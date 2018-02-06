@@ -1,0 +1,5 @@
+Release notes
+
+v3.0.0-beta-20180206
+
+- Project is moved to the new public GitHub repository
