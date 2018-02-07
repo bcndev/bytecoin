@@ -14,12 +14,12 @@ You also need Boost 1.58 or newer installed system-wide.
 
 If you want to use tools like `clang-tidy`, run `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON` instead of `cmake`.
 
-Bytecoin references source files directly by relative paths, so you do not need to separately build dependencies
+Bytecoin references source files directly by relative paths, so you do not need to separately build dependencies.
 
-What tools you need to build:
-* On Linux - developer essentials, cmake, make, gcc/g++ (builing via cmake).
-* On MacOS - XCode (building with provided XCode project).
-* On Windows - Microsoft Visual Studio Community 2017 (building project after CMake integration).
+What you need to build the project:
+* On Linux - developer essentials, cmake (3.5 or newer), make, gcc/g++ (5.4 or newer) [builing via cmake].
+* On MacOS - XCode [building with provided XCode project].
+* On Windows - Microsoft Visual Studio Community 2017 [building project after CMake integration].
 
 Please note that we currently support building only 64-bit binaries.
 
