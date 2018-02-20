@@ -1,33 +1,19 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "KVBinaryOutputStream.hpp"
 #include "KVBinaryCommon.hpp"
 
 #include <cassert>
+#include <iostream>
 #include <stdexcept>
 #include "common/Streams.hpp"
-#include <iostream>
 
 using namespace common;
 using namespace bytecoin;
 using namespace seria;
 
-static bool verbose_debug = false;
+static bool verbose_debug  = false;
 static bool verbose_tokens = false;
 
 namespace {
@@ -46,17 +32,17 @@ size_t packVarint(IOutputStream &s, uint8_t type_or, size_t pv) {
 }
 
 void writeElementName(IOutputStream &s, common::StringView name) {
-	if (name.getSize() > std::numeric_limits<uint8_t>::max()) {
+	if (name.size() > std::numeric_limits<uint8_t>::max()) {
 		throw std::runtime_error("Element name is too long");
 	}
 
-	uint8_t len = static_cast<uint8_t>(name.getSize());
+	uint8_t len = static_cast<uint8_t>(name.size());
 	s.write(&len, sizeof(len));
-	s.write(name.getData(), len);
+	s.write(name.data(), len);
 	if (verbose_debug)
-		std::cout << "writeElementName name=" << (std::string) name << std::endl;
+		std::cout << "writeElementName name=" << (std::string)name << std::endl;
 	if (verbose_tokens)
-		std::cout << "\"" << (std::string) name << "\"" << std::endl;
+		std::cout << "\"" << (std::string)name << "\"" << std::endl;
 }
 
 size_t writeArraySize(IOutputStream &s, size_t val) {
@@ -73,53 +59,48 @@ size_t writeArraySize(IOutputStream &s, size_t val) {
 		return packVarint<uint64_t>(s, PORTABLE_RAW_SIZE_MARK_INT64, val);
 	}
 }
-
 }
 
-KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : target(target) {
+KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : m_target(target) {
 	KVBinaryStorageBlockHeader hdr;
 	hdr.m_signature_a = PORTABLE_STORAGE_SIGNATUREA;
 	hdr.m_signature_b = PORTABLE_STORAGE_SIGNATUREB;
-	hdr.m_ver = PORTABLE_STORAGE_FORMAT_VER;
+	hdr.m_ver         = PORTABLE_STORAGE_FORMAT_VER;
 
-	target.write(&hdr, sizeof(hdr));
+	m_target.write(&hdr, sizeof(hdr));
 }
 
-void KVBinaryOutputStream::objectKey(common::StringView name) {
-	nextKey = name;
-}
-void KVBinaryOutputStream::nextMapKey(std::string &name) {
-	nextKey = name;
-}
+void KVBinaryOutputStream::object_key(common::StringView name) { m_next_key = name; }
+void KVBinaryOutputStream::next_map_key(std::string &name) { m_next_key = name; }
 
-void KVBinaryOutputStream::beginObject() {
+void KVBinaryOutputStream::begin_object() {
 	if (m_stack.empty()) {
-		if (!expectingRoot)
-			throw std::logic_error("KVBinaryOutputStream::writeElementPrefix expecting only object");
-		expectingRoot = false;
+		if (!m_expecting_root)
+			throw std::logic_error("KVBinaryOutputStream::write_element_prefix expecting only object");
+		m_expecting_root = false;
 	} else
-		writeElementPrefix(BIN_KV_SERIALIZE_TYPE_OBJECT);
+		write_element_prefix(BIN_KV_SERIALIZE_TYPE_OBJECT);
 
 	m_stack.push_back(Level(common::StringView("")));
-	m_objectsStack.emplace_back();
+	m_objects_stack.emplace_back();
 	if (verbose_debug)
-		std::cout << "beginObject m_objectsStack.push_back, m_stack.push_back name=" << std::endl;
+		std::cout << "begin_object m_objects_stack.push_back, m_stack.push_back name=" << std::endl;
 }
 
-void KVBinaryOutputStream::endObject() {
-	assert(m_objectsStack.size());
+void KVBinaryOutputStream::end_object() {
+	assert(m_objects_stack.size());
 
 	auto level = std::move(m_stack.back());
 	m_stack.pop_back();
 
-	auto objStream = std::move(m_objectsStack.back());
-	m_objectsStack.pop_back();
+	auto objStream = std::move(m_objects_stack.back());
+	m_objects_stack.pop_back();
 
-	IOutputStream &out = m_objectsStack.empty() ? target : stream();
+	IOutputStream &out = m_objects_stack.empty() ? m_target : stream();
 
 	if (verbose_debug)
-		std::cout << "endObject TYPE_OBJECT level.count=" << level.count << " level.name="
-				  << (std::string) level.name << std::endl;
+		std::cout << "end_object TYPE_OBJECT level.count=" << level.count << " level.name=" << (std::string)level.name
+		          << std::endl;
 
 	writeArraySize(out, level.count);
 	out.write(objStream.buffer().data(), objStream.buffer().size());
@@ -127,16 +108,16 @@ void KVBinaryOutputStream::endObject() {
 		std::cout << "OBJ c=" << level.count << std::endl;
 }
 
-void KVBinaryOutputStream::beginArray(size_t &size, bool fixed_size) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_ARRAY);
+void KVBinaryOutputStream::begin_array(size_t &size, bool fixed_size) {
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_ARRAY);
 
 	m_stack.push_back(Level(common::StringView(""), size));
 	if (verbose_debug)
-		std::cout << "beginArray size=" << size << std::endl;
+		std::cout << "begin_array size=" << size << std::endl;
 	if (size == 0) {
 		auto &s = stream();
-		unsigned char c = BIN_KV_SERIALIZE_FLAG_ARRAY |
-						  BIN_KV_SERIALIZE_TYPE_STRING; // we do not care which type is empty array
+		unsigned char c =
+		    BIN_KV_SERIALIZE_FLAG_ARRAY | BIN_KV_SERIALIZE_TYPE_STRING;  // we do not care which type is empty array
 		s.write(&c, 1);
 		writeArraySize(s, size);
 		m_stack.back().state = State::Array;
@@ -145,31 +126,31 @@ void KVBinaryOutputStream::beginArray(size_t &size, bool fixed_size) {
 	}
 }
 
-void KVBinaryOutputStream::endArray() {
+void KVBinaryOutputStream::end_array() {
 	bool validArray = m_stack.back().state == State::Array;
 	m_stack.pop_back();
 
 	if (verbose_debug)
-		std::cout << "endArray validArray=" << int(validArray) << " m_stack.back().state="
-				  << int(m_stack.back().state) << std::endl;
+		std::cout << "end_array validArray=" << int(validArray) << " m_stack.back().state=" << int(m_stack.back().state)
+		          << std::endl;
 }
 
-void KVBinaryOutputStream::writeElementPrefix(uint8_t type) {
+void KVBinaryOutputStream::write_element_prefix(uint8_t type) {
 	if (m_stack.empty()) {
-		throw std::logic_error("KVBinaryOutputStream::beginObject unexpected root");
+		throw std::logic_error("KVBinaryOutputStream::begin_object unexpected root");
 	}
 
 	Level &level = m_stack.back();
-	auto &s = stream();
+	auto &s      = stream();
 
 	if (verbose_debug)
-		std::cout << "writeElementPrefix level.state=" << int(level.state) << std::endl;
+		std::cout << "write_element_prefix level.state=" << int(level.state) << std::endl;
 	if (level.state == State::Object) {
-		if (!nextKey.isEmpty()) {
-			writeElementName(s, nextKey);
+		if (!m_next_key.empty()) {
+			writeElementName(s, m_next_key);
 			if (type != BIN_KV_SERIALIZE_TYPE_ARRAY)
 				s.write(&type, 1);
-			nextKey = common::StringView("");
+			m_next_key = common::StringView("");
 		}
 		++level.count;
 	}
@@ -186,59 +167,59 @@ void KVBinaryOutputStream::writeElementPrefix(uint8_t type) {
 }
 
 common::VectorStream &KVBinaryOutputStream::stream() {
-	assert(m_objectsStack.size());
-	return m_objectsStack.back();
+	assert(m_objects_stack.size());
+	return m_objects_stack.back();
 }
 
 void KVBinaryOutputStream::seria_v(uint8_t &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_UINT8);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT8);
 	writePod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(uint16_t &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_UINT16);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT16);
 	writePod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(int16_t &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_INT16);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_INT16);
 	writePod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(uint32_t &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_UINT32);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT32);
 	writePod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(int32_t &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_INT32);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_INT32);
 	writePod(stream(), value);
 	if (verbose_tokens)
 		std::cout << value << std::endl;
 }
 
 void KVBinaryOutputStream::seria_v(int64_t &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_INT64);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_INT64);
 	writePod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(uint64_t &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_UINT64);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT64);
 	writePod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(bool &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_BOOL);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_BOOL);
 	writePod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(double &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_DOUBLE);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_DOUBLE);
 	writePod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(std::string &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_STRING);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_STRING);
 
 	auto &out = stream();
 	writeArraySize(out, value.size());
@@ -247,7 +228,7 @@ void KVBinaryOutputStream::seria_v(std::string &value) {
 		std::cout << "\"" << value << "\"" << std::endl;
 }
 void KVBinaryOutputStream::seria_v(common::BinaryArray &value) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_STRING);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_STRING);
 
 	auto &out = stream();
 	writeArraySize(out, value.size());
@@ -255,9 +236,8 @@ void KVBinaryOutputStream::seria_v(common::BinaryArray &value) {
 }
 
 void KVBinaryOutputStream::binary(void *value, size_t size) {
-	writeElementPrefix(BIN_KV_SERIALIZE_TYPE_STRING);
+	write_element_prefix(BIN_KV_SERIALIZE_TYPE_STRING);
 	auto &out = stream();
 	writeArraySize(out, size);
 	out.write(value, size);
 }
-

@@ -1,20 +1,25 @@
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+
 #include "TransactionBuilder.hpp"
-#include "crypto/random.h"
 #include <iostream>
-#include "http/JsonRpc.h"
-#include "crypto/crypto.hpp"
 #include "BlockChain.hpp"
 #include "CryptoNoteTools.hpp"
 #include "Currency.hpp"
 #include "Wallet.hpp"
+#include "crypto/crypto.hpp"
+#include "crypto/random.h"
+#include "http/JsonRpc.h"
 #include "seria/BinaryOutputStream.hpp"
 
 using namespace bytecoin;
 
-bool TransactionBuilder::derive_public_key(const AccountPublicAddress &to, const SecretKey &tx_key, size_t output_index,
-                                           PublicKey &ephemeral_key) {
+bool TransactionBuilder::derive_public_key(const AccountPublicAddress &to,
+    const SecretKey &tx_key,
+    size_t output_index,
+    PublicKey &ephemeral_key) {
 	KeyDerivation derivation;
-	if( !generate_key_derivation(to.view_public_key, tx_key, derivation) )
+	if (!generate_key_derivation(to.view_public_key, tx_key, derivation))
 		return false;
 	return crypto::derive_public_key(derivation, output_index, to.spend_public_key, ephemeral_key);
 }
@@ -26,7 +31,7 @@ TransactionBuilder::TransactionBuilder(const Currency &currency, UnlockMoment un
 
 void TransactionBuilder::set_payment_id(const Hash &hash) {
 	BinaryArray payment_id_blob;
-	setPaymentIdToTransactionExtraNonce(payment_id_blob, reinterpret_cast<const Hash &>(hash));
+	set_payment_id_to_transaction_extra_nonce(payment_id_blob, reinterpret_cast<const Hash &>(hash));
 	set_extra_nonce(payment_id_blob);
 }
 
@@ -51,13 +56,13 @@ static bool APIOutputLessGlobalIndex(const api::Output &a, const api::Output &b)
 }
 
 bool TransactionBuilder::generate_key_image_helper(const AccountKeys &ack, const PublicKey &tx_public_key,
-                                                   size_t real_output_index, KeyPair &in_ephemeral, KeyImage &ki) {
+    size_t real_output_index, KeyPair &in_ephemeral, KeyImage &ki) {
 	KeyDerivation recv_derivation;
 	bool r = generate_key_derivation(tx_public_key, ack.view_secret_key, recv_derivation);
 	if (!r)
 		return false;
-	r = crypto::derive_public_key(recv_derivation, real_output_index, ack.address.spend_public_key,
-	                              in_ephemeral.publicKey);
+	r = crypto::derive_public_key(
+	    recv_derivation, real_output_index, ack.address.spend_public_key, in_ephemeral.publicKey);
 	if (!r)
 		return false;
 	crypto::derive_secret_key(recv_derivation, real_output_index, ack.spend_secret_key, in_ephemeral.secretKey);
@@ -73,8 +78,9 @@ std::vector<uint32_t> TransactionBuilder::absolute_output_offsets_to_relative(co
 	return copy;
 }
 
-size_t TransactionBuilder::add_input(const AccountKeys &sender_keys, api::Output real_output,
-                                     const std::vector<api::Output> &mix_outputs) {
+size_t TransactionBuilder::add_input(const AccountKeys &sender_keys,
+    api::Output real_output,
+    const std::vector<api::Output> &mix_outputs) {
 	m_inputs_amount += real_output.amount;
 
 	InputDesc desc;
@@ -86,8 +92,8 @@ size_t TransactionBuilder::add_input(const AccountKeys &sender_keys, api::Output
 	    desc.outputs.begin();
 	desc.outputs.insert(desc.outputs.begin() + desc.real_output_index, real_output);
 
-	if (!generate_key_image_helper(sender_keys, real_output.transaction_public_key, real_output.index_in_transaction, desc.eph_keys,
-	                               desc.input.key_image))
+	if (!generate_key_image_helper(sender_keys, real_output.transaction_public_key, real_output.index_in_transaction,
+	        desc.eph_keys, desc.input.key_image))
 		throw std::runtime_error("generating keyimage failed");
 	if (desc.input.key_image != real_output.key_image)
 		throw std::runtime_error("generated keyimage does not match input");
@@ -104,7 +110,7 @@ size_t TransactionBuilder::add_input(const AccountKeys &sender_keys, api::Output
 	return m_input_descs.size() - 1;
 }
 
-KeyPair TransactionBuilder::deterministic_keys_from_seed(const Hash & tx_inputs_hash, const Hash & tx_derivation_seed) {
+KeyPair TransactionBuilder::deterministic_keys_from_seed(const Hash &tx_inputs_hash, const Hash &tx_derivation_seed) {
 	BinaryArray ba;
 	common::append(ba, std::begin(tx_inputs_hash.data), std::end(tx_inputs_hash.data));
 	common::append(ba, std::begin(tx_derivation_seed.data), std::end(tx_derivation_seed.data));
@@ -115,12 +121,12 @@ KeyPair TransactionBuilder::deterministic_keys_from_seed(const Hash & tx_inputs_
 	return tx_keys;
 }
 
-KeyPair TransactionBuilder::deterministic_keys_from_seed(const Transaction & tx, const Hash & tx_derivation_seed){
+KeyPair TransactionBuilder::deterministic_keys_from_seed(const TransactionPrefix &tx, const Hash &tx_derivation_seed) {
 	Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
 	return deterministic_keys_from_seed(tx_inputs_hash, tx_derivation_seed);
 }
 
-Transaction TransactionBuilder::sign(const Hash & tx_derivation_seed) {
+Transaction TransactionBuilder::sign(const Hash &tx_derivation_seed) {
 	std::shuffle(m_output_descs.begin(), m_output_descs.end(), crypto::random_engine<size_t>{});
 	std::shuffle(m_input_descs.begin(), m_input_descs.end(), crypto::random_engine<size_t>{});
 
@@ -137,7 +143,7 @@ Transaction TransactionBuilder::sign(const Hash & tx_derivation_seed) {
 	m_transaction.outputs.resize(m_output_descs.size());
 	for (size_t i = 0; i != m_output_descs.size(); ++i) {
 		KeyOutput outKey;
-		if( !derive_public_key(m_output_descs[i].addr, txKeys.secretKey, i, outKey.key) )
+		if (!derive_public_key(m_output_descs[i].addr, txKeys.secretKey, i, outKey.key))
 			throw std::runtime_error("output keys detected as corrupted during output key derivation");
 		TransactionOutput out       = {m_output_descs[i].amount, outKey};
 		m_transaction.outputs.at(i) = out;
@@ -154,8 +160,8 @@ Transaction TransactionBuilder::sign(const Hash & tx_derivation_seed) {
 			keys_ptrs.push_back(&o.public_key);  // reinterpret_cast<const PublicKey*>(&o.targetKey));
 		}
 		signatures.resize(keys_ptrs.size(), Signature{});
-		if( !generate_ring_signature(hash, input.key_image, keys_ptrs, desc.eph_keys.secretKey, desc.real_output_index,
-		                        signatures.data())){
+		if (!generate_ring_signature(
+		        hash, input.key_image, keys_ptrs, desc.eph_keys.secretKey, desc.real_output_index, signatures.data())) {
 			throw std::runtime_error("output keys detected as corrupted during ring signing");
 		}
 		m_transaction.signatures.at(i) = signatures;
@@ -166,8 +172,18 @@ Transaction TransactionBuilder::sign(const Hash & tx_derivation_seed) {
 UnspentSelector::UnspentSelector(const Currency &currency, Unspents &&unspents)
     : m_currency(currency), m_unspents(std::move(unspents)) {}
 
-void UnspentSelector::add_mixed_inputs(const SecretKey & view_secret_key, const std::unordered_map<PublicKey, WalletRecord> & wallet_records, TransactionBuilder &builder, uint32_t anonymity,
-                                       api::bytecoind::GetRandomOutputs::Response &&ra_response) {
+void UnspentSelector::reset(Unspents &&unspents) {
+	m_unspents = std::move(unspents);
+	m_used_unspents.clear();
+	m_optimization_unspents.clear();
+	m_used_total   = 0;
+	m_inputs_count = 0;
+	m_ra_amounts.clear();
+}
+
+void UnspentSelector::add_mixed_inputs(const SecretKey &view_secret_key,
+    const std::unordered_map<PublicKey, WalletRecord> &wallet_records, TransactionBuilder &builder, uint32_t anonymity,
+    api::bytecoind::GetRandomOutputs::Response &&ra_response) {
 	for (auto uu : m_used_unspents) {
 		std::vector<api::Output> mix_outputs;
 		auto &our_ra_outputs = ra_response.outputs[uu.amount];
@@ -185,34 +201,36 @@ void UnspentSelector::add_mixed_inputs(const SecretKey & view_secret_key, const 
 		if (!m_currency.parse_account_address_string(uu.address, sender_keys.address))
 			throw json_rpc::Error(json_rpc::errInvalidParams, "Could not parse address " + uu.address);
 		auto rit = wallet_records.find(sender_keys.address.spend_public_key);
-		if( rit == wallet_records.end() || rit->second.spend_public_key != sender_keys.address.spend_public_key)
+		if (rit == wallet_records.end() || rit->second.spend_public_key != sender_keys.address.spend_public_key)
 			throw json_rpc::Error(json_rpc::errInvalidParams, "No keys in wallet for address " + uu.address);
 		sender_keys.spend_secret_key = rit->second.spend_secret_key;
 		builder.add_input(sender_keys, uu, mix_outputs);
 	}
 }
 
-constexpr Amount fake_large = 1000000000000000000;  // optimize negative amounts by adding this large number to them
+constexpr Amount fake_large = 1000000000000000000;  // optimize negative amounts
+                                                    // by adding this large
+                                                    // number to them
 constexpr size_t OPTIMIZATIONS_PER_TX            = 50;
 constexpr size_t OPTIMIZATIONS_PER_TX_AGGRESSIVE = 200;
 constexpr size_t MEDIAN_PERCENT                  = 25;  // make tx up to 25% of block
 constexpr size_t MEDIAN_PERCENT_AGGRESSIVE       = 50;  // make tx up to 50% of block
 constexpr size_t STACK_OPTIMIZATION_THRESHOLD    = 20;  // If any coin stack is larger, we will spend 10 coins.
-constexpr size_t TWO_THRESHOLD = 10;  // if any of 2 coin stacks is larger, we will use 2 coins to cover single digit (e.g. 7 + 9 for 6)
+constexpr size_t TWO_THRESHOLD                   = 10;  // if any of 2 coin stacks is larger, we
+                                                        // will use 2 coins to cover single digit
+                                                        // (e.g. 7 + 9 for 6)
 
 bool UnspentSelector::select_optimal_outputs(Height block_height, Timestamp block_time, Height confirmed_height,
-                                             size_t effective_median_size, size_t anonymity, Amount total_amount,
-                                             size_t total_outputs, Amount fee_per_byte, std::string optimization_level,
-                                             Amount &change) {
+    size_t effective_median_size, size_t anonymity, Amount total_amount, size_t total_outputs, Amount fee_per_byte,
+    std::string optimization_level, Amount &change) {
 	HaveCoins have_coins;
 	size_t max_digits;
 	DustCoins dust_coins;
 	create_have_coins(block_height, block_time, confirmed_height, have_coins, dust_coins, max_digits);
-	Amount fee = m_currency.minimum_fee;
-	size_t optimizations =
-	    (optimization_level == "aggressive")
-	        ? OPTIMIZATIONS_PER_TX_AGGRESSIVE
-	        : (optimization_level == "minimal") ? 9 : OPTIMIZATIONS_PER_TX;
+	Amount fee           = m_currency.minimum_fee;
+	size_t optimizations = (optimization_level == "aggressive")
+	                           ? OPTIMIZATIONS_PER_TX_AGGRESSIVE
+	                           : (optimization_level == "minimal") ? 9 : OPTIMIZATIONS_PER_TX;
 	// 9 allows some dust optimization, but never "stack of coins" optimization.
 	// "Minimal" optimization does not mean no optimization
 	size_t optimization_median_percent =
@@ -222,8 +240,8 @@ bool UnspentSelector::select_optimal_outputs(Height block_height, Timestamp bloc
 		if (!select_optimal_outputs(have_coins, dust_coins, max_digits, total_amount + fee, anonymity, optimizations))
 			return false;
 		Amount change_dust_fee = (m_used_total - total_amount - fee) % m_currency.default_dust_threshold;
-		size_t tx_size =
-		    getMaximumTxSize(m_inputs_count, total_outputs + 8, anonymity);  // TODO - 8 is expected max change outputs
+		size_t tx_size         = get_maximum_tx_size(m_inputs_count, total_outputs + 8,
+		    anonymity);  // TODO - 8 is expected max change outputs
 		if (tx_size > optimization_median && optimizations > 0) {
 			unoptimize_amounts(have_coins, dust_coins);
 			optimizations /= 2;
@@ -247,7 +265,7 @@ bool UnspentSelector::select_optimal_outputs(Height block_height, Timestamp bloc
 }
 
 void UnspentSelector::create_have_coins(Height block_height, Timestamp block_time, Height confirmed_height,
-                                        HaveCoins &have_coins, DustCoins &dust_coins, size_t &max_digit) {
+    HaveCoins &have_coins, DustCoins &dust_coins, size_t &max_digit) {
 	max_digit = 0;
 	for (auto uit = m_unspents.rbegin(); uit != m_unspents.rend(); ++uit) {
 		api::Output &un = *uit;
@@ -263,7 +281,7 @@ void UnspentSelector::create_have_coins(Height block_height, Timestamp block_tim
 				am /= 10;
 			}
 			max_digit = std::max(max_digit, digit);
-			have_coins[digit][am].push_back(un);
+			have_coins[digit][static_cast<size_t>(am)].push_back(un);
 		} else
 			dust_coins[un.amount].push_back(un);
 	}
@@ -289,15 +307,14 @@ void UnspentSelector::unoptimize_amounts(HaveCoins &have_coins, DustCoins &dust_
 				digit += 1;
 				am /= 10;
 			}
-			have_coins[digit][am].push_back(un);
+			have_coins[digit][static_cast<size_t>(am)].push_back(un);
 		} else
 			dust_coins[un.amount].push_back(un);
 	}
 	m_optimization_unspents.clear();
 }
 
-void UnspentSelector::optimize_amounts(HaveCoins &have_coins, size_t max_digit,
-                                       Amount total_amount) {
+void UnspentSelector::optimize_amounts(HaveCoins &have_coins, size_t max_digit, Amount total_amount) {
 	std::cout << "Sub optimizing am=" << fake_large + total_amount - m_used_total << std::endl;
 	Amount digit_amount = 1;
 	for (size_t digit = 0; digit != max_digit + 1; ++digit, digit_amount *= 10) {
@@ -368,13 +385,14 @@ void UnspentSelector::optimize_amounts(HaveCoins &have_coins, size_t max_digit,
 }
 
 bool UnspentSelector::select_optimal_outputs(HaveCoins &have_coins, DustCoins &dust_coins, size_t max_digit,
-                                             Amount total_amount, size_t anonymity, size_t optimization_count) {
+    Amount total_amount, size_t anonymity, size_t optimization_count) {
 	// Optimize for roundness of used_total - total_amount;
 	//    [digit:size:outputs]
 	std::cout << "Optimizing am=" << fake_large + total_amount - m_used_total << std::endl;
 	if (anonymity == 0) {
 		if (m_used_total < total_amount) {
-			// Find smallest dust coin >= total_amount - used_total, it can be very large
+			// Find smallest dust coin >= total_amount - used_total, it can be very
+			// large
 			auto duit = dust_coins.lower_bound(total_amount - m_used_total);
 			if (duit != dust_coins.end()) {
 				auto &un = duit->second.back();

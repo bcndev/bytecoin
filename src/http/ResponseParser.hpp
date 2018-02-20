@@ -1,12 +1,10 @@
-//
-// request_parser.hpp
-// ~~~~~~~~~~~~~~~~~~
-//
 // Copyright (c) 2003-2017 Christopher M. Kohlhoff (chris at kohlhoff dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-//
+
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
@@ -51,18 +49,18 @@ public:
 	void reset();
 
 	template<typename InputIterator>
-	InputIterator parse(response &req,
-						InputIterator begin, InputIterator end) {
+	InputIterator parse(response &req, InputIterator begin, InputIterator end) {
 		while (begin != end && state_ != good && state_ != bad)
 			state_ = consume(req, *begin++);
 		return begin;
 	}
 	bool is_good() const { return state_ == good; }
 	bool is_bad() const { return state_ == bad; }
+
 private:
 	bool process_ready_header(response &req);
 	Header lowcase;
 	state consume(response &req, char input);
 };
 
-} // namespace http
+}  // namespace http

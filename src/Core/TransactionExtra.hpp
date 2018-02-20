@@ -1,33 +1,17 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
-#include <vector>
 #include <boost/variant.hpp>
+#include <vector>
 
 #include "CryptoNote.hpp"
 #include "seria/ISeria.hpp"
 
 namespace bytecoin {
 
-	enum { TX_EXTRA_PADDING_MAX_COUNT = 255,
-		TX_EXTRA_NONCE_MAX_COUNT      = 255,
-		TX_EXTRA_NONCE_PAYMENT_ID     = 0x00 };
+enum { TX_EXTRA_PADDING_MAX_COUNT = 255, TX_EXTRA_NONCE_MAX_COUNT = 255, TX_EXTRA_NONCE_PAYMENT_ID = 0x00 };
 
 struct TransactionExtraPadding {
 	size_t size = 0;
@@ -35,7 +19,7 @@ struct TransactionExtraPadding {
 };
 
 struct TransactionExtraPublicKey {
-	crypto::PublicKey publicKey;
+	crypto::PublicKey public_key;
 	enum { tag = 0x01 };
 };
 
@@ -46,7 +30,7 @@ struct TransactionExtraNonce {
 
 struct TransactionExtraMergeMiningTag {
 	size_t depth = 0;
-	crypto::Hash merkleRoot;
+	crypto::Hash merkle_root;
 	enum { tag = 0x03 };
 };
 
@@ -54,46 +38,33 @@ struct TransactionExtraMergeMiningTag {
 //   varint tag;
 //   varint size;
 //   varint data[];
-typedef boost::variant<TransactionExtraPadding, TransactionExtraPublicKey, TransactionExtraNonce, TransactionExtraMergeMiningTag> TransactionExtraField;
+typedef boost::variant<TransactionExtraPadding, TransactionExtraPublicKey, TransactionExtraNonce,
+    TransactionExtraMergeMiningTag>
+    TransactionExtraField;
 
+bool parse_transaction_extra(const BinaryArray &tx_extra, std::vector<TransactionExtraField> &tx_extra_fields);
+bool write_transaction_extra(BinaryArray &tx_extra, const std::vector<TransactionExtraField> &tx_extra_fields);
 
-template<typename T>
-bool findTransactionExtraFieldByType(const std::vector<TransactionExtraField> &tx_extra_fields, T &field) {
-	auto it = std::find_if(tx_extra_fields.begin(), tx_extra_fields.end(),
-						   [](const TransactionExtraField &f) { return typeid(T) == f.type(); });
+crypto::PublicKey get_transaction_public_key_from_extra(const BinaryArray &tx_extra);
+bool add_transaction_public_key_to_extra(BinaryArray &tx_extra, const crypto::PublicKey &tx_pub_key);
+bool add_extra_nonce_to_transaction_extra(BinaryArray &tx_extra, const BinaryArray &extra_nonce);
+void set_payment_id_to_transaction_extra_nonce(BinaryArray &extra_nonce, const crypto::Hash &payment_id);
+bool get_payment_id_from_transaction_extra_nonce(const BinaryArray &extra_nonce, crypto::Hash &payment_id);
+bool append_merge_mining_tag_to_extra(BinaryArray &tx_extra, const TransactionExtraMergeMiningTag &mm_tag);
+bool get_merge_mining_tag_from_extra(const BinaryArray &tx_extra, TransactionExtraMergeMiningTag &mm_tag);
 
-	if (tx_extra_fields.end() == it)
-		return false;
-
-	field = boost::get<T>(*it);
-	return true;
-}
-
-bool parseTransactionExtra(const BinaryArray &tx_extra, std::vector<TransactionExtraField> &tx_extra_fields);
-bool writeTransactionExtra(BinaryArray &tx_extra, const std::vector<TransactionExtraField> &tx_extra_fields);
-
-crypto::PublicKey getTransactionPublicKeyFromExtra(const BinaryArray &tx_extra);
-bool addTransactionPublicKeyToExtra(BinaryArray &tx_extra, const crypto::PublicKey &tx_pub_key);
-bool addExtraNonceToTransactionExtra(BinaryArray &tx_extra, const BinaryArray &extra_nonce);
-void setPaymentIdToTransactionExtraNonce(BinaryArray &extra_nonce, const crypto::Hash &payment_id);
-bool getPaymentIdFromTransactionExtraNonce(const BinaryArray &extra_nonce, crypto::Hash &payment_id);
-bool appendMergeMiningTagToExtra(BinaryArray &tx_extra, const TransactionExtraMergeMiningTag &mm_tag);
-bool getMergeMiningTagFromExtra(const BinaryArray &tx_extra, TransactionExtraMergeMiningTag &mm_tag);
-
-bool createTxExtraWithPaymentId(const std::string &paymentIdString, BinaryArray &extra);
-//returns false if payment id is not found or parse error
-bool getPaymentIdFromTxExtra(const BinaryArray &extra, crypto::Hash &paymentId);
-bool parsePaymentId(const std::string &paymentIdString, crypto::Hash &paymentId);
+// bool createTxExtraWithPaymentId(const std::string &paymentIdString, BinaryArray &extra);
+// returns false if payment id is not found or parse error
+bool get_payment_id_from_tx_extra(const BinaryArray &extra, crypto::Hash &paymentId);
+// bool parsePaymentId(const std::string &paymentIdString, crypto::Hash &paymentId);
 
 class TransactionExtra {
 public:
 	TransactionExtra() {}
-	TransactionExtra(const BinaryArray &extra) {
-		parse(extra);
-	}
+	TransactionExtra(const BinaryArray &extra) { parse(extra); }
 	bool parse(const BinaryArray &extra) {
 		m_fields.clear();
-		return bytecoin::parseTransactionExtra(extra, m_fields);
+		return bytecoin::parse_transaction_extra(extra, m_fields);
 	}
 	template<typename T>
 	bool get(T &value) const {
@@ -119,31 +90,33 @@ public:
 		m_fields.push_back(value);
 	}
 
-	bool getPublicKey(crypto::PublicKey &pk) const {
-		bytecoin::TransactionExtraPublicKey extraPk;
-		if (!get(extraPk)) {
+	bool get_public_key(crypto::PublicKey &pk) const {
+		bytecoin::TransactionExtraPublicKey extra_pk;
+		if (!get(extra_pk)) {
 			return false;
 		}
-		pk = extraPk.publicKey;
+		pk = extra_pk.public_key;
 		return true;
 	}
 
 	BinaryArray serialize() const {
 		BinaryArray extra;
-		writeTransactionExtra(extra, m_fields);
+		write_transaction_extra(extra, m_fields);
 		return extra;
 	}
+
 private:
 	std::vector<bytecoin::TransactionExtraField>::const_iterator find(const std::type_info &t) const {
-		return std::find_if(m_fields.begin(), m_fields.end(), [&t](const bytecoin::TransactionExtraField &f) { return t == f.type(); });
+		return std::find_if(
+		    m_fields.begin(), m_fields.end(), [&t](const bytecoin::TransactionExtraField &f) { return t == f.type(); });
 	}
 	std::vector<bytecoin::TransactionExtraField>::iterator find(const std::type_info &t) {
-		return std::find_if(m_fields.begin(), m_fields.end(), [&t](const bytecoin::TransactionExtraField &f) { return t == f.type(); });
+		return std::find_if(
+		    m_fields.begin(), m_fields.end(), [&t](const bytecoin::TransactionExtraField &f) { return t == f.type(); });
 	}
 
 	std::vector<bytecoin::TransactionExtraField> m_fields;
 };
-
 }
 
 namespace seria {

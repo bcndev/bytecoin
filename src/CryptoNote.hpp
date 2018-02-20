@@ -1,27 +1,13 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
 #include <boost/variant.hpp>
 #include <functional>
 #include <vector>
-#include "crypto/types.hpp"
 #include "common/BinaryArray.hpp"
+#include "crypto/types.hpp"
 
 // We define here, as CryptoNoteConfig.h is never included anywhere anymore
 #define ALLOW_DEBUG_COMMANDS 1
@@ -72,7 +58,7 @@ struct TransactionOutput {
 };
 
 struct TransactionPrefix {
-	uint8_t version = 0;
+	uint8_t version          = 0;
 	UnlockMoment unlock_time = 0;
 	std::vector<TransactionInput> inputs;
 	std::vector<TransactionOutput> outputs;
@@ -98,8 +84,8 @@ struct ParentBlock {
 struct BlockHeader {
 	uint8_t major_version = 0;
 	uint8_t minor_version = 0;
-	uint32_t nonce = 0;
-	Timestamp timestamp = 0;
+	uint32_t nonce        = 0;
+	Timestamp timestamp   = 0;
 	Hash previous_block_hash;
 };
 
@@ -114,7 +100,7 @@ struct AccountPublicAddress {
 	PublicKey view_public_key;
 };
 
-struct SendProof { // proofing that some tx actually sent amount to particular address
+struct SendProof {  // proofing that some tx actually sent amount to particular address
 	Hash transaction_hash;
 	AccountPublicAddress address;
 	Amount amount = 0;
@@ -167,26 +153,25 @@ void ser(bytecoin::SecretKey &v, ISeria &s);
 void ser(bytecoin::KeyDerivation &v, ISeria &s);
 void ser(bytecoin::Signature &v, ISeria &s);
 
-void serMembers(bytecoin::AccountPublicAddress &v, ISeria &s);
-void serMembers(bytecoin::SendProof &v, ISeria &s);
-void serMembers(bytecoin::TransactionInput &v, ISeria &s);
-void serMembers(bytecoin::TransactionOutput &v, ISeria &s);
-void serMembers(bytecoin::TransactionOutputTarget &v, ISeria &s);
+void ser_members(bytecoin::AccountPublicAddress &v, ISeria &s);
+void ser_members(bytecoin::SendProof &v, ISeria &s);
+void ser_members(bytecoin::TransactionInput &v, ISeria &s);
+void ser_members(bytecoin::TransactionOutput &v, ISeria &s);
+void ser_members(bytecoin::TransactionOutputTarget &v, ISeria &s);
 
-void serMembers(bytecoin::CoinbaseInput &v, ISeria &s);
-void serMembers(bytecoin::KeyInput &v, ISeria &s);
+void ser_members(bytecoin::CoinbaseInput &v, ISeria &s);
+void ser_members(bytecoin::KeyInput &v, ISeria &s);
 
-void serMembers(bytecoin::KeyOutput &v, ISeria &s);
+void ser_members(bytecoin::KeyOutput &v, ISeria &s);
 
-void serMembers(bytecoin::TransactionPrefix &v, ISeria &s);
-void serMembers(bytecoin::BaseTransaction &v, ISeria &s);
-void serMembers(bytecoin::Transaction &v, ISeria &s);
+void ser_members(bytecoin::TransactionPrefix &v, ISeria &s);
+void ser_members(bytecoin::BaseTransaction &v, ISeria &s);
+void ser_members(bytecoin::Transaction &v, ISeria &s);
 
-void serMembers(bytecoin::BlockTemplate &v, ISeria &s);
-void serMembers(bytecoin::BlockHeader &v, ISeria &s);
-void serMembers(bytecoin::ParentBlock &v, ISeria &s);
+void ser_members(bytecoin::BlockTemplate &v, ISeria &s);
+void ser_members(bytecoin::BlockHeader &v, ISeria &s);
+void ser_members(bytecoin::ParentBlock &v, ISeria &s);
 
-void serMembers(bytecoin::RawBlock &v, ISeria &s);
-void serMembers(bytecoin::Block &v, ISeria &s);
-
+void ser_members(bytecoin::RawBlock &v, ISeria &s);
+void ser_members(bytecoin::Block &v, ISeria &s);
 }

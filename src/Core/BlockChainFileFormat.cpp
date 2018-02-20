@@ -1,19 +1,5 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "BlockChainFileFormat.hpp"
 #include "BlockChainState.hpp"
@@ -25,28 +11,28 @@ using namespace common;
 using namespace bytecoin;
 
 LegacyBlockChainReader::LegacyBlockChainReader(const std::string &index_file_name, const std::string &item_file_name) {
-	try{
+	try {
 		m_indexes_file = std::make_unique<platform::FileStream>(index_file_name, platform::FileStream::READ_EXISTING);
-		m_items_file = std::make_unique<platform::FileStream>(item_file_name, platform::FileStream::READ_EXISTING);
+		m_items_file   = std::make_unique<platform::FileStream>(item_file_name, platform::FileStream::READ_EXISTING);
 
 		m_indexes_file->seek(0, SEEK_END);
 		uint64_t m_indexesFileSize = m_indexes_file->tellp();
 		m_indexes_file->seek(0, SEEK_SET);
-		uint64_t max_hei = (m_indexesFileSize - sizeof(uint64_t))/sizeof(uint32_t);
+		uint64_t max_hei  = (m_indexesFileSize - sizeof(uint64_t)) / sizeof(uint32_t);
 		uint64_t read_hei = 0;
 		m_indexes_file->read(reinterpret_cast<char *>(&read_hei), sizeof(uint64_t));
 		m_count = boost::lexical_cast<Height>(std::min(read_hei, max_hei));
-	}catch(const std::runtime_error & ){
+	} catch (const std::runtime_error &) {
 	}
 }
 
-LegacyBlockChainReader::~LegacyBlockChainReader(){
+LegacyBlockChainReader::~LegacyBlockChainReader() {
 	{
 		std::unique_lock<std::mutex> lock(mu);
 		quit = true;
 		have_work.notify_all();
 	}
-	if( th.joinable() )
+	if (th.joinable())
 		th.join();
 }
 
@@ -54,7 +40,7 @@ void LegacyBlockChainReader::load_offsets() {
 	if (m_count == 0 || !m_offsets.empty())
 		return;
 	uint64_t pos = 0;
-	try{
+	try {
 		m_items_file->seek(0, SEEK_END);
 		uint64_t m_itemsFileSize = m_items_file->tellp();
 		std::vector<uint32_t> item_sizes(m_count);
@@ -65,33 +51,34 @@ void LegacyBlockChainReader::load_offsets() {
 			if (pos > m_itemsFileSize)  // index offset outside item file
 				return;
 		}
-	}catch(const std::runtime_error & ){
+	} catch (const std::runtime_error &) {
 	}
 	m_offsets.emplace_back(pos);
 }
 
-BinaryArray LegacyBlockChainReader::get_block_data_by_index(Height i){
+BinaryArray LegacyBlockChainReader::get_block_data_by_index(Height i) {
 	load_offsets();
-	size_t si = m_offsets.at(i + 1) - m_offsets.at(i);
+	size_t si = boost::lexical_cast<size_t>(m_offsets.at(i + 1) - m_offsets.at(i));
 	m_items_file->seek(m_offsets.at(i), SEEK_SET);
 	BinaryArray data_cache(si);
 	m_items_file->read(reinterpret_cast<char *>(data_cache.data()), si);
 	return data_cache;
 }
 
-const size_t MAX_PRELOAD_BLOCKS = 100;
-const size_t MAX_PRELOAD_TOTAL_SIZE = 50*1024*1024;
+const size_t MAX_PRELOAD_BLOCKS     = 100;
+const size_t MAX_PRELOAD_TOTAL_SIZE = 50 * 1024 * 1024;
 
-void LegacyBlockChainReader::thread_run(){
-	while(true){
+void LegacyBlockChainReader::thread_run() {
+	while (true) {
 		Height to_load = 0;
 		{
 			std::unique_lock<std::mutex> lock(mu);
-			if( quit )
+			if (quit)
 				return;
-			if( next_load_height == 0)
+			if (next_load_height == 0)
 				next_load_height = last_load_height;
-			if( next_load_height > last_load_height + MAX_PRELOAD_BLOCKS || total_prepared_data_size > MAX_PRELOAD_TOTAL_SIZE ){
+			if (next_load_height > last_load_height + MAX_PRELOAD_BLOCKS ||
+			    total_prepared_data_size > MAX_PRELOAD_TOTAL_SIZE) {
 				have_work.wait(lock);
 				continue;
 			}
@@ -109,34 +96,35 @@ void LegacyBlockChainReader::thread_run(){
 }
 
 static size_t max_ps = 0;
-PreparedBlock LegacyBlockChainReader::get_prepared_block_by_index(Height i){
+PreparedBlock LegacyBlockChainReader::get_prepared_block_by_index(Height i) {
 	load_offsets();
 	{
 		std::unique_lock<std::mutex> lock(mu);
-		if( !th.joinable() )
-			th = std::thread(&LegacyBlockChainReader::thread_run, this);
+		if (!th.joinable())
+			th           = std::thread(&LegacyBlockChainReader::thread_run, this);
 		last_load_height = i;
 		have_work.notify_all();
 	}
-	while(true){
+	while (true) {
 		std::unique_lock<std::mutex> lock(mu);
 		auto pit = prepared_blocks.find(i);
-		if( pit == prepared_blocks.end()){
+		if (pit == prepared_blocks.end()) {
 			prepared_blocks_ready.wait(lock);
 			continue;
 		}
 		PreparedBlock result = std::move(pit->second);
-		pit = prepared_blocks.erase(pit);
-		max_ps = std::max(max_ps, total_prepared_data_size);
+		pit                  = prepared_blocks.erase(pit);
+		max_ps               = std::max(max_ps, total_prepared_data_size);
 		total_prepared_data_size -= result.block_data.size();
 		return result;
 	}
 }
 
-bool LegacyBlockChainReader::import_blocks(BlockChainState &block_chain, Height count) {
+bool LegacyBlockChainReader::import_blocks(BlockChainState &block_chain) {
 	try {
-		size_t bs_count = std::min(block_chain.get_tip_height() + 1 + count, get_block_count());
-		while (block_chain.get_tip_height() + 1 < bs_count) {
+		auto idea_start = std::chrono::high_resolution_clock::now();
+		// size_t bs_count = std::min(block_chain.get_tip_height() + 1 + count, get_block_count());
+		while (block_chain.get_tip_height() + 1 < get_block_count()) {
 			BinaryArray rba = get_block_data_by_index(block_chain.get_tip_height() + 1);
 			PreparedBlock pb(std::move(rba), nullptr);
 			api::BlockHeader info;
@@ -146,6 +134,10 @@ bool LegacyBlockChainReader::import_blocks(BlockChainState &block_chain, Height 
 				block_chain.db_commit();
 				return false;
 			}
+			auto idea_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+			    std::chrono::high_resolution_clock::now() - idea_start);
+			if (idea_ms.count() > 100)
+				break;
 		}
 	} catch (const std::exception &ex) {
 		std::cout << "Exception while importing blockchain file, what=" << ex.what() << std::endl;
@@ -158,15 +150,18 @@ bool LegacyBlockChainReader::import_blocks(BlockChainState &block_chain, Height 
 }
 
 bool LegacyBlockChainReader::import_blockchain2(const std::string &coin_folder, BlockChainState &block_chain) {
-//	std::fstream ts_file("/Users/user/bytecoin/timestamps.txt", std::ios::out | std::ios::trunc);
-//	ts_file << "Block timestamp\tBlock medianTimestamp\tBlock unlockTimestamp\tTimestamp difference\tMedian timestamp "
-//	           "difference\tMedian - Timestamp"
-//	        << std::endl;
+	//	std::fstream ts_file("/Users/user/bytecoin/timestamps.txt",
+	// std::ios::out | std::ios::trunc);
+	//	ts_file << "Block timestamp\tBlock medianTimestamp\tBlock
+	// unlockTimestamp\tTimestamp difference\tMedian timestamp "
+	//	           "difference\tMedian - Timestamp"
+	//	        << std::endl;
 
 	LegacyBlockChainReader reader(coin_folder + "/blockindexes.bin", coin_folder + "/blocks.bin");
 	const size_t bs_count = reader.get_block_count();
 	if (block_chain.get_tip_height() > bs_count) {
-		std::cout << "Skipping block chain import - we have more blocks than blocks.bin tip_height="
+		std::cout << "Skipping block chain import - we have more blocks than "
+		             "blocks.bin tip_height="
 		          << block_chain.get_tip_height() << " bs_count=" << bs_count << std::endl;
 		return true;
 	}
@@ -184,10 +179,14 @@ bool LegacyBlockChainReader::import_blockchain2(const std::string &coin_folder, 
 		}
 		if (block_chain.get_tip_height() % 50000 == 0)
 			block_chain.db_commit();
-//		ts_file << info.timestamp << "\t" << info.timestamp_median << "\t" << info.timestamp_unlock << "\t"
-//		        << int64_t(info.timestamp) - int64_t(prev_info.timestamp) << "\t"
-//		        << int64_t(info.timestamp_median) - int64_t(prev_info.timestamp_median) << "\t"
-//		        << int64_t(info.timestamp) - int64_t(info.timestamp_median) << std::endl;
+		// ts_file << info.timestamp << "\t" << info.timestamp_median << "\t" <<
+		// info.timestamp_unlock << "\t"
+		//		        << int64_t(info.timestamp) -
+		// int64_t(prev_info.timestamp) << "\t"
+		//		        << int64_t(info.timestamp_median) -
+		// int64_t(prev_info.timestamp_median) << "\t"
+		//		        << int64_t(info.timestamp) -
+		// int64_t(info.timestamp_median) << std::endl;
 		prev_info = info;
 		if (block_chain.get_tip_height() == 1370000)  // 1370000
 			break;
@@ -200,15 +199,16 @@ bool LegacyBlockChainReader::import_blockchain2(const std::string &coin_folder, 
 	return true;
 }
 
-LegacyBlockChainWriter::LegacyBlockChainWriter(const std::string &index_file_name, const std::string &item_file_name,
-                                               uint64_t count)
+LegacyBlockChainWriter::LegacyBlockChainWriter(const std::string &index_file_name,
+    const std::string &item_file_name,
+    uint64_t count)
     : m_items_file(item_file_name, platform::FileStream::TRUNCATE_READ_WRITE)
     , m_indexes_file(index_file_name, platform::FileStream::TRUNCATE_READ_WRITE) {
 	m_indexes_file.write(&count, sizeof(count));
 }
 
 void LegacyBlockChainWriter::write_block(const bytecoin::RawBlock &raw_block) {
-	bytecoin::BinaryArray ba = seria::toBinary(raw_block);
+	bytecoin::BinaryArray ba = seria::to_binary(raw_block);
 	m_items_file.write(ba.data(), ba.size());
 	uint32_t si = static_cast<uint32_t>(ba.size());
 	m_indexes_file.write(&si, sizeof si);
@@ -217,8 +217,8 @@ void LegacyBlockChainWriter::write_block(const bytecoin::RawBlock &raw_block) {
 bool LegacyBlockChainWriter::export_blockchain2(const std::string &export_folder, BlockChainState &block_chain) {
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	std::cout << "Start exporting blocks" << std::endl;
-	LegacyBlockChainWriter writer(export_folder + "/blockindexes.bin", export_folder + "/blocks.bin",
-	                              block_chain.get_tip_height() + 1);
+	LegacyBlockChainWriter writer(
+	    export_folder + "/blockindexes.bin", export_folder + "/blocks.bin", block_chain.get_tip_height() + 1);
 	for (Height ha = 0; ha != block_chain.get_tip_height() + 1; ++ha) {
 		Hash bid{};
 		RawBlock raw_block;

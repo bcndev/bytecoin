@@ -1,19 +1,5 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include <assert.h>
 #include <stddef.h>
@@ -106,25 +92,25 @@ static void cn_slow_hash_platform_independent(void * scratchpad, const void *dat
 	size_t i, j;
 	uint8_t aes_key[AES_KEY_SIZE];
 	OAES_CTX* aes_ctx;
-	
+
 	hash_process(&state.hs, data, length);
 	memcpy(text, state.init, INIT_SIZE_BYTE);
 	memcpy(aes_key, state.hs.b, AES_KEY_SIZE);
 	aes_ctx = oaes_alloc();
-	
+
 	oaes_key_import_data(aes_ctx, aes_key, AES_KEY_SIZE);
 	for (i = 0; i < MEMORY / INIT_SIZE_BYTE; i++) {
 		for (j = 0; j < INIT_SIZE_BLK; j++)
 			oaes_pseudo_encrypt_ecb(aes_ctx, &text[AES_BLOCK_SIZE * j]);
-		
+
 		memcpy(&long_state[i * INIT_SIZE_BYTE], text, INIT_SIZE_BYTE);
 	}
-	
+
 	for (i = 0; i < 16; i++) {
 		a[i] = state.k[     i] ^ state.k[32 + i];
 		b[i] = state.k[16 + i] ^ state.k[48 + i];
 	}
-	
+
 	for (i = 0; i < ITER / 2; i++) {
 		/* Dependency chain: address -> read value ------+
 		 * written value <-+ hard function (AES or MUL) <+
@@ -150,7 +136,7 @@ static void cn_slow_hash_platform_independent(void * scratchpad, const void *dat
 		assert(j == e2i(a, MEMORY / AES_BLOCK_SIZE));
 		swap_blocks(a, b);
 	}
-	
+
 	memcpy(text, state.init, INIT_SIZE_BYTE);
 	oaes_key_import_data(aes_ctx, &state.hs.b[32], AES_KEY_SIZE);
 	for (i = 0; i < MEMORY / INIT_SIZE_BYTE; i++) {

@@ -1,26 +1,12 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
+#include "Core/Wallet.hpp"  // for WalletRecord
 #include "common/Streams.hpp"
-#include "seria/ISeria.hpp"
 #include "crypto/chacha8.h"
-#include "Core/Wallet.hpp" // for WalletRecord
+#include "seria/ISeria.hpp"
 
 namespace bytecoin {
 
@@ -30,8 +16,8 @@ public:
 	    //    ITransfersObserver& transfersObserver,
 	    crypto::PublicKey &view_public_key,
 	    crypto::SecretKey &view_secret_key,
-//	    uint64_t &actual_balance,
-//	    uint64_t &pending_palance,
+	    //	    uint64_t &actual_balance,
+	    //	    uint64_t &pending_palance,
 	    std::vector<WalletRecord> &wallets_container
 	    //    TransfersSyncronizer& synchronizer,
 	    //    UnlockTransactionJobs& unlockTransactions,
@@ -65,7 +51,7 @@ private:
 	void load_flags(bool &details, bool &cache, common::IInputStream &source, CryptoContext &);
 	void load_wallets(common::IInputStream &source, CryptoContext &);
 	//  void subscribeWallets();
-//	void load_balances(common::IInputStream &source, CryptoContext &);
+	//	void load_balances(common::IInputStream &source, CryptoContext &);
 	//  void loadTransfersSynchronizer(common::IInputStream& source, CryptoContext& cryptoContext);
 	//  void loadObsoleteSpentOutputs(common::IInputStream& source, CryptoContext& cryptoContext);
 	//  void loadUnlockTransactionsJobs(common::IInputStream& source, CryptoContext& cryptoContext);
@@ -76,8 +62,8 @@ private:
 
 	void load_wallet_v1_keys(seria::ISeria &s);
 	// void loadWalletV1Details(BinaryInputStreamSerializer& serializer);
-//	void add_wallet_v1_details(const std::vector<WalletLegacyTransaction> &txs,
-//	                           const std::vector<WalletLegacyTransfer> &trs);
+	//	void add_wallet_v1_details(const std::vector<WalletLegacyTransaction> &txs,
+	//	                           const std::vector<WalletLegacyTransfer> &trs);
 	//  void resetCachedBalance();
 	//  void updateTransactionsBaseStatus();
 	//  void updateTransfersSign();
@@ -85,8 +71,8 @@ private:
 	//  ITransfersObserver& m_transfersObserver;
 	crypto::PublicKey &m_view_public_key;
 	crypto::SecretKey &m_view_secret_key;
-//	uint64_t &m_actual_balance;
-//	uint64_t &m_pending_balance;
+	//	uint64_t &m_actual_balance;
+	//	uint64_t &m_pending_balance;
 	std::vector<WalletRecord> &m_wallets_container;
 	//  TransfersSyncronizer& m_synchronizer;
 	//  UnlockTransactionJobs& m_unlockTransactions;

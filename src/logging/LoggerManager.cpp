@@ -1,44 +1,31 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "LoggerManager.hpp"
 #include <thread>
-#include "platform/PathTools.hpp"
 #include "ConsoleLogger.hpp"
 #include "FileLogger.hpp"
+#include "platform/PathTools.hpp"
 
 namespace logging {
 
 using common::JsonValue;
 
-LoggerManager::LoggerManager() {
-}
+LoggerManager::LoggerManager() {}
 
-void LoggerManager::operator()(const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) {
-	std::unique_lock<std::mutex> lock(reconfigureLock);
+void LoggerManager::operator()(
+    const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) {
+	std::unique_lock<std::mutex> lock(reconfigure_lock);
 	LoggerGroup::operator()(category, level, time, body);
 }
 
 void LoggerManager::configure_default(const std::string &log_folder, const std::string &log_prefix) {
-	std::unique_lock<std::mutex> lock(reconfigureLock); // TODO - investigate possible deadlocks
+	std::unique_lock<std::mutex> lock(reconfigure_lock);  // TODO - investigate possible deadlocks
 	loggers.clear();
 	LoggerGroup::loggers.clear();
 
-	std::unique_ptr<logging::CommonLogger> logger(new FileLogger(log_folder + "/" + log_prefix + "verbose", 128 * 1024, TRACE));
+	std::unique_ptr<logging::CommonLogger> logger(
+	    new FileLogger(log_folder + "/" + log_prefix + "verbose", 128 * 1024, TRACE));
 	loggers.emplace_back(std::move(logger));
 	add_logger(*loggers.back());
 
@@ -53,7 +40,7 @@ void LoggerManager::configure_default(const std::string &log_folder, const std::
 }
 
 void LoggerManager::configure(const JsonValue &val) {
-	std::unique_lock<std::mutex> lock(reconfigureLock); // TODO - investigate possible deadlocks
+	std::unique_lock<std::mutex> lock(reconfigure_lock);  // TODO - investigate possible deadlocks
 	loggers.clear();
 	LoggerGroup::loggers.clear();
 	Level globalLevel;
@@ -106,7 +93,7 @@ void LoggerManager::configure(const JsonValue &val) {
 					logger.reset(new ConsoleLogger(level));
 				} else if (type == "file") {
 					std::string filename = loggerConfiguration("filename").get_string();
-					auto fileLogger = new FileLogger(filename, level);
+					auto fileLogger      = new FileLogger(filename, level);
 					logger.reset(fileLogger);
 				} else {
 					throw std::runtime_error("Unknown logger type: " + type);
@@ -119,11 +106,11 @@ void LoggerManager::configure(const JsonValue &val) {
 				std::vector<std::string> disabledCategories;
 				if (loggerConfiguration.contains("disabledCategories")) {
 					auto disabledCategoriesVal = loggerConfiguration("disabledCategories");
-					size_t countOfCategories = disabledCategoriesVal.size();
+					size_t countOfCategories   = disabledCategoriesVal.size();
 					for (size_t i = 0; i < countOfCategories; ++i) {
 						auto categoryVal = disabledCategoriesVal[i];
 						if (categoryVal.is_string()) {
-                            logger->disable_category(categoryVal.get_string());
+							logger->disable_category(categoryVal.get_string());
 						}
 					}
 				}
@@ -139,8 +126,7 @@ void LoggerManager::configure(const JsonValue &val) {
 	}
 	set_max_level(globalLevel);
 	for (const auto &category : globalDisabledCategories) {
-        disable_category(category);
+		disable_category(category);
 	}
 }
-
 }

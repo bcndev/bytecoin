@@ -1,27 +1,13 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
-#include "crypto/hash.hpp"
 #include <cstdint>
 #include <string>
 #include <vector>
 #include "CryptoNote.hpp"
+#include "crypto/hash.hpp"
 
 namespace bytecoin {
 
@@ -84,38 +70,39 @@ public:
 
 	uint32_t block_granted_full_reward_zone_by_block_version(uint8_t block_major_version) const;
 	bool get_block_reward(uint8_t block_major_version, size_t effective_median_size, size_t current_block_size,
-	                      Amount already_generated_coins, Amount fee, Amount &reward,
-	                      SignedAmount &emission_change) const;
+	    Amount already_generated_coins, Amount fee, Amount &reward, SignedAmount &emission_change) const;
 	uint32_t max_block_cumulative_size(Height height) const;
 	uint32_t max_transaction_allowed_size(uint32_t effective_block_size_median) const;
 	bool construct_miner_tx(uint8_t block_major_version, Height height, size_t effective_median_size,
-	                        Amount already_generated_coins, size_t current_block_size, Amount fee,
-	                        const AccountPublicAddress &miner_address, Transaction &tx,
-	                        const BinaryArray &extra_nonce = BinaryArray(), size_t max_outs = 1) const;
+	    Amount already_generated_coins, size_t current_block_size, Amount fee,
+	    const AccountPublicAddress &miner_address, Transaction &tx, const BinaryArray &extra_nonce = BinaryArray(),
+	    size_t max_outs = 1) const;
 
 	std::string account_address_as_string(const AccountPublicAddress &account_public_address) const;
 	bool parse_account_address_string(const std::string &str, AccountPublicAddress &addr) const;
 
 	std::string format_amount(Amount amount) const { return format_amount(number_of_decimal_places, amount); }
 	std::string format_amount(SignedAmount amount) const { return format_amount(number_of_decimal_places, amount); }
-	bool parse_amount(const std::string & str, Amount & amount) const { return parse_amount(number_of_decimal_places, str, amount); }
+	bool parse_amount(const std::string &str, Amount &amount) const {
+		return parse_amount(number_of_decimal_places, str, amount);
+	}
 
-	Difficulty next_difficulty(std::vector<Timestamp> timestamps, std::vector<Difficulty> cumulative_difficulties)
-	    const;
+	Difficulty next_difficulty(
+	    std::vector<Timestamp> timestamps, std::vector<Difficulty> cumulative_difficulties) const;
 
-	bool check_proof_of_work_v1(const Hash & long_block_hash, const BlockTemplate &block,
-	                            Difficulty current_difficulty) const;
-	bool check_proof_of_work_v2(const Hash & long_block_hash, const BlockTemplate &block,
-	                            Difficulty current_difficulty) const;
-	bool check_proof_of_work(const Hash & long_block_hash, const BlockTemplate &block,
-	                         Difficulty current_difficulty) const;
+	bool check_proof_of_work_v1(
+	    const Hash &long_block_hash, const BlockTemplate &block, Difficulty current_difficulty) const;
+	bool check_proof_of_work_v2(
+	    const Hash &long_block_hash, const BlockTemplate &block, Difficulty current_difficulty) const;
+	bool check_proof_of_work(
+	    const Hash &long_block_hash, const BlockTemplate &block, Difficulty current_difficulty) const;
 
 	bool is_transaction_spend_time(UnlockMoment unlock_time) const { return unlock_time >= max_block_height; }
 	bool is_transaction_spend_time_block(UnlockMoment unlock_time) const { return unlock_time < max_block_height; }
 	bool is_transaction_spend_time_unlocked(UnlockMoment unlock_time, Height block_index, Timestamp block_time) const {
-		if (unlock_time < max_block_height) { // interpret as block index
+		if (unlock_time < max_block_height) {  // interpret as block index
 			return block_index + locked_tx_allowed_delta_blocks >= unlock_time;
-		} // else interpret as time
+		}  // else interpret as time
 		return block_time + locked_tx_allowed_delta_seconds >= unlock_time;
 	}
 	static bool is_dust(Amount am);
@@ -128,8 +115,8 @@ public:
 };
 
 // we should probaly find better place for these global funs
-Hash get_transaction_inputs_hash(const Transaction &);
-Hash get_transaction_prefix_hash(const Transaction &);
+Hash get_transaction_inputs_hash(const TransactionPrefix &);
+Hash get_transaction_prefix_hash(const TransactionPrefix &);
 Hash get_transaction_hash(const Transaction &);
 
 Hash get_block_hash(const BlockTemplate &);

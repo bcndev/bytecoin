@@ -1,205 +1,191 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "StringView.hpp"
-#include <limits>
-#include <cstring>
 #include <algorithm>
+#include <cstring>
+#include <limits>
 
 namespace common {
 
-const StringView::Char &StringView::operator[](Size index) const {
-	assert(index < size);
-	return *(data + index);
+StringView::Char StringView::operator[](Size index) const {
+	assert(index < m_size);
+	return *(m_data + index);
 }
 
-const StringView::Char &StringView::first() const {
-	assert(size > 0);
-	return *data;
+StringView::Char StringView::front() const {
+	assert(m_size > 0);
+	return *m_data;
 }
 
-const StringView::Char &StringView::last() const {
-	assert(size > 0);
-	return *(data + (size - 1));
+StringView::Char StringView::back() const {
+	assert(m_size > 0);
+	return *(m_data + (m_size - 1));
 }
 
-bool StringView::operator==(const StringView & other) const {
-	if (size != other.size)
+bool StringView::operator==(const StringView &other) const {
+	if (m_size != other.m_size)
 		return false;
-	if (other.size == 0)
+	if (other.m_size == 0)
 		return true;
-	return memcmp(data, other.data, size) == 0;
+	return memcmp(m_data, other.m_data, m_size) == 0;
 }
 
-bool StringView::operator<(const StringView & other) const {
-	size_t common_size = std::min(size, other.size);
-	int res = memcmp(data, other.data, common_size);
-	if( res != 0)
+bool StringView::operator<(const StringView &other) const {
+	size_t common_size = std::min(m_size, other.m_size);
+	int res            = memcmp(m_data, other.m_data, common_size);
+	if (res != 0)
 		return res < 0;
-	return size < other.size;
+	return m_size < other.m_size;
 }
-
+/*
 bool StringView::beginsWith(const Char &object) const {
-	if (size == 0)
-		return false;
-	return *data == object;
+    if (m_size == 0)
+        return false;
+    return *m_data == object;
 }
 
 bool StringView::beginsWith(StringView other) const {
-	if (size >= other.size) {
-		for (Size i = 0;; ++i) {
-			if (i == other.size) {
-				return true;
-			}
-			if (!(*(data + i) == *(other.data + i))) {
-				break;
-			}
-		}
-	}
-	return false;
+    if (m_size >= other.m_size) {
+        for (Size i = 0;; ++i) {
+            if (i == other.m_size) {
+                return true;
+            }
+            if (!(*(m_data + i) == *(other.m_data + i))) {
+                break;
+            }
+        }
+    }
+    return false;
 }
 
 bool StringView::contains(const Char &object) const {
-	for (Size i = 0; i < size; ++i) {
-		if (*(data + i) == object) {
-			return true;
-		}
-	}
-	return false;
+    for (Size i = 0; i < m_size; ++i) {
+        if (*(m_data + i) == object) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool StringView::contains(StringView other) const {
-	if (size >= other.size) {
-		Size i = size - other.size;
-		for (Size j = 0; !(i < j); ++j) {
-			for (Size k = 0;; ++k) {
-				if (k == other.size) {
-					return true;
-				}
-				if (!(*(data + j + k) == *(other.data + k))) {
-					break;
-				}
-			}
-		}
-	}
-	return false;
+    if (m_size >= other.m_size) {
+        Size i = m_size - other.m_size;
+        for (Size j = 0; !(i < j); ++j) {
+            for (Size k = 0;; ++k) {
+                if (k == other.m_size) {
+                    return true;
+                }
+                if (!(*(m_data + j + k) == *(other.m_data + k))) {
+                    break;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 bool StringView::endsWith(const Char &object) const {
-	if (size == 0)
-		return false;
-	return *(data + (size - 1)) == object;
+    if (m_size == 0)
+        return false;
+    return *(m_data + (m_size - 1)) == object;
 }
 
 bool StringView::endsWith(StringView other) const {
-	if (size >= other.size) {
-		Size i = size - other.size;
-		for (Size j = 0;; ++j) {
-			if (j == other.size) {
-				return true;
-			}
-			if (!(*(data + i + j) == *(other.data + j))) {
-				break;
-			}
-		}
-	}
-	return false;
+    if (m_size >= other.m_size) {
+        Size i = m_size - other.m_size;
+        for (Size j = 0;; ++j) {
+            if (j == other.m_size) {
+                return true;
+            }
+            if (!(*(m_data + i + j) == *(other.m_data + j))) {
+                break;
+            }
+        }
+    }
+    return false;
 }
 
 StringView::Size StringView::find(const Char &object) const {
-	for (Size i = 0; i < size; ++i) {
-		if (*(data + i) == object) {
-			return i;
-		}
-	}
-	return INVALID;
+    for (Size i = 0; i < m_size; ++i) {
+        if (*(m_data + i) == object) {
+            return i;
+        }
+    }
+    return INVALID;
 }
 
 StringView::Size StringView::find(StringView other) const {
-	if (size >= other.size) {
-		Size i = size - other.size;
-		for (Size j = 0; !(i < j); ++j) {
-			for (Size k = 0;; ++k) {
-				if (k == other.size) {
-					return j;
-				}
-				if (!(*(data + j + k) == *(other.data + k))) {
-					break;
-				}
-			}
-		}
-	}
-	return INVALID;
+    if (m_size >= other.m_size) {
+        Size i = m_size - other.m_size;
+        for (Size j = 0; !(i < j); ++j) {
+            for (Size k = 0;; ++k) {
+                if (k == other.m_size) {
+                    return j;
+                }
+                if (!(*(m_data + j + k) == *(other.m_data + k))) {
+                    break;
+                }
+            }
+        }
+    }
+    return INVALID;
 }
 
 StringView::Size StringView::findLast(const Char &object) const {
-	for (Size i = 0; i < size; ++i) {
-		if (*(data + (size - 1 - i)) == object) {
-			return size - 1 - i;
-		}
-	}
-	return INVALID;
+    for (Size i = 0; i < m_size; ++i) {
+        if (*(m_data + (m_size - 1 - i)) == object) {
+            return m_size - 1 - i;
+        }
+    }
+    return INVALID;
 }
 
 StringView::Size StringView::findLast(StringView other) const {
-	if (size >= other.size) {
-		Size i = size - other.size;
-		for (Size j = 0; !(i < j); ++j) {
-			for (Size k = 0;; ++k) {
-				if (k == other.size) {
-					return i - j;
-				}
-				if (!(*(data + (i - j + k)) == *(other.data + k))) {
-					break;
-				}
-			}
-		}
-	}
-	return INVALID;
+    if (m_size >= other.m_size) {
+        Size i = m_size - other.m_size;
+        for (Size j = 0; !(i < j); ++j) {
+            for (Size k = 0;; ++k) {
+                if (k == other.m_size) {
+                    return i - j;
+                }
+                if (!(*(m_data + (i - j + k)) == *(other.m_data + k))) {
+                    break;
+                }
+            }
+        }
+    }
+    return INVALID;
 }
 
 StringView StringView::head(Size headSize) const {
-	assert(headSize <= size);
-	return StringView(data, headSize);
+    assert(headSize <= m_size);
+    return StringView(m_data, headSize);
 }
 
 StringView StringView::tail(Size tailSize) const {
-	assert(tailSize <= size);
-	return StringView(data + (size - tailSize), tailSize);
+    assert(tailSize <= m_size);
+    return StringView(m_data + (m_size - tailSize), tailSize);
 }
 
 StringView StringView::unhead(Size headSize) const {
-	assert(headSize <= size);
-	return StringView(data + headSize, size - headSize);
+    assert(headSize <= m_size);
+    return StringView(m_data + headSize, m_size - headSize);
 }
 
 StringView StringView::untail(Size tailSize) const {
-	assert(tailSize <= size);
-	return StringView(data, size - tailSize);
+    assert(tailSize <= m_size);
+    return StringView(m_data, m_size - tailSize);
 }
 
 StringView StringView::range(Size startIndex, Size endIndex) const {
-	assert(startIndex <= endIndex && endIndex <= size);
-	return StringView(data + startIndex, endIndex - startIndex);
+    assert(startIndex <= endIndex && endIndex <= m_size);
+    return StringView(m_data + startIndex, endIndex - startIndex);
 }
 
 StringView StringView::slice(Size startIndex, Size sliceSize) const {
-	assert(startIndex <= size && startIndex + sliceSize <= size);
-	return StringView(data + startIndex, sliceSize);
+    assert(startIndex <= m_size && startIndex + sliceSize <= m_size);
+    return StringView(m_data + startIndex, sliceSize);
 }
-
+ */
 }

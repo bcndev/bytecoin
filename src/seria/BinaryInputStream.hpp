@@ -1,19 +1,5 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
@@ -27,18 +13,18 @@ public:
 	BinaryInputStream(common::IInputStream &strm) : stream(strm) {}
 	virtual ~BinaryInputStream() {}
 
-	virtual bool isInput() const override { return true; }
+	virtual bool is_input() const override { return true; }
 
-	virtual void beginObject() override {}
-	virtual void objectKey(common::StringView name) override {}
-	virtual void endObject() override {}
+	virtual void begin_object() override {}
+	virtual void object_key(common::StringView) override {}
+	virtual void end_object() override {}
 
-	virtual void beginMap(size_t &size) override;
-	virtual void nextMapKey(std::string &name) override;
-	virtual void endMap() override {}
+	virtual void begin_map(size_t &size) override;
+	virtual void next_map_key(std::string &name) override;
+	virtual void end_map() override {}
 
-	virtual void beginArray(size_t &size, bool fixed_size = false) override;
-	virtual void endArray() override {}
+	virtual void begin_array(size_t &size, bool fixed_size = false) override;
+	virtual void end_array() override {}
 
 	virtual void seria_v(uint8_t &value) override;
 	virtual void seria_v(int16_t &value) override;
@@ -52,21 +38,19 @@ public:
 	virtual void seria_v(std::string &value) override;
 	virtual void seria_v(common::BinaryArray &value) override;
 	virtual void binary(void *value, size_t size) override;
+
 private:
-//	void checkedRead(char *buf, size_t size);
-//	void checkedRead(unsigned char *buf, size_t size);
 	common::IInputStream &stream;
 };
 
-
 template<typename T>
-void fromBinary(T &obj, const common::BinaryArray &blob) {
+void from_binary(T &obj, const common::BinaryArray &blob) {
 	common::MemoryInputStream stream(blob.data(), blob.size());
 	BinaryInputStream ba(stream);
 	ba(obj);
 }
 template<typename T>
-void fromBinary(T &obj, const std::string &blob) {
+void from_binary(T &obj, const std::string &blob) {
 	common::MemoryInputStream stream(blob.data(), blob.size());
 	BinaryInputStream ba(stream);
 	ba(obj);

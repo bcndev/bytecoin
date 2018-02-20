@@ -1,39 +1,31 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
 #include <cstdint>
-#include <type_traits>
 #include <string>
+#include <type_traits>
 #include "BinaryArray.hpp"
 
 namespace common {
 
-std::string as_string(const void *data, size_t size); // Does not throw
-inline std::string as_string(const BinaryArray &data){ return as_string(data.data(), data.size()); }
+std::string as_string(const void *data, size_t size);  // Does not throw
+inline std::string as_string(const BinaryArray &data) { return as_string(data.data(), data.size()); }
 BinaryArray as_binary_array(const std::string &data);
 
-uint8_t from_hex(char character); // Returns value of hex 'character', throws on error
-bool from_hex(char character, uint8_t &value); // Assigns value of hex 'character' to 'value', returns false on error, does not throw
-size_t from_hex(const std::string &text, void *data, size_t bufferSize); // Assigns values of hex 'text' to buffer 'data' up to 'bufferSize', returns actual data size, throws on error
-bool from_hex(const std::string &text, void *data, size_t bufferSize, size_t &size); // Assigns values of hex 'text' to buffer 'data' up to 'bufferSize', assigns actual data size to 'size', returns false on error, does not throw
-BinaryArray from_hex(const std::string &text); // Returns values of hex 'text', throws on error
-bool from_hex(const std::string &text, BinaryArray &data); // Appends values of hex 'text' to 'data', returns false on error, does not throw
+uint8_t from_hex(char character);  // Returns value of hex 'character', throws on error
+bool from_hex(char character,
+    uint8_t &value);  // Assigns value of hex 'character' to 'value', returns false on error, does not throw
+size_t from_hex(const std::string &text, void *data, size_t bufferSize);  // Assigns values of hex 'text' to buffer
+                                                                          // 'data' up to 'bufferSize', returns actual
+                                                                          // data size, throws on error
+bool from_hex(const std::string &text, void *data, size_t bufferSize,
+    size_t &size);  // Assigns values of hex 'text' to buffer 'data' up to 'bufferSize', assigns actual data size to
+                    // 'size', returns false on error, does not throw
+BinaryArray from_hex(const std::string &text);  // Returns values of hex 'text', throws on error
+bool from_hex(const std::string &text,
+    BinaryArray &data);  // Appends values of hex 'text' to 'data', returns false on error, does not throw
 
 template<typename T>
 bool pod_from_hex(const std::string &text, T &val) {
@@ -42,10 +34,12 @@ bool pod_from_hex(const std::string &text, T &val) {
 	return from_hex(text, &val, sizeof(val), outSize) && outSize == sizeof(val);
 }
 
-std::string to_hex(const void *data, size_t size); // Returns hex representation of ('data', 'size'), does not throw
-void append_hex(const void *data, size_t size, std::string &text); // Appends hex representation of ('data', 'size') to 'text', does not throw
-std::string to_hex(const BinaryArray &data); // Returns hex representation of 'data', does not throw
-void append_hex(const BinaryArray &data, std::string &text); // Appends hex representation of 'data' to 'text', does not throw
+std::string to_hex(const void *data, size_t size);  // Returns hex representation of ('data', 'size'), does not throw
+void append_hex(const void *data, size_t size,
+    std::string &text);  // Appends hex representation of ('data', 'size') to 'text', does not throw
+std::string to_hex(const BinaryArray &data);  // Returns hex representation of 'data', does not throw
+void append_hex(
+    const BinaryArray &data, std::string &text);  // Appends hex representation of 'data' to 'text', does not throw
 
 template<class T>
 std::string pod_to_hex(const T &s) {
@@ -65,9 +59,9 @@ inline bool split_string_helper(const std::string &str, size_t pos, const std::s
 	return true;
 }
 
-template<class...Parts>
-inline bool split_string_helper(const std::string &str, size_t pos, const std::string &separator, std::string &head,
-								Parts &... parts) {
+template<class... Parts>
+inline bool split_string_helper(
+    const std::string &str, size_t pos, const std::string &separator, std::string &head, Parts &... parts) {
 	size_t pos2 = str.find(separator, pos);
 	if (pos2 == std::string::npos)
 		return false;
@@ -75,9 +69,8 @@ inline bool split_string_helper(const std::string &str, size_t pos, const std::s
 	return split_string_helper(str, pos2 + 1, separator, parts...);
 }
 
-template<class...Parts>
+template<class... Parts>
 inline bool split_string(const std::string &str, const std::string &separator, Parts &... parts) {
 	return split_string_helper(str, 0, separator, parts...);
 }
-
 }

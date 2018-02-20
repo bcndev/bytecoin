@@ -1,19 +1,5 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
@@ -50,10 +36,10 @@ void read(IInputStream &in, uint32_t &value);
 void read(IInputStream &in, uint64_t &value);
 void read(IInputStream &in, BinaryArray &data, size_t size);
 void read(IInputStream &in, std::string &data, size_t size);
-void readVarint(IInputStream &in, uint8_t &value);
-void readVarint(IInputStream &in, uint16_t &value);
-void readVarint(IInputStream &in, uint32_t &value);
-void readVarint(IInputStream &in, uint64_t &value);
+void read_varint(IInputStream &in, uint8_t &value);
+void read_varint(IInputStream &in, uint16_t &value);
+void read_varint(IInputStream &in, uint32_t &value);
+void read_varint(IInputStream &in, uint64_t &value);
 
 void write(IOutputStream &out, int8_t value);
 void write(IOutputStream &out, int16_t value);
@@ -65,18 +51,19 @@ void write(IOutputStream &out, uint32_t value);
 void write(IOutputStream &out, uint64_t value);
 void write(IOutputStream &out, const BinaryArray &data);
 void write(IOutputStream &out, const std::string &data);
-void writeVarint(IOutputStream &out, uint64_t value);
+void write_varint(IOutputStream &out, uint64_t value);
 
-template<typename T> T read(IInputStream &in) {
+template<typename T>
+T read(IInputStream &in) {
 	T value;
 	read(in, value);
 	return value;
 }
 
-template<typename T> T readVarint(IInputStream &in) {
+template<typename T>
+T read_varint(IInputStream &in) {
 	T value;
-	readVarint(in, value);
+	read_varint(in, value);
 	return value;
 }
-
 }

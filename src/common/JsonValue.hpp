@@ -1,19 +1,5 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
@@ -33,7 +19,7 @@ public:
 	typedef bool Bool;
 	typedef int64_t Integer;
 	typedef uint64_t Unsigned;
-//	typedef std::nullptr_t Nil; - unfortunately conflicts on some compilers
+	//	typedef std::nullptr_t Nil; - unfortunately conflicts on some compilers
 	typedef std::map<Key, JsonValue> Object;
 	typedef double Double;
 	typedef std::string String;
@@ -47,7 +33,7 @@ public:
 		OBJECT,
 		DOUBLE,
 		STRING
-	}; // We preserve semantic of very large 64-bit values by splitting into signed/unsigned
+	};  // We preserve semantic of very large 64-bit values by splitting into signed/unsigned
 
 	JsonValue();
 	JsonValue(const JsonValue &other);
@@ -65,8 +51,8 @@ public:
 	JsonValue(const String &value);
 	JsonValue(String &&value);
 	template<size_t size>
-	JsonValue(const char(&value)[size]) {
-		new(valueString)String(value, size - 1);
+	JsonValue(const char (&value)[size]) {
+		new (valueString) String(value, size - 1);
 		type = STRING;
 	}
 
@@ -86,10 +72,10 @@ public:
 	JsonValue &operator=(const String &value);
 	JsonValue &operator=(String &&value);
 	template<size_t size>
-	JsonValue &operator=(const char(&value)[size]) {
+	JsonValue &operator=(const char (&value)[size]) {
 		if (type != STRING) {
 			destructValue();
-			new(valueString)String(value, size - 1);
+			new (valueString) String(value, size - 1);
 			type = STRING;
 		} else {
 			reinterpret_cast<String *>(valueString)->assign(value, size - 1);
@@ -105,7 +91,7 @@ public:
 	bool is_double() const { return type == DOUBLE; }
 	bool is_string() const { return type == STRING; }
 
-//	Type getType() const { return type; }
+	//	Type getType() const { return type; }
 	Array &get_array();
 	const Array &get_array() const;
 	Bool get_bool() const;
@@ -139,19 +125,20 @@ public:
 	static JsonValue from_string(const std::string &source);
 	std::string to_string() const;
 
-	// those operators should no be used because they do not check for correct end of object (example - extra comma after json object)
+	// those operators should no be used because they do not check for correct end of object (example - extra comma
+	// after json object)
 	friend std::ostream &operator<<(std::ostream &out, const JsonValue &jsonValue);
 	friend std::istream &operator>>(std::istream &in, JsonValue &jsonValue);
 
 private:
 	Type type;
 	union {
-        alignas(Array) uint8_t valueArray[sizeof(Array)];
-        Bool valueBool;
+		alignas(Array) uint8_t valueArray[sizeof(Array)];
+		Bool valueBool;
 		Integer valueInteger;
 		Unsigned valueUnsigned;
-        alignas(Object) uint8_t valueObject[sizeof(Object)];
-        Double valueReal;
+		alignas(Object) uint8_t valueObject[sizeof(Object)];
+		Double valueReal;
 		alignas(std::string) uint8_t valueString[sizeof(std::string)];
 	};
 
@@ -165,5 +152,4 @@ private:
 	void readObject(std::istream &in);
 	void readString(std::istream &in);
 };
-
 }

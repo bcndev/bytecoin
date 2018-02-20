@@ -1,22 +1,10 @@
-// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
-//
-// This file is part of Bytecoin.
-//
-// Bytecoin is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// Bytecoin is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with Bytecoin.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "Ipv4Address.hpp"
+#include <boost/lexical_cast.hpp>
 #include <stdexcept>
+#include "StringTools.hpp"
 
 namespace common {
 
@@ -78,33 +66,30 @@ bool parse_ip_address_and_port(uint32_t &ip, uint32_t &port, const std::string &
 	}
 
 	ip = (v[3] << 24) | (v[2] << 16) | (v[1] << 8) | v[0];
-	if( localPort > 65535 )
+	if (localPort > 65535)
 		return false;
 	port = localPort;
 	return true;
 }
 
-bool parse_ip_address_and_port(std::string &ip, uint16_t &port, const std::string &addr){
+bool parse_ip_address_and_port(std::string &ip, uint16_t &port, const std::string &addr) {
 	uint32_t sip = 0, sport = 0;
-	if(!parse_ip_address_and_port(sip, sport, addr))
+	if (!parse_ip_address_and_port(sip, sport, addr))
 		return false;
 	port = static_cast<uint16_t>(sport);
-	ip = ip_address_to_string(sip);
+	ip   = ip_address_to_string(sip);
 	return true;
 }
 
-bool is_ip_address_loopback(uint32_t ip) {
-	return (ip & 0xff000000) == (127 << 24);
-}
+bool is_ip_address_loopback(uint32_t ip) { return (ip & 0xff000000) == (127 << 24); }
 
 bool is_ip_address_private(uint32_t ip) {
 	return
-		// 10.0.0.0/8
-			(ip & 0xff000000) == (10u << 24) ||
-			// 172.16.0.0/12
-			(ip & 0xfff00000) == ((172u << 24) | (16u << 16)) ||
-			// 192.168.0.0/16
-			(ip & 0xffff0000) == ((192u << 24) | (168u << 16));
+	    // 10.0.0.0/8
+	    (ip & 0xff000000) == (10u << 24) ||
+	    // 172.16.0.0/12
+	    (ip & 0xfff00000) == ((172u << 24) | (16u << 16)) ||
+	    // 192.168.0.0/16
+	    (ip & 0xffff0000) == ((192u << 24) | (168u << 16));
 }
-
 }
