@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "TransactionExtra.hpp"
@@ -9,7 +9,7 @@
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 template<typename T>
 bool find_transaction_extra_field_by_type(const std::vector<TransactionExtraField> &tx_extra_fields, T &field) {
@@ -209,9 +209,9 @@ bool get_payment_id_from_transaction_extra_nonce(const BinaryArray &extra_nonce,
     }
 
     BinaryArray extraNonce;
-    bytecoin::set_payment_id_to_transaction_extra_nonce(extraNonce, paymentIdBin);
+    byterub::set_payment_id_to_transaction_extra_nonce(extraNonce, paymentIdBin);
 
-    if (!bytecoin::add_extra_nonce_to_transaction_extra(extra, extraNonce)) {
+    if (!byterub::add_extra_nonce_to_transaction_extra(extra, extraNonce)) {
         return false;
     }
 
@@ -230,7 +230,7 @@ bool get_payment_id_from_tx_extra(const BinaryArray &extra, Hash &paymentId) {
 }
 }
 
-static void doSerialize(bytecoin::TransactionExtraMergeMiningTag &tag, seria::ISeria &s) {
+static void doSerialize(byterub::TransactionExtraMergeMiningTag &tag, seria::ISeria &s) {
 	s.begin_object();
 	uint64_t depth = static_cast<uint64_t>(tag.depth);
 	seria_kv("depth", depth, s);
@@ -239,7 +239,7 @@ static void doSerialize(bytecoin::TransactionExtraMergeMiningTag &tag, seria::IS
 	s.end_object();
 }
 
-void seria::ser(bytecoin::TransactionExtraMergeMiningTag &v, ISeria &s) {
+void seria::ser(byterub::TransactionExtraMergeMiningTag &v, ISeria &s) {
 	if (s.is_input()) {
 		std::string field;
 		s(field);

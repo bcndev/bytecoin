@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -7,14 +7,14 @@
 #include <string>
 #include "common/CommandLine.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 struct MiningConfig {
 	explicit MiningConfig(common::CommandLine &cmd);
 
 	std::string mining_address;
-	std::string bytecoind_ip;
-	uint16_t bytecoind_port = 0;
+	std::string byterubd_ip;
+	uint16_t byterubd_port = 0;
 	size_t thread_count     = 0;
 	//	size_t scanPeriod; // We are using longpoll now
 	//	uint8_t log_level;
@@ -24,4 +24,4 @@ struct MiningConfig {
 	                          //	bool help;
 };
 
-}  // namespace bytecoin
+}  // namespace byterub

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -10,7 +10,7 @@
 #include "crypto/chacha8.h"
 #include "rpc_api.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 class Wallet;
 class Currency;
@@ -85,7 +85,7 @@ public:
 	void reset(Unspents &&unspents);
 	void add_mixed_inputs(const SecretKey &view_secret_key,
 	    const std::unordered_map<PublicKey, WalletRecord> &wallet_records, TransactionBuilder &builder,
-	    uint32_t anonymity, api::bytecoind::GetRandomOutputs::Response &&ra_response);
+	    uint32_t anonymity, api::byterubd::GetRandomOutputs::Response &&ra_response);
 
 	bool select_optimal_outputs(Height block_height, Timestamp block_time, Height confirmed_height,
 	    size_t effective_median_size, size_t anonymity, Amount total_amount, size_t total_outputs, Amount fee_per_byte,
@@ -94,4 +94,4 @@ public:
 	const std::vector<Amount> &get_ra_amounts() const { return m_ra_amounts; }
 };
 
-}  // namespace bytecoin
+}  // namespace byterub

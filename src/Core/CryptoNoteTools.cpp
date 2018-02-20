@@ -1,13 +1,13 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "CryptoNoteTools.hpp"
 #include "TransactionExtra.hpp"
 #include "seria/ISeria.hpp"
 
-using namespace bytecoin;
+using namespace byterub;
 
-Hash bytecoin::get_base_transaction_hash(const BaseTransaction &tx) {
+Hash byterub::get_base_transaction_hash(const BaseTransaction &tx) {
 	if (tx.version < 2)
 		return get_object_hash(tx);
 	BinaryArray data{{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -56,7 +56,7 @@ void decompose_amount_into_digits(
 	}
 }
 
-void bytecoin::decompose_amount(Amount amount, Amount dustThreshold, std::vector<Amount> &decomposedAmounts) {
+void byterub::decompose_amount(Amount amount, Amount dustThreshold, std::vector<Amount> &decomposedAmounts) {
 	decompose_amount_into_digits(amount, dustThreshold, [&](Amount amount) { decomposedAmounts.push_back(amount); },
 	    [&](Amount dust) {
 		    Amount du0 = dust % 1000;
@@ -68,7 +68,7 @@ void bytecoin::decompose_amount(Amount amount, Amount dustThreshold, std::vector
 		});
 }
 
-size_t bytecoin::get_maximum_tx_size(size_t inputCount, size_t outputCount, size_t mixinCount) {
+size_t byterub::get_maximum_tx_size(size_t inputCount, size_t outputCount, size_t mixinCount) {
 	const size_t KEY_IMAGE_SIZE                    = sizeof(crypto::KeyImage);
 	const size_t OUTPUT_KEY_SIZE                   = sizeof(crypto::PublicKey);
 	const size_t AMOUNT_SIZE                       = sizeof(uint64_t) + 2;  // varint
@@ -92,7 +92,7 @@ size_t bytecoin::get_maximum_tx_size(size_t inputCount, size_t outputCount, size
 	return headerSize + outputsSize + inputSize * inputCount;
 }
 
-bool bytecoin::get_tx_fee(const Transaction &tx, uint64_t &fee) {
+bool byterub::get_tx_fee(const Transaction &tx, uint64_t &fee) {
 	uint64_t amount_in  = 0;
 	uint64_t amount_out = 0;
 
@@ -114,7 +114,7 @@ bool bytecoin::get_tx_fee(const Transaction &tx, uint64_t &fee) {
 	return true;
 }
 
-uint64_t bytecoin::get_tx_fee(const Transaction &tx) {
+uint64_t byterub::get_tx_fee(const Transaction &tx) {
 	uint64_t r = 0;
 	if (!get_tx_fee(tx, r))
 		return 0;

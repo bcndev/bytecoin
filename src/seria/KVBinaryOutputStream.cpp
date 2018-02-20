@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "KVBinaryOutputStream.hpp"
@@ -10,7 +10,7 @@
 #include "common/Streams.hpp"
 
 using namespace common;
-using namespace bytecoin;
+using namespace byterub;
 using namespace seria;
 
 static bool verbose_debug  = false;

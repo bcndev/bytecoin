@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "Network.hpp"
@@ -183,7 +183,7 @@ void TCPSocket::write_callback(CFWriteStreamRef stream, CFStreamEventType event,
 #include <boost/bind.hpp>
 #include <iostream>
 
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 #include <boost/asio/ssl.hpp>
 namespace ssl = boost::asio::ssl;
 typedef ssl::stream<boost::asio::ip::tcp::socket> SSLSocket;
@@ -230,7 +230,7 @@ EventLoop::EventLoop(boost::asio::io_service &io_service) : io_service(io_servic
 
 EventLoop::~EventLoop() {
 	current_loop = 0;
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 	shared_client_context.reset();
 #endif
 }
@@ -306,7 +306,7 @@ public:
 	bool pending_write;
 	bool pending_connect;
 	boost::asio::ip::tcp::socket socket;
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 	std::shared_ptr<ssl::context> ssl_context;  // TCP socket may live longer than TCP acceptor
 	std::unique_ptr<SSLSocket> ssl_socket;
 #endif
@@ -314,7 +314,7 @@ public:
 	common::CircularBuffer outgoing_buffer;
 
 	void close(bool called_from_run_loop) {
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 		if (ssl_socket)
 			ssl_socket->lowest_layer().close();
 		else
@@ -333,7 +333,7 @@ public:
 			pending_write   = false;
 			incoming_buffer.clear();
 			outgoing_buffer.clear();
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 			ssl_socket.reset();
 			ssl_context.reset();
 #endif
@@ -343,7 +343,7 @@ public:
 	}
 	void start_shutdown() {
 		boost::system::error_code ignored_ec;
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 		if (ssl_socket) {
 			// TODO -
 			// https://stackoverflow.com/questions/32046034/what-is-the-proper-way-to-securely-disconnect-an-asio-ssl-socket
@@ -355,7 +355,7 @@ public:
 
 	void handle_connect(const boost::system::error_code &e) {
 		if (!e) {
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 			if (ssl_socket) {
 				start_server_handshake();
 				return;
@@ -381,7 +381,7 @@ public:
 		boost::array<boost::asio::mutable_buffer, 2> bufs{
 		    {boost::asio::buffer(incoming_buffer.write_ptr(), incoming_buffer.write_count()),
 		        boost::asio::buffer(incoming_buffer.write_ptr2(), incoming_buffer.write_count2())}};
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 		if (ssl_socket)
 			ssl_socket->async_read_some(
 			    bufs, boost::bind(&Impl::handle_read, owner->impl, boost::asio::placeholders::error,
@@ -419,7 +419,7 @@ public:
 		boost::array<boost::asio::const_buffer, 2> bufs{
 		    {boost::asio::buffer(outgoing_buffer.read_ptr(), outgoing_buffer.read_count()),
 		        boost::asio::buffer(outgoing_buffer.read_ptr2(), outgoing_buffer.read_count2())}};
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 		if (ssl_socket)
 			ssl_socket->async_write_some(
 			    bufs, boost::bind(&Impl::handle_write, owner->impl, boost::asio::placeholders::error,
@@ -444,7 +444,7 @@ public:
 			close(true);
 		}
 	}
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 	void start_server_handshake() {
 		ssl_socket->async_handshake(ssl::stream_base::server,
 		    boost::bind(&Impl::handle_server_handshake, this, boost::asio::placeholders::error));
@@ -477,7 +477,7 @@ bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 	close();
 
 	std::string stripped_addr = addr;
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 	bool ssl                  = false;
 	const std::string prefix1("https://");
 	const std::string prefix2("ssl://");
@@ -492,7 +492,7 @@ bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 	try {
 		impl->pending_connect = true;
 		boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::address::from_string(stripped_addr), port);
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 		if (ssl) {
 			if (shared_client_context == nullptr) {
 				shared_client_context = std::make_shared<ssl::context>(ssl::context::tlsv12_client);
@@ -547,7 +547,7 @@ public:
 	    , pending_accept(false)
 	    , acceptor(EventLoop::current()->io())
 	    , socket_being_accepted(EventLoop::current()->io())
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 	    , ssl_context(std::make_shared<ssl::context>(ssl::context::sslv23))
 	    , ssl_socket_being_accepted(std::make_unique<SSLSocket>(EventLoop::current()->io(), *ssl_context))
 #endif
@@ -558,7 +558,7 @@ public:
 	bool pending_accept;
 	boost::asio::ip::tcp::acceptor acceptor;
 	boost::asio::ip::tcp::socket socket_being_accepted;
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 	std::shared_ptr<ssl::context> ssl_context;
 	std::unique_ptr<SSLSocket> ssl_socket_being_accepted;
 #endif
@@ -577,7 +577,7 @@ public:
 		if (!owner)
 			return;
 		pending_accept = true;
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 		if (ssl)
 			acceptor.async_accept(ssl_socket_being_accepted->next_layer(),
 			    boost::bind(&Impl::handle_accept, owner->impl, boost::asio::placeholders::error));
@@ -603,7 +603,7 @@ TCPAcceptor::TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_han
     const std::string &ssl_certificate_password)
     : impl(std::make_shared<Impl>(this, !ssl_pem_file.empty())), a_handler(a_handler) {
 
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 	if (impl->ssl) {
 		impl->ssl_context->set_options(
 		    ssl::context::default_workarounds | ssl::context::no_sslv2);  // | ssl::context::single_dh_use
@@ -639,7 +639,7 @@ bool TCPAcceptor::accept(TCPSocket &socket, std::string &accepted_addr) {
 	socket.close();
 	std::swap(socket.impl->socket, impl->socket_being_accepted);
 	boost::system::error_code ec;
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 	std::swap(socket.impl->ssl_socket, impl->ssl_socket_being_accepted);
 	auto endpoint =
 	    impl->ssl ? socket.impl->ssl_socket->next_layer().remote_endpoint(ec) : socket.impl->socket.remote_endpoint(ec);
@@ -650,7 +650,7 @@ bool TCPAcceptor::accept(TCPSocket &socket, std::string &accepted_addr) {
 	if (ec)
 		return false;
 	accepted_addr = endpoint.address().to_string();
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
 	if (impl->ssl) {
 		if (!impl->ssl_socket_being_accepted)
 			impl->ssl_socket_being_accepted =

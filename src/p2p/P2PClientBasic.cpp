@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "P2PClientBasic.hpp"
@@ -9,10 +9,10 @@ const float HANDSHAKE_TIMEOUT  = 30;
 const float MESSAGE_TIMEOUT    = 60 * 6;
 const float TIMED_SYNC_TIMEOUT = 60 * 4;
 
-using namespace bytecoin;
+using namespace byterub;
 
 template<typename Cmd>
-bytecoin::P2PClientBasic::LevinHandlerFunction levinMethod(void (bytecoin::P2PClientBasic::*handler)(Cmd &&)) {
+byterub::P2PClientBasic::LevinHandlerFunction levinMethod(void (byterub::P2PClientBasic::*handler)(Cmd &&)) {
 	return [handler](P2PClientBasic *who, BinaryArray &&body) {
 
 		Cmd req{};
@@ -240,7 +240,7 @@ void P2PClientBasic::on_request_ready() {
 				}
 				continue;
 			}
-			std::cout << "generic bytecoin::P2P cmd={" << cmd.command << "} " << cmd.is_response << " " << cmd.is_notify
+			std::cout << "generic byterub::P2P cmd={" << cmd.command << "} " << cmd.is_response << " " << cmd.is_notify
 			          << " {"
 			          << "}" << std::endl;
 		} catch (const std::exception &ex) {

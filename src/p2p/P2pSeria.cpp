@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "CryptoNoteProtocolDefinitions.hpp"
@@ -6,7 +6,7 @@
 #include "P2pProtocolTypes.hpp"
 #include "crypto/hash.hpp"
 
-crypto::Hash bytecoin::proof_of_trust::get_hash() const {
+crypto::Hash byterub::proof_of_trust::get_hash() const {
 	std::string s;
 	s.append(reinterpret_cast<const char *>(&peer_id), sizeof(peer_id));
 	s.append(reinterpret_cast<const char *>(&time), sizeof(time));
@@ -34,27 +34,27 @@ typename std::enable_if<std::is_standard_layout<T>::value>::type serialize_as_bi
 }
 
 // P2pProtocolTypes
-void ser(bytecoin::UUID &v, seria::ISeria &s) { s.binary(&v, sizeof(v)); }
+void ser(byterub::UUID &v, seria::ISeria &s) { s.binary(&v, sizeof(v)); }
 
-void ser_members(bytecoin::PeerlistEntry &v, seria::ISeria &s) {
+void ser_members(byterub::PeerlistEntry &v, seria::ISeria &s) {
 	seria_kv("adr", v.adr, s);
 	seria_kv("id", v.id, s);
 	seria_kv("last_seen", v.last_seen, s);
 	//	seria_kv("reserved", v.reserved, s);
 }
 
-void ser_members(bytecoin::NetworkAddress &v, seria::ISeria &s) {
+void ser_members(byterub::NetworkAddress &v, seria::ISeria &s) {
 	seria_kv("ip", v.ip, s);
 	seria_kv("port", v.port, s);
 }
 
-void ser_members(bytecoin::connection_entry &v, seria::ISeria &s) {
+void ser_members(byterub::connection_entry &v, seria::ISeria &s) {
 	seria_kv("adr", v.adr, s);
 	seria_kv("id", v.id, s);
 	seria_kv("is_income", v.is_income, s);
 }
 
-void ser_members(bytecoin::CoreStatistics &v, seria::ISeria &s) {
+void ser_members(byterub::CoreStatistics &v, seria::ISeria &s) {
 	seria::seria_kv("tx_pool_size", v.transactionPoolSize, s);
 	seria::seria_kv("blockchain_height", v.blockchainHeight, s);
 	seria::seria_kv("mining_speed", v.miningSpeed, s);
@@ -63,14 +63,14 @@ void ser_members(bytecoin::CoreStatistics &v, seria::ISeria &s) {
 }
 
 // P2pProtocolDefinitions
-void ser_members(bytecoin::network_config &v, seria::ISeria &s) {
+void ser_members(byterub::network_config &v, seria::ISeria &s) {
 	seria_kv("connections_count", v.connections_count, s);
 	seria_kv("handshake_interval", v.handshake_interval, s);
 	seria_kv("packet_max_size", v.packet_max_size, s);
 	seria_kv("config_id", v.config_id, s);
 }
 
-void ser_members(bytecoin::basic_node_data &v, seria::ISeria &s) {
+void ser_members(byterub::basic_node_data &v, seria::ISeria &s) {
 	seria_kv("network_id", v.network_id, s);
 	if (s.is_input()) {
 		v.version = 0;
@@ -81,7 +81,7 @@ void ser_members(bytecoin::basic_node_data &v, seria::ISeria &s) {
 	seria_kv("my_port", v.my_port, s);
 }
 
-void ser_members(bytecoin::CORE_SYNC_DATA &v, seria::ISeria &s) {
+void ser_members(byterub::CORE_SYNC_DATA &v, seria::ISeria &s) {
 	if (s.is_input()) {
 		uint32_t on_wire = 0;
 		s.object_key("current_height");
@@ -95,44 +95,44 @@ void ser_members(bytecoin::CORE_SYNC_DATA &v, seria::ISeria &s) {
 	seria_kv("top_id", v.top_id, s);
 }
 
-void ser_members(bytecoin::COMMAND_HANDSHAKE::request &v, seria::ISeria &s) {
+void ser_members(byterub::COMMAND_HANDSHAKE::request &v, seria::ISeria &s) {
 	seria_kv("node_data", v.node_data, s);
 	seria_kv("payload_data", v.payload_data, s);
 }
 
-void ser_members(bytecoin::COMMAND_HANDSHAKE::response &v, seria::ISeria &s) {
+void ser_members(byterub::COMMAND_HANDSHAKE::response &v, seria::ISeria &s) {
 	seria_kv("node_data", v.node_data, s);
 	seria_kv("payload_data", v.payload_data, s);
 	serialize_as_binary(v.local_peerlist, "local_peerlist", s);
 }
 
-void ser_members(bytecoin::COMMAND_TIMED_SYNC::request &v, seria::ISeria &s) {
+void ser_members(byterub::COMMAND_TIMED_SYNC::request &v, seria::ISeria &s) {
 	seria_kv("payload_data", v.payload_data, s);
 }
 
-void ser_members(bytecoin::COMMAND_TIMED_SYNC::response &v, seria::ISeria &s) {
+void ser_members(byterub::COMMAND_TIMED_SYNC::response &v, seria::ISeria &s) {
 	seria_kv("local_time", v.local_time, s);
 	seria_kv("payload_data", v.payload_data, s);
 	serialize_as_binary(v.local_peerlist, "local_peerlist", s);
 }
 
-void ser_members(bytecoin::COMMAND_PING::request &v, seria::ISeria &s) {}
+void ser_members(byterub::COMMAND_PING::request &v, seria::ISeria &s) {}
 
-void ser_members(bytecoin::COMMAND_PING::response &v, seria::ISeria &s) {
+void ser_members(byterub::COMMAND_PING::response &v, seria::ISeria &s) {
 	seria_kv("status", v.status, s);
 	seria_kv("peer_id", v.peer_id, s);
 }
 
 #ifdef ALLOW_DEBUG_COMMANDS
-void ser_members(bytecoin::proof_of_trust &v, seria::ISeria &s) {
+void ser_members(byterub::proof_of_trust &v, seria::ISeria &s) {
 	seria_kv("peer_id", v.peer_id, s);
 	seria_kv("time", v.time, s);
 	seria_kv("sign", v.sign, s);
 }
 
-void ser_members(bytecoin::COMMAND_REQUEST_STAT_INFO::request &v, seria::ISeria &s) { seria_kv("tr", v.tr, s); }
+void ser_members(byterub::COMMAND_REQUEST_STAT_INFO::request &v, seria::ISeria &s) { seria_kv("tr", v.tr, s); }
 
-void ser_members(bytecoin::COMMAND_REQUEST_STAT_INFO::response &v, seria::ISeria &s) {
+void ser_members(byterub::COMMAND_REQUEST_STAT_INFO::response &v, seria::ISeria &s) {
 	seria_kv("version", v.version, s);
 	seria_kv("os_version", v.os_version, s);
 	seria_kv("connections_count", v.connections_count, s);
@@ -140,9 +140,9 @@ void ser_members(bytecoin::COMMAND_REQUEST_STAT_INFO::response &v, seria::ISeria
 	seria_kv("payload_info", v.payload_info, s);
 }
 
-void ser_members(bytecoin::COMMAND_REQUEST_NETWORK_STATE::request &v, seria::ISeria &s) { seria_kv("tr", v.tr, s); }
+void ser_members(byterub::COMMAND_REQUEST_NETWORK_STATE::request &v, seria::ISeria &s) { seria_kv("tr", v.tr, s); }
 
-void ser_members(bytecoin::COMMAND_REQUEST_NETWORK_STATE::response &v, seria::ISeria &s) {
+void ser_members(byterub::COMMAND_REQUEST_NETWORK_STATE::response &v, seria::ISeria &s) {
 	serialize_as_binary(v.local_peerlist_white, "local_peerlist_white", s);
 	serialize_as_binary(v.local_peerlist_gray, "local_peerlist_gray", s);
 	serialize_as_binary(v.connections_list, "connections_list", s);
@@ -152,7 +152,7 @@ void ser_members(bytecoin::COMMAND_REQUEST_NETWORK_STATE::response &v, seria::IS
 #endif
 
 // CryptoNoteProtocolDefinitions
-void ser_members(bytecoin::RawBlockLegacy &v, seria::ISeria &s) {
+void ser_members(byterub::RawBlockLegacy &v, seria::ISeria &s) {
 	std::string other_block;
 	std::vector<std::string> other_transactions;
 	if (s.is_input()) {
@@ -162,62 +162,62 @@ void ser_members(bytecoin::RawBlockLegacy &v, seria::ISeria &s) {
 		v.transactions.reserve(other_transactions.size());
 		std::copy(other_block.begin(), other_block.end(), std::back_inserter(v.block));
 		std::transform(other_transactions.begin(), other_transactions.end(), std::back_inserter(v.transactions),
-		    [](const std::string &s) { return bytecoin::BinaryArray(s.data(), s.data() + s.size()); });
+		    [](const std::string &s) { return byterub::BinaryArray(s.data(), s.data() + s.size()); });
 	} else {
 		other_block.reserve(v.block.size());
 		other_transactions.reserve(v.transactions.size());
 		std::copy(v.block.begin(), v.block.end(), std::back_inserter(other_block));
 		std::transform(v.transactions.begin(), v.transactions.end(), std::back_inserter(other_transactions),
-		    [](bytecoin::BinaryArray &s) { return std::string(s.begin(), s.end()); });
+		    [](byterub::BinaryArray &s) { return std::string(s.begin(), s.end()); });
 		seria::seria_kv("block", other_block, s);
 		seria::seria_kv("txs", other_transactions, s);
 	}
 }
 
-void ser_members(bytecoin::NOTIFY_NEW_BLOCK::request &v, seria::ISeria &s) {
+void ser_members(byterub::NOTIFY_NEW_BLOCK::request &v, seria::ISeria &s) {
 	seria_kv("b", v.b, s);
 	seria_kv("current_blockchain_height", v.current_blockchain_height, s);
 	seria_kv("hop", v.hop, s);
 }
 
-void ser_members(bytecoin::NOTIFY_NEW_TRANSACTIONS::request &v, seria::ISeria &s) {
+void ser_members(byterub::NOTIFY_NEW_TRANSACTIONS::request &v, seria::ISeria &s) {
 	std::vector<std::string> transactions;
 	if (s.is_input()) {
 		seria::seria_kv("txs", transactions, s);
 		v.txs.reserve(transactions.size());
 		std::transform(transactions.begin(), transactions.end(), std::back_inserter(v.txs),
-		    [](const std::string &s) { return bytecoin::BinaryArray(s.data(), s.data() + s.size()); });
+		    [](const std::string &s) { return byterub::BinaryArray(s.data(), s.data() + s.size()); });
 	} else {
 		transactions.reserve(v.txs.size());
 		std::transform(v.txs.begin(), v.txs.end(), std::back_inserter(transactions),
-		    [](const bytecoin::BinaryArray &s) { return std::string(s.begin(), s.end()); });
+		    [](const byterub::BinaryArray &s) { return std::string(s.begin(), s.end()); });
 		seria::seria_kv("txs", transactions, s);
 	}
 }
 
-void ser_members(bytecoin::NOTIFY_REQUEST_GET_OBJECTS::request &v, seria::ISeria &s) {
+void ser_members(byterub::NOTIFY_REQUEST_GET_OBJECTS::request &v, seria::ISeria &s) {
 	serialize_as_binary(v.txs, "txs", s);
 	serialize_as_binary(v.blocks, "blocks", s);
 }
 
-void ser_members(bytecoin::NOTIFY_RESPONSE_GET_OBJECTS::request &v, seria::ISeria &s) {
+void ser_members(byterub::NOTIFY_RESPONSE_GET_OBJECTS::request &v, seria::ISeria &s) {
 	seria_kv("txs", v.txs, s);
 	seria_kv("blocks", v.blocks, s);
 	serialize_as_binary(v.missed_ids, "missed_ids", s);
 	seria_kv("current_blockchain_height", v.current_blockchain_height, s);
 }
 
-void ser_members(bytecoin::NOTIFY_REQUEST_CHAIN::request &v, seria::ISeria &s) {
+void ser_members(byterub::NOTIFY_REQUEST_CHAIN::request &v, seria::ISeria &s) {
 	serialize_as_binary(v.block_ids, "block_ids", s);
 }
 
-void ser_members(bytecoin::NOTIFY_RESPONSE_CHAIN_ENTRY::request &v, seria::ISeria &s) {
+void ser_members(byterub::NOTIFY_RESPONSE_CHAIN_ENTRY::request &v, seria::ISeria &s) {
 	seria_kv("start_height", v.start_height, s);
 	seria_kv("total_height", v.total_height, s);
 	serialize_as_binary(v.m_block_ids, "m_block_ids", s);
 }
 
-void ser_members(bytecoin::NOTIFY_REQUEST_TX_POOL::request &v, seria::ISeria &s) {
+void ser_members(byterub::NOTIFY_REQUEST_TX_POOL::request &v, seria::ISeria &s) {
 	serialize_as_binary(v.txs, "txs", s);
 }
 }

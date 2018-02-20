@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include <boost/algorithm/string.hpp>
@@ -13,7 +13,7 @@
 #include "platform/Network.hpp"
 #include "version.hpp"
 
-using namespace bytecoin;
+using namespace byterub;
 
 static const char USAGE[] =
     R"(walletd.
@@ -37,21 +37,21 @@ Options:
   --walletd-bind-address=<ip:port>     Interface and port for walletd RPC [default: 127.0.0.1:8070].
   --walletd-authorization=<auth>       DEPRECATED. HTTP Basic Authorization header (base64 of login:password)
 
-  --bytecoind-remote-address=<ip:port> Connect to remote bytecoind and suppress running built-in bytecoind.
-  --bytecoind-authorization=<auth>     HTTP Basic Authorization header (base64 of login:password)
+  --byterubd-remote-address=<ip:port> Connect to remote byterubd and suppress running built-in byterubd.
+  --byterubd-authorization=<auth>     HTTP Basic Authorization header (base64 of login:password)
 
-Options for built-in bytecoind (run when no --bytecoind-remote-address specified):
+Options for built-in byterubd (run when no --byterubd-remote-address specified):
   --allow-local-ip                     Allow local ip add to peer list, mostly in debug purposes.
   --hide-my-port                       DEPRECATED. Do not announce yourself as peer list candidate. Use --p2p-external-port=0 instead.
   --p2p-bind-address=<ip:port>         Interface and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>           External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
-  --bytecoind-bind-address=<ip:port>   Interface and port for bytecoind RPC [default: 0.0.0.0:8081].
+  --byterubd-bind-address=<ip:port>   Interface and port for byterubd RPC [default: 0.0.0.0:8081].
   --seed-node-address=<ip:port>        Specify list (one or more) of nodes to start connecting to.
   --priority-node-address=<ip:port>    Specify list (one or more) of nodes to connect to and attempt to keep the connection open.
   --exclusive-node-address=<ip:port>   Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.
 )";
 
-static const bool separate_thread_for_bytecoind = true;
+static const bool separate_thread_for_byterubd = true;
 
 int main(int argc, const char *argv[]) try {
 	common::console::UnicodeConsoleSetup console_setup;
@@ -111,13 +111,13 @@ int main(int argc, const char *argv[]) try {
 			}
 		}
 	}
-	bytecoin::Config config(cmd);
-	bytecoin::Currency currency(config.is_testnet);
+	byterub::Config config(cmd);
+	byterub::Currency currency(config.is_testnet);
 
-	if (cmd.should_quit(USAGE, bytecoin::app_version()))
+	if (cmd.should_quit(USAGE, byterub::app_version()))
 		return 0;
 	logging::LoggerManager logManagerNode;
-	logManagerNode.configure_default(config.get_coin_directory("logs"), "bytecoind-");
+	logManagerNode.configure_default(config.get_coin_directory("logs"), "byterubd-");
 
 	if (wallet_file.empty()) {
 		std::cout << "--wallet-file=<file> argument is mandatory" << std::endl;
@@ -158,11 +158,11 @@ int main(int argc, const char *argv[]) try {
 	std::unique_ptr<platform::ExclusiveLock> walletcache_lock;
 	std::unique_ptr<Wallet> wallet;
 	try {
-		if (!config.bytecoind_remote_port)
-			blockchain_lock = std::make_unique<platform::ExclusiveLock>(coinFolder, "bytecoind.lock");
+		if (!config.byterubd_remote_port)
+			blockchain_lock = std::make_unique<platform::ExclusiveLock>(coinFolder, "byterubd.lock");
 	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
 		std::cout << ex.what() << std::endl;
-		return api::BYTECOIND_ALREADY_RUNNING;
+		return api::BYTERUBD_ALREADY_RUNNING;
 	}
 	try {
 		wallet = std::make_unique<Wallet>(
@@ -204,11 +204,11 @@ int main(int argc, const char *argv[]) try {
 	std::unique_ptr<Node> node;
 
 	std::promise<void> prm;
-	std::thread bytecoind_thread;
-	if (!config.bytecoind_remote_port) {
+	std::thread byterubd_thread;
+	if (!config.byterubd_remote_port) {
 		try {
-			if (separate_thread_for_bytecoind) {
-				bytecoind_thread = std::thread([&prm, &logManagerNode, &config, &currency] {
+			if (separate_thread_for_byterubd) {
+				byterubd_thread = std::thread([&prm, &logManagerNode, &config, &currency] {
 					boost::asio::io_service io;
 					platform::EventLoop separate_run_loop(io);
 
@@ -237,9 +237,9 @@ int main(int argc, const char *argv[]) try {
 			}
 		} catch (const boost::system::system_error &ex) {
 			std::cout << ex.what() << std::endl;
-			if (bytecoind_thread.joinable())
-				bytecoind_thread.join();  // otherwise terminate will be called in ~thread
-			return api::BYTECOIND_BIND_PORT_IN_USE;
+			if (byterubd_thread.joinable())
+				byterubd_thread.join();  // otherwise terminate will be called in ~thread
+			return api::BYTERUBD_BIND_PORT_IN_USE;
 		}
 	}
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -11,7 +11,7 @@
 #include "common/CommandLine.hpp"
 #include "p2p/P2pProtocolTypes.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 class Config {  // Consensus does not depend on those parameters
 public:
@@ -37,11 +37,11 @@ public:
 
 	std::string ssl_certificate_pem_file;
 	boost::optional<std::string> ssl_certificate_password;
-	std::string bytecoind_authorization;
-	uint16_t bytecoind_bind_port;
-	std::string bytecoind_bind_ip;
-	uint16_t bytecoind_remote_port;
-	std::string bytecoind_remote_ip;
+	std::string byterubd_authorization;
+	uint16_t byterubd_bind_port;
+	std::string byterubd_bind_ip;
+	uint16_t byterubd_remote_port;
+	std::string byterubd_remote_ip;
 
 	std::string walletd_authorization;
 	uint16_t walletd_bind_port;
@@ -69,4 +69,4 @@ public:
 	std::string get_coin_directory(const std::string &subdir = std::string(), bool create = true) const;
 };
 
-}  // namespace bytecoin
+}  // namespace byterub

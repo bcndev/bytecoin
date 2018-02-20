@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "Currency.hpp"
@@ -19,7 +19,7 @@
 #include "seria/BinaryOutputStream.hpp"
 
 using namespace common;
-using namespace bytecoin;
+using namespace byterub;
 
 const std::vector<Amount> Currency::PRETTY_AMOUNTS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90,
     100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000,
@@ -83,8 +83,8 @@ Currency::Currency(bool is_testnet)
 	// random, but genesis should be always
 	// the same
 	std::string genesis_coinbase_tx_hex =
-	    "010a01ff0001ffffffffffff0f029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f"
-	    "5142ee494ffbbd08807121013c086a48c15fb637a96991bc6d53caf77068b5ba6eeb3c82357228c49790584a";
+	    "010a01ff0001ffffffffff7f029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712101643f7c04859c6d0bcc2f9a8e72733075a3d6ab406d38c8ecc68069aed9b6f010"
+	    "010a01ff0001ffffffffff7f029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712101643f7c04859c6d0bcc2f9a8e72733075a3d6ab406d38c8ecc68069aed9b6f011";
 	BinaryArray miner_tx_blob;
 
 	bool r = from_hex(genesis_coinbase_tx_hex, miner_tx_blob);
@@ -148,8 +148,8 @@ uint32_t Currency::block_granted_full_reward_zone_by_block_version(uint8_t block
 	if (block_major_version >= 3)
 		return block_granted_full_reward_zone;
 	if (block_major_version == 2)
-		return bytecoin::parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2;
-	return bytecoin::parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1;
+		return byterub::parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2;
+	return byterub::parameters::CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1;
 }
 
 bool Currency::get_block_reward(uint8_t block_major_version, size_t effective_median_size, size_t current_block_size,
@@ -496,20 +496,20 @@ bool Currency::is_dust(Amount amount) {
 	       amount < 1000000;  // After fork, dust definition will change
 }
 
-Hash bytecoin::get_transaction_inputs_hash(const TransactionPrefix &tx) {
+Hash byterub::get_transaction_inputs_hash(const TransactionPrefix &tx) {
 	BinaryArray ba = seria::to_binary(tx.inputs);
 	Hash new_hash  = crypto::cn_fast_hash(ba.data(), ba.size());
 	return new_hash;
 }
 
-Hash bytecoin::get_transaction_prefix_hash(const TransactionPrefix &tx) {
+Hash byterub::get_transaction_prefix_hash(const TransactionPrefix &tx) {
 	const TransactionPrefix &prefix = tx;
 	BinaryArray ba                  = seria::to_binary(prefix);
 	Hash new_hash                   = crypto::cn_fast_hash(ba.data(), ba.size());
 	return new_hash;
 }
 
-Hash bytecoin::get_transaction_hash(const Transaction &tx) {
+Hash byterub::get_transaction_hash(const Transaction &tx) {
 	BinaryArray ba = seria::to_binary(tx);
 	Hash new_hash  = crypto::cn_fast_hash(ba.data(), ba.size());
 	return new_hash;
@@ -535,7 +535,7 @@ static BinaryArray get_block_hashing_binary_array(const BlockTemplate &bh) {
 	return ba;
 }
 
-Hash bytecoin::get_block_hash(const BlockTemplate &bh) {
+Hash byterub::get_block_hash(const BlockTemplate &bh) {
 	BinaryArray ba2 = get_block_hashing_binary_array(bh);
 
 	if (bh.major_version >= 2) {
@@ -547,11 +547,11 @@ Hash bytecoin::get_block_hash(const BlockTemplate &bh) {
 	return new_hash2;
 }
 
-Hash bytecoin::get_auxiliary_block_header_hash(const BlockTemplate &bh) {
+Hash byterub::get_auxiliary_block_header_hash(const BlockTemplate &bh) {
 	return get_object_hash(get_block_hashing_binary_array(bh));
 }
 
-Hash bytecoin::get_block_long_hash(const BlockTemplate &bh, crypto::CryptoNightContext &crypto_ctx) {
+Hash byterub::get_block_long_hash(const BlockTemplate &bh, crypto::CryptoNightContext &crypto_ctx) {
 	if (bh.major_version == 1) {
 		auto raw_hashing_block = get_block_hashing_binary_array(bh);
 		return crypto_ctx.cn_slow_hash(raw_hashing_block.data(), raw_hashing_block.size());

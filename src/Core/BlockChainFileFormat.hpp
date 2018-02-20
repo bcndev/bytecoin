@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -12,7 +12,7 @@
 #include "CryptoNote.hpp"
 #include "platform/Files.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 class BlockChainState;
 // TODO - convert all read/writes to little endian
@@ -54,9 +54,9 @@ class LegacyBlockChainWriter {
 
 public:
 	LegacyBlockChainWriter(const std::string &index_file_name, const std::string &item_file_name, uint64_t count);
-	void write_block(const bytecoin::RawBlock &raw_block);
+	void write_block(const byterub::RawBlock &raw_block);
 
 	static bool export_blockchain2(const std::string &export_folder, BlockChainState &block_chain);
 };
 
-}  // namespace bytecoin
+}  // namespace byterub

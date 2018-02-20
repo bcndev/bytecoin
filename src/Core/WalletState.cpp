@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "WalletState.hpp"
@@ -31,7 +31,7 @@ static const std::string UNLOCK_TIME_PREFIX  = "unlt/";
 
 static const std::string ADDRESSES_PREFIX = "ad/";
 
-using namespace bytecoin;
+using namespace byterub;
 using namespace platform;
 
 WalletPreparatorMulticore::WalletPreparatorMulticore() {
@@ -92,7 +92,7 @@ void WalletPreparatorMulticore::thread_run() {
 		SecretKey view_secret_key;
 		Height height          = 0;
 		int local_work_counter = 0;
-		api::bytecoind::SyncBlocks::SyncBlock sync_block;
+		api::byterubd::SyncBlocks::SyncBlock sync_block;
 		std::vector<std::vector<uint32_t>> global_indices;
 		{
 			std::unique_lock<std::mutex> lock(mu);
@@ -123,12 +123,12 @@ void WalletPreparatorMulticore::thread_run() {
 
 void WalletPreparatorMulticore::cancel_work() {
 	std::unique_lock<std::mutex> lock(mu);
-	work = api::bytecoind::SyncBlocks::Response();
+	work = api::byterubd::SyncBlocks::Response();
 	prepared_blocks.clear();
 	work_counter += 1;
 }
 
-void WalletPreparatorMulticore::start_work(const api::bytecoind::SyncBlocks::Response &new_work,
+void WalletPreparatorMulticore::start_work(const api::byterubd::SyncBlocks::Response &new_work,
     const SecretKey &view_secret_key) {
 	std::unique_lock<std::mutex> lock(mu);
 	work            = new_work;
@@ -339,7 +339,7 @@ std::vector<WalletRecord> WalletState::generate_new_addresses(const std::vector<
 	return result;
 }
 
-bool WalletState::sync_with_blockchain(api::bytecoind::SyncBlocks::Response &resp) {
+bool WalletState::sync_with_blockchain(api::byterubd::SyncBlocks::Response &resp) {
 	if (resp.blocks.empty())  // Our creation timestamp > last block timestamp, so
 		                      // no blocks
 		return true;
@@ -411,7 +411,7 @@ std::vector<Hash> WalletState::get_tx_pool_hashes() const {
 	return std::vector<Hash>(m_pool_hashes.begin(), m_pool_hashes.end());
 }
 
-bool WalletState::sync_with_blockchain(const api::bytecoind::SyncMemPool::Response &resp) {
+bool WalletState::sync_with_blockchain(const api::byterubd::SyncMemPool::Response &resp) {
 	for (auto tid : resp.removed_hashes) {
 		if (m_pool_hashes.erase(tid) != 0) {
 		}

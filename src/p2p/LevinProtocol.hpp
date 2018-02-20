@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -9,7 +9,7 @@
 #include "CryptoNote.hpp"
 #include "common/MemoryStreams.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 enum class LevinError : int32_t {
 	OK                                   = 0,

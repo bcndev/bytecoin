@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include <boost/algorithm/string.hpp>
@@ -11,15 +11,15 @@
 #include "platform/Network.hpp"
 #include "version.hpp"
 
-using namespace bytecoin;
+using namespace byterub;
 
 static const char USAGE[] =
-    R"(bytecoind.
+    R"(byterubd.
 
 Usage:
-  bytecoind [options]
-  bytecoind --help | -h
-  bytecoind --version | -v
+  byterubd [options]
+  byterubd --help | -h
+  byterubd --version | -v
 
 Options:
   --export-blocks=<directory>        Export blockchain into specified directory as blocks.bin and blockindexes.bin, then exit. This overwrites existing files.
@@ -29,18 +29,18 @@ Options:
   --testnet                          Configure for testnet.
   --p2p-bind-address=<ip:port>       Interface and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>         External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
-  --bytecoind-bind-address=<ip:port> Interface and port for bytecoind RPC [default: 0.0.0.0:8081].
+  --byterubd-bind-address=<ip:port> Interface and port for byterubd RPC [default: 0.0.0.0:8081].
   --seed-node-address=<ip:port>      Specify list (one or more) of nodes to start connecting to.
   --priority-node-address=<ip:port>  Specify list (one or more) of nodes to connect to and attempt to keep the connection open.
   --exclusive-node-address=<ip:port> Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.
 )"
-#if BYTECOIN_SSL
+#if BYTERUB_SSL
     R"(
   --ssl-certificate-pem-file=<file>  Full path to file containing both server SSL certificate and private key in PEM format
   --ssl-certificate-password=<pass>  DEPRECATED. Will read password from stdin if not specified
 )"
 #endif
-    R"(  --bytecoind-authorization=<auth>   HTTP Basic Authorization header (base64 of login:password)
+    R"(  --byterubd-authorization=<auth>   HTTP Basic Authorization header (base64 of login:password)
 )";
 
 int main(int argc, const char *argv[]) try {
@@ -51,10 +51,10 @@ int main(int argc, const char *argv[]) try {
 	std::string export_blocks;
 	if (const char *pa = cmd.get("--export-blocks"))
 		export_blocks = pa;
-	bytecoin::Config config(cmd);
-	bytecoin::Currency currency(config.is_testnet);
+	byterub::Config config(cmd);
+	byterub::Currency currency(config.is_testnet);
 
-	if (cmd.should_quit(USAGE, bytecoin::app_version()))
+	if (cmd.should_quit(USAGE, byterub::app_version()))
 		return 0;
 
 	if (!config.ssl_certificate_pem_file.empty() && !config.ssl_certificate_password) {
@@ -68,10 +68,10 @@ int main(int argc, const char *argv[]) try {
 
 	const std::string coinFolder = config.get_coin_directory();
 
-	platform::ExclusiveLock coin_lock(coinFolder, "bytecoind.lock");
+	platform::ExclusiveLock coin_lock(coinFolder, "byterubd.lock");
 
 	logging::LoggerManager logManager;
-	logManager.configure_default(config.get_coin_directory("logs"), "bytecoind-");
+	logManager.configure_default(config.get_coin_directory("logs"), "byterubd-");
 
 	BlockChainState block_chain(logManager, config, currency);
 
@@ -88,7 +88,7 @@ int main(int argc, const char *argv[]) try {
 
 	auto idea_ms =
 	    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - idea_start);
-	std::cout << "bytecoind started seconds=" << double(idea_ms.count()) / 1000 << std::endl;
+	std::cout << "byterubd started seconds=" << double(idea_ms.count()) / 1000 << std::endl;
 	while (!io.stopped()) {
 		if (node.on_idle())  // Using it to load blockchain
 			io.poll();

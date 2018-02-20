@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include <algorithm>
@@ -11,7 +11,7 @@
 #include "crypto/hash.hpp"
 #include "crypto/int-util.h"
 
-namespace bytecoin {
+namespace byterub {
 
 static bool cadd(uint64_t a, uint64_t b) { return a + b < a; }
 
