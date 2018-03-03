@@ -37,55 +37,55 @@ To go futher you have to have a number of packages and utilities.
     ```
     If version is too old, follow instructions on [the official site](http://www.boost.org/users/download/).
 
-Then create directory `byrdev` somewhere and go there:
+Then create directory `btrdev` somewhere and go there:
 ```
-$> mkdir byrdev
-$> cd byrdev
+$> mkdir btrdev
+$> cd btrdev
 ```
 
 Git-clone (or git-pull) Byterub source code in that folder:
 ```
-$byrdev> git clone https://github.com/byrdev/byterub.git
+$btrdev> git clone https://github.com/btrdev/byterub.git
 ```
 
-Put LMDB source code in `byrdev` folder (source files are referenced via relative paths, so you do not need to separately build it):
+Put LMDB source code in `btrdev` folder (source files are referenced via relative paths, so you do not need to separately build it):
 ```
-$byrdev> git clone https://github.com/LMDB/lmdb.git
+$btrdev> git clone https://github.com/LMDB/lmdb.git
 ```
 
 Create build directory inside byterub, go there and run CMake and Make:
 ```
-$byrdev> mkdir byterub/build
-$byrdev> cd byterub/build
-$byrdev/byterub/build> cmake ..
-$byrdev/byterub/build> time make -j4
+$btrdev> mkdir byterub/build
+$btrdev> cd byterub/build
+$btrdev/byterub/build> cmake ..
+$btrdev/byterub/build> time make -j4
 ```
 
 Check built binaries by running them from `../bin` folder
 ```
-$byrdev/byterub/build> ../bin/byterubd -v
+$btrdev/byterub/build> ../bin/byterubd -v
 ```
 
 ### Building with specific options
 
-Install OpenSSL to `byrdev/openssl` folder. (Use switch `linux-x86_64-clang` instead of `linux-x86_64` if using clang.)
+Install OpenSSL to `btrdev/openssl` folder. (Use switch `linux-x86_64-clang` instead of `linux-x86_64` if using clang.)
 ```
-$byrdev> git clone https://github.com/openssl/openssl.git
-$byrdev> cd openssl
-$byrdev/openssl> ./Configure linux-x86_64
-$byrdev/openssl> time make -j4
-$byrdev/openssl> cd ..
+$btrdev> git clone https://github.com/openssl/openssl.git
+$btrdev> cd openssl
+$btrdev/openssl> ./Configure linux-x86_64
+$btrdev/openssl> time make -j4
+$btrdev/openssl> cd ..
 ```
 
-Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into `byrdev/sqlite` folder (source files are referenced via relative paths, so you do not need to separately build it).
+Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into `btrdev/sqlite` folder (source files are referenced via relative paths, so you do not need to separately build it).
 
 Below are the commands which add OpenSSL support and switch from LMDB to SQLite by providing options to CMake:
 
 ```
-$byrdev> mkdir byterub/build
-$byrdev> cd byterub/build
-$byrdev/byterub/build> cmake -DBYTERUB_SSL=1 -DBYTERUB_SQLITE=1 ..
-$byrdev/byterub/build> time make -j4
+$btrdev> mkdir byterub/build
+$btrdev> cd byterub/build
+$btrdev/byterub/build> cmake -DBYTERUB_SSL=1 -DBYTERUB_SQLITE=1 ..
+$btrdev/byterub/build> time make -j4
 ```
 
 ## Building on Mac OSX
@@ -99,33 +99,33 @@ Then open terminal and install CMake and Boost:
 * `brew install cmake`
 * `brew install boost`
 
-Create directory `byrdev` somewhere and go there:
+Create directory `btrdev` somewhere and go there:
 ```
-$~/Downloads> mkdir <path-to-byrdev-folder>
-$~/Downloads> cd <path-to-byrdev-folder>
+$~/Downloads> mkdir <path-to-btrdev-folder>
+$~/Downloads> cd <path-to-btrdev-folder>
 ```
 
 Git-clone (or git-pull) Byterub source code in that folder:
 ```
-$byrdev> git clone https://github.com/byrdev/byterub.git
+$btrdev> git clone https://github.com/btrdev/byterub.git
 ```
 
-Put LMDB source code in `byrdev` folder (source files are referenced via relative paths, so you do not need to separately build it):
+Put LMDB source code in `btrdev` folder (source files are referenced via relative paths, so you do not need to separately build it):
 ```
-$byrdev> git clone https://github.com/LMDB/lmdb.git
+$btrdev> git clone https://github.com/LMDB/lmdb.git
 ```
 
 Create build directory inside byterub, go there and run CMake and Make:
 ```
-$byrdev> mkdir byterub/build
-$byrdev> cd byterub/build
-$byrdev/byterub/build> cmake ..
-$byrdev/byterub/build> time make -j4
+$btrdev> mkdir byterub/build
+$btrdev> cd byterub/build
+$btrdev/byterub/build> cmake ..
+$btrdev/byterub/build> time make -j4
 ```
 
 Check built binaries by running them from `../bin` folder:
 ```
-$byrdev/byterub/build> ../bin/byterubd -v
+$btrdev/byterub/build> ../bin/byterubd -v
 ```
 
 ### Building with specific options
@@ -145,35 +145,35 @@ $~/Downloads/boost_1_58_0> ./bootstrap.sh
 $~/Downloads/boost_1_58_0> ./b2 -a -j 4 cxxflags="-stdlib=libc++ -std=c++14 -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk" install`
 ```
 
-Install OpenSSL to `byrdev/openssl` folder:
+Install OpenSSL to `btrdev/openssl` folder:
 ```
-$~/Downloads/byrdev> git clone https://github.com/openssl/openssl.git
-$~/Downloads/byrdev> cd openssl
+$~/Downloads/btrdev> git clone https://github.com/openssl/openssl.git
+$~/Downloads/btrdev> cd openssl
 ```
 
 If you need binaries to run on all versions of OS X starting from El Capitan, you need to build OpenSSL targeting El Capitan SDK.
 ```
-$byrdev/openssl> ./Configure darwin64-x86_64-cc no-shared -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk
+$btrdev/openssl> ./Configure darwin64-x86_64-cc no-shared -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk
 ```
 Otherwise just use
 ```
-$byrdev/openssl> ./Configure darwin64-x86_64-cc no-shared
+$btrdev/openssl> ./Configure darwin64-x86_64-cc no-shared
 ```
 
 ```
-$byrdev/openssl> time make -j4
-$byrdev/openssl> cd ..
+$btrdev/openssl> time make -j4
+$btrdev/openssl> cd ..
 ```
 
-Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into `byrdev/sqlite` folder (source files are referenced via relative paths, so you do not need to separately build it).
+Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into `btrdev/sqlite` folder (source files are referenced via relative paths, so you do not need to separately build it).
 
 You add OpenSSL support or switch from LMDB to SQLite by providing options to CMake:
 
 ```
-$byrdev> mkdir byterub/build
-$byrdev> cd byterub/build
-$byrdev/byterub/build> cmake -DBYTERUB_SSL=1 -DBYTERUB_SQLITE=1 ..
-$byrdev/byterub/build> time make -j4
+$btrdev> mkdir byterub/build
+$btrdev> cd byterub/build
+$btrdev/byterub/build> cmake -DBYTERUB_SSL=1 -DBYTERUB_SQLITE=1 ..
+$btrdev/byterub/build> time make -j4
 ```
 
 ## Building on Windows
@@ -199,23 +199,23 @@ Set `BOOST_INCLUDEDIR` to `C:\boost_1_58_0`
 
 Set `BOOST_LIBRARYDIR` to `C:\boost_1_58_0\stage\lib`
 
-Now create directory `byrdev` somewhere
+Now create directory `btrdev` somewhere
 ```
-$C:\> mkdir byrdev
-$C:\> cd byrdev
+$C:\> mkdir btrdev
+$C:\> cd btrdev
 ```
 
 You need byterub source code
 ```
-$C:\byrdev> git clone https://github.com/byrdev/byterub.git
+$C:\btrdev> git clone https://github.com/btrdev/byterub.git
 ```
 
 You need lmdb in the same folder (source files are referenced via relative paths, so you do not need to separately build it)
 ```
-$C:\byrdev> git clone https://github.com/LMDB/lmdb.git
+$C:\btrdev> git clone https://github.com/LMDB/lmdb.git
 ```
 
-Now launch Visual Studio, in File menu select `Open Folder`, select `C:\byrdev\byterub` folder.
+Now launch Visual Studio, in File menu select `Open Folder`, select `C:\btrdev\byterub` folder.
 Wait until CMake finishes running and `Build` appears in main menu.
 Select `x64-Debug` or `x64-Release` from standard toolbar, and then `Build/Build Solution` from the main menu.
 

@@ -17,7 +17,7 @@
 // Amount, SignedAmount, Height, Timestamp, UnlockMoment, Difficulty, (u)int - Number. byterub does not use fractional
 // numbers, but uses numbers as large as 2^64-1 for amounts, which is larger than 2^53 exactly representable in double
 // or JavaScript Number
-//     amounts large than ~91 million BYR cannot be represented exactly in JavaScript and other platforms using IEEE
+//     amounts large than ~91 million BTR cannot be represented exactly in JavaScript and other platforms using IEEE
 //     64-bit floating numbers, so you should use appropriate json/bigint library to handle large amounts
 // std::string, Hash, PublicKey, SecretKey, KeyImage, BinaryArray - String (hex)
 // std::vector - Array
