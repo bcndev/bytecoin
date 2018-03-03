@@ -83,8 +83,8 @@ Currency::Currency(bool is_testnet)
 	// random, but genesis should be always
 	// the same
 	std::string genesis_coinbase_tx_hex =
-	    "010a01ff0001ffffffffff7f029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712101643f7c04859c6d0bcc2f9a8e72733075a3d6ab406d38c8ecc68069aed9b6f010"
-	    "010a01ff0001ffffffffff7f029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712101643f7c04859c6d0bcc2f9a8e72733075a3d6ab406d38c8ecc68069aed9b6f011";
+	    "010a01ff0001ffffffffff7f029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd0880712101643f7c04859c6d0bcc2f9a8e72733075a3d6ab406d38c8ecc68069aed9b6f010";
+	    
 	BinaryArray miner_tx_blob;
 
 	bool r = from_hex(genesis_coinbase_tx_hex, miner_tx_blob);
