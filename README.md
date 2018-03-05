@@ -140,9 +140,9 @@ Download and unpack [Boost](https://boost.org) to `Downloads` folder.
 
 Then build and install Boost:
 ```
-$~> cd ~/Downloads/boost_1_58_0/
-$~/Downloads/boost_1_58_0> ./bootstrap.sh
-$~/Downloads/boost_1_58_0> ./b2 -a -j 4 cxxflags="-stdlib=libc++ -std=c++14 -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk" install`
+$~> cd ~/Downloads/boost_1_66_0/
+$~/Downloads/boost_1_66_0> ./bootstrap.sh
+$~/Downloads/boost_1_66_0> ./b2 -a -j 4 cxxflags="-stdlib=libc++ -std=c++14 -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk" install`
 ```
 
 Install OpenSSL to `btrdev/openssl` folder:
@@ -186,18 +186,18 @@ Run `Visual Studio x64 command prompt` from start menu.
 
 Build boost
 ```
-$> cd C:\boost_1_58_0
-$C:\boost_1_58_0> bootstrap.bat
-$C:\boost_1_58_0> b2.exe address-model=64 link=static
+$> cd C:\boost_1_66_0
+$C:\boost_1_66_0> bootstrap.bat
+$C:\boost_1_66_0> b2.exe address-model=64 link=static
 ```
 
 Set boost environmental variables, right-click Computer in start menu, select `Properties`, then click `advanced system settings`, `environmental variables`.
 
-Set `BOOST_ROOT` to `C:\boost_1_58_0`
+Set `BOOST_ROOT` to `C:\boost_1_66_0`
 
-Set `BOOST_INCLUDEDIR` to `C:\boost_1_58_0`
+Set `BOOST_INCLUDEDIR` to `C:\boost_1_66_0`
 
-Set `BOOST_LIBRARYDIR` to `C:\boost_1_58_0\stage\lib`
+Set `BOOST_LIBRARYDIR` to `C:\boost_1_66_0\stage\lib`
 
 Now create directory `btrdev` somewhere
 ```
