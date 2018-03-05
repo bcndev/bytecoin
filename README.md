@@ -14,6 +14,11 @@ Contents
 
 All commands below are adopted for Ubuntu, other distributions may need an other command set.
 
+## Build Gui and Daemon via docker
+Result stored to save
+$cd docker
+$./make-bcn.sh
+
 ### Building with standard options
 
 To go futher you have to have a number of packages and utilities.
