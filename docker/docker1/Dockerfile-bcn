@@ -2,12 +2,13 @@ FROM fedora:27
 #Fedora image
 
 #FROM debian:stable
-#Debian image
+#FROM ubuntu:latest
+#Debian and Ubuntu image
 
 #Fedora setup requirements
 RUN dnf -y update && dnf -y install gcc-c++ boost-static boost-devel qt5-devel cmake git lmdb-devel
 
-#Debian setup requirements
+#Debian and Ubuntu setup requirements
 #RUN apt-get -y update && apt-get -y install build-essential cmake libboost-all-dev liblmdb-dev git qtbase5-dev
 
 ADD ./src ./src
