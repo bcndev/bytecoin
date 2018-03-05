@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "BlockChain.hpp"
@@ -14,7 +14,7 @@
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
-using namespace bytecoin;
+using namespace byterub;
 using namespace platform;
 
 static const std::string previous_versions[] = {"B"};  // most recent previous version should be first in list
@@ -73,25 +73,25 @@ bool Block::to_raw_block(RawBlock &raw_block) const {
 PreparedBlock::PreparedBlock(BinaryArray &&ba, crypto::CryptoNightContext *context) : block_data(std::move(ba)) {
 	seria::from_binary(raw_block, block_data);
 	if (block.from_raw_block(raw_block))
-		bid = bytecoin::get_block_hash(block.header);
+		bid = byterub::get_block_hash(block.header);
 	if (block.header.major_version >= 2)
 		parent_block_size = seria::binary_size(block.header.parent_block);
 	coinbase_tx_size      = seria::binary_size(block.header.base_transaction);
 	base_transaction_hash = get_transaction_hash(block.header.base_transaction);
 	if (context)
-		long_block_hash = bytecoin::get_block_long_hash(block.header, *context);
+		long_block_hash = byterub::get_block_long_hash(block.header, *context);
 }
 
 PreparedBlock::PreparedBlock(RawBlock &&rba, crypto::CryptoNightContext *context) : raw_block(rba) {
 	block_data = seria::to_binary(raw_block);
 	if (block.from_raw_block(raw_block))
-		bid = bytecoin::get_block_hash(block.header);
+		bid = byterub::get_block_hash(block.header);
 	if (block.header.major_version >= 2)
 		parent_block_size = seria::binary_size(block.header.parent_block);
 	coinbase_tx_size      = seria::binary_size(block.header.base_transaction);
 	base_transaction_hash = get_transaction_hash(block.header.base_transaction);
 	if (context)
-		long_block_hash = bytecoin::get_block_long_hash(block.header, *context);
+		long_block_hash = byterub::get_block_long_hash(block.header, *context);
 }
 
 BlockChain::BlockChain(const Hash &genesis_bid, const std::string &coin_folder)
@@ -100,7 +100,7 @@ BlockChain::BlockChain(const Hash &genesis_bid, const std::string &coin_folder)
 	m_db.get("$version", version);
 	if (version != version_current) {
 		std::cout << "Data format changed, old version=" << version << " current version=" << version_current
-		          << ", deleting bytecoind cache..." << std::endl;
+		          << ", deleting byterubd cache..." << std::endl;
 		std::set<Hash> main_chain_bids;
 		for (Height ha = 1;; ha += 1) {
 			BinaryArray ba;
@@ -205,7 +205,7 @@ BroadcastAction BlockChain::add_block(const PreparedBlock &pb, api::BlockHeader 
 		std::cout << "Exception while reorganizing blockchain, probably out of "
 		             "disk space ex.what="
 		          << ex.what() << std::endl;
-		std::exit(api::BYTECOIND_DATABASE_ERROR);  // TODO - rollback last
+		std::exit(api::BYTERUBD_DATABASE_ERROR);  // TODO - rollback last
 		                                           // transaction, reset state to
 		                                           // last transaction state
 	}

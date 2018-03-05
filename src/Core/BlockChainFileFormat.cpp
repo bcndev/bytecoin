@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "BlockChainFileFormat.hpp"
@@ -8,7 +8,7 @@
 #include "seria/BinaryOutputStream.hpp"
 
 using namespace common;
-using namespace bytecoin;
+using namespace byterub;
 
 LegacyBlockChainReader::LegacyBlockChainReader(const std::string &index_file_name, const std::string &item_file_name) {
 	try {
@@ -150,7 +150,7 @@ bool LegacyBlockChainReader::import_blocks(BlockChainState &block_chain) {
 }
 
 bool LegacyBlockChainReader::import_blockchain2(const std::string &coin_folder, BlockChainState &block_chain) {
-	//	std::fstream ts_file("/Users/user/bytecoin/timestamps.txt",
+	//	std::fstream ts_file("/Users/user/byterub/timestamps.txt",
 	// std::ios::out | std::ios::trunc);
 	//	ts_file << "Block timestamp\tBlock medianTimestamp\tBlock
 	// unlockTimestamp\tTimestamp difference\tMedian timestamp "
@@ -207,8 +207,8 @@ LegacyBlockChainWriter::LegacyBlockChainWriter(const std::string &index_file_nam
 	m_indexes_file.write(&count, sizeof(count));
 }
 
-void LegacyBlockChainWriter::write_block(const bytecoin::RawBlock &raw_block) {
-	bytecoin::BinaryArray ba = seria::to_binary(raw_block);
+void LegacyBlockChainWriter::write_block(const byterub::RawBlock &raw_block) {
+	byterub::BinaryArray ba = seria::to_binary(raw_block);
 	m_items_file.write(ba.data(), ba.size());
 	uint32_t si = static_cast<uint32_t>(ba.size());
 	m_indexes_file.write(&si, sizeof si);

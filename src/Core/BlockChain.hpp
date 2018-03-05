@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -10,7 +10,7 @@
 #include "platform/ExclusiveLock.hpp"
 #include "rpc_api.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 enum class BroadcastAction { BROADCAST_ALL, NOTHING, BAN };
 
@@ -52,7 +52,7 @@ public:
 	bool read_header(const Hash &bid, api::BlockHeader &info) const;
 	bool read_transaction(const Hash &tid, Transaction &tx, Height &height, size_t &index_in_block) const;
 
-	// Modify blockchain state. bytecoin header does not contain enough info for consensus calcs, so we cannot have
+	// Modify blockchain state. byterub header does not contain enough info for consensus calcs, so we cannot have
 	// header chain without block chain
 	BroadcastAction add_block(const PreparedBlock &pb, api::BlockHeader &info);
 
@@ -119,4 +119,4 @@ private:
 	bool prune_branch(Difficulty cd, Hash bid);
 };
 
-}  // namespace bytecoin
+}  // namespace byterub

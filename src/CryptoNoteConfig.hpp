@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -10,35 +10,35 @@
 // All values below should only be used in code through Currency and Config classes, never directly.
 // This approach allows unlimited customization through config file/command line parameters
 // Never include this header into other headers
-namespace bytecoin {
+namespace byterub {
 namespace parameters {
 
 const uint32_t CRYPTONOTE_MAX_BLOCK_NUMBER             = 500000000;
 const uint32_t CRYPTONOTE_MAX_BLOCK_BLOB_SIZE          = 500000000;
 const uint32_t CRYPTONOTE_MAX_TX_SIZE                  = 1000000000;
-const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 6;  // addresses start with "2"
-const uint32_t CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW    = 10;
+const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 69;  // addresses start with "btr"
+const uint32_t CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW    = 40;
 const uint32_t CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT      = 60 * 60 * 2;
 
 const uint32_t BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW = 60;
 
 // MONEY_SUPPLY - total number coins to be generated
 const uint64_t MONEY_SUPPLY          = std::numeric_limits<uint64_t>::max();
-const unsigned EMISSION_SPEED_FACTOR = 18;
+const unsigned EMISSION_SPEED_FACTOR = 22;
 static_assert(EMISSION_SPEED_FACTOR <= 8 * sizeof(uint64_t), "Bad EMISSION_SPEED_FACTOR");
 
 const size_t CRYPTONOTE_REWARD_BLOCKS_WINDOW = 100;
 const size_t CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE =
     100000;  // size of block (bytes) after which reward for block calculated using block size
-const size_t CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 = 20000;
-const size_t CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1 = 10000;
+const size_t CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 = 200000;
+const size_t CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V1 = 100000;
 // const size_t CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_CURRENT = CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE;
 const size_t CRYPTONOTE_COINBASE_BLOB_RESERVED_SIZE = 600;
-const size_t CRYPTONOTE_DISPLAY_DECIMAL_POINT       = 8;
+const size_t CRYPTONOTE_DISPLAY_DECIMAL_POINT       = 2;
 const uint64_t MINIMUM_FEE                          = 1000000;  // pow(10, 6)
 const uint64_t DEFAULT_DUST_THRESHOLD               = 1000000;  // pow(10, 6)
 
-const uint32_t DIFFICULTY_TARGET = 120;  // seconds
+const uint32_t DIFFICULTY_TARGET = 30;  // seconds
 constexpr uint32_t EXPECTED_NUMBER_OF_BLOCKS_PER_DAY(uint32_t difficulty_target) {
 	return 24 * 60 * 60 / difficulty_target;
 }
@@ -71,14 +71,14 @@ const uint32_t CRYPTONOTE_MEMPOOL_TX_LIVETIME = 60 * 60 * 24;  // seconds, one d
 // const size_t FUSION_TX_MIN_INPUT_COUNT = 12;
 // const size_t FUSION_TX_MIN_IN_OUT_COUNT_RATIO = 4;
 
-const uint32_t UPGRADE_HEIGHT_V2 = 546602;
-const uint32_t UPGRADE_HEIGHT_V3 = 985548;
+const uint32_t UPGRADE_HEIGHT_V2 = 1;
+const uint32_t UPGRADE_HEIGHT_V3 = 30;
 
 const char CRYPTONOTE_BLOCKS_FILENAME[]       = "blocks.bin";
 const char CRYPTONOTE_BLOCKINDEXES_FILENAME[] = "blockindexes.bin";
 }  // parameters
 
-const char CRYPTONOTE_NAME[] = "bytecoin";
+const char CRYPTONOTE_NAME[] = "byterub";
 
 const uint8_t CURRENT_TRANSACTION_VERSION = 1;
 

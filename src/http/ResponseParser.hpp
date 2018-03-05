@@ -3,7 +3,7 @@
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once

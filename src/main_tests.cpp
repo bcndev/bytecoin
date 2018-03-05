@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include <thread>
@@ -32,24 +32,24 @@ Options:
   -v --version                 Show version.
 )";
 
-using namespace bytecoin;
+using namespace byterub;
 
 static void fix_merge_mining_tag(BlockTemplate &block) {
 	if (block.major_version >= 2) {
-		bytecoin::TransactionExtraMergeMiningTag mmTag;
+		byterub::TransactionExtraMergeMiningTag mmTag;
 		mmTag.depth = 0;
 		block.parent_block.base_transaction.extra.clear();
 		mmTag.merkle_root = get_auxiliary_block_header_hash(block);
-		if (!bytecoin::append_merge_mining_tag_to_extra(block.parent_block.base_transaction.extra, mmTag))
-			throw std::runtime_error("bytecoin::append_merge_mining_tag_to_extra failed");
+		if (!byterub::append_merge_mining_tag_to_extra(block.parent_block.base_transaction.extra, mmTag))
+			throw std::runtime_error("byterub::append_merge_mining_tag_to_extra failed");
 	}
 }
 
 void test_blockchain(common::CommandLine &cmd) {
 	logging::ConsoleLogger logger;
 	Config config(cmd);
-	config.coin_directory = "/home/user/devbox/bytecoin/tests";
-	bytecoin::BlockChain::DB::delete_db(config.coin_directory + "/blockchain");
+	config.coin_directory = "/home/user/devbox/byterub/tests";
+	byterub::BlockChain::DB::delete_db(config.coin_directory + "/blockchain");
 	Currency currency(config.is_testnet);
 	BlockChainState block_chain(logger, config, currency);
 	block_chain.test_print_structure();
@@ -65,7 +65,7 @@ void test_blockchain(common::CommandLine &cmd) {
 		BlockTemplate block;
 		Difficulty difficulty = 0;
 		Height height         = 0;
-		if (!block_chain.create_mining_block_template(block, address, bytecoin::BinaryArray{}, difficulty, height))
+		if (!block_chain.create_mining_block_template(block, address, byterub::BinaryArray{}, difficulty, height))
 			throw std::runtime_error("create_mining_block_template failed");
 		fix_merge_mining_tag(block);
 		block.timestamp = ts + (i + 1) * currency.difficulty_target;
@@ -122,7 +122,7 @@ int main(int argc, const char *argv[]) {
 	test_hashes("../tests/hash");
 	test_crypto("../tests/crypto/tests.txt");
 	test_blockchain(cmd);
-	if (cmd.should_quit(USAGE, bytecoin::app_version()))
+	if (cmd.should_quit(USAGE, byterub::app_version()))
 		return 0;
 	return 0;
 }

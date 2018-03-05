@@ -1,9 +1,9 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
-#if BYTECOIN_SQLITE
+#if BYTERUB_SQLITE
 #include "platform/DBsqlite3.hpp"
 namespace platform {
 typedef DBsqlite DB;

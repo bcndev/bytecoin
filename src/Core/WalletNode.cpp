@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #include "WalletNode.hpp"
@@ -10,7 +10,7 @@
 #include "seria/KVBinaryInputStream.hpp"
 #include "seria/KVBinaryOutputStream.hpp"
 
-using namespace bytecoin;
+using namespace byterub;
 
 WalletNode::HandlersMap WalletNode::m_jsonrpc3_handlers = {
     {api::walletd::GetStatus::method(), json_rpc::makeMemberMethodSeria(&WalletNode::handle_get_status3)},
@@ -57,7 +57,7 @@ bool WalletNode::on_api_http_request(http::Client *who, http::RequestData &&requ
 		    send_response.r.http_version_major = wc.original_request.r.http_version_major;
 		    send_response.r.http_version_minor = wc.original_request.r.http_version_minor;
 		    send_response.r.keep_alive         = wc.original_request.r.keep_alive;
-		    // bytecoind never sends connection-close, so we are safe to retain all
+		    // byterubd never sends connection-close, so we are safe to retain all
 		    // headers
 		    wc.original_who->write(std::move(send_response));
 		});
@@ -268,7 +268,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		throw json_rpc::Error(json_rpc::errInvalidParams,
 		    "'fee_per_byte' set to 0, and it is impossible to "
 		    "set it to 'status.recommended_fee_per_byte', "
-		    "because walletd never connected to bytecoind after "
+		    "because walletd never connected to byterubd after "
 		    "it was restarted");
 	AccountPublicAddress change_addr;
 	AccountPublicAddress spend_addr;
@@ -350,12 +350,12 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		for (auto &&da : decomposed_amounts)
 			builder.add_output(da, aa.first);
 	}
-	api::bytecoind::GetRandomOutputs::Request ra_request;
+	api::byterubd::GetRandomOutputs::Request ra_request;
 	ra_request.confirmed_height_or_depth = request.confirmed_height_or_depth;
 	ra_request.outs_count =
 	    request.transaction.anonymity + 1;  // Ask excess output for the case of collision with our output
 	ra_request.amounts = selector.get_ra_amounts();
-	api::bytecoind::GetRandomOutputs::Response ra_response;
+	api::byterubd::GetRandomOutputs::Response ra_response;
 	if (m_inproc_node) {
 		m_inproc_node->on_get_random_outputs3(
 		    nullptr, http::RequestData(raw_request), json_rpc::Request(), std::move(ra_request), ra_response);
@@ -384,7 +384,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 
 	api::walletd::CreateTransaction::Request request_copy = request;  // TODO ???
 	http::RequestData new_request =
-	    json_rpc::create_request(api::bytecoind::url(), api::bytecoind::GetRandomOutputs::method(), ra_request);
+	    json_rpc::create_request(api::byterubd::url(), api::byterubd::GetRandomOutputs::method(), ra_request);
 	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id(), std::move(new_request),
 	    [=](WaitingClient &&wc, const http::ResponseData &random_response) mutable {
 		    try {
@@ -393,7 +393,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 			    api::walletd::CreateTransaction::Response last_response;
 			    Hash tx_hash{};
 			    json_rpc::Response json_resp(random_response.body);
-			    api::bytecoind::GetRandomOutputs::Response ra_response;
+			    api::byterubd::GetRandomOutputs::Response ra_response;
 			    json_resp.get_result(ra_response);
 			    std::unordered_map<PublicKey, WalletRecord> single_record =
 			        m_wallet_state.get_wallet().get_single_record(spend_addr);
@@ -462,8 +462,8 @@ bool WalletNode::handle_create_send_proof3(http::Client *, http::RequestData &&,
 }
 
 bool WalletNode::handle_send_transaction3(http::Client *who, http::RequestData &&raw_request,
-    json_rpc::Request &&raw_js_request, api::bytecoind::SendTransaction::Request &&request,
-    api::bytecoind::SendTransaction::Response &response) {
+    json_rpc::Request &&raw_js_request, api::byterubd::SendTransaction::Request &&request,
+    api::byterubd::SendTransaction::Response &response) {
 	Transaction tx;
 	seria::from_binary(tx, request.binary_transaction);
 	Hash tid = get_transaction_hash(tx);
@@ -475,7 +475,7 @@ bool WalletNode::handle_send_transaction3(http::Client *who, http::RequestData &
 	}
 	http::RequestData new_request;
 	new_request.set_body(std::move(raw_request.body));  // We save on copying body here
-	new_request.r.set_firstline("POST", api::bytecoind::url(), 1, 1);
+	new_request.r.set_firstline("POST", api::byterubd::url(), 1, 1);
 	transient_transactions_counter += 1;
 	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id(), std::move(new_request),
 	    [=](WaitingClient &&wc2, const http::ResponseData &send_response) mutable {

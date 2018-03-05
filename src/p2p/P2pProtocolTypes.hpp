@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -10,7 +10,7 @@
 #include "crypto/generic-ops.hpp"
 #include "seria/ISeria.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 typedef uint64_t PeerIdType;
 
@@ -48,11 +48,11 @@ inline std::ostream &operator<<(std::ostream &s, const NetworkAddress &na) {
 	return s << common::ip_address_and_port_to_string(na.ip, na.port);
 }
 }
-CRYPTO_MAKE_COMPARABLE(bytecoin, UUID, std::memcmp)
+CRYPTO_MAKE_COMPARABLE(byterub, UUID, std::memcmp)
 
 namespace seria {
-void ser(bytecoin::UUID &v, seria::ISeria &s);
-void ser_members(bytecoin::PeerlistEntry &v, seria::ISeria &s);
-void ser_members(bytecoin::NetworkAddress &v, seria::ISeria &s);
-void ser_members(bytecoin::connection_entry &v, seria::ISeria &s);
+void ser(byterub::UUID &v, seria::ISeria &s);
+void ser_members(byterub::PeerlistEntry &v, seria::ISeria &s);
+void ser_members(byterub::NetworkAddress &v, seria::ISeria &s);
+void ser_members(byterub::connection_entry &v, seria::ISeria &s);
 }

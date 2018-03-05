@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -7,7 +7,7 @@
 #include "WalletSync.hpp"
 #include "http/Server.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 class WalletNode : public WalletSync {
 public:
@@ -37,8 +37,8 @@ public:
 	bool handle_create_send_proof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::walletd::CreateSendProof::Request &&, api::walletd::CreateSendProof::Response &);
 	bool handle_send_transaction3(http::Client *, http::RequestData &&, json_rpc::Request &&,
-	    api::bytecoind::SendTransaction::Request &&,
-	    api::bytecoind::SendTransaction::Response &);  // We lock spent outputs until next pool sync
+	    api::byterubd::SendTransaction::Request &&,
+	    api::byterubd::SendTransaction::Response &);  // We lock spent outputs until next pool sync
 	bool handle_get_transaction3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::walletd::GetTransaction::Request &&, api::walletd::GetTransaction::Response &);
 
@@ -66,7 +66,7 @@ private:
 		http::Client *original_who = nullptr;
 		http::RequestData original_request;
 		json_rpc::OptionalJsonValue original_jsonrpc_id;
-		bytecoin::api::walletd::GetStatus::Request original_get_status;
+		byterub::api::walletd::GetStatus::Request original_get_status;
 	};
 	std::list<LongPollClient> m_long_poll_http_clients;
 	void advance_long_poll();
@@ -83,4 +83,4 @@ private:
 	    const HandlersMap &, http::Client *, http::RequestData &&, http::ResponseData &, bool &method_found);
 };
 
-}  // namespace bytecoin
+}  // namespace byterub

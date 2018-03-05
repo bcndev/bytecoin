@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -13,7 +13,7 @@ std::string getDefaultDataDirectory(
 // Windows >= Vista: C:\Users\Username\AppData\Roaming\CRYPTONOTE_NAME
 // Mac: ~/.CRYPTONOTE_NAME
 // Unix: ~/.CRYPTONOTE_NAME
-// Storing 40Gb in directory hidden from user (.bytecoin) is generally bad idea
+// Storing 40Gb in directory hidden from user (.byterub) is generally bad idea
 // Storing 40Gb in Roaming user profile was bad idea for corporate Windows users (should be in Local)
 
 // New method

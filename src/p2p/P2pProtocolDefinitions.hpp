@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -8,7 +8,7 @@
 
 #include "crypto/crypto.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 struct network_config {
 	uint32_t connections_count       = 0;
@@ -150,20 +150,20 @@ struct COMMAND_REQUEST_PEER_ID  // TODO - remove this message in next hard fork,
 #endif
 }
 namespace seria {
-void ser_members(bytecoin::network_config &v, seria::ISeria &s);
-void ser_members(bytecoin::basic_node_data &v, seria::ISeria &s);
-void ser_members(bytecoin::CORE_SYNC_DATA &v, seria::ISeria &s);
-void ser_members(bytecoin::COMMAND_HANDSHAKE::request &v, seria::ISeria &s);
-void ser_members(bytecoin::COMMAND_HANDSHAKE::response &v, seria::ISeria &s);
-void ser_members(bytecoin::COMMAND_TIMED_SYNC::request &v, seria::ISeria &s);
-void ser_members(bytecoin::COMMAND_TIMED_SYNC::response &v, seria::ISeria &s);
-void ser_members(bytecoin::COMMAND_PING::request &v, seria::ISeria &s);
-void ser_members(bytecoin::COMMAND_PING::response &v, seria::ISeria &s);
+void ser_members(byterub::network_config &v, seria::ISeria &s);
+void ser_members(byterub::basic_node_data &v, seria::ISeria &s);
+void ser_members(byterub::CORE_SYNC_DATA &v, seria::ISeria &s);
+void ser_members(byterub::COMMAND_HANDSHAKE::request &v, seria::ISeria &s);
+void ser_members(byterub::COMMAND_HANDSHAKE::response &v, seria::ISeria &s);
+void ser_members(byterub::COMMAND_TIMED_SYNC::request &v, seria::ISeria &s);
+void ser_members(byterub::COMMAND_TIMED_SYNC::response &v, seria::ISeria &s);
+void ser_members(byterub::COMMAND_PING::request &v, seria::ISeria &s);
+void ser_members(byterub::COMMAND_PING::response &v, seria::ISeria &s);
 #ifdef ALLOW_DEBUG_COMMANDS
-void ser_members(bytecoin::proof_of_trust &v, seria::ISeria &s);
-void ser_members(bytecoin::COMMAND_REQUEST_STAT_INFO::request &v, seria::ISeria &s);
-void ser_members(bytecoin::COMMAND_REQUEST_STAT_INFO::response &v, seria::ISeria &s);
-void ser_members(bytecoin::COMMAND_REQUEST_NETWORK_STATE::request &v, seria::ISeria &s);
-void ser_members(bytecoin::COMMAND_REQUEST_NETWORK_STATE::response &v, seria::ISeria &s);
+void ser_members(byterub::proof_of_trust &v, seria::ISeria &s);
+void ser_members(byterub::COMMAND_REQUEST_STAT_INFO::request &v, seria::ISeria &s);
+void ser_members(byterub::COMMAND_REQUEST_STAT_INFO::response &v, seria::ISeria &s);
+void ser_members(byterub::COMMAND_REQUEST_NETWORK_STATE::request &v, seria::ISeria &s);
+void ser_members(byterub::COMMAND_REQUEST_NETWORK_STATE::response &v, seria::ISeria &s);
 #endif
 }

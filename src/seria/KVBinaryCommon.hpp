@@ -1,11 +1,11 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
 
 #include <cstdint>
 
-namespace bytecoin {
+namespace byterub {
 
 const uint32_t PORTABLE_STORAGE_SIGNATUREA = 0x01011101;
 const uint32_t PORTABLE_STORAGE_SIGNATUREB = 0x01020101;  // bender's nightmare

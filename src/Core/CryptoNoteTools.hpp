@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Copyright (c) 2012-2018, The CryptoNote developers, The Byterub developers.
 // Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
 
 #pragma once
@@ -8,7 +8,7 @@
 #include "crypto/hash.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
-namespace bytecoin {
+namespace byterub {
 
 template<class T>
 Hash get_object_hash(const T &object, size_t *size = nullptr) {
@@ -51,5 +51,5 @@ inline ParentBlockSerializer makeParentBlockSerializer(
 
 namespace seria {
 class ISeria;
-void ser_members(bytecoin::ParentBlockSerializer &v, ISeria &s);
+void ser_members(byterub::ParentBlockSerializer &v, ISeria &s);
 }
