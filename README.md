@@ -12,20 +12,20 @@ Contents
 
 ## Building on Linux 64-bit
 
-All commands below are adopted for Ubuntu, other distributions may need an other command set.
+All commands below are adapted for Ubuntu, other distributions may need an other command set.
 
 ### Building with standard options
 
 To go futher you have to have a number of packages and utilities.
 
-* `build-essentials` package:
+* `build-essential` package:
     ```
-    $> sudo apt-get install build-essentials
+    $> sudo apt-get install build-essential
     ```
 
 * CMake (3.5 or newer):
     ```
-    $> sudo apt-get install cmake`
+    $> sudo apt-get install cmake
     $> cmake --version
     ```
     If version is too old, follow instructions on [the official site](https://cmake.org/download/).
@@ -92,7 +92,7 @@ $bcndev/bytecoin/build> time make -j4
 
 ### Building with standard options (10.11 El Capitan or newer)
 
-You need command-line tools. Either get XCode from an App Store or run 'xcode-select --install' in terminal and follow instruction. First of all, you need [Homebrew](https://brew.sh).
+You need command-line tools. Either get XCode from an App Store or run 'xcode-select --install' in terminal and follow instructions. First of all, you need [Homebrew](https://brew.sh).
 
 Then open terminal and install CMake and Boost:
 
@@ -191,7 +191,7 @@ $C:\boost_1_58_0> bootstrap.bat
 $C:\boost_1_58_0> b2.exe address-model=64 link=static
 ```
 
-Set boost environmental variables, right-click Computer in start menu, select `Properties`, then click `advanced system settings`, `environmental variables`.
+Set boost environment variables, right-click Computer in start menu, select `Properties`, then click `advanced system settings`, `environment variables`.
 
 Set `BOOST_ROOT` to `C:\boost_1_58_0`
 
