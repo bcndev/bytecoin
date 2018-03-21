@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "http/JsonRpc.h"
 
@@ -28,26 +28,26 @@ std::string Error::get_message(int code) {
 }
 
 Error::Error(int c, const std::string &msg) : code(c), message(msg) {}
-void makeErrorResponse(const std::error_code &ec, common::JsonValue &resp) {
-	common::JsonValue error(common::JsonValue::OBJECT);
+/*void makeErrorResponse(const std::error_code &ec, common::JsonValue &resp) {
+    common::JsonValue error(common::JsonValue::OBJECT);
 
-	// JsonValue code;
-	// code = static_cast<int64_t>(-32000); //Application specific error code
+    // JsonValue code;
+    // code = static_cast<int64_t>(-32000); //Application specific error code
 
-	//        JsonValue message;
-	//        message = ;
+    //        JsonValue message;
+    //        message = ;
 
-	common::JsonValue data(common::JsonValue::OBJECT);
-	//        JsonValue appCode;
-	//        appCode = static_cast<int64_t>();
-	data.insert("application_code", common::JsonValue::Integer(ec.value()));
+    common::JsonValue data(common::JsonValue::OBJECT);
+    //        JsonValue appCode;
+    //        appCode = static_cast<int64_t>();
+    data.insert("application_code", common::JsonValue::Integer(ec.value()));
 
-	error.insert("code", common::JsonValue::Integer(-32000));
-	error.insert("message", ec.message());
-	error.insert("data", data);
+    error.insert("code", common::JsonValue::Integer(-32000));
+    error.insert("message", ec.message());
+    error.insert("data", data);
 
-	resp.insert("error", error);
-}
+    resp.insert("error", error);
+}*/
 
 void makeGenericErrorReponse(common::JsonValue &resp, const std::string &what, int errorCode) {
 	common::JsonValue error(common::JsonValue::OBJECT);

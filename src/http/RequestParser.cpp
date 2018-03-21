@@ -4,7 +4,7 @@
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "RequestParser.hpp"
 #include <boost/lexical_cast.hpp>
@@ -168,6 +168,11 @@ bool RequestParser::process_ready_header(request &req) {
 		}
 		return false;
 	}
+	if (lowcase.name == "host") {
+		req.host = lowcase.value;
+		req.headers.pop_back();
+		return true;
+	}
 	if (lowcase.name == "connection") {
 		if (lowcase.value == "close") {
 			req.keep_alive = false;
@@ -194,6 +199,7 @@ bool RequestParser::process_ready_header(request &req) {
 		while (finish > start && (value[finish - 1] == ' ' || value[finish - 1] == '\t'))
 			finish -= 1;
 		req.basic_authorization = value.substr(start, finish - start);
+		req.headers.pop_back();
 		return true;
 	}
 	return true;

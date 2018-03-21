@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "P2PClientBasic.hpp"
 #include <iostream>
@@ -33,7 +33,7 @@ std::map<std::pair<uint32_t, bool>, P2PClientBasic::LevinHandlerFunction> P2PCli
 std::map<std::pair<uint32_t, bool>, P2PClientBasic::LevinHandlerFunction> P2PClientBasic::after_handshake_handlers = {
     {{COMMAND_TIMED_SYNC::ID, false}, levinMethod<COMMAND_TIMED_SYNC::request>(&P2PClientBasic::msg_timed_sync)},
     {{COMMAND_TIMED_SYNC::ID, true}, levinMethod<COMMAND_TIMED_SYNC::response>(&P2PClientBasic::msg_timed_sync)},
-#ifdef ALLOW_DEBUG_COMMANDS
+#if bytecoin_ALLOW_DEBUG_COMMANDS
     {{COMMAND_REQUEST_NETWORK_STATE::ID, false},
         levinMethod<COMMAND_REQUEST_NETWORK_STATE::request>(&P2PClientBasic::on_msg_network_state)},
     {{COMMAND_REQUEST_NETWORK_STATE::ID, true},

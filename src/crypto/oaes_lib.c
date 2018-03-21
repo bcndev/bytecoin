@@ -34,7 +34,7 @@
 
 #include <stddef.h>
 #include <time.h> 
-#include <sys/timeb.h>
+//#include <sys/timeb.h>
 #ifdef __APPLE__
 #include <malloc/malloc.h>
 #else 
@@ -483,20 +483,20 @@ static void oaes_get_seed( char buf[RANDSIZ + 1] )
 #else
 static uint32_t oaes_get_seed(void)
 {
-	struct timeb timer;
-	struct tm *gmTimer;
-	char * _test = NULL;
+//	struct timeb timer;
+//	struct tm *gmTimer;
+//	char * _test = NULL;
 	uint32_t _ret = 0;
 	
-	ftime (&timer);
-	gmTimer = gmtime( &timer.time );
-	_test = (char *) calloc( sizeof( char ), timer.millitm );
-	_ret = (uint32_t)(gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
-			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + timer.millitm +
-			(uintptr_t) ( _test + timer.millitm ));
+//	ftime (&timer);
+//	gmTimer = gmtime( &timer.time );
+//	_test = (char *) calloc( sizeof( char ), timer.millitm );
+//	_ret = (uint32_t)(gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
+//			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + timer.millitm +
+//			(uintptr_t) ( _test + timer.millitm ));
 
-	if( _test )
-		free( _test );
+//	if( _test )
+//		free( _test );
 	
 	return _ret;
 }

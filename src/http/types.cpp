@@ -4,7 +4,7 @@
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "types.hpp"
 #include <sstream>
@@ -75,6 +75,8 @@ std::string request::to_string() const {
 	std::stringstream ss;
 	ss << method << " " << uri << " "
 	   << "HTTP/" << http_version_major << "." << http_version_minor << "\r\n";
+	if (!host.empty())
+		ss << "Host: " << host << "\r\n";
 	for (auto &&h : headers)
 		ss << h.name << ": " << h.value << "\r\n";
 	if (!basic_authorization.empty())

@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Streams.hpp"
 #include <algorithm>
@@ -13,7 +13,7 @@ void IInputStream::read(void *data, size_t count) {
 	while (count != 0) {
 		size_t rc = read_some(data, count);
 		if (rc == 0)
-			throw std::runtime_error("IInputStream reading from empty stream");
+			throw StreamError("IInputStream reading from empty stream");
 		data = (char *)data + rc;
 		count -= rc;
 	}
@@ -23,7 +23,7 @@ void IOutputStream::write(const void *data, size_t size) {
 	while (size != 0) {
 		size_t wc = write_some(data, size);
 		if (wc == 0)
-			throw std::runtime_error("IOutputStream error writing to full stream");
+			throw StreamError("IOutputStream error writing to full stream");
 		data = (const char *)data + wc;
 		size -= wc;
 	}

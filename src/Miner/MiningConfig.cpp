@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "MiningConfig.hpp"
 #include "common/CommandLine.hpp"
@@ -18,11 +18,11 @@ MiningConfig::MiningConfig(common::CommandLine &cmd)
 	if (const char *pa = cmd.get("--address"))
 		mining_address = pa;
 	if (const char *pa = cmd.get("--bytecoind-address")) {
-		if (!common::parse_ip_address_and_port(bytecoind_ip, bytecoind_port, pa))
+		if (!common::parse_ip_address_and_port(pa, bytecoind_ip, bytecoind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
 	if (const char *pa = cmd.get("--daemon-address", "Use --bytecoind-address instead")) {
-		if (!common::parse_ip_address_and_port(bytecoind_ip, bytecoind_port, pa))
+		if (!common::parse_ip_address_and_port(pa, bytecoind_ip, bytecoind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
 	if (const char *pa = cmd.get("--daemon-host", "Use --bytecoind-address instead"))

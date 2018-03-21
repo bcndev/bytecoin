@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "DBlmdb.hpp"
 #include <boost/lexical_cast.hpp>
@@ -194,7 +194,7 @@ bool DBlmdb::get(const std::string &key, std::string &value) const {
 	return true;
 }
 
-bool DBlmdb::get(const std::string &key, lmdb::Val &value) const { return db_dbi->get(*db_txn, lmdb::Val(key), value); }
+bool DBlmdb::get(const std::string &key, Value &value) const { return db_dbi->get(*db_txn, lmdb::Val(key), value); }
 
 void DBlmdb::del(const std::string &key, bool mustexist) {
 	const int rc = ::mdb_del(db_txn->handle, db_dbi->handle, lmdb::Val(key), nullptr);

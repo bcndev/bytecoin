@@ -1,9 +1,18 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
 #include <string>
+
+// For documentation
+#if defined(__MACH__)
+#define platform_DEFAULT_DATA_FOLDER_PATH_PREFIX "~/Library/Application Support/"
+#elif defined(_WIN32)
+#define platform_DEFAULT_DATA_FOLDER_PATH_PREFIX "%appdata%/"
+#else  // defined(__linux__) and unknown platforms
+#define platform_DEFAULT_DATA_FOLDER_PATH_PREFIX "~/."
+#endif
 
 namespace platform {
 std::string getDefaultDataDirectory(
@@ -25,7 +34,9 @@ std::string get_app_data_folder(const std::string &app_name);
 
 //  std::string getDefaultCacheFile(const std::string& dataDir);
 std::string get_os_version_string();
-bool create_directories_if_necessary(const std::string &path);
+bool directory_exists(const std::string &path);
+bool create_directory_if_necessary(const std::string &path);    // Only last element
+bool create_directories_if_necessary(const std::string &path);  // Recursively all elements
 bool atomic_replace_file(const std::string &replacement_name, const std::string &old_file_name);
 //  bool directoryExists(const std::string& path);
 }

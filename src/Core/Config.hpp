@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -64,9 +64,10 @@ public:
 
 	PublicKey trusted_public_key{};
 
-	std::string coin_directory;
+	std::string data_folder;
 
-	std::string get_coin_directory(const std::string &subdir = std::string(), bool create = true) const;
+	std::string get_data_folder() const { return data_folder; }  // suppress creation of dir itself
+	std::string get_data_folder(const std::string &subdir) const;
 };
 
 }  // namespace bytecoin

@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include <iostream>
 #include "Core/Config.hpp"
@@ -203,4 +203,50 @@ bool Node::on_submitblock_legacy(http::Client *who, http::RequestData &&rd, json
 		throw json_rpc::Error{CORE_RPC_ERROR_CODE_WRONG_BLOCKBLOB, "Wrong block blob 1"};
 	}
 	return on_submitblock(who, std::move(rd), std::move(jr), std::move(other_req), res);
+}
+
+bool Node::on_get_last_block_header(http::Client *, http::RequestData &&, json_rpc::Request &&,
+    api::bytecoind::GetLastBlockHeaderLegacy::Request &&,
+    api::bytecoind::GetLastBlockHeaderLegacy::Response &response) {
+	static_cast<api::BlockHeader &>(response.block_header) = m_block_chain.get_tip();
+	response.block_header.orphan_status                    = false;
+	response.block_header.depth =
+	    api::HeightOrDepth(m_block_chain.get_tip_height()) - api::HeightOrDepth(response.block_header.height);
+	response.status = CORE_RPC_STATUS_OK;
+	return true;
+}
+
+bool Node::on_get_block_header_by_hash(http::Client *, http::RequestData &&, json_rpc::Request &&,
+    api::bytecoind::GetBlockHeaderByHashLegacy::Request &&request,
+    api::bytecoind::GetBlockHeaderByHashLegacy::Response &response) {
+	if (!m_block_chain.read_header(request.hash, response.block_header))
+		throw json_rpc::Error{CORE_RPC_ERROR_CODE_INTERNAL_ERROR,
+		    "Internal error: can't get block by hash. Hash = " + common::pod_to_hex(request.hash) + '.'};
+	Hash hash_at_height;
+	response.block_header.orphan_status =
+	    m_block_chain.read_chain(response.block_header.height, hash_at_height) && hash_at_height == request.hash;
+	response.block_header.depth =
+	    api::HeightOrDepth(m_block_chain.get_tip_height()) - api::HeightOrDepth(response.block_header.height);
+	response.status = CORE_RPC_STATUS_OK;
+	return true;
+}
+
+bool Node::on_get_block_header_by_height(http::Client *, http::RequestData &&, json_rpc::Request &&,
+    api::bytecoind::GetBlockHeaderByHeightLegacy::Request &&request,
+    api::bytecoind::GetBlockHeaderByHeightLegacy::Response &response) {
+	Hash block_hash;
+	if (!m_block_chain.read_chain(request.height - 1, block_hash)) {  // This call counts blocks from 1
+		throw json_rpc::Error{CORE_RPC_ERROR_CODE_TOO_BIG_HEIGHT,
+		    std::string("To big height: ") + common::to_string(request.height) +
+		        ", current blockchain height = " + common::to_string(m_block_chain.get_tip_height())};
+	}
+	if (!m_block_chain.read_header(block_hash, response.block_header))
+		throw json_rpc::Error{CORE_RPC_ERROR_CODE_TOO_BIG_HEIGHT,
+		    std::string("To big height: ") + common::to_string(request.height) +
+		        ", current blockchain height = " + common::to_string(m_block_chain.get_tip_height())};
+	response.block_header.orphan_status = false;
+	response.block_header.depth =
+	    api::HeightOrDepth(m_block_chain.get_tip_height()) - api::HeightOrDepth(response.block_header.height);
+	response.status = CORE_RPC_STATUS_OK;
+	return true;
 }

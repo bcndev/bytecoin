@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "WalletSync.hpp"
 #include "Config.hpp"
@@ -20,6 +20,7 @@ WalletSync::WalletSync(
     : m_state_changed_handler(state_changed_handler)
     , m_log(log, "WalletSync")
     , m_config(config)
+    , m_sync_error("CONNECTING")
     , m_status_timer(std::bind(&WalletSync::send_get_status, this))
     , m_sync_agent(config.bytecoind_remote_ip,
           config.bytecoind_remote_port ? config.bytecoind_remote_port : config.bytecoind_bind_port)
@@ -27,7 +28,6 @@ WalletSync::WalletSync(
           config.bytecoind_remote_port ? config.bytecoind_remote_port : config.bytecoind_bind_port)
     , m_wallet_state(wallet_state)
     , m_commit_timer(std::bind(&WalletSync::db_commit, this)) {
-	m_sync_error = "CONNECTING";
 	advance_sync();
 	m_commit_timer.once(DB_COMMIT_PERIOD_WALLET_CACHE);
 }
@@ -38,6 +38,7 @@ void WalletSync::send_get_status() {
 	req.transaction_pool_version = m_wallet_state.get_tx_pool_version();
 	req.outgoing_peer_count      = m_last_node_status.outgoing_peer_count;
 	req.incoming_peer_count      = m_last_node_status.incoming_peer_count;
+	req.lower_level_error        = m_last_node_status.lower_level_error;
 	json_rpc::Request json_send_raw_req;
 	json_send_raw_req.set_method(api::bytecoind::GetStatus::method());
 	json_send_raw_req.set_params(req);
@@ -49,6 +50,10 @@ void WalletSync::send_get_status() {
 	m_sync_request.reset(new http::Request(m_sync_agent, std::move(req_header),
 	    [&](http::ResponseData &&response) {
 		    m_sync_request.reset();
+		    if (response.r.status == 504) {  // Common for longpoll
+			    advance_sync();
+			    return;
+		    }
 		    api::bytecoind::GetStatus::Response resp;
 		    json_rpc::parse_response(response.body, resp);
 		    m_last_node_status = resp;

@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "PreventSleep.hpp"
 #include <iostream>
@@ -7,12 +7,65 @@
 #include "TargetConditionals.h"
 #endif
 
-using namespace platform;
+#if defined(__ANDROID__)
+#include <QAndroidJniObject>
 
-#if TARGET_OS_IPHONE
+static QAndroidJniObject m_wakeLock;
+static std::atomic<int> counter{0};
+
+/*static void setActivityFlags(const char * method){
+    QAndroidJniObject activity = QAndroidJniObject::callStaticObjectMethod("org/qtproject/qt5/android/QtNative",
+"activity", "()Landroid/app/Activity;");
+    if (activity.isValid()) {
+        QAndroidJniObject window = activity.callObjectMethod("getWindow", "()Landroid/view/Window;");
+        if (window.isValid()) {
+            const int FLAG_KEEP_SCREEN_ON = 128;
+            window.callMethod<void>(method, "(I)V", FLAG_KEEP_SCREEN_ON);
+        }
+    }
+}*/
+
+platform::PreventSleep::PreventSleep(const char *reason) {
+	if (++counter == 1) {
+		QAndroidJniObject activity = QAndroidJniObject::callStaticObjectMethod(
+		    "org/qtproject/qt5/android/QtNative", "activity", "()Landroid/app/Activity;");
+		if (activity.isValid()) {
+			QAndroidJniObject serviceName =
+			    QAndroidJniObject::getStaticObjectField<jstring>("android/content/Context", "POWER_SERVICE");
+			if (serviceName.isValid()) {
+				QAndroidJniObject powerMgr = activity.callObjectMethod(
+				    "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", serviceName.object<jobject>());
+				if (powerMgr.isValid()) {
+					jint levelAndFlags =
+					    QAndroidJniObject::getStaticField<jint>("android/os/PowerManager", "SCREEN_DIM_WAKE_LOCK");
+
+					QAndroidJniObject tag = QAndroidJniObject::fromString("My Tag");
+
+					m_wakeLock = powerMgr.callObjectMethod("newWakeLock",
+					    "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;", levelAndFlags,
+					    tag.object<jstring>());
+				}
+			}
+		}
+		if (m_wakeLock.isValid()) {
+			m_wakeLock.callMethod<void>("acquire", "()V");
+			//            qDebug() << "Locked device, can't go to standby anymore";
+		}
+	}
+}
+platform::PreventSleep::~PreventSleep() {
+	if (--counter == 0) {
+		if (m_wakeLock.isValid()) {
+			m_wakeLock.callMethod<void>("release", "()V");
+			//            qDebug() << "Unlocked device, can now go to standby";
+		}
+	}
+}
+
+#elif TARGET_OS_IPHONE
 // No power modes on iOS, app will run when in foreground
-PreventSleep::PreventSleep(const char *reason) {}
-PreventSleep::~PreventSleep() {}
+platform::PreventSleep::PreventSleep(const char *reason) {}
+platform::PreventSleep::~PreventSleep() {}
 #elif TARGET_OS_MAC
 #include <IOKit/IOKitLib.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
@@ -21,7 +74,7 @@ PreventSleep::~PreventSleep() {}
 static std::atomic<int> counter{0};
 static IOPMAssertionID assertionID = 0;
 
-PreventSleep::PreventSleep(const char *reason) {
+platform::PreventSleep::PreventSleep(const char *reason) {
 	if (++counter == 1) {
 		CFStringRef reasonForActivity = CFStringCreateWithCString(kCFAllocatorDefault, reason, kCFStringEncodingUTF8);
 		IOReturn success              = IOPMAssertionCreateWithName(
@@ -30,7 +83,7 @@ PreventSleep::PreventSleep(const char *reason) {
 		std::cout << "Preventing sleep " << reason << " success=" << success << std::endl;
 	}
 }
-PreventSleep::~PreventSleep() {
+platform::PreventSleep::~PreventSleep() {
 	if (--counter == 0) {
 		IOReturn success = IOPMAssertionRelease(assertionID);
 		std::cout << "Allowing sleep success=" << success << std::endl;
@@ -42,13 +95,13 @@ PreventSleep::~PreventSleep() {
 #include "platform/Windows.hpp"
 
 static thread_local int counter = 0;
-PreventSleep::PreventSleep(const char *reason) {
+platform::PreventSleep::PreventSleep(const char *reason) {
 	if (++counter == 1) {
 		SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);  // ES_AWAYMODE_REQUIRED - only for media centers
 		std::cout << "Preventing sleep " << reason << std::endl;
 	}
 }
-PreventSleep::~PreventSleep() {
+platform::PreventSleep::~PreventSleep() {
 	if (--counter == 0) {
 		SetThreadExecutionState(ES_CONTINUOUS);
 		std::cout << "Allowing sleep" << std::endl;
@@ -57,7 +110,7 @@ PreventSleep::~PreventSleep() {
 
 #elif defined(__linux__)
 // Sorry, no power modes in '70s
-PreventSleep::PreventSleep(const char *reason) {}
-PreventSleep::~PreventSleep() {}
+platform::PreventSleep::PreventSleep(const char *reason) {}
+platform::PreventSleep::~PreventSleep() {}
 
 #endif

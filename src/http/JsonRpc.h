@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -176,7 +176,7 @@ bool invoke_method(Agent *agent, RawRequest &&raw_request, Request &&jsReq, Resp
 }
 
 template<typename Owner, typename Agent, typename RawRequest, typename Params, typename Result>
-std::function<bool(Owner *, Agent *, RawRequest &&raw_request, Request &&, Response &)> makeMemberMethodSeria(
+std::function<bool(Owner *, Agent *, RawRequest &&raw_request, Request &&, Response &)> makeMemberMethod(
     bool (Owner::*handler)(Agent *, RawRequest &&, json_rpc::Request &&, Params &&, Result &)) {
 	return [handler](Owner *obj, Agent *agent, RawRequest &&raw_request, Request &&req, Response &res) -> bool {
 		return json_rpc::invoke_method<Agent, RawRequest, Params, Result>(agent, std::move(raw_request), std::move(req),
@@ -205,6 +205,17 @@ http::ResponseData create_response(
 	json_rpc::Response last_json_resp;
 	last_json_resp.set_id(id);
 	last_json_resp.set_result(response);
+	http::ResponseData last_http_response(request.r);
+	last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
+	last_http_response.set_body(last_json_resp.get_body());
+	last_http_response.r.status = 200;
+	return last_http_response;
+}
+inline http::ResponseData create_error_response(
+    const http::RequestData &request, const Error &response, const OptionalJsonValue &id = OptionalJsonValue{}) {
+	json_rpc::Response last_json_resp;
+	last_json_resp.set_id(id);
+	last_json_resp.set_error(response);
 	http::ResponseData last_http_response(request.r);
 	last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 	last_http_response.set_body(last_json_resp.get_body());

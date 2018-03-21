@@ -1,16 +1,17 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "DBsqlite3.hpp"
 #include <boost/lexical_cast.hpp>
 #include <iostream>
 #include "PathTools.hpp"
+#include "common/string.hpp"
 
 using namespace platform;
 
 static void sqlite_check(int rc, const char *msg) {
 	if (rc != SQLITE_OK)
-		throw platform::sqlite::Error(msg + std::to_string(rc));
+		throw platform::sqlite::Error(msg + common::to_string(rc));
 }
 
 sqlite::Dbi::~Dbi() {
@@ -46,12 +47,11 @@ DBsqlite::DBsqlite(const std::string &full_path, uint64_t max_db_size) : full_pa
 	    "sqlite3_prepare_v2 stmt_del ");
 	sqlite_check(sqlite3_exec(db_dbi.handle, "BEGIN TRANSACTION", 0, 0, &err_msg), err_msg);
 	commit_db_txn();  // We apply journal from last crash/exit immediately
-	//	sqlite3_free(err_msg);
 }
 
 size_t DBsqlite::test_get_approximate_size() const { return 0; }
 
-size_t DBsqlite::get_approximate_items_count() const { return 0; }
+size_t DBsqlite::get_approximate_items_count() const { return 0; }  // TODO
 
 static const size_t max_key_size = 128;
 
@@ -95,7 +95,7 @@ void DBsqlite::Cursor::step_and_check() {
 		return;
 	}
 	if (rc != SQLITE_ROW)
-		throw platform::sqlite::Error("Cursor step failed sqlite3_step in step_and_check " + std::to_string(rc));
+		throw platform::sqlite::Error("Cursor step failed sqlite3_step in step_and_check " + common::to_string(rc));
 	size = sqlite3_column_bytes(stmt_get.handle, 0);
 	data = reinterpret_cast<const char *>(sqlite3_column_blob(stmt_get.handle, 0));
 	std::string itkey(data, size);
@@ -146,7 +146,7 @@ static void put(sqlite::Stmt &stmt, const std::string &key, const void *data, si
 	sqlite_check(sqlite3_bind_blob(stmt.handle, 2, data, static_cast<int>(size), 0), "DB::put sqlite3_bind_blob 2 ");
 	auto rc = sqlite3_step(stmt.handle);
 	if (rc != SQLITE_DONE)
-		throw platform::sqlite::Error("DB::put failed sqlite3_step in put " + std::to_string(rc));
+		throw platform::sqlite::Error("DB::put failed sqlite3_step in put " + common::to_string(rc));
 }
 
 void DBsqlite::put(const std::string &key, const common::BinaryArray &value, bool nooverwrite) {
@@ -167,7 +167,7 @@ static std::pair<const unsigned char *, size_t> get(const sqlite::Stmt &stmt, co
 	if (rc == SQLITE_DONE)
 		return std::make_pair(nullptr, 0);
 	if (rc != SQLITE_ROW)
-		throw platform::sqlite::Error("DB::get failed sqlite3_step in get " + std::to_string(rc));
+		throw platform::sqlite::Error("DB::get failed sqlite3_step in get " + common::to_string(rc));
 	auto si = sqlite3_column_bytes(stmt.handle, 0);
 	auto da = reinterpret_cast<const unsigned char *>(sqlite3_column_blob(stmt.handle, 0));
 	si      = sqlite3_column_bytes(stmt.handle, 1);
@@ -197,7 +197,7 @@ void DBsqlite::del(const std::string &key, bool mustexist) {
 	    "DB::del sqlite3_bind_blob 1 ");
 	auto rc = sqlite3_step(stmt_del.handle);
 	if (rc != SQLITE_DONE)
-		throw platform::sqlite::Error("DB::del failed sqlite3_step in del " + std::to_string(rc));
+		throw platform::sqlite::Error("DB::del failed sqlite3_step in del " + common::to_string(rc));
 	int deleted_rows = sqlite3_changes(db_dbi.handle);
 	if (mustexist && deleted_rows != 1)
 		throw platform::sqlite::Error("DB::del row does not exits");
@@ -210,7 +210,10 @@ std::string DBsqlite::to_ascending_key(uint32_t key) {
 }
 
 uint32_t DBsqlite::from_ascending_key(const std::string &key) {
-	return boost::lexical_cast<uint32_t>(std::stoull(key, nullptr, 16));
+	long long unsigned val = 0;
+	if (sscanf(key.c_str(), "%llx", &val) != 1)
+		throw std::runtime_error("from_ascending_key failed to convert key=" + key);
+	return boost::lexical_cast<uint32_t>(val);  // TODO - std::stoull(key, nullptr, 16) when Google updates NDK compiler
 }
 
 std::string DBsqlite::clean_key(const std::string &key) {
@@ -240,6 +243,7 @@ void DBsqlite::run_tests() {
 		DBsqlite db("temp_db");
 		std::string str;
 		bool res = db.get("history/ha", str);
+		std::cout << "res=" << res << std::endl;
 
 		db.put("history/ha", "ua", false);
 		db.put("history/hb", "ub", false);
@@ -258,6 +262,7 @@ void DBsqlite::run_tests() {
 		} catch (...) {
 		}
 		res = db.get("history/ha", str);
+		std::cout << "res=" << res << std::endl;
 
 		db.put("unspent/ua", "ua", false);
 		db.put("unspent/ub", "ub", false);

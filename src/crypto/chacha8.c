@@ -34,7 +34,7 @@ Public domain.
   a = PLUS(a,b); d = ROTATE(XOR(d,a), 8); \
   c = PLUS(c,d); b = ROTATE(XOR(b,c), 7);
 
-static const char sigma[] = "expand 32-byte k";
+//static const char sigma[] = "expand 32-byte k";
 
 void chacha8(const void* data, size_t length, const uint8_t* key, const uint8_t* iv, char* cipher) {
   uint32_t x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15;
@@ -45,10 +45,10 @@ void chacha8(const void* data, size_t length, const uint8_t* key, const uint8_t*
 
   if (!length) return;
 
-  j0  = U8TO32_LITTLE(sigma + 0);
-  j1  = U8TO32_LITTLE(sigma + 4);
-  j2  = U8TO32_LITTLE(sigma + 8);
-  j3  = U8TO32_LITTLE(sigma + 12);
+  j0  = 1634760805; // U8TO32_LITTLE(sigma + 0); //
+  j1  = 857760878; // U8TO32_LITTLE(sigma + 4); //
+  j2  = 2036477234; // U8TO32_LITTLE(sigma + 8); //
+  j3  = 1797285236; // U8TO32_LITTLE(sigma + 12); //
   j4  = U8TO32_LITTLE(key + 0);
   j5  = U8TO32_LITTLE(key + 4);
   j6  = U8TO32_LITTLE(key + 8);

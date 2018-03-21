@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "PathTools.hpp"
 #include <algorithm>
@@ -19,6 +19,10 @@
 #include <sys/stat.h>
 #include <sys/utsname.h>
 #include <boost/algorithm/string/trim.hpp>
+#endif
+
+#ifdef __ANDROID__
+#include <QStandardPaths>
 #endif
 
 namespace platform {
@@ -266,7 +270,12 @@ std::string getDefaultDataDirectory(const std::string &cryptonote_name) {
 }
 #endif  // #if !TARGET_OS_IPHONE
 
-#if !TARGET_OS_IPHONE
+#ifdef __ANDROID__
+std::string get_app_data_folder(const std::string &app_name) {
+	QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+	return dataPath.toStdString();
+}
+#elif !TARGET_OS_IPHONE
 std::string get_app_data_folder(const std::string &app_name) {
 #ifdef _WIN32
 	// Windows
@@ -284,7 +293,24 @@ std::string get_app_data_folder(const std::string &app_name) {
 }
 #endif  // #if !TARGET_OS_IPHONE
 
-static bool create_path_element(const std::string &subpath) {
+bool directory_exists(const std::string &path) {
+#if defined(__MACH__) || defined(__linux__)
+	struct stat info;
+
+	if (stat(path.c_str(), &info) != 0)
+		return false;  // printf( "cannot access %s\n", pathname );
+	if (info.st_mode & S_IFDIR)
+		return true;
+	return false;
+#elif defined(_WIN32)
+	auto wsubpath  = FileStream::utf8_to_utf16(path);
+	DWORD dwAttrib = GetFileAttributesW(wsubpath.c_str());
+
+	return dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY);
+#endif
+}
+
+bool create_directory_if_necessary(const std::string &subpath) {
 #if defined(__MACH__) || defined(__linux__)
 	mode_t mode = 0755;
 	if (mkdir(subpath.c_str(), mode) != 0 && errno != EEXIST)
@@ -302,10 +328,11 @@ static bool create_path_element(const std::string &subpath) {
 bool create_directories_if_necessary(const std::string &path) {
 	size_t delim_pos = std::min(path.find("/"), path.find("\\"));
 	while (delim_pos != std::string::npos) {
-		create_path_element(path.substr(0, delim_pos + 1));  // We ignore intermediate results, because of some systems
+		create_directory_if_necessary(
+		    path.substr(0, delim_pos + 1));  // We ignore intermediate results, because of some systems
 		delim_pos = std::min(path.find("/", delim_pos + 1), path.find("\\", delim_pos + 1));
 	}
-	return create_path_element(path);
+	return create_directory_if_necessary(path);
 }
 
 bool atomic_replace_file(const std::string &replacement_name, const std::string &old_file_name) {

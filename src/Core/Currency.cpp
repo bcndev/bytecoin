@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Currency.hpp"
 #include <boost/algorithm/string/trim.hpp>
@@ -13,6 +13,7 @@
 #include "common/Base58.hpp"
 #include "common/StringTools.hpp"
 #include "common/Varint.hpp"
+#include "common/string.hpp"
 #include "crypto/int-util.h"
 #include "platform/PathTools.hpp"
 #include "seria/BinaryInputStream.hpp"
@@ -341,7 +342,7 @@ bool Currency::parse_account_address_string(const std::string &str, AccountPubli
 }
 
 std::string Currency::format_amount(size_t number_of_decimal_places, Amount amount) {
-	std::string s = std::to_string(amount);
+	std::string s = common::to_string(amount);
 	if (s.size() < number_of_decimal_places + 1)
 		s.insert(0, number_of_decimal_places + 1 - s.size(), '0');
 	s.insert(s.size() - number_of_decimal_places, ".");

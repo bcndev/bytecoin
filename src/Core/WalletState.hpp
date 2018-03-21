@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -137,8 +137,6 @@ public:
 	api::Block api_get_pool_as_history(const std::string &address) const;
 	std::map<std::pair<Amount, uint32_t>, api::Output> api_get_unlocked_outputs(
 	    const std::string &address, Height from_height, Height to_height = std::numeric_limits<Height>::max()) const;
-	std::vector<api::Transaction> api_list_history(const std::string &address, Hash start_transaction,
-	    size_t max_count = std::numeric_limits<size_t>::max()) const;
 	std::vector<api::Output> api_get_unspent(
 	    const std::string &address, Height height, Amount max_amount = std::numeric_limits<Amount>::max()) const;
 	std::vector<api::Output> api_get_locked_or_unconfirmed_unspent(const std::string &address, Height height) const;
@@ -167,7 +165,6 @@ protected:
 	    Timestamp block_unlock_timestamp) const;
 	bool redo_transaction(const PreparedWalletTransaction &pwtx, const std::vector<uint32_t> &global_indices,
 	    DeltaState *delta_state, bool is_base, Hash tid, Hash bid, Timestamp tx_timestamp);
-	void undo_transaction(const TransactionPrefix &tx);
 	void read_unlock_index(std::map<std::pair<Amount, uint32_t>, api::Output> &add, const std::string &index_prefix,
 	    uint32_t begin, uint32_t end) const;
 	void lock_unlock(Height prev_height, Height now_height, Timestamp prev, Timestamp now, bool lock);
@@ -175,7 +172,7 @@ protected:
 	void remove_from_unspent_index(const api::Output &);
 	bool is_unspent(const api::Output &) const;
 	void add_to_lock_index(const api::Output &);
-	void remove_from_lock_index(const api::Output &);
+	bool remove_from_lock_index(const api::Output &, bool mustexist);
 
 	virtual void redo_transaction(
 	    Height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override;
@@ -202,6 +199,7 @@ private:
 	Height m_tail_height = 0;
 	api::BlockHeader m_tip;
 	uint32_t m_tx_pool_version = 1;
+	std::chrono::steady_clock::time_point log_redo_block;
 
 	bool read_tips();
 	void push_chain(const api::BlockHeader &);

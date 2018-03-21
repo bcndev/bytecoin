@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #import <Foundation/Foundation.h>
 
@@ -35,9 +35,7 @@ std::string getDefaultDataDirectory() {
 	//NSString *documentsDirectory = [paths objectAtIndex:0];    NSArray * paths = [[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask];
 	//NSURL * documentsURL = [paths lastObject];
 	//config_folder = [[documentsURL absoluteString] UTF8String];
-	config_folder = [[paths
-	objectAtIndex:
-	0] UTF8String];
+	config_folder = [[paths	objectAtIndex:0] UTF8String];
 
 	return config_folder;
 }

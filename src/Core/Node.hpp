@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -64,6 +64,13 @@ public:
 	    api::bytecoind::SubmitBlock::Request &&, api::bytecoind::SubmitBlock::Response &);
 	bool on_submitblock_legacy(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::SubmitBlockLegacy::Request &&, api::bytecoind::SubmitBlockLegacy::Response &);
+	bool on_get_last_block_header(http::Client *, http::RequestData &&, json_rpc::Request &&,
+	    api::bytecoind::GetLastBlockHeaderLegacy::Request &&, api::bytecoind::GetLastBlockHeaderLegacy::Response &);
+	bool on_get_block_header_by_hash(http::Client *, http::RequestData &&, json_rpc::Request &&,
+	    api::bytecoind::GetBlockHeaderByHashLegacy::Request &&, api::bytecoind::GetBlockHeaderByHashLegacy::Response &);
+	bool on_get_block_header_by_height(http::Client *, http::RequestData &&, json_rpc::Request &&,
+	    api::bytecoind::GetBlockHeaderByHeightLegacy::Request &&,
+	    api::bytecoind::GetBlockHeaderByHeightLegacy::Response &);
 
 	bool process_json_rpc_request(http::Client *, http::RequestData &&, http::ResponseData &);
 
@@ -122,7 +129,7 @@ protected:
 		virtual void on_msg_timed_sync(COMMAND_TIMED_SYNC::response &&) override;
 		virtual void on_msg_notify_new_block(NOTIFY_NEW_BLOCK::request &&) override;
 		virtual void on_msg_notify_new_transactions(NOTIFY_NEW_TRANSACTIONS::request &&) override;
-#ifdef ALLOW_DEBUG_COMMANDS
+#if bytecoin_ALLOW_DEBUG_COMMANDS
 		virtual void on_msg_network_state(COMMAND_REQUEST_NETWORK_STATE::request &&) override;
 		virtual void on_msg_stat_info(COMMAND_REQUEST_STAT_INFO::request &&) override;
 #endif
@@ -193,6 +200,8 @@ protected:
 		std::deque<Hash> m_chain;     // 10k-20k of hashes of the next wanted blocks
 		NetworkAddress chain_source;  // for banning culprit in case of a problem
 		platform::Timer m_download_timer;
+		std::chrono::steady_clock::time_point log_request_timestamp;
+		std::chrono::steady_clock::time_point log_response_timestamp;
 
 		// multicore preparator
 		std::vector<std::thread> threads;
@@ -232,8 +241,8 @@ protected:
 
 	void sync_transactions(P2PClientBytecoin *);
 
-	static std::unordered_map<std::string, HTTPHandlerFunction> m_http_handlers;
-	static std::unordered_map<std::string, JSONRPCHandlerFunction> m_jsonrpc_handlers;
+	static const std::unordered_map<std::string, HTTPHandlerFunction> m_http_handlers;
+	static const std::unordered_map<std::string, JSONRPCHandlerFunction> m_jsonrpc_handlers;
 };
 
 }  // namespace bytecoin

@@ -1,5 +1,12 @@
 ## Release Notes
 
+### v3.0.0
+
+- Added HTTPS support between walletd and bytecoind.
+- Added generating and checking send proofs.
+- Added SQLite database support as an alternative to LMDB.
+- Added several legacy bytecoind RPC API methods for miners.
+
 ### v3.0.0-beta-20180219
 
 - Reworked creating transactions with 100,000+ unspent outputs to make it much faster.

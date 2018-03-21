@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "PeerDB.hpp"
 #include "Core/Config.hpp"
@@ -10,6 +10,7 @@
 #include "seria/BinaryOutputStream.hpp"
 
 #include "common/Ipv4Address.hpp"
+#include "common/string.hpp"
 #include "crypto/crypto.hpp"
 #include "seria/ISeria.hpp"
 
@@ -35,7 +36,7 @@ static const float DB_COMMIT_PERIOD       = 180;  // 3 minutes sounds good compr
 
 PeerDB::PeerDB(const Config &config)
     : config(config)
-    , db(config.get_coin_directory() + "/peer_db", 1024 * 1024 * 128)
+    , db(config.get_data_folder() + "/peer_db", 1024 * 1024 * 128)
     ,  // make sure this is enough for seed node
     commit_timer(std::bind(&PeerDB::db_commit, this)) {
 	read_db(WHITE_LIST, whitelist);
@@ -82,12 +83,12 @@ void PeerDB::read_db(const std::string &prefix, peers_indexed &list) {
 }
 
 void PeerDB::update_db(const std::string &prefix, const Entry &entry) {
-	auto key = prefix + std::to_string(entry.adr.ip) + ":" + std::to_string(entry.adr.port);
+	auto key = prefix + common::to_string(entry.adr.ip) + ":" + common::to_string(entry.adr.port);
 	db.put(key, seria::to_binary(entry), false);
 }
 
 void PeerDB::del_db(const std::string &prefix, const NetworkAddress &addr) {
-	auto key = prefix + std::to_string(addr.ip) + ":" + std::to_string(addr.port);
+	auto key = prefix + common::to_string(addr.ip) + ":" + common::to_string(addr.port);
 	db.del(key, false);
 }
 

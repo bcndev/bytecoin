@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Ipv4Address.hpp"
 #include <boost/lexical_cast.hpp>
@@ -34,7 +34,7 @@ std::string ip_address_and_port_to_string(uint32_t ip, uint32_t port) {
 	return std::string(buf);
 }
 
-bool parse_ip_address(uint32_t &ip, const std::string &addr) {
+bool parse_ip_address(const std::string &addr, uint32_t &ip) {
 	uint32_t v[4]{};
 
 	if (sscanf(addr.c_str(), "%u.%u.%u.%u", &v[0], &v[1], &v[2], &v[3]) != 4) {
@@ -51,7 +51,7 @@ bool parse_ip_address(uint32_t &ip, const std::string &addr) {
 	return true;
 }
 
-bool parse_ip_address_and_port(uint32_t &ip, uint32_t &port, const std::string &addr) {
+bool parse_ip_address_and_port(const std::string &addr, uint32_t &ip, uint32_t &port) {
 	uint32_t v[4]{};
 	uint32_t localPort = 0;
 
@@ -72,9 +72,9 @@ bool parse_ip_address_and_port(uint32_t &ip, uint32_t &port, const std::string &
 	return true;
 }
 
-bool parse_ip_address_and_port(std::string &ip, uint16_t &port, const std::string &addr) {
+bool parse_ip_address_and_port(const std::string &addr, std::string &ip, uint16_t &port) {
 	uint32_t sip = 0, sport = 0;
-	if (!parse_ip_address_and_port(sip, sport, addr))
+	if (!parse_ip_address_and_port(addr, sip, sport))
 		return false;
 	port = static_cast<uint16_t>(sport);
 	ip   = ip_address_to_string(sip);

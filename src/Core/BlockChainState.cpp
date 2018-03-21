@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "BlockChainState.hpp"
 #include <condition_variable>
@@ -124,11 +124,12 @@ api::BlockHeader BlockChainState::fill_genesis(Hash genesis_bid, const BlockTemp
 }
 
 BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, const Currency &currency)
-    : BlockChain(currency.genesis_block_hash, config.get_coin_directory())
+    : BlockChain(currency.genesis_block_hash, config.get_data_folder())
     , m_config(config)
     , m_currency(currency)
     , m_log(log, "BlockChainState")
-    , m_memory_state_total_complexity(0) {
+    , m_memory_state_total_complexity(0)
+    , log_redo_block_timestamp(std::chrono::steady_clock::now()) {
 	if (get_tip_height() == (Height)-1) {
 		Block genesis_block;
 		genesis_block.header = currency.genesis_block_template;
@@ -969,10 +970,13 @@ bool BlockChainState::redo_block(const Hash &bhash, const Block &block, const ap
 		remove_from_pool(th);
 		update_first_seen_timestamp(th, 0);
 	}
-	if (info.height % 100 == 0)
+	auto now = std::chrono::steady_clock::now();
+	if (std::chrono::duration_cast<std::chrono::milliseconds>(now - log_redo_block_timestamp).count() > 1000) {
+		log_redo_block_timestamp = now;
 		std::cout << "redo_block {" << block.transactions.size() << "} height=" << info.height
 		          << " bid=" << common::pod_to_hex(bhash) << " old tip_bid=" << common::pod_to_hex(get_tip_bid())
 		          << std::endl;
+	}
 	return true;
 }
 

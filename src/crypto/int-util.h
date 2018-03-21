@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -36,11 +36,11 @@ inline uint64_t rol64(uint64_t x, int r) {
 #if defined(__cplusplus)
 extern "C" {
 #endif
-inline uint32_t rol32(uint32_t x, int r) {
+static inline uint32_t rol32(uint32_t x, int r) {
   return (x << (r & 31)) | (x >> (-r & 31));
 }
 
-inline uint64_t rol64(uint64_t x, int r) {
+static inline uint64_t rol64(uint64_t x, int r) {
   return (x << (r & 63)) | (x >> (-r & 63));
 }
 #if defined(__cplusplus)
@@ -53,15 +53,15 @@ inline uint64_t rol64(uint64_t x, int r) {
 extern "C" {
 #endif
 
-inline uint64_t hi_dword(uint64_t val) {
+static inline uint64_t hi_dword(uint64_t val) {
   return val >> 32;
 }
 
-inline uint64_t lo_dword(uint64_t val) {
+static inline uint64_t lo_dword(uint64_t val) {
   return val & 0xFFFFFFFF;
 }
 
-inline uint64_t mul128(uint64_t multiplier, uint64_t multiplicand, uint64_t * product_hi) {
+static inline uint64_t mul128(uint64_t multiplier, uint64_t multiplicand, uint64_t * product_hi) {
 #if defined(__GNUC__) && defined(__x86_64__)
 	uint64_t hi, lo;
       __asm__("mulq %3\n\t"
@@ -104,14 +104,14 @@ inline uint64_t mul128(uint64_t multiplier, uint64_t multiplicand, uint64_t * pr
 #endif
 }
 
-inline uint64_t div_with_reminder(uint64_t dividend, uint32_t divisor, uint32_t* remainder) {
+static inline uint64_t div_with_reminder(uint64_t dividend, uint32_t divisor, uint32_t* remainder) {
   dividend |= ((uint64_t)*remainder) << 32;
   *remainder = dividend % divisor;
   return dividend / divisor;
 }
 
 // Long division with 2^32 base
-inline uint32_t div128_32(uint64_t dividend_hi, uint64_t dividend_lo, uint32_t divisor, uint64_t* quotient_hi, uint64_t* quotient_lo) {
+static inline uint32_t div128_32(uint64_t dividend_hi, uint64_t dividend_lo, uint32_t divisor, uint64_t* quotient_hi, uint64_t* quotient_lo) {
   uint64_t dividend_dwords[4];
   uint32_t remainder = 0;
 
@@ -144,14 +144,14 @@ inline uint32_t div128_32(uint64_t dividend_hi, uint64_t dividend_lo, uint32_t d
   (((uint64_t) (x) & 0x00ff000000000000) >> 40) | \
   (((uint64_t) (x) & 0xff00000000000000) >> 56))
 
-inline uint32_t ident32(uint32_t x) { return x; }
-inline uint64_t ident64(uint64_t x) { return x; }
+static inline uint32_t ident32(uint32_t x) { return x; }
+static inline uint64_t ident64(uint64_t x) { return x; }
 
-inline uint32_t swap32(uint32_t x) {
+static inline uint32_t swap32(uint32_t x) {
   x = ((x & 0x00ff00ff) << 8) | ((x & 0xff00ff00) >> 8);
   return (x << 16) | (x >> 16);
 }
-inline uint64_t swap64(uint64_t x) {
+static inline uint64_t swap64(uint64_t x) {
   x = ((x & 0x00ff00ff00ff00ff) <<  8) | ((x & 0xff00ff00ff00ff00) >>  8);
   x = ((x & 0x0000ffff0000ffff) << 16) | ((x & 0xffff0000ffff0000) >> 16);
   return (x << 32) | (x >> 32);
@@ -199,7 +199,10 @@ inline uint64_t swap64(uint64_t x) {
 //}
 
 #if !defined(BYTE_ORDER) || !defined(LITTLE_ENDIAN) || !defined(BIG_ENDIAN)
-static_assert(false, "BYTE_ORDER is undefined. Perhaps, GNU extensions are not enabled");
+//static_assert(false, "BYTE_ORDER is undefined. Perhaps, GNU extensions are not enabled");
+#define LITTLE_ENDIAN 1234
+#define BIG_ENDIAN 4321
+#define BYTE_ORDER LITTLE_ENDIAN
 #endif
 
 #if BYTE_ORDER == LITTLE_ENDIAN

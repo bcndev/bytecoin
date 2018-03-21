@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "BlockChain.hpp"
 
@@ -148,7 +148,7 @@ BlockChain::BlockChain(const Hash &genesis_bid, const std::string &coin_folder)
 	DB::Cursor cur2 = m_db.rbegin(TIP_CHAIN_PREFIX + previous_versions[0] + "/");
 	m_internal_import_known_height =
 	    cur2.end() ? 0 : boost::lexical_cast<Height>(common::read_varint_sqlite4(cur2.get_suffix()));
-	test_print_structure();
+	//	test_print_structure();
 }
 
 void BlockChain::db_commit() {
@@ -205,9 +205,7 @@ BroadcastAction BlockChain::add_block(const PreparedBlock &pb, api::BlockHeader 
 		std::cout << "Exception while reorganizing blockchain, probably out of "
 		             "disk space ex.what="
 		          << ex.what() << std::endl;
-		std::exit(api::BYTECOIND_DATABASE_ERROR);  // TODO - rollback last
-		                                           // transaction, reset state to
-		                                           // last transaction state
+		std::exit(api::BYTECOIND_DATABASE_ERROR);
 	}
 	if (get_tip_height() % 50000 == 0)
 		db_commit();
@@ -509,8 +507,7 @@ bool BlockChain::read_block(const Hash &bid, RawBlock &raw_block) const {
 }
 
 bool BlockChain::has_block(const Hash &bid) const {
-	//	lmdb::Val ms; - TODO return fast check
-	std::string ms;
+	platform::DB::Value ms;
 	auto key = BLOCK_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + BLOCK_SUFFIX;
 	if (!m_db.get(key, ms))
 		return false;

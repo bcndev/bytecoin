@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "BlockChainFileFormat.hpp"
 #include "BlockChainState.hpp"
@@ -9,6 +9,14 @@
 
 using namespace common;
 using namespace bytecoin;
+
+// Example
+//	LegacyBlockChainReader reader(import_path + "/blockindexes.bin", import_path + "/blocks.bin");
+//	std::cout << "Importing blocks count=" << reader.get_block_count() << std::endl;
+//	for(Height h = 0; h != reader.get_block_count(); ++h){
+//		PreparedBlock pb = reader.get_prepared_block_by_index(h);
+//		std::cout << "Block tx count=" << pb.block.transactions.size() << std::endl;
+//	}
 
 LegacyBlockChainReader::LegacyBlockChainReader(const std::string &index_file_name, const std::string &item_file_name) {
 	try {

@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -20,11 +20,11 @@ public:
 
 protected:
 	const std::function<void()> m_state_changed_handler;
-	std::string m_sync_error;
 	logging::LoggerRef m_log;
 	const Config &m_config;
 
 	api::bytecoind::GetStatus::Response m_last_node_status;
+	std::string m_sync_error;
 	platform::Timer m_status_timer;
 	http::Agent m_sync_agent;
 	std::unique_ptr<http::Request> m_sync_request;

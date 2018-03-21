@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Node.hpp"
 #include <boost/algorithm/string.hpp>
@@ -27,7 +27,7 @@ Node::Node(logging::ILogger &log, const Config &config, BlockChainState &block_c
     , m_commit_timer(std::bind(&Node::db_commit, this))
     , m_downloader(this, block_chain) {
 	const std::string old_path = platform::getDefaultDataDirectory(config.crypto_note_name);
-	const std::string new_path = config.get_coin_directory();
+	const std::string new_path = config.get_data_folder();
 
 	if (!config.is_testnet) {
 		m_block_chain_reader1 =
@@ -249,7 +249,7 @@ void Node::P2PClientBytecoin::on_msg_notify_new_transactions(NOTIFY_NEW_TRANSACT
 	m_node->advance_long_poll();
 }
 
-#ifdef ALLOW_DEBUG_COMMANDS
+#if bytecoin_ALLOW_DEBUG_COMMANDS
 void Node::P2PClientBytecoin::on_msg_network_state(COMMAND_REQUEST_NETWORK_STATE::request &&req) {
 	if (!m_node->check_trust(req.tr)) {
 		disconnect(std::string());
@@ -374,6 +374,7 @@ static const std::string beautiful_index_start =
 </svg></td><td>bytecoind &bull; version
 )";
 static const std::string beautiful_index_finish = " </td></tr></table></body></html>";
+static const std::string robots_txt             = "User-agent: *\r\nDisallow: /";
 
 bool Node::on_api_http_request(http::Client *who, http::RequestData &&request, http::ResponseData &response) {
 	response.r.add_headers_nocache();
@@ -384,6 +385,12 @@ bool Node::on_api_http_request(http::Client *who, http::RequestData &&request, h
 		response.set_body(beautiful_index_start + app_version() + " &bull; sync status " +
 		                  std::to_string(stat.top_block_height) + "/" + std::to_string(stat.top_known_block_height) +
 		                  beautiful_index_finish);
+		return true;
+	}
+	if (request.r.uri == "/robots.txt") {
+		response.r.headers.push_back({"Content-Type", "text/plain; charset=UTF-8"});
+		response.r.status = 200;
+		response.set_body(std::string(robots_txt));
 		return true;
 	}
 	auto it = m_http_handlers.find(request.r.uri);
@@ -412,26 +419,26 @@ void Node::on_api_http_disconnect(http::Client *who) {
 }
 
 namespace {
-template<typename CommandRequest, typename CommandResponse>
+/*template<typename CommandRequest, typename CommandResponse>
 Node::HTTPHandlerFunction binMethod(bool (Node::*handler)(http::Client *who, http::RequestData &&raw_request,
     json_rpc::Request &&raw_js_request, CommandRequest &&, CommandResponse &)) {
-	return [handler](Node *obj, http::Client *who, http::RequestData &&request, http::ResponseData &response) {
+    return [handler](Node *obj, http::Client *who, http::RequestData &&request, http::ResponseData &response) {
 
-		CommandRequest req{};
-		CommandResponse res{};
+        CommandRequest req{};
+        CommandResponse res{};
 
-		if (!loadFromBinaryKeyValue(req, request.body)) {
-			return false;
-		}
+        if (!loadFromBinaryKeyValue(req, request.body)) {
+            return false;
+        }
 
-		bool result = (obj->*handler)(who, std::move(request), json_rpc::Request(), std::move(req), res);
-		if (result) {
-			response.set_body(storeToBinaryKeyValueStr(res));
-			response.r.status = 200;
-		}
-		return result;
-	};
-}
+        bool result = (obj->*handler)(who, std::move(request), json_rpc::Request(), std::move(req), res);
+        if (result) {
+            response.set_body(storeToBinaryKeyValueStr(res));
+            response.r.status = 200;
+        }
+        return result;
+    };
+}*/
 
 template<typename CommandRequest, typename CommandResponse>
 Node::HTTPHandlerFunction binMethod2(bool (Node::*handler)(http::Client *who, http::RequestData &&raw_request,
@@ -472,27 +479,36 @@ Node::HTTPHandlerFunction jsonMethod(bool (Node::*handler)(http::Client *who, ht
 }
 }  // anonymous namespace
 
-std::unordered_map<std::string, Node::HTTPHandlerFunction> Node::m_http_handlers = {
+const std::unordered_map<std::string, Node::HTTPHandlerFunction> Node::m_http_handlers = {
 
     {api::bytecoind::SyncBlocks::binMethod(), binMethod2(&Node::on_wallet_sync3)},
     {api::bytecoind::SyncMemPool::binMethod(), binMethod2(&Node::on_sync_mempool3)},
     {"/json_rpc", std::bind(&Node::process_json_rpc_request, std::placeholders::_1, std::placeholders::_2,
                       std::placeholders::_3, std::placeholders::_4)}};
 
-std::unordered_map<std::string, Node::JSONRPCHandlerFunction> Node::m_jsonrpc_handlers = {
-    {api::bytecoind::GetBlockTemplate::method(), json_rpc::makeMemberMethodSeria(&Node::on_getblocktemplate)},
-    {api::bytecoind::GetBlockTemplate::method_legacy(), json_rpc::makeMemberMethodSeria(&Node::on_getblocktemplate)},
-    {api::bytecoind::GetCurrencyId::method(), json_rpc::makeMemberMethodSeria(&Node::on_get_currency_id)},
-    {api::bytecoind::GetCurrencyId::method_legacy(), json_rpc::makeMemberMethodSeria(&Node::on_get_currency_id)},
-    {api::bytecoind::SubmitBlock::method(), json_rpc::makeMemberMethodSeria(&Node::on_submitblock)},
-    {api::bytecoind::SubmitBlockLegacy::method(), json_rpc::makeMemberMethodSeria(&Node::on_submitblock_legacy)},
-    {api::bytecoind::GetRandomOutputs::method(), json_rpc::makeMemberMethodSeria(&Node::on_get_random_outputs3)},
-    {api::bytecoind::GetStatus::method(), json_rpc::makeMemberMethodSeria(&Node::on_get_status3)},
-    {api::bytecoind::GetStatus::method2(), json_rpc::makeMemberMethodSeria(&Node::on_get_status3)},
-    {api::bytecoind::SendTransaction::method(), json_rpc::makeMemberMethodSeria(&Node::handle_send_transaction3)},
-    {api::bytecoind::CheckSendProof::method(), json_rpc::makeMemberMethodSeria(&Node::handle_check_send_proof3)},
-    {api::bytecoind::SyncBlocks::method(), json_rpc::makeMemberMethodSeria(&Node::on_wallet_sync3)},
-    {api::bytecoind::SyncMemPool::method(), json_rpc::makeMemberMethodSeria(&Node::on_sync_mempool3)}};
+//{"getlastblockheader", JsonRpc::makeMemberMethod(&Node::on_get_last_block_header)},
+//{"getblockheaderbyhash", JsonRpc::makeMemberMethod(&Node::on_get_block_header_by_hash)},
+//{"getblockheaderbyheight", JsonRpc::makeMemberMethod(&Node::on_get_block_header_by_height)},
+
+const std::unordered_map<std::string, Node::JSONRPCHandlerFunction> Node::m_jsonrpc_handlers = {
+    {api::bytecoind::GetLastBlockHeaderLegacy::method(), json_rpc::makeMemberMethod(&Node::on_get_last_block_header)},
+    {api::bytecoind::GetBlockHeaderByHashLegacy::method(),
+        json_rpc::makeMemberMethod(&Node::on_get_block_header_by_hash)},
+    {api::bytecoind::GetBlockHeaderByHeightLegacy::method(),
+        json_rpc::makeMemberMethod(&Node::on_get_block_header_by_height)},
+    {api::bytecoind::GetBlockTemplate::method(), json_rpc::makeMemberMethod(&Node::on_getblocktemplate)},
+    {api::bytecoind::GetBlockTemplate::method_legacy(), json_rpc::makeMemberMethod(&Node::on_getblocktemplate)},
+    {api::bytecoind::GetCurrencyId::method(), json_rpc::makeMemberMethod(&Node::on_get_currency_id)},
+    {api::bytecoind::GetCurrencyId::method_legacy(), json_rpc::makeMemberMethod(&Node::on_get_currency_id)},
+    {api::bytecoind::SubmitBlock::method(), json_rpc::makeMemberMethod(&Node::on_submitblock)},
+    {api::bytecoind::SubmitBlockLegacy::method(), json_rpc::makeMemberMethod(&Node::on_submitblock_legacy)},
+    {api::bytecoind::GetRandomOutputs::method(), json_rpc::makeMemberMethod(&Node::on_get_random_outputs3)},
+    {api::bytecoind::GetStatus::method(), json_rpc::makeMemberMethod(&Node::on_get_status3)},
+    {api::bytecoind::GetStatus::method2(), json_rpc::makeMemberMethod(&Node::on_get_status3)},
+    {api::bytecoind::SendTransaction::method(), json_rpc::makeMemberMethod(&Node::handle_send_transaction3)},
+    {api::bytecoind::CheckSendProof::method(), json_rpc::makeMemberMethod(&Node::handle_check_send_proof3)},
+    {api::bytecoind::SyncBlocks::method(), json_rpc::makeMemberMethod(&Node::on_wallet_sync3)},
+    {api::bytecoind::SyncMemPool::method(), json_rpc::makeMemberMethod(&Node::on_sync_mempool3)}};
 
 bool Node::on_get_random_outputs3(http::Client *, http::RequestData &&, json_rpc::Request &&,
     api::bytecoind::GetRandomOutputs::Request &&request, api::bytecoind::GetRandomOutputs::Response &response) {

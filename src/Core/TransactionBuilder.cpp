@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "TransactionBuilder.hpp"
 #include <iostream>
@@ -7,6 +7,7 @@
 #include "CryptoNoteTools.hpp"
 #include "Currency.hpp"
 #include "Wallet.hpp"
+#include "common/string.hpp"
 #include "crypto/crypto.hpp"
 #include "crypto/random.h"
 #include "http/JsonRpc.h"
@@ -145,7 +146,9 @@ Transaction TransactionBuilder::sign(const Hash &tx_derivation_seed) {
 		KeyOutput outKey;
 		if (!derive_public_key(m_output_descs[i].addr, txKeys.secretKey, i, outKey.key))
 			throw std::runtime_error("output keys detected as corrupted during output key derivation");
-		TransactionOutput out       = {m_output_descs[i].amount, outKey};
+		TransactionOutput out;  // TODO - return {} initializer after NDK compiler upgrade
+		out.amount                  = m_output_descs[i].amount;
+		out.target                  = outKey;
 		m_transaction.outputs.at(i) = out;
 	}
 
@@ -190,7 +193,7 @@ void UnspentSelector::add_mixed_inputs(const SecretKey &view_secret_key,
 		while (mix_outputs.size() < anonymity) {
 			if (our_ra_outputs.empty())
 				throw std::runtime_error("Not enough anonymity for amount " +
-				                         std::to_string(uu.amount));  // TODO - return error code to json_rpc
+				                         common::to_string(uu.amount));  // TODO - return error code to json_rpc
 			api::Output out = std::move(our_ra_outputs.back());
 			our_ra_outputs.pop_back();
 			if (out.global_index != uu.global_index)  // Protect against collisions

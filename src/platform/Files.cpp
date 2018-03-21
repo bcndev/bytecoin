@@ -1,11 +1,12 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Files.hpp"
 #include <algorithm>
 #include <boost/lexical_cast.hpp>
 #include <ios>
 #include <stdexcept>
+#include "common/string.hpp"
 #ifdef _WIN32
 #include "platform/Windows.hpp"
 #else
@@ -25,12 +26,12 @@ FileStream::FileStream(const std::string &filename, OpenMode mode) {
 	    FILE_ATTRIBUTE_NORMAL, nullptr);
 	DWORD err = GetLastError();
 	if (handle == INVALID_HANDLE_VALUE)
-		throw std::ios_base::failure("File failed to open " + filename);
+		throw common::StreamError("File failed to open " + filename);
 #else
 	int m1 = (mode == TRUNCATE_READ_WRITE) ? (O_CREAT | O_TRUNC) : (mode == READ_WRITE_EXISTING) ? 0 : 0;
 	fd     = open(filename.c_str(), m1 | (mode == READ_EXISTING ? O_RDONLY : O_RDWR), 0600);
 	if (fd == -1)
-		throw std::ios_base::failure("File failed to open " + filename);
+		throw common::StreamError("File failed to open " + filename);
 #endif
 }
 
@@ -51,12 +52,12 @@ uint64_t FileStream::seek(uint64_t pos, int whence) {
 	static_assert(SEEK_END == FILE_END && SEEK_CUR == FILE_CURRENT && SEEK_SET == FILE_BEGIN,
 	    "Whene definition between Windows and POSIX do not match");
 	if (!SetFilePointerEx(handle, lpos, &rpos, whence))
-		throw std::ios_base::failure("Error seeking file in seek, GetLastError=" + std::to_string(GetLastError()));
+		throw common::StreamError("Error seeking file in seek, GetLastError=" + std::to_string(GetLastError()));
 	return rpos.QuadPart;
 #else
 	off_t res = lseek(fd, pos, whence);
 	if (res == -1)
-		throw std::ios_base::failure("Error seeking file in seek, errno=" + std::to_string(errno));
+		throw common::StreamError("Error seeking file in seek, errno=" + common::to_string(errno));
 	return res;
 #endif
 }
@@ -66,12 +67,12 @@ size_t FileStream::write_some(const void *data, size_t size) {
 #ifdef _WIN32
 	DWORD si = 0;
 	if (!WriteFile(handle, data, static_cast<DWORD>(size), &si, nullptr))
-		throw std::ios_base::failure("Error writing file, GetLastError()=" + std::to_string(GetLastError()));
+		throw common::StreamError("Error writing file, GetLastError()=" + std::to_string(GetLastError()));
 	return si;
 #else
 	size_t si = ::write(fd, data, size);
 	if (si == (size_t)-1)
-		throw std::ios_base::failure("Error writing file, errno=" + std::to_string(errno));
+		throw common::StreamError("Error writing file, errno=" + common::to_string(errno));
 	return si;
 #endif
 }
@@ -80,12 +81,12 @@ size_t FileStream::read_some(void *data, size_t size) {
 #ifdef _WIN32
 	DWORD si = 0;
 	if (!ReadFile(handle, data, static_cast<DWORD>(size), &si, nullptr))
-		throw std::ios_base::failure("Error reading file, GetLastError()=" + std::to_string(GetLastError()));
+		throw common::StreamError("Error reading file, GetLastError()=" + std::to_string(GetLastError()));
 	return si;
 #else
 	size_t si = ::read(fd, data, size);
 	if (si == (size_t)-1)
-		throw std::ios_base::failure("Error reading file, errno=" + std::to_string(errno));
+		throw common::StreamError("Error reading file, errno=" + common::to_string(errno));
 	return si;
 #endif
 }
@@ -98,7 +99,7 @@ void FileStream::fdatasync() {
 #else
 	if (::fdatasync(fd) == -1)
 #endif
-		throw std::ios_base::failure("Error syncing file to disk, errno=" + std::to_string(errno));
+		throw common::StreamError("Error syncing file to disk, errno=" + common::to_string(errno));
 }
 
 #ifdef _WIN32

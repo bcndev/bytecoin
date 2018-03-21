@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -52,12 +52,14 @@ private:
 		http::RequestData request;
 		http::RequestData original_request;
 		json_rpc::OptionalJsonValue original_jsonrpc_id;
-		std::function<void(WaitingClient &&wc, http::ResponseData &&resp)> fun;
+		std::function<void(const WaitingClient &wc, http::ResponseData &&resp)> fun;
+		std::function<void(const WaitingClient &wc, std::string)> err_fun;
 	};
 	std::deque<WaitingClient> m_waiting_command_requests;
 	void add_waiting_command(http::Client *who, http::RequestData &&original_request,
 	    const json_rpc::OptionalJsonValue &original_rpc_id, http::RequestData &&request,
-	    std::function<void(WaitingClient &&wc, http::ResponseData &&resp)> fun);
+	    std::function<void(const WaitingClient &wc, http::ResponseData &&resp)> fun,
+	    std::function<void(const WaitingClient &wc, std::string)> err_fun);
 	void send_next_waiting_command();
 	void process_waiting_command_response(http::ResponseData &&resp);
 	void process_waiting_command_error(std::string err);
@@ -72,7 +74,7 @@ private:
 	void advance_long_poll();
 
 	typedef std::unordered_map<std::string, JSONRPCHandlerFunction> HandlersMap;
-	static HandlersMap m_jsonrpc3_handlers;
+	static const HandlersMap m_jsonrpc3_handlers;
 
 	api::walletd::GetStatus::Response createStatusResponse3() const;
 

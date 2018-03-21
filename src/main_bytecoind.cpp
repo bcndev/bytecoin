@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include <boost/algorithm/string.hpp>
 #include "Core/Config.hpp"
@@ -9,12 +9,13 @@
 #include "logging/LoggerManager.hpp"
 #include "platform/ExclusiveLock.hpp"
 #include "platform/Network.hpp"
+#include "platform/PathTools.hpp"
 #include "version.hpp"
 
 using namespace bytecoin;
 
 static const char USAGE[] =
-    R"(bytecoind.
+    R"(bytecoind )" bytecoin_VERSION_STRING R"(.
 
 Usage:
   bytecoind [options]
@@ -22,26 +23,23 @@ Usage:
   bytecoind --version | -v
 
 Options:
-  --export-blocks=<directory>        Export blockchain into specified directory as blocks.bin and blockindexes.bin, then exit. This overwrites existing files.
-
-  --allow-local-ip                   Allow local ip add to peer list, mostly in debug purposes.
-  --hide-my-port                     DEPRECATED. Do not announce yourself as peerlist candidate. Use --p2p-external-port=0 instead.
-  --testnet                          Configure for testnet.
-  --p2p-bind-address=<ip:port>       Interface and port for P2P network protocol [default: 0.0.0.0:8080].
-  --p2p-external-port=<port>         External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
-  --bytecoind-bind-address=<ip:port> Interface and port for bytecoind RPC [default: 0.0.0.0:8081].
-  --seed-node-address=<ip:port>      Specify list (one or more) of nodes to start connecting to.
-  --priority-node-address=<ip:port>  Specify list (one or more) of nodes to connect to and attempt to keep the connection open.
-  --exclusive-node-address=<ip:port> Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.
+  --export-blocks=<directory>          Export blockchain into specified directory as blocks.bin and blockindexes.bin, then exit. This overwrites existing files.
+  --allow-local-ip                     Allow local ip add to peer list, mostly in debug purposes.
+  --testnet                            Configure for testnet.
+  --p2p-bind-address=<ip:port>         Interface and port for P2P network protocol [default: 0.0.0.0:8080].
+  --p2p-external-port=<port>           External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
+  --bytecoind-bind-address=<ip:port>   Interface and port for bytecoind RPC [default: 0.0.0.0:8081].
+  --seed-node-address=<ip:port>        Specify list (one or more) of nodes to start connecting to.
+  --priority-node-address=<ip:port>    Specify list (one or more) of nodes to connect to and attempt to keep the connection open.
+  --exclusive-node-address=<ip:port>   Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.
+  --data-folder=<full-path>            Folder for blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
+    R"(bytecoin].
 )"
-#if BYTECOIN_SSL
-    R"(
-  --ssl-certificate-pem-file=<file>  Full path to file containing both server SSL certificate and private key in PEM format
-  --ssl-certificate-password=<pass>  DEPRECATED. Will read password from stdin if not specified
-)"
+#if platform_USE_SSL
+    R"(  --ssl-certificate-pem-file=<file>    Full path to file containing both server SSL certificate and private key in PEM format.
+  --ssl-certificate-password=<pass>    DEPRECATED. Will read password from stdin if not specified.)"
 #endif
-    R"(  --bytecoind-authorization=<auth>   HTTP Basic Authorization header (base64 of login:password)
-)";
+    R"(  --bytecoind-authorization=<usr:pass> HTTP authorization for RPC.)";
 
 int main(int argc, const char *argv[]) try {
 	common::console::UnicodeConsoleSetup console_setup;
@@ -66,12 +64,12 @@ int main(int argc, const char *argv[]) try {
 		config.ssl_certificate_password = ssl_certificate_password;
 	}
 
-	const std::string coinFolder = config.get_coin_directory();
+	const std::string coinFolder = config.get_data_folder();
 
 	platform::ExclusiveLock coin_lock(coinFolder, "bytecoind.lock");
 
 	logging::LoggerManager logManager;
-	logManager.configure_default(config.get_coin_directory("logs"), "bytecoind-");
+	logManager.configure_default(config.get_data_folder("logs"), "bytecoind-");
 
 	BlockChainState block_chain(logManager, config, currency);
 
@@ -96,8 +94,10 @@ int main(int argc, const char *argv[]) try {
 			io.run_one();
 	}
 	return 0;
-} catch (const std::exception & ex) { // On Windows what() is not printed if thrown from main
+} catch (const platform::ExclusiveLock::FailedToLock &ex) {
+	std::cout << "Bytecoind already running - " << ex.what() << std::endl;
+	return api::BYTECOIND_ALREADY_RUNNING;
+} catch (const std::exception &ex) {  // On Windows what() is not printed if thrown from main
 	std::cout << "Exception in main() - " << ex.what() << std::endl;
 	throw;
 }
-

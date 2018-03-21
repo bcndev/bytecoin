@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -14,6 +14,7 @@
 
 #include "common/BinaryArray.hpp"
 #include "common/StringView.hpp"
+#include "common/string.hpp"
 
 namespace seria {
 class ISeria;
@@ -169,15 +170,15 @@ void seria_map_integral(MapT &value, ISeria &s, std::true_type) {
 		for (size_t i = 0; i != size; ++i) {
 			std::string key;
 			s.next_map_key(key);
-			typename MapT::key_type k = static_cast<typename MapT::key_type>(
-			    std::stoll(key));  // We use widest possible because no generic function provided in C++
+			typename MapT::key_type k = static_cast<typename MapT::key_type>(common::stoll(key));
+			// We use widest possible conversion because no generic function provided in C++
 			typename MapT::mapped_type v;
 			s(v);
 			value.insert(std::make_pair(k, std::move(v)));
 		}
 	} else {
 		for (auto &kv : value) {
-			auto str_key = std::to_string(kv.first);
+			auto str_key = common::to_string(kv.first);
 			s.next_map_key(const_cast<std::string &>(str_key));
 			s(const_cast<typename MapT::mapped_type &>(kv.second));
 		}

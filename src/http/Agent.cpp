@@ -1,12 +1,16 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Agent.hpp"
+#include <assert.h>
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <sstream>
 
 using namespace http;
+
+static const int REQUEST_TIMEOUT = 30;
 
 Agent::Connection::Connection(handler r_handler, handler d_handler)
     : buffer(8192)
@@ -125,28 +129,27 @@ Agent::Agent(const std::string &address, uint16_t port)
     , address(address)
     , port(port)
     , client(std::bind(&Agent::on_client_response, this), std::bind(&Agent::on_client_disconnect, this))
-    , reconnect_timer(std::bind(&Agent::on_reconnect_timer, this)) {
-	on_reconnect_timer();
-}
+    , reconnect_timer(std::bind(&Agent::on_reconnect_timer, this)) {}
 
 Agent::~Agent() { assert(!sent_request); }
-
-bool Agent::disconnected_for_long_time() const {
-	return false;  // TODO - implement. For now will wait forever for reconnection
-}
 
 void Agent::set_request(Request *req) {
 	if (sent_request)
 		throw std::logic_error("Agent is busy with previous request");
-	sent_request = req;
-	send_request();
+	sent_request  = req;
+	request_start = std::chrono::steady_clock::now();
+	if (!client.is_open() && !client.connect(address, port)) {
+		reconnect_timer.once(10);
+		return;
+	}
+	client.write(RequestData(sent_request->req));
 }
 
 void Agent::cancel_request(Request *req) {
 	if (sent_request == req) {
 		sent_request = nullptr;
 		client.disconnect();
-		reconnect_timer.once(10);
+		reconnect_timer.cancel();
 	}
 }
 
@@ -171,32 +174,39 @@ void Agent::on_client_response() {
 	}
 }
 
-void Agent::on_client_disconnect() { reconnect_timer.once(10); }
-
-void Agent::send_request() {
-	if (client.is_open())
-		client.write(RequestData(sent_request->req));
+void Agent::on_client_disconnect() {
+	if (sent_request)
+		reconnect_timer.once(10);
 }
 
 void Agent::on_reconnect_timer() {
-	if (disconnected_for_long_time() && sent_request) {
-		auto was_sent_request = sent_request;
-		sent_request          = nullptr;
-		if (was_sent_request) {
-			Request::E_handler e_handler = std::move(was_sent_request->e_handler);
-			e_handler("Timeout");
-		}
+	if (!sent_request)
+		return;  // Should not happen
+	auto idea_sec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - request_start);
+	if (idea_sec.count() > REQUEST_TIMEOUT) {
+		auto was_sent_request        = sent_request;
+		sent_request                 = nullptr;
+		Request::E_handler e_handler = std::move(was_sent_request->e_handler);
+		e_handler("Timeout");
+		return;
 	}
-	if (!client.connect(address, port)) {
+	if (!client.is_open() && !client.connect(address, port)) {
 		reconnect_timer.once(10);
 		return;
 	}
-	if (sent_request)
-		send_request();
+	client.write(RequestData(sent_request->req));
 }
 
 Request::Request(Agent &agent, RequestData &&req, R_handler r_handler, E_handler e_handler)
     : agent(agent), req(std::move(req)), r_handler(r_handler), e_handler(e_handler) {
+	std::string host = agent.address;
+	const std::string prefix1("https://");
+	const std::string prefix2("ssl://");
+	if (host.find(prefix1) == 0)
+		host = host.substr(prefix1.size());
+	else if (host.find(prefix2) == 0)
+		host         = host.substr(prefix2.size());
+	this->req.r.host = host;
 	agent.set_request(this);
 }
 

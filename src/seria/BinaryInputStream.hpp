@@ -1,8 +1,9 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
+#include <typeinfo>
 #include "ISeria.hpp"
 #include "common/MemoryStreams.hpp"
 
@@ -48,11 +49,15 @@ void from_binary(T &obj, const common::BinaryArray &blob) {
 	common::MemoryInputStream stream(blob.data(), blob.size());
 	BinaryInputStream ba(stream);
 	ba(obj);
+	if (!stream.empty())
+		throw std::runtime_error("Excess data in from_binary " + std::string(typeid(T).name()));
 }
 template<typename T>
 void from_binary(T &obj, const std::string &blob) {
 	common::MemoryInputStream stream(blob.data(), blob.size());
 	BinaryInputStream ba(stream);
 	ba(obj);
+	if (!stream.empty())
+		throw std::runtime_error("Excess data in from_binary " + std::string(typeid(T).name()));
 }
 }

@@ -1,17 +1,17 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Config.hpp"
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 #include <iostream>
 #include "CryptoNoteConfig.hpp"
-#include "common/CommandLine.hpp"
+#include "common/Base64.hpp"
 #include "platform/PathTools.hpp"
 
-static void parse_peer_and_add_to_container(std::string str, std::vector<bytecoin::NetworkAddress> &container) {
+static void parse_peer_and_add_to_container(const std::string &str, std::vector<bytecoin::NetworkAddress> &container) {
 	bytecoin::NetworkAddress na{};
-	if (!common::parse_ip_address_and_port(na.ip, na.port, str))
+	if (!common::parse_ip_address_and_port(str, na.ip, na.port))
 		throw std::runtime_error("Wrong address format " + str + ", should be ip:port");
 	container.push_back(na);
 }
@@ -19,8 +19,8 @@ static void parse_peer_and_add_to_container(std::string str, std::vector<bytecoi
 using namespace common;
 using namespace bytecoin;
 
-const static UUID BYTECOIN_NETWORK = {{0x11, 0x10, 0x01, 0x11, 0x11, 0x00, 0x01, 0x01, 0x10, 0x11, 0x00, 0x12, 0x10,
-    0x11, 0x01, 0x10}};  // Bender's nightmare
+const static UUID BYTECOIN_NETWORK{{0x11, 0x10, 0x01, 0x11, 0x11, 0x00, 0x01, 0x01, 0x10, 0x11, 0x00, 0x12, 0x10, 0x11,
+    0x01, 0x10}};  // Bender's nightmare
 
 Config::Config(common::CommandLine &cmd)
     : is_testnet(cmd.get_bool("--testnet"))
@@ -57,63 +57,61 @@ Config::Config(common::CommandLine &cmd)
 		p2p_allow_local_ip = true;
 	}
 	if (const char *pa = cmd.get("--p2p-bind-address")) {
-		if (!common::parse_ip_address_and_port(p2p_bind_ip, p2p_bind_port, pa))
+		if (!common::parse_ip_address_and_port(pa, p2p_bind_ip, p2p_bind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
 	if (const char *pa = cmd.get("--p2p-external-port"))
 		p2p_external_port = boost::lexical_cast<uint16_t>(pa);
-	if (const char *pa = cmd.get("--walletd-authorization")) {
-		// go to https://www.base64encode.org and encode username:password there
-		walletd_authorization = pa;
-	}
 	if (const char *pa = cmd.get("--walletd-bind-address")) {
-		if (!common::parse_ip_address_and_port(walletd_bind_ip, walletd_bind_port, pa))
+		if (!common::parse_ip_address_and_port(pa, walletd_bind_ip, walletd_bind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
 	if (const char *pa = cmd.get("--ssl-certificate-pem-file")) {
 		ssl_certificate_pem_file = pa;
-#if !BYTECOIN_SSL
+#if !platform_USE_SSL
 		throw std::runtime_error(
 		    "Setting --ssl-certificate-pem-file impossible - this binary is built without OpenSSL");
 #endif
 	}
 	if (const char *pa = cmd.get("--ssl-certificate-password")) {
 		ssl_certificate_password = pa;
-#if !BYTECOIN_SSL
+#if !platform_USE_SSL
 		throw std::runtime_error(
 		    "Setting --ssl_certificate_password impossible - this binary is built without OpenSSL");
 #endif
 	}
 	if (const char *pa = cmd.get("--bytecoind-authorization")) {
-		// go to https://www.base64encode.org and encode username:password there
-		bytecoind_authorization = pa;
+		bytecoind_authorization = common::base64::encode(BinaryArray(pa, pa + strlen(pa)));
 	}
 	if (const char *pa = cmd.get("--bytecoind-bind-address")) {
-		if (!common::parse_ip_address_and_port(bytecoind_bind_ip, bytecoind_bind_port, pa))
+		if (!common::parse_ip_address_and_port(pa, bytecoind_bind_ip, bytecoind_bind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
 	if (const char *pa = cmd.get("--bytecoind-remote-address")) {
+		std::string addr         = pa;
 		const std::string prefix = "https://";
-		if (std::string(pa).find(prefix) == 0) {
-#if !BYTECOIN_SSL
-			throw std::runtime_error("Using https in --bytecoind-remote-address impossible - this binary is built without OpenSSL");
+		if (addr.find(prefix) == 0) {
+#if !platform_USE_SSL
+			throw std::runtime_error(
+			    "Using https in --bytecoind-remote-address impossible - this binary is built without OpenSSL");
 #endif
 			std::string sip;
 			std::string sport;
-			if (!split_string(std::string(pa).substr(prefix.size()), ":", sip, sport))
+			if (!split_string(addr.substr(prefix.size()), ":", sip, sport))
 				throw std::runtime_error(
-					"Wrong address format " + std::string(pa) + ", should be <ip>:<port> or https://<host>:<port>");
+				    "Wrong address format " + addr + ", should be <ip>:<port> or https://<host>:<port>");
 			bytecoind_remote_port = boost::lexical_cast<uint16_t>(sport);
-			bytecoind_remote_ip = prefix + sip;
-		}else {
-			if (!common::parse_ip_address_and_port(bytecoind_remote_ip, bytecoind_remote_port, pa))
-				throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
+			bytecoind_remote_ip   = prefix + sip;
+		} else {
+			const std::string prefix2 = "http://";
+			if (addr.find(prefix2) == 0)
+				addr = addr.substr(prefix2.size());
+			if (!common::parse_ip_address_and_port(addr, bytecoind_remote_ip, bytecoind_remote_port))
+				throw std::runtime_error("Wrong address format " + addr + ", should be ip:port");
 		}
 	}
 	if (cmd.get_bool("--allow-local-ip"))
 		p2p_allow_local_ip = true;
-	if (cmd.get_bool("--hide-my-port", "will be interpreted as --p2p-external-port 0"))
-		p2p_external_port = 0;
 	for (auto &&pa : cmd.get_array("--seed-node-address"))
 		parse_peer_and_add_to_container(pa, seed_nodes);
 	for (auto &&pa : cmd.get_array("--seed-node", "Use --seed-node-address instead"))
@@ -130,7 +128,7 @@ Config::Config(common::CommandLine &cmd)
 	if (seed_nodes.empty() && !is_testnet)
 		for (auto &&sn : bytecoin::SEED_NODES) {
 			NetworkAddress addr;
-			if (!common::parse_ip_address_and_port(addr.ip, addr.port, sn))
+			if (!common::parse_ip_address_and_port(sn, addr.ip, addr.port))
 				continue;
 			seed_nodes.push_back(addr);
 		}
@@ -139,51 +137,58 @@ Config::Config(common::CommandLine &cmd)
 	std::sort(exclusive_nodes.begin(), exclusive_nodes.end());
 	std::sort(priority_nodes.begin(), priority_nodes.end());
 
-	coin_directory = platform::get_app_data_folder(crypto_note_name);
+	data_folder = platform::get_app_data_folder(crypto_note_name);
 	if (is_testnet)
-		coin_directory += "_testnet";
-	std::string file_str;
-	if (common::load_file(coin_directory + "/" + "data_folder_path.txt", file_str)) {
-		if (file_str.find(std::string("\xEF\xBB\xBF")) == 0)  // BOM is written by Notepad on Windows
-			file_str = file_str.substr(3);
-		std::vector<std::string> strs;
-		boost::algorithm::split(strs, file_str, boost::algorithm::is_any_of("\r\n"));
-		for (auto &&str : strs) {
-			boost::algorithm::trim(str);
-			boost::algorithm::trim_right_if(str, boost::algorithm::is_any_of("\\/"));
-			if (str.empty() || str.find(std::string("#")) == 0)  // Comments
-				continue;
-			std::cout << "Found coin folder via data_folder_path.txt, path=" << str << std::endl;
-			coin_directory = str;
-			break;
-		}
+		data_folder += "_testnet";
+	if (const char *pa = cmd.get("--data-folder")) {
+		data_folder = pa;
+		if (!platform::directory_exists(data_folder))
+			throw std::runtime_error("Data folder must exist " + data_folder);
 	} else {
-#ifdef _WIN32
-		const char content[] =
-		    "\xEF\xBB\xBF# Edit this file to switch data folder\r\n"
-		    "# Uncomment line below and point it to desired blockchain location. Only full path is supported\r\n"
-		    "# You should manually move content of old data folder to new location after completely stopping "
-		    "bytecoin\r\n\r\n"
-		    "# D:\\BlockChains\\bytecoin\r\n";
-#else
-		const char content[] =
-		    "# Edit this file to switch data folder\n"
-		    "# Uncomment line below and point it to desired blockchain location. Note, ~ is unsupported, use full "
-		    "path\n"
-		    "# You should manually move content of old data folder to new location after completely stopping "
-		    "bytecoin\n\n"
-		    "# /some/far/away/folder\n";
-#endif
-		common::save_file(coin_directory + "/" + "data_folder_path.txt", content);
+		if (!platform::create_directories_if_necessary(data_folder))  // Create only in default place
+			throw std::runtime_error("Failed to create data folder " + data_folder);
 	}
+	/*	std::string file_str;
+	    if (common::load_file(coin_directory + "/" + "data_folder_path.txt", file_str)) {
+	        if (file_str.find(std::string("\xEF\xBB\xBF")) == 0)  // BOM is written by Notepad on Windows
+	            file_str = file_str.substr(3);
+	        std::vector<std::string> strs;
+	        boost::algorithm::split(strs, file_str, boost::algorithm::is_any_of("\r\n"));
+	        for (auto &&str : strs) {
+	            boost::algorithm::trim(str);
+	            boost::algorithm::trim_right_if(str, boost::algorithm::is_any_of("\\/"));
+	            if (str.empty() || str.find(std::string("#")) == 0)  // Comments
+	                continue;
+	            std::cout << "Found coin folder via data_folder_path.txt, path=" << str << std::endl;
+	            coin_directory = str;
+	            break;
+	        }
+	    } else {
+	#ifdef _WIN32
+	        const char content[] =
+	            "\xEF\xBB\xBF# Edit this file to switch data folder\r\n"
+	            "# Uncomment line below and point it to desired blockchain location. Only full path is supported\r\n"
+	            "# You should manually move content of old data folder to new location after completely stopping "
+	            "bytecoin\r\n\r\n"
+	            "# D:\\BlockChains\\bytecoin\r\n";
+	#else
+	        const char content[] =
+	            "# Edit this file to switch data folder\n"
+	            "# Uncomment line below and point it to desired blockchain location. Note, ~ is unsupported, use full "
+	            "path\n"
+	            "# You should manually move content of old data folder to new location after completely stopping "
+	            "bytecoin\n\n"
+	            "# /some/far/away/folder\n";
+	#endif
+	        common::save_file(data_folder + "/" + "data_folder_path.txt", content);
+	    }*/
 }
 
-std::string Config::get_coin_directory(const std::string &subdir, bool create) const {
-	std::string config_folder = coin_directory;
+std::string Config::get_data_folder(const std::string &subdir) const {
+	std::string folder = data_folder;
 	// This code is called just several times at startup, so no caching
-	if (!subdir.empty())
-		config_folder += "/" + subdir;
-	if (create && !platform::create_directories_if_necessary(config_folder))
-		throw std::runtime_error("Failed to create coin folder " + config_folder);
-	return config_folder;
+	folder += "/" + subdir;
+	if (!platform::create_directory_if_necessary(folder))
+		throw std::runtime_error("Failed to create coin folder " + folder);
+	return folder;
 }

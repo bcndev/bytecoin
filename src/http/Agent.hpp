@@ -1,9 +1,10 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <set>
@@ -59,8 +60,8 @@ class Agent {
 	uint16_t port;
 	Connection client;
 	platform::Timer reconnect_timer;
+	std::chrono::steady_clock::time_point request_start;
 
-	void send_request();
 	void on_client_response();
 	void on_client_disconnect();
 	void on_reconnect_timer();
@@ -71,7 +72,6 @@ class Agent {
 public:
 	Agent(const std::string &address, uint16_t port);
 	~Agent();
-	bool disconnected_for_long_time() const;
 };
 
 class Request {

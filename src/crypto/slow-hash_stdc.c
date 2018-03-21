@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include <assert.h>
 #include <stddef.h>
@@ -151,7 +151,7 @@ static void cn_slow_hash_platform_independent(void * scratchpad, const void *dat
 	oaes_free(&aes_ctx);
 }
 
-#if TARGET_OS_IPHONE // We need if !x86, but no portable way to express that
+#if TARGET_OS_IPHONE || defined(__ANDROID__) // We need if !x86, but no portable way to express that
 void cn_slow_hash(void * scratchpad, const void *data, size_t length, void *hash) {
 	cn_slow_hash_platform_independent(scratchpad, data, length, hash);
 }

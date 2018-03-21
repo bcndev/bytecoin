@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "TransactionExtra.hpp"
 
@@ -50,8 +50,10 @@ bool parse_transaction_extra(const BinaryArray &transactionExtra,
 				if (size > TX_EXTRA_PADDING_MAX_COUNT) {
 					return false;
 				}
-
-				transactionExtraFields.push_back(TransactionExtraPadding{size});
+				TransactionExtraPadding padding;
+				padding.size = size;
+				transactionExtraFields.push_back(
+				    padding);  // TODO - return {} initializer when Google updates NDK copmiler
 				break;
 			}
 

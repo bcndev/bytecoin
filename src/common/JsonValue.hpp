@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace common {
@@ -52,7 +53,7 @@ public:
 	JsonValue(String &&value);
 	template<size_t size>
 	JsonValue(const char (&value)[size]) {
-		new (valueString) String(value, size - 1);
+		new (&valueString) String(value, size - 1);
 		type = STRING;
 	}
 
@@ -75,10 +76,10 @@ public:
 	JsonValue &operator=(const char (&value)[size]) {
 		if (type != STRING) {
 			destructValue();
-			new (valueString) String(value, size - 1);
+			new (&valueString) String(value, size - 1);
 			type = STRING;
 		} else {
-			reinterpret_cast<String *>(valueString)->assign(value, size - 1);
+			reinterpret_cast<String *>(&valueString)->assign(value, size - 1);
 		}
 		return *this;
 	}
@@ -133,13 +134,13 @@ public:
 private:
 	Type type;
 	union {
-		alignas(Array) uint8_t valueArray[sizeof(Array)];
+		typename std::aligned_storage<sizeof(Array), alignof(Array)>::type valueArray;
 		Bool valueBool;
 		Integer valueInteger;
 		Unsigned valueUnsigned;
-		alignas(Object) uint8_t valueObject[sizeof(Object)];
+		typename std::aligned_storage<sizeof(Object), alignof(Object)>::type valueObject;
 		Double valueReal;
-		alignas(std::string) uint8_t valueString[sizeof(std::string)];
+		typename std::aligned_storage<sizeof(std::string), alignof(std::string)>::type valueString;
 	};
 
 	void destructValue();

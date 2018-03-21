@@ -16,6 +16,12 @@ All commands below are adapted for Ubuntu, other distributions may need an other
 
 ### Building with standard options
 
+Create directory `bcndev` somewhere and go there:
+```
+$> mkdir bcndev
+$> cd bcndev
+```
+
 To go futher you have to have a number of packages and utilities.
 
 * `build-essential` package:
@@ -30,18 +36,19 @@ To go futher you have to have a number of packages and utilities.
     ```
     If version is too old, follow instructions on [the official site](https://cmake.org/download/).
 
-* Boost (1.58 or newer):
+* Boost (1.62 or newer):
     ```
     $> sudo apt-get install libboost-all-dev
     $> cat /usr/include/boost/version.hpp | grep "BOOST_LIB_VERSION"
     ```
-    If version is too old, follow instructions on [the official site](http://www.boost.org/users/download/).
-
-Then create directory `bcndev` somewhere and go there:
-```
-$> mkdir bcndev
-$> cd bcndev
-```
+    If version is too old, download boost from [boost.org](https://boost.org), unpack it into a folder inside `bcndev` and rename it from `boost_1_66_0` or similar to just `boost`
+    Build boost
+    ```
+    $> cd boost
+    $bcndev/boost> ./bootstrap.sh
+    $bcndev/boost> ./b2 link=static -j 8 --build-dir=build64 --stagedir=stage
+    cd ..
+    ```
 
 Git-clone (or git-pull) Bytecoin source code in that folder:
 ```
@@ -57,7 +64,7 @@ Create build directory inside bytecoin, go there and run CMake and Make:
 ```
 $bcndev> mkdir bytecoin/build
 $bcndev> cd bytecoin/build
-$bcndev/bytecoin/build> cmake ..
+$bcndev/bytecoin/build> cmake -DUSE_SSL=0 ..
 $bcndev/bytecoin/build> time make -j4
 ```
 
@@ -72,7 +79,7 @@ Install OpenSSL to `bcndev/openssl` folder. (Use switch `linux-x86_64-clang` ins
 ```
 $bcndev> git clone https://github.com/openssl/openssl.git
 $bcndev> cd openssl
-$bcndev/openssl> ./Configure linux-x86_64
+$bcndev/openssl> ./Configure linux-x86_64 no-shared
 $bcndev/openssl> time make -j4
 $bcndev/openssl> cd ..
 ```
@@ -84,7 +91,7 @@ Below are the commands which add OpenSSL support and switch from LMDB to SQLite 
 ```
 $bcndev> mkdir bytecoin/build
 $bcndev> cd bytecoin/build
-$bcndev/bytecoin/build> cmake -DBYTECOIN_SSL=1 -DBYTECOIN_SQLITE=1 ..
+$bcndev/bytecoin/build> cmake -DUSE_SSL=1 -DUSE_SQLITE=1 ..
 $bcndev/bytecoin/build> time make -j4
 ```
 
@@ -119,7 +126,7 @@ Create build directory inside bytecoin, go there and run CMake and Make:
 ```
 $bcndev> mkdir bytecoin/build
 $bcndev> cd bytecoin/build
-$bcndev/bytecoin/build> cmake ..
+$bcndev/bytecoin/build> cmake -DUSE_SSL=0 ..
 $bcndev/bytecoin/build> time make -j4
 ```
 
@@ -172,54 +179,64 @@ You add OpenSSL support or switch from LMDB to SQLite by providing options to CM
 ```
 $bcndev> mkdir bytecoin/build
 $bcndev> cd bytecoin/build
-$bcndev/bytecoin/build> cmake -DBYTECOIN_SSL=1 -DBYTECOIN_SQLITE=1 ..
+$bcndev/bytecoin/build> cmake -DUSE_SSL=1 -DUSE_SQLITE=1 ..
 $bcndev/bytecoin/build> time make -j4
 ```
 
 ## Building on Windows
 
 You need Microsoft Visual Studio Community 2017. [Download](https://microsoft.com) and install it selecting `C++`, `git`, `cmake integration` packages.
-
-Get [Boost](https://boost.org) and unpack it into a folder of your choice. We will use `C:\boost_1_58_0` in the further examples.
-
 Run `Visual Studio x64 command prompt` from start menu.
 
-Build boost
-```
-$> cd C:\boost_1_58_0
-$C:\boost_1_58_0> bootstrap.bat
-$C:\boost_1_58_0> b2.exe address-model=64 link=static
-```
-
-Set boost environment variables, right-click Computer in start menu, select `Properties`, then click `advanced system settings`, `environment variables`.
-
-Set `BOOST_ROOT` to `C:\boost_1_58_0`
-
-Set `BOOST_INCLUDEDIR` to `C:\boost_1_58_0`
-
-Set `BOOST_LIBRARYDIR` to `C:\boost_1_58_0\stage\lib`
-
-Now create directory `bcndev` somewhere
+Create directory `bcndev` somewhere:
 ```
 $C:\> mkdir bcndev
 $C:\> cd bcndev
 ```
 
-You need bytecoin source code
+Get [Boost](https://boost.org) and unpack it into a folder inside `bcndev` and rename it from `boost_1_66_0` or similar to just `boost`.
+
+Build boost (build 32-bit boost version only if you need 32-bit bytecoin binaries).
+```
+$> cd boost
+$C:\bcndev\boost> bootstrap.bat
+$C:\bcndev\boost> b2.exe address-model=64 link=static -j 8 --build-dir=build64 --stagedir=stage
+$C:\bcndev\boost> b2.exe address-model=32 link=static -j 8 --build-dir=build32 --stagedir=stage32
+cd ..
+```
+
+Git-clone (or git-pull) Bytecoin source code in that folder:
 ```
 $C:\bcndev> git clone https://github.com/bcndev/bytecoin.git
 ```
 
-You need lmdb in the same folder (source files are referenced via relative paths, so you do not need to separately build it)
+Put LMDB in the same folder (source files are referenced via relative paths, so you do not need to separately build it):
 ```
 $C:\bcndev> git clone https://github.com/LMDB/lmdb.git
+```
+
+You need to build openssl, first install ActivePerl (select "add to PATH" option, then restart console):
+```
+$C:\bcndev> git clone https://github.com/openssl/openssl.git
+$C:\bcndev> cd openssl
+$C:\bcndev\openssl> perl Configure VC-WIN64A no-shared no-asm
+$C:\bcndev\openssl> nmake
+$C:\bcndev\openssl> cd ..
+```
+If you want to build 32-bit binaries, you will also need 32-bit build of openssl in separate folder (configuring openssl changes header files, so there is no way to have both 32-bit and 64-bit versions in the same folder):
+```
+$C:\bcndev> git clone https://github.com/openssl/openssl.git openssl32
+$C:\bcndev> cd openssl32
+$C:\bcndev\openssl> perl Configure VC-WIN32 no-shared no-asm
+$C:\bcndev\openssl> nmake
+$C:\bcndev\openssl> cd ..
 ```
 
 Now launch Visual Studio, in File menu select `Open Folder`, select `C:\bcndev\bytecoin` folder.
 Wait until CMake finishes running and `Build` appears in main menu.
 Select `x64-Debug` or `x64-Release` from standard toolbar, and then `Build/Build Solution` from the main menu.
 
-You cannot add options to CMake running inside Visual Studio so just edit `CMakeLists.txt` and set `BYTECOIN_SSL` or `BYTECOIN_SQLITE` to `ON` if you wish to build with them.
+You cannot add options to CMake running inside Visual Studio so just edit `CMakeLists.txt` and set `USE_SSL` or `USE_SQLITE` to `ON` if you wish to build with them.
 
 ## Building on 32-bit x86 platforms, iOS, Android and other ARM platforms
 

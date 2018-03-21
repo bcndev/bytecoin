@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -53,7 +53,7 @@ protected:
 	virtual void on_msg_ping(COMMAND_PING::response &&) {}              // called after some internal processing
 	virtual void on_msg_timed_sync(COMMAND_TIMED_SYNC::request &&) {}   // called after some internal processing
 	virtual void on_msg_timed_sync(COMMAND_TIMED_SYNC::response &&) {}  // called after some internal processing
-#ifdef ALLOW_DEBUG_COMMANDS
+#if bytecoin_ALLOW_DEBUG_COMMANDS
 	virtual void on_msg_network_state(COMMAND_REQUEST_NETWORK_STATE::request &&) {}
 	virtual void on_msg_network_state(COMMAND_REQUEST_NETWORK_STATE::response &&) {}
 	virtual void on_msg_stat_info(COMMAND_REQUEST_STAT_INFO::request &&) {}

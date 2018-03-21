@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -83,7 +83,7 @@ struct COMMAND_PING {
 	};
 };
 
-#ifdef ALLOW_DEBUG_COMMANDS
+#if bytecoin_ALLOW_DEBUG_COMMANDS
 // These commands are considered as insecure, and made in debug purposes for a limited lifetime.
 // Anyone who feel unsafe with this commands can disable the ALLOW_GET_STAT_COMMAND macro.
 
@@ -159,7 +159,7 @@ void ser_members(bytecoin::COMMAND_TIMED_SYNC::request &v, seria::ISeria &s);
 void ser_members(bytecoin::COMMAND_TIMED_SYNC::response &v, seria::ISeria &s);
 void ser_members(bytecoin::COMMAND_PING::request &v, seria::ISeria &s);
 void ser_members(bytecoin::COMMAND_PING::response &v, seria::ISeria &s);
-#ifdef ALLOW_DEBUG_COMMANDS
+#if bytecoin_ALLOW_DEBUG_COMMANDS
 void ser_members(bytecoin::proof_of_trust &v, seria::ISeria &s);
 void ser_members(bytecoin::COMMAND_REQUEST_STAT_INFO::request &v, seria::ISeria &s);
 void ser_members(bytecoin::COMMAND_REQUEST_STAT_INFO::response &v, seria::ISeria &s);

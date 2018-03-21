@@ -1,3 +1,6 @@
+// Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
+
 #include "version.hpp"
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -5,8 +8,8 @@
 //
 
 1 VERSIONINFO
- FILEVERSION BYTECOIN_VERSION_WINDOWS_COMMA
- PRODUCTVERSION BYTECOIN_VERSION_WINDOWS_COMMA
+ FILEVERSION bytecoin_VERSION_WINDOWS_COMMA
+ PRODUCTVERSION bytecoin_VERSION_WINDOWS_COMMA
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS 0x40004L
@@ -19,12 +22,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Bytecoin Developers"
             VALUE "FileDescription", "Bytecoin"
-            VALUE "FileVersion", BYTECOIN_VERSION_WINDOWS_STRING
-            VALUE "InternalName", "bytecoin.rc"
-            VALUE "LegalCopyright", "Copyright (C) Bytecoin Developers 2018"
-            VALUE "OriginalFilename", "bytecoin.rc"
+            VALUE "FileVersion", bytecoin_VERSION_STRING
+            VALUE "InternalName", "Bytecoin"
+            VALUE "LegalCopyright", "Copyright (C) Bytecoin Developers 2012-2018"
+            VALUE "OriginalFilename", "Bytecoin"
             VALUE "ProductName", "Bytecoin"
-            VALUE "ProductVersion", BYTECOIN_VERSION_WINDOWS_STRING
+            VALUE "ProductVersion", bytecoin_VERSION_STRING
         END
     END
     BLOCK "VarFileInfo"

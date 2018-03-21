@@ -4,7 +4,7 @@
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -26,6 +26,7 @@ struct request {
 
 	std::vector<Header> headers;
 	std::string basic_authorization;
+	std::string host;
 
 	bool keep_alive       = true;
 	size_t content_length = -1;

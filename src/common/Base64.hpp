@@ -3,6 +3,14 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include "BinaryArray.hpp"
 
-void test_hashes(const std::string &test_vectors_folder);
+namespace common {
+namespace base64 {
+
+std::string encode(const BinaryArray &data);
+bool decode(const std::string &enc, BinaryArray &data);
+}
+}

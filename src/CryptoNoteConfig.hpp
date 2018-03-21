@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -169,5 +169,6 @@ constexpr const CheckpointData CHECKPOINTS[] = {
     {1372000, "55e02f544df808a12d3c2809b8c7490f8b0729aef196745240e94522c69a7181"},
     {1398000, "5e9eaf424ffba3957c569efc119a6e9ba0a636af99c44ea4cb921654ba634146"},
     {1422000, "edae8fec5d6572c84b4c6c794922b1e4ce97d82a057c77235407e29568525a46"},
-    {1451000, "327814e8ee24650ad95d62b61e066d884abbb9d5ac18cd258baf24086c2a0882"}};
+    {1451000, "327814e8ee24650ad95d62b61e066d884abbb9d5ac18cd258baf24086c2a0882"},
+    {1479000, "16c9a464514685d325ac06b82e4476d0d5467c59b733f5fbd950e9931e58d18c"}};
 }  // CryptoNote

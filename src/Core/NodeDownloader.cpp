@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include <iostream>
 #include "Config.hpp"
@@ -15,7 +15,9 @@ Node::DownloaderV11::DownloaderV11(Node *node, BlockChainState &block_chain)
     : m_node(node)
     , m_block_chain(block_chain)
     , m_chain_timer(std::bind(&DownloaderV11::on_chain_timer, this))
-    , m_download_timer(std::bind(&DownloaderV11::on_download_timer, this)) {
+    , m_download_timer(std::bind(&DownloaderV11::on_download_timer, this))
+    , log_request_timestamp(std::chrono::steady_clock::now())
+    , log_response_timestamp(std::chrono::steady_clock::now()) {
 	if (multicore) {
 		auto th_count = std::max<size_t>(2, std::thread::hardware_concurrency() / 2);
 		// we use more energy but have the same speed when using hyperthreading
@@ -232,9 +234,12 @@ void Node::DownloaderV11::on_msg_notify_request_objects(P2PClientBytecoin *who,
 			git->second -= 1;
 			total_downloading_blocks -= 1;
 			m_who_downloaded_block.push_back(who);
-			if (dc.expected_height % 100 == 0)
-				std::cout << "Received block with height=" << dc.expected_height << "(" << total_downloading_blocks
-				          << ") from " << who->get_address() << std::endl;
+			auto now = std::chrono::steady_clock::now();
+			if (std::chrono::duration_cast<std::chrono::milliseconds>(now - log_response_timestamp).count() > 1000) {
+				log_response_timestamp = now;
+				std::cout << "Received block with height=" << dc.expected_height
+				          << "(queue=" << total_downloading_blocks << ") from " << who->get_address() << std::endl;
+			}
 			cell_found = true;
 			if (multicore) {
 				dc.status = DownloadCell::PREPARING;
@@ -364,9 +369,12 @@ void Node::DownloaderV11::advance_download(Hash last_downloaded_block) {
 		total_downloading_blocks += 1;
 		NOTIFY_REQUEST_GET_OBJECTS::request msg;
 		msg.blocks.push_back(dc.bid);
-		if (dc.expected_height % 100 == 0)
+		auto now = std::chrono::steady_clock::now();
+		if (std::chrono::duration_cast<std::chrono::milliseconds>(now - log_request_timestamp).count() > 1000) {
+			log_request_timestamp = now;
 			std::cout << "Requesting block " << dc.expected_height << " from " << ready_client->get_address()
 			          << std::endl;
+		}
 		BinaryArray raw_msg =
 		    LevinProtocol::send_message(NOTIFY_REQUEST_GET_OBJECTS::ID, LevinProtocol::encode(msg), false);
 		ready_client->send(std::move(raw_msg));

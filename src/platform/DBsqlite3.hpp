@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -49,6 +49,8 @@ public:
 
 	bool get(const std::string &key, common::BinaryArray &value) const;
 	bool get(const std::string &key, std::string &value) const;
+
+	typedef std::string Value;
 	//	bool get(const std::string &key, lmdb::Val &value) const;
 
 	void del(const std::string &key, bool mustexist);

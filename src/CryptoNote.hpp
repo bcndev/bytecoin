@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -10,7 +10,7 @@
 #include "crypto/types.hpp"
 
 // We define here, as CryptoNoteConfig.h is never included anywhere anymore
-#define ALLOW_DEBUG_COMMANDS 1
+#define bytecoin_ALLOW_DEBUG_COMMANDS 1
 
 namespace bytecoin {
 
@@ -69,7 +69,7 @@ struct Transaction : public TransactionPrefix {
 	std::vector<std::vector<Signature>> signatures;
 };
 
-struct BaseTransaction : public TransactionPrefix {};
+struct BaseTransaction : public TransactionPrefix {};  // has 'ignored' field during seria
 
 struct ParentBlock {
 	uint8_t major_version = 0;

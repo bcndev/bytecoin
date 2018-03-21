@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Network.hpp"
 #include "common/MemoryStreams.hpp"
@@ -11,7 +11,125 @@
 
 using namespace platform;
 
-#if TARGET_OS_IPHONE
+static std::pair<bool, std::string> split_ssl_address(const std::string &addr) {
+	std::string stripped_addr = addr;
+	bool ssl                  = false;
+	const std::string prefix1("https://");
+	const std::string prefix2("ssl://");
+	if (addr.find(prefix1) == 0) {
+		stripped_addr = addr.substr(prefix1.size());
+		ssl           = true;
+	} else if (addr.find(prefix2) == 0) {
+		stripped_addr = addr.substr(prefix2.size());
+		ssl           = true;
+	}
+	return std::make_pair(ssl, stripped_addr);
+}
+#if defined(__ANDROID__)
+#include <QSslSocket>
+
+Timer::Timer(after_handler a_handler) : a_handler(a_handler), impl(nullptr) {
+	QObject::connect(&impl, &QTimer::timeout, [this]() { this->a_handler(); });
+	impl.setSingleShot(true);
+}
+
+void Timer::cancel() { impl.stop(); }
+
+void Timer::once(float after_seconds) {
+	cancel();
+	impl.start(static_cast<int>(after_seconds * 1000));
+}
+
+TCPSocket::TCPSocket(RW_handler rw_handler, D_handler d_handler) : rw_handler(rw_handler), d_handler(d_handler) {}
+
+void TCPSocket::close() {
+	if (impl) {
+		impl->deleteLater();
+		impl.release();
+	}
+	ready = false;
+}
+
+bool TCPSocket::is_open() const { return impl && impl->state() != QAbstractSocket::UnconnectedState; }
+
+bool TCPSocket::connect(const std::string &addr, uint16_t port) {
+	close();
+	//    bool sup = QSslSocket::supportsSsl();
+	//    auto vs = QSslSocket::sslLibraryVersionString(); // "BoringSSL"
+	//    auto vsv = QSslSocket::sslLibraryBuildVersionString(); // "OpenSSL 1.0.1j 15 Oct 2014"
+
+	auto ssl_addr = split_ssl_address(addr);
+
+	if (ssl_addr.first) {
+		auto s = std::make_unique<QSslSocket>();
+		QObject::connect(s.get(), static_cast<void (QSslSocket::*)(const QList<QSslError> &)>(&QSslSocket::sslErrors),
+		    [this](const QList<QSslError> &errors) {
+			    QString str;
+			    for (const auto &error : errors)
+				    str = error.errorString();
+			});
+		QObject::connect(s.get(), &QSslSocket::encrypted, [this]() {
+			this->ready = true;
+			this->rw_handler(true, true);
+		});
+		QObject::connect(
+		    s.get(), &QSslSocket::encryptedBytesWritten, [this](qint64 bytes) { this->rw_handler(true, true); });
+		QObject::connect(s.get(), &QAbstractSocket::readyRead, [this]() { this->rw_handler(true, true); });
+		QObject::connect(s.get(), &QAbstractSocket::disconnected, [this]() {
+			this->close();
+			this->d_handler();
+		});
+		QObject::connect(s.get(),
+		    static_cast<void (QAbstractSocket::*)(QAbstractSocket::SocketError)>(&QAbstractSocket::error),
+		    [this](QAbstractSocket::SocketError err) {
+			    qDebug() << this->impl->errorString();
+			    this->close();
+			    this->d_handler();
+			});
+		s->connectToHostEncrypted(QString::fromUtf8(ssl_addr.second.data(), ssl_addr.second.size()), port);
+		impl = std::move(s);
+	} else {
+		impl = std::make_unique<QTcpSocket>();
+		QObject::connect(
+		    impl.get(), &QAbstractSocket::bytesWritten, [this](qint64 bytes) { this->rw_handler(true, true); });
+		QObject::connect(impl.get(), &QAbstractSocket::connected, [this]() {
+			this->ready = true;
+			this->rw_handler(true, true);
+		});
+		QObject::connect(impl.get(), &QAbstractSocket::readyRead, [this]() { this->rw_handler(true, true); });
+		QObject::connect(impl.get(), &QAbstractSocket::disconnected, [this]() {
+			this->close();
+			this->d_handler();
+		});
+		QObject::connect(impl.get(),
+		    static_cast<void (QAbstractSocket::*)(QAbstractSocket::SocketError)>(&QAbstractSocket::error),
+		    [this](QAbstractSocket::SocketError err) {
+			    this->close();
+			    this->d_handler();
+			});
+		impl->connectToHost(QString::fromUtf8(ssl_addr.second.data(), ssl_addr.second.size()), port);
+	}
+	return true;
+}
+
+size_t TCPSocket::read_some(void *val, size_t count) {
+	qint64 res = (impl && ready) ? impl->read(reinterpret_cast<char *>(val), count) : 0;
+	if (res != 0)
+		res += 0;
+	return res;
+}
+
+size_t TCPSocket::write_some(const void *val, size_t count) {
+	qint64 res = (impl && ready) ? impl->write(reinterpret_cast<const char *>(val), count) : 0;
+	return res;
+}
+
+void TCPSocket::shutdown_both() {
+	if (impl)
+		impl->disconnectFromHost();
+}
+
+#elif TARGET_OS_IPHONE
 #include <CoreFoundation/CoreFoundation.h>
 #include <sys/socket.h>
 #include "common/MemoryStreams.hpp"
@@ -38,11 +156,6 @@ void Timer::once(float after_seconds) {
 	CFRunLoopAddTimer(CFRunLoopGetCurrent(), impl, kCFRunLoopDefaultMode);
 }
 
-TCPSocket::TCPSocket(RW_handler rw_handler, D_handler d_handler)
-    : rw_handler(rw_handler), d_handler(d_handler), readStream(nullptr), writeStream(nullptr) {}
-
-TCPSocket::~TCPSocket() { close(); }
-
 void TCPSocket::close() {
 	if (readStream) {
 		CFReadStreamClose(readStream);
@@ -67,7 +180,8 @@ bool TCPSocket::is_open() const { return readStream || writeStream; }
 
 bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 	close();
-	CFStringRef hname = CFStringCreateWithCString(kCFAllocatorDefault, addr.c_str(), kCFStringEncodingUTF8);
+	auto ssl_addr     = split_ssl_address(addr);
+	CFStringRef hname = CFStringCreateWithCString(kCFAllocatorDefault, ssl_addr.second.c_str(), kCFStringEncodingUTF8);
 	CFHostRef host    = CFHostCreateWithName(kCFAllocatorDefault, hname);
 	CFRelease(hname);
 	hname = nullptr;
@@ -75,17 +189,18 @@ bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 	CFRelease(host);
 	host = nullptr;
 	//	CFReadStreamSetProperty(readStream, NSStreamSocketSecurityLevelKey, securityDictRef);
-	CFMutableDictionaryRef securityDictRef = CFDictionaryCreateMutable(
-	    kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-	if (!securityDictRef) {
-		close();
-		return false;
+	if (ssl_addr.first) {
+		CFMutableDictionaryRef securityDictRef = CFDictionaryCreateMutable(
+		    kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+		if (!securityDictRef) {
+			close();
+			return false;
+		}
+		CFDictionarySetValue(securityDictRef, kCFStreamSSLValidatesCertificateChain, kCFBooleanTrue);
+		CFReadStreamSetProperty(readStream, kCFStreamPropertySSLSettings, securityDictRef);
+		CFRelease(securityDictRef);
+		securityDictRef = nullptr;
 	}
-	CFDictionarySetValue(securityDictRef, kCFStreamSSLValidatesCertificateChain, kCFBooleanTrue);
-	CFReadStreamSetProperty(readStream, kCFStreamPropertySSLSettings, securityDictRef);
-	CFRelease(securityDictRef);
-	securityDictRef = nullptr;
-
 	CFStreamClientContext myContext = {0, this, nullptr, nullptr, nullptr};
 	if (!CFReadStreamSetClient(readStream,
 	        kCFStreamEventHasBytesAvailable | kCFStreamEventErrorOccurred | kCFStreamEventEndEncountered,
@@ -183,12 +298,15 @@ void TCPSocket::write_callback(CFWriteStreamRef stream, CFStreamEventType event,
 #include <boost/bind.hpp>
 #include <iostream>
 
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 #include <boost/asio/ssl.hpp>
+#include <common/string.hpp>
+
 namespace ssl = boost::asio::ssl;
 typedef ssl::stream<boost::asio::ip::tcp::socket> SSLSocket;
 
 #ifdef _WIN32
+#include <Wincrypt.h>
 #pragma comment(lib, "libcrypto.lib")  // OpenSSL library
 #pragma comment(lib, "libssl.lib")     // OpenSSL library
 #pragma comment(lib, "crypt32.lib")    // Windows SDK dependency of OpenSSL
@@ -214,10 +332,76 @@ static void add_system_root_certs(ssl::context &ctx) {
 	SSL_CTX_set_cert_store(ctx.native_handle(), store);
 }
 #else
-static void add_system_root_certs(ssl::context &ctx) { ctx.set_default_verify_paths(); }
+// https://letsencrypt.org/certs/isrgrootx1.pem.txt
+static const char our_cert[] = R"(
+-----BEGIN CERTIFICATE-----
+MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
+WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
+ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
+MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
+h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
+0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U
+A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW
+T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH
+B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC
+B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv
+KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn
+OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn
+jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw
+qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI
+rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
+HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
+hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
+ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
+3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
+NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5
+ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur
+TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC
+jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc
+oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
+4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA
+mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
+emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
+-----END CERTIFICATE-----
+)";
+// https://www.identrust.com/certificates/trustid/root-download-x3.html (converted to pem)
+static const char our_cert2[] = R"(
+-----BEGIN CERTIFICATE-----
+MIIDSjCCAjKgAwIBAgIQRK+wgNajJ7qJMDmGLvhAazANBgkqhkiG9w0BAQUFADA/
+MSQwIgYDVQQKExtEaWdpdGFsIFNpZ25hdHVyZSBUcnVzdCBDby4xFzAVBgNVBAMT
+DkRTVCBSb290IENBIFgzMB4XDTAwMDkzMDIxMTIxOVoXDTIxMDkzMDE0MDExNVow
+PzEkMCIGA1UEChMbRGlnaXRhbCBTaWduYXR1cmUgVHJ1c3QgQ28uMRcwFQYDVQQD
+Ew5EU1QgUm9vdCBDQSBYMzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEB
+AN+v6ZdQCINXtMxiZfaQguzH0yxrMMpb7NnDfcdAwRgUi+DoM3ZJKuM/IUmTrE4O
+rz5Iy2Xu/NMhD2XSKtkyj4zl93ewEnu1lcCJo6m67XMuegwGMoOifooUMM0RoOEq
+OLl5CjH9UL2AZd+3UWODyOKIYepLYYHsUmu5ouJLGiifSKOeDNoJjj4XLh7dIN9b
+xiqKqy69cK3FCxolkHRyxXtqqzTWMIn/5WgTe1QLyNau7Fqckh49ZLOMxt+/yUFw
+7BZy1SbsOFU5Q9D8/RhcQPGX69Wam40dutolucbY38EVAjqr2m7xPi71XAicPNaD
+aeQQmxkqtilX4+U9m5/wAl0CAwEAAaNCMEAwDwYDVR0TAQH/BAUwAwEB/zAOBgNV
+HQ8BAf8EBAMCAQYwHQYDVR0OBBYEFMSnsaR7LHH62+FLkHX/xBVghYkQMA0GCSqG
+SIb3DQEBBQUAA4IBAQCjGiybFwBcqR7uKGY3Or+Dxz9LwwmglSBd49lZRNI+DT69
+ikugdB/OEIKcdBodfpga3csTS7MgROSR6cz8faXbauX+5v3gTt23ADq1cEmv8uXr
+AvHRAosZy5Q6XkjEGB5YGV8eAlrwDPGxrancWYaLbumR9YbK+rlmM6pZW87ipxZz
+R8srzJmwN0jP41ZL9c8PDHIyh8bwRLtTcm1D9SZImlJnt1ir/md2cXjbDaJWFBM5
+JDGFoqgCWjBH4d1QB7wCCZAA62RjYJsWvIjJEubSfZGL+T0yjWW06XyxV3bqxbYo
+Ob8VZRzI9neWagqNdwvYkQsEjgfbKbYK7p2CNTUQ
+-----END CERTIFICATE-----
+)";
+static void add_system_root_certs(ssl::context &ctx) {
+	// We try all methods and hope for the best
+	ctx.set_default_verify_paths();
+	ctx.add_verify_path("/etc/ssl/certs");  // read below for the cert folder mess on Linux
+	// https://www.happyassassin.net/2015/01/12/a-note-about-ssltls-trusted-certificate-stores-and-platforms/
+	boost::asio::const_buffer cert(our_cert, sizeof(our_cert) - 1);
+	ctx.add_certificate_authority(cert);
+	boost::asio::const_buffer cert2(our_cert2, sizeof(our_cert2) - 1);
+	ctx.add_certificate_authority(cert2);
+}
 #endif
 
-static thread_local std::shared_ptr<ssl::context> shared_client_context;
+// static thread_local std::shared_ptr<ssl::context> shared_client_context;
 #endif
 
 thread_local EventLoop *EventLoop::current_loop = 0;
@@ -230,9 +414,9 @@ EventLoop::EventLoop(boost::asio::io_service &io_service) : io_service(io_servic
 
 EventLoop::~EventLoop() {
 	current_loop = 0;
-#if BYTECOIN_SSL
-	shared_client_context.reset();
-#endif
+	//#if platform_USE_SSL
+	//	shared_client_context.reset();
+	//#endif
 }
 
 void EventLoop::cancel() { io_service.stop(); }
@@ -306,7 +490,7 @@ public:
 	bool pending_write;
 	bool pending_connect;
 	boost::asio::ip::tcp::socket socket;
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 	std::shared_ptr<ssl::context> ssl_context;  // TCP socket may live longer than TCP acceptor
 	std::unique_ptr<SSLSocket> ssl_socket;
 #endif
@@ -314,7 +498,7 @@ public:
 	common::CircularBuffer outgoing_buffer;
 
 	void close(bool called_from_run_loop) {
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 		if (ssl_socket)
 			ssl_socket->lowest_layer().close();
 		else
@@ -333,7 +517,7 @@ public:
 			pending_write   = false;
 			incoming_buffer.clear();
 			outgoing_buffer.clear();
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 			ssl_socket.reset();
 			ssl_context.reset();
 #endif
@@ -343,7 +527,7 @@ public:
 	}
 	void start_shutdown() {
 		boost::system::error_code ignored_ec;
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 		if (ssl_socket) {
 			// TODO -
 			// https://stackoverflow.com/questions/32046034/what-is-the-proper-way-to-securely-disconnect-an-asio-ssl-socket
@@ -355,9 +539,9 @@ public:
 
 	void handle_connect(const boost::system::error_code &e) {
 		if (!e) {
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 			if (ssl_socket) {
-				start_server_handshake();
+				start_handshake(ssl::stream_base::client);
 				return;
 			}
 #endif
@@ -381,7 +565,7 @@ public:
 		boost::array<boost::asio::mutable_buffer, 2> bufs{
 		    {boost::asio::buffer(incoming_buffer.write_ptr(), incoming_buffer.write_count()),
 		        boost::asio::buffer(incoming_buffer.write_ptr2(), incoming_buffer.write_count2())}};
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 		if (ssl_socket)
 			ssl_socket->async_read_some(
 			    bufs, boost::bind(&Impl::handle_read, owner->impl, boost::asio::placeholders::error,
@@ -403,6 +587,7 @@ public:
 			return;
 		}
 		if (e != boost::asio::error::operation_aborted) {
+			//			std::cout << e << " " << e.message() << std::endl;
 			close(true);
 		}
 	}
@@ -419,7 +604,7 @@ public:
 		boost::array<boost::asio::const_buffer, 2> bufs{
 		    {boost::asio::buffer(outgoing_buffer.read_ptr(), outgoing_buffer.read_count()),
 		        boost::asio::buffer(outgoing_buffer.read_ptr2(), outgoing_buffer.read_count2())}};
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 		if (ssl_socket)
 			ssl_socket->async_write_some(
 			    bufs, boost::bind(&Impl::handle_write, owner->impl, boost::asio::placeholders::error,
@@ -444,20 +629,22 @@ public:
 			close(true);
 		}
 	}
-#if BYTECOIN_SSL
-	void start_server_handshake() {
-		ssl_socket->async_handshake(ssl::stream_base::server,
-		    boost::bind(&Impl::handle_server_handshake, this, boost::asio::placeholders::error));
+#if platform_USE_SSL
+	void start_handshake(ssl::stream_base::handshake_type type) {
+		ssl_socket->async_handshake(type, boost::bind(&Impl::handle_handshake, this, boost::asio::placeholders::error));
 	}
-	void handle_server_handshake(const boost::system::error_code &e) {
+	void handle_handshake(const boost::system::error_code &e) {
 		pending_connect = false;
 		if (!e) {
 			connected = true;
 			start_read();
 			start_write();
+			if (owner)
+				owner->rw_handler(true, true);
 			return;
 		}
 		if (e != boost::asio::error::operation_aborted) {
+			std::cout << e << " " << e.message() << std::endl;
 			close(true);
 		}
 	}
@@ -471,45 +658,50 @@ TCPSocket::~TCPSocket() { close(); }
 
 void TCPSocket::close() { impl->close(false); }
 
-bool TCPSocket::is_open() const { return impl->socket.lowest_layer().is_open(); }
+bool TCPSocket::is_open() const {
+#if platform_USE_SSL
+	if (impl->ssl_socket)
+		return impl->ssl_socket->lowest_layer().is_open();
+#endif
+	return impl->socket.lowest_layer().is_open();
+}
 
 bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 	close();
 
-	std::string stripped_addr = addr;
-#if BYTECOIN_SSL
-	bool ssl                  = false;
-	const std::string prefix1("https://");
-	const std::string prefix2("ssl://");
-	if (addr.find(prefix1) == 0) {
-		stripped_addr = addr.substr(prefix1.size());
-		ssl           = true;
-	} else if (addr.find(prefix2) == 0) {
-		stripped_addr = addr.substr(prefix2.size());
-		ssl           = true;
-	}
-#endif
+	auto ssl_addr = split_ssl_address(addr);
 	try {
 		impl->pending_connect = true;
-		boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::address::from_string(stripped_addr), port);
-#if BYTECOIN_SSL
-		if (ssl) {
-			if (shared_client_context == nullptr) {
-				shared_client_context = std::make_shared<ssl::context>(ssl::context::tlsv12_client);
-				shared_client_context->set_options(ssl::context::default_workarounds | ssl::context::no_sslv2 |
-				                                   ssl::context::no_sslv3 | ssl::context::tlsv12_client);
-				add_system_root_certs(*shared_client_context);
-				shared_client_context->set_verify_mode(ssl::verify_peer);
-				shared_client_context->set_verify_callback(ssl::rfc2818_verification(stripped_addr));
-			}
+		if (ssl_addr.first) {
+#if platform_USE_SSL
+			boost::asio::ip::tcp::resolver resolver(EventLoop::current()->io());
+			boost::asio::ip::tcp::resolver::query query(ssl_addr.second, common::to_string(port));
+			boost::asio::ip::tcp::resolver::iterator iter = resolver.resolve(query);
+			for (; iter != boost::asio::ip::tcp::resolver::iterator(); ++iter)
+				if (iter->endpoint().address().is_v4())
+					break;
+			if (iter == boost::asio::ip::tcp::resolver::iterator())
+				return false;
+			std::shared_ptr<ssl::context> shared_client_context =
+			    std::make_shared<ssl::context>(ssl::context::tlsv12_client);
+			add_system_root_certs(*shared_client_context);
+			shared_client_context->set_verify_mode(ssl::verify_peer);
+			shared_client_context->set_verify_callback(ssl::rfc2818_verification(ssl_addr.second));
+
 			impl->ssl_context = shared_client_context;
 			impl->ssl_socket  = std::make_unique<SSLSocket>(EventLoop::current()->io(), *impl->ssl_context);
-			impl->ssl_socket->lowest_layer().async_connect(
-			    endpoint, boost::bind(&TCPSocket::Impl::handle_connect, impl, boost::asio::placeholders::error));
-		} else
+			if (!SSL_set_tlsext_host_name(impl->ssl_socket->native_handle(), ssl_addr.second.c_str()))
+				return false;
+			impl->ssl_socket->lowest_layer().async_connect(iter->endpoint(),
+			    boost::bind(&TCPSocket::Impl::handle_connect, impl, boost::asio::placeholders::error));
+#else
+			return false;
 #endif
+		} else {
+			boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::address::from_string(ssl_addr.second), port);
 			impl->socket.async_connect(
 			    endpoint, boost::bind(&TCPSocket::Impl::handle_connect, impl, boost::asio::placeholders::error));
+		}
 	} catch (const std::exception &) {
 		return false;
 	}
@@ -547,9 +739,10 @@ public:
 	    , pending_accept(false)
 	    , acceptor(EventLoop::current()->io())
 	    , socket_being_accepted(EventLoop::current()->io())
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 	    , ssl_context(std::make_shared<ssl::context>(ssl::context::sslv23))
-	    , ssl_socket_being_accepted(std::make_unique<SSLSocket>(EventLoop::current()->io(), *ssl_context))
+	    , ssl_socket_being_accepted(
+	          ssl ? std::make_unique<SSLSocket>(EventLoop::current()->io(), *ssl_context) : nullptr)
 #endif
 	    , socket_ready(false) {
 	}
@@ -558,7 +751,7 @@ public:
 	bool pending_accept;
 	boost::asio::ip::tcp::acceptor acceptor;
 	boost::asio::ip::tcp::socket socket_being_accepted;
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 	std::shared_ptr<ssl::context> ssl_context;
 	std::unique_ptr<SSLSocket> ssl_socket_being_accepted;
 #endif
@@ -577,7 +770,7 @@ public:
 		if (!owner)
 			return;
 		pending_accept = true;
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 		if (ssl)
 			acceptor.async_accept(ssl_socket_being_accepted->next_layer(),
 			    boost::bind(&Impl::handle_accept, owner->impl, boost::asio::placeholders::error));
@@ -603,7 +796,7 @@ TCPAcceptor::TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_han
     const std::string &ssl_certificate_password)
     : impl(std::make_shared<Impl>(this, !ssl_pem_file.empty())), a_handler(a_handler) {
 
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 	if (impl->ssl) {
 		impl->ssl_context->set_options(
 		    ssl::context::default_workarounds | ssl::context::no_sslv2);  // | ssl::context::single_dh_use
@@ -639,7 +832,7 @@ bool TCPAcceptor::accept(TCPSocket &socket, std::string &accepted_addr) {
 	socket.close();
 	std::swap(socket.impl->socket, impl->socket_being_accepted);
 	boost::system::error_code ec;
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 	std::swap(socket.impl->ssl_socket, impl->ssl_socket_being_accepted);
 	auto endpoint =
 	    impl->ssl ? socket.impl->ssl_socket->next_layer().remote_endpoint(ec) : socket.impl->socket.remote_endpoint(ec);
@@ -650,13 +843,13 @@ bool TCPAcceptor::accept(TCPSocket &socket, std::string &accepted_addr) {
 	if (ec)
 		return false;
 	accepted_addr = endpoint.address().to_string();
-#if BYTECOIN_SSL
+#if platform_USE_SSL
 	if (impl->ssl) {
 		if (!impl->ssl_socket_being_accepted)
 			impl->ssl_socket_being_accepted =
 			    std::make_unique<SSLSocket>(EventLoop::current()->io(), *impl->ssl_context);
 		socket.impl->ssl_context = impl->ssl_context;
-		socket.impl->start_server_handshake();
+		socket.impl->start_handshake(ssl::stream_base::server);
 	} else
 #endif
 	{

@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "CryptoNoteProtocolDefinitions.hpp"
 #include "P2pProtocolDefinitions.hpp"
@@ -123,7 +123,7 @@ void ser_members(bytecoin::COMMAND_PING::response &v, seria::ISeria &s) {
 	seria_kv("peer_id", v.peer_id, s);
 }
 
-#ifdef ALLOW_DEBUG_COMMANDS
+#if bytecoin_ALLOW_DEBUG_COMMANDS
 void ser_members(bytecoin::proof_of_trust &v, seria::ISeria &s) {
 	seria_kv("peer_id", v.peer_id, s);
 	seria_kv("time", v.time, s);

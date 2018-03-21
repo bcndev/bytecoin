@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
@@ -15,11 +15,11 @@
 namespace crypto { extern "C" {
 #endif
 
-inline void *padd(void *p, size_t i) {
+static inline void *padd(void *p, size_t i) {
   return (char *) p + i;
 }
 
-inline const void *cpadd(const void *p, size_t i) {
+static inline const void *cpadd(const void *p, size_t i) {
   return (const char *) p + i;
 }
 

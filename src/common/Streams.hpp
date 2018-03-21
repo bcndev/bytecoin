@@ -1,10 +1,11 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include "BinaryArray.hpp"
 
@@ -24,6 +25,11 @@ public:
 	virtual ~IOutputStream() {}
 	virtual size_t write_some(const void *data, size_t size) = 0;
 	void write(const void *data, size_t size);
+};
+
+class StreamError : public std::runtime_error {
+public:
+	explicit StreamError(const std::string &str) : std::runtime_error(str) {}
 };
 
 void read(IInputStream &in, int8_t &value);

@@ -1,7 +1,8 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include <boost/algorithm/string.hpp>
+#include <common/Base64.hpp>
 #include <future>
 #include "Core/Config.hpp"
 #include "Core/Node.hpp"
@@ -11,12 +12,13 @@
 #include "logging/LoggerManager.hpp"
 #include "platform/ExclusiveLock.hpp"
 #include "platform/Network.hpp"
+#include "platform/PathTools.hpp"
 #include "version.hpp"
 
 using namespace bytecoin;
 
 static const char USAGE[] =
-    R"(walletd.
+    R"(walletd )" bytecoin_VERSION_STRING R"(.
 
 Usage:
   walletd [options] --wallet-file=<file> | --export-blocks=<directory>
@@ -25,31 +27,26 @@ Usage:
 
 Options:
   --wallet-file=<file>                 Path to wallet file to open.
-  --wallet-password=<password>         DEPRECATED. Password to decrypt wallet file. If not specified, will read as a line from stdin.
-  --generate-wallet                    Create wallet file with new random keys. Must be used with --wallet-file option.
-  --import-keys=<hexbytes>             DEPRECATED. Create wallet file with specified imported keys. Must be used with --generate-wallet.
-  --import-keys                        Create wallet file with imported keys read as a line from stdin. Must be used with --generate-wallet.
-  --set-password=<password>            DEPRECATED. Reencrypt wallet file with the new password.
+  --wallet-password=<password>         DEPRECATED AND NOT RECOMMENDED (as entailing security risk). Use given string as password and not read it from stdin.
+  --create-wallet                      Create wallet file with new random keys. Must be used with --wallet-file option.
+  --import-keys                        Create wallet file with imported keys read as a line from stdin. Must be used with --create-wallet.
   --set-password                       Read new password as a line from stdin (twice) and reencrypt wallet file.
   --export-view-only=<file>            Export view-only version of wallet file with the same password, then exit.
-
   --testnet                            Configure for testnet.
   --walletd-bind-address=<ip:port>     Interface and port for walletd RPC [default: 127.0.0.1:8070].
-  --walletd-authorization=<auth>       DEPRECATED. HTTP Basic Authorization header (base64 of login:password)
-
+  --data-folder=<full-path>            Folder for wallet cache, blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
+    R"(bytecoin].
   --bytecoind-remote-address=<ip:port> Connect to remote bytecoind and suppress running built-in bytecoind.
-  --bytecoind-authorization=<auth>     HTTP Basic Authorization header (base64 of login:password)
+  --bytecoind-authorization=<usr:pass> HTTP authorization for RCP.
 
 Options for built-in bytecoind (run when no --bytecoind-remote-address specified):
   --allow-local-ip                     Allow local ip add to peer list, mostly in debug purposes.
-  --hide-my-port                       DEPRECATED. Do not announce yourself as peer list candidate. Use --p2p-external-port=0 instead.
   --p2p-bind-address=<ip:port>         Interface and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>           External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
   --bytecoind-bind-address=<ip:port>   Interface and port for bytecoind RPC [default: 0.0.0.0:8081].
   --seed-node-address=<ip:port>        Specify list (one or more) of nodes to start connecting to.
   --priority-node-address=<ip:port>    Specify list (one or more) of nodes to connect to and attempt to keep the connection open.
-  --exclusive-node-address=<ip:port>   Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.
-)";
+  --exclusive-node-address=<ip:port>   Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.)";
 
 static const bool separate_thread_for_bytecoind = true;
 
@@ -58,99 +55,112 @@ int main(int argc, const char *argv[]) try {
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	common::CommandLine cmd(argc, argv);
 	std::string wallet_file, password, new_password, export_view_only, import_keys_value;
-	bool set_password         = false;
-	bool password_in_args     = true;
-	bool new_password_in_args = true;
-	bool import_keys          = false;
-	bool generate_wallet      = false;
+	bool set_password  = false;
+	bool ask_password  = true;
+	bool import_keys   = false;
+	bool create_wallet = false;
 	if (const char *pa = cmd.get("--wallet-file"))
 		wallet_file = pa;
 	if (const char *pa = cmd.get("--container-file", "Use --wallet-file instead"))
 		wallet_file = pa;
-	if (cmd.get_bool("--generate-wallet"))
-		generate_wallet = true;
-	if (cmd.get_bool("--generate-container", "Use --generate-wallet instead"))
-		generate_wallet = true;
+	if (cmd.get_bool("--create-wallet"))
+		create_wallet = true;
+	else if (cmd.get_bool("--generate-container", "Use --create-wallet instead"))
+		create_wallet = true;
 	if (const char *pa = cmd.get("--export-view-only"))
 		export_view_only = pa;
 	if (const char *pa = cmd.get("--wallet-password")) {
-		password = pa;
-		if (generate_wallet) {
-			std::cout << "When generating wallet, use --set-password=<pass> argument for password" << std::endl;
-			return api::WALLETD_WRONG_ARGS;
-		}
+		password     = pa;
+		ask_password = false;
 	} else if (const char *pa = cmd.get("--container-password", "Use --wallet-password instead")) {
-		password = pa;
-		if (generate_wallet) {
-			std::cout << "When generating wallet, use --set-password=<pass> argument for password" << std::endl;
+		password     = pa;
+		ask_password = false;
+	}
+	if (!ask_password) {
+		if (create_wallet) {
+			std::cout
+			    << "When generating wallet, you cannot use --wallet-password. Wallet password will be read from stdin"
+			    << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
-	} else
-		password_in_args = false;
-	if (cmd.get_type("--set-password") == typeid(bool)) {
-		cmd.get_bool("--set-password");  // mark option as used
-		new_password_in_args = false;
-		set_password         = true;
-	} else if (const char *pa = cmd.get("--set-password")) {
-		new_password = pa;
-		set_password = true;
-	} else
-		new_password_in_args = false;
-	if (generate_wallet) {
-		if (cmd.get_type("--import-keys") == typeid(bool)) {
-			cmd.get_bool("--import-keys");  // mark option as used
-			import_keys = true;
-		} else if (const char *pa = cmd.get("--import-keys")) {
-			import_keys       = true;
-			import_keys_value = pa;
-			if (import_keys_value.empty()) {
-				std::cout << "--import-keys=<hexbytes> should not be empty. Use --import-keys without value to enter "
-				             "keys from stdin"
-				          << std::endl;
-				return api::WALLETD_WRONG_ARGS;
-			}
-		}
+		common::console::set_text_color(common::console::BrightRed);
+		std::cout << "Password on command line is a security risk. Use echo <pwd> | ./walletd" << std::endl;
+		common::console::set_text_color(common::console::Default);
 	}
+	set_password = cmd.get_bool("--set-password");  // mark option as used
+	if (create_wallet)
+		import_keys = cmd.get_bool("--import-keys");
 	bytecoin::Config config(cmd);
+
 	bytecoin::Currency currency(config.is_testnet);
 
 	if (cmd.should_quit(USAGE, bytecoin::app_version()))
-		return 0;
+		return api::WALLETD_WRONG_ARGS;
 	logging::LoggerManager logManagerNode;
-	logManagerNode.configure_default(config.get_coin_directory("logs"), "bytecoind-");
+	logManagerNode.configure_default(config.get_data_folder("logs"), "bytecoind-");
 
 	if (wallet_file.empty()) {
 		std::cout << "--wallet-file=<file> argument is mandatory" << std::endl;
 		return api::WALLETD_WRONG_ARGS;
 	}
-	if (generate_wallet && import_keys && import_keys_value.empty()) {
+	if (create_wallet && import_keys && import_keys_value.empty()) {
 		std::cout << "Enter imported keys as hex bytes (05AB6F... etc.): " << std::flush;
-		std::getline(std::cin, import_keys_value);
+		if (!std::getline(std::cin, import_keys_value)) {
+			std::cout << "Unexpected end of stdin" << std::endl;
+			return api::WALLETD_WRONG_ARGS;
+		}
 		boost::algorithm::trim(import_keys_value);
 		if (import_keys_value.empty()) {
 			std::cout << "Imported keys should not be empty" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
 	}
-	if (!generate_wallet && !password_in_args) {
+	if (!create_wallet && ask_password) {
 		std::cout << "Enter current wallet password: " << std::flush;
-		std::getline(std::cin, password);
+		if (!std::getline(std::cin, password)) {
+			std::cout << "Unexpected end of stdin" << std::endl;
+			return api::WALLETD_WRONG_ARGS;
+		}
 		boost::algorithm::trim(password);
 	}
-	if ((generate_wallet || set_password) && !new_password_in_args) {
+	if (create_wallet || set_password) {
 		std::cout << "Enter new wallet password: " << std::flush;
-		std::getline(std::cin, new_password);
+		if (!std::getline(std::cin, new_password)) {
+			std::cout << "Unexpected end of stdin" << std::endl;
+			return api::WALLETD_WRONG_ARGS;
+		}
 		boost::algorithm::trim(new_password);
 		std::cout << "Repeat new wallet password:" << std::flush;
 		std::string new_password2;
-		std::getline(std::cin, new_password2);
+		if (!std::getline(std::cin, new_password2)) {
+			std::cout << "Unexpected end of stdin" << std::endl;
+			return api::WALLETD_WRONG_ARGS;
+		}
 		boost::algorithm::trim(new_password2);
 		if (new_password != new_password2) {
 			std::cout << "New passwords do not match" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
 	}
-	const std::string coinFolder = config.get_coin_directory();
+	std::cout << "Enter HTTP authorization <user>:<password> for walletd RPC: " << std::flush;
+	std::string auth;
+	if (!std::getline(std::cin, auth)) {
+		std::cout << "Unexpected end of stdin" << std::endl;
+		return api::WALLETD_WRONG_ARGS;
+	}
+	boost::algorithm::trim(auth);
+	config.walletd_authorization = common::base64::encode(BinaryArray(auth.data(), auth.data() + auth.size()));
+	if (config.walletd_authorization.empty()) {
+		common::console::set_text_color(common::console::BrightRed);
+		std::cout << "No authorization for RPC is a security risk. Use username with a strong password" << std::endl;
+		common::console::set_text_color(common::console::Default);
+	} else {
+		if (auth.find(":") == std::string::npos) {
+			std::cout << "HTTP authorization must be in the format <user>:<password>" << std::endl;
+			return api::WALLETD_WRONG_ARGS;
+		}
+	}
+	const std::string coinFolder = config.get_data_folder();
 	//	if (wallet_file.empty() && !generate_wallet) // No args can be provided when debugging with MSVC
 	//		wallet_file = "C:\\Users\\user\\test.wallet";
 
@@ -161,15 +171,15 @@ int main(int argc, const char *argv[]) try {
 		if (!config.bytecoind_remote_port)
 			blockchain_lock = std::make_unique<platform::ExclusiveLock>(coinFolder, "bytecoind.lock");
 	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
-		std::cout << ex.what() << std::endl;
+		std::cout << "Bytecoind already running - " << ex.what() << std::endl;
 		return api::BYTECOIND_ALREADY_RUNNING;
 	}
 	try {
 		wallet = std::make_unique<Wallet>(
-		    wallet_file, generate_wallet ? new_password : password, generate_wallet, import_keys_value);
+		    wallet_file, create_wallet ? new_password : password, create_wallet, import_keys_value);
 		walletcache_lock = std::make_unique<platform::ExclusiveLock>(
-		    config.get_coin_directory("wallet_cache"), wallet->get_cache_name() + ".lock");
-	} catch (const std::ios_base::failure &ex) {
+		    config.get_data_folder("wallet_cache"), wallet->get_cache_name() + ".lock");
+	} catch (const common::StreamError &ex) {
 		std::cout << ex.what() << std::endl;
 		return api::WALLET_FILE_READ_ERROR;
 	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
@@ -186,7 +196,7 @@ int main(int argc, const char *argv[]) try {
 			wallet->export_view_only(export_view_only);
 			return 0;
 		}
-	} catch (const std::ios_base::failure &ex) {
+	} catch (const common::StreamError &ex) {
 		std::cout << ex.what() << std::endl;
 		return api::WALLET_FILE_WRITE_ERROR;
 	} catch (const Wallet::Exception &ex) {
@@ -194,7 +204,7 @@ int main(int argc, const char *argv[]) try {
 		return ex.return_code;
 	}
 	logging::LoggerManager logManagerWalletNode;
-	logManagerWalletNode.configure_default(config.get_coin_directory("logs"), "walletd-");
+	logManagerWalletNode.configure_default(config.get_data_folder("logs"), "walletd-");
 
 	WalletState wallet_state(*wallet, logManagerWalletNode, config, currency);
 	boost::asio::io_service io;
@@ -230,7 +240,7 @@ int main(int argc, const char *argv[]) try {
 					}
 				});
 				std::future<void> fut = prm.get_future();
-				fut.wait();  // propagates thread exception from here
+				fut.get();  // propagates thread exception from here
 			} else {
 				block_chain = std::make_unique<BlockChainState>(logManagerNode, config, currency);
 				node        = std::make_unique<Node>(logManagerNode, config, *block_chain);
@@ -262,7 +272,7 @@ int main(int argc, const char *argv[]) try {
 			io.run_one();
 	}
 	return 0;
-} catch (const std::exception & ex) { // On Windows what() is not printed if thrown from main
+} catch (const std::exception &ex) {  // On Windows what() is not printed if thrown from main
 	std::cout << "Exception in main() - " << ex.what() << std::endl;
 	throw;
 }

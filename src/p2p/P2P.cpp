@@ -1,5 +1,5 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSING.md for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "P2P.hpp"
 #include <algorithm>
@@ -179,7 +179,7 @@ void P2P::accept_all() {
 		if (!la_socket->accept(next_client[incoming]->sock, addr))
 			return;
 		NetworkAddress address;
-		common::parse_ip_address(address.ip, addr);
+		common::parse_ip_address(addr, address.ip);
 		address.port                   = config.p2p_bind_port;
 		next_client[incoming]->address = address;
 		if (peers.is_peer_banned(address, get_local_time())) {
