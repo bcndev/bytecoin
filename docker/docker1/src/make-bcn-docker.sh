@@ -33,4 +33,4 @@ echo $RESULT_MSG
 cp -v ../bin/* /save
 
 echo Remove sources
-cd ../.. && rm -rf bytecoin-gui && rm -rf bytecoin-gui
+cd ../.. && rm -rf bytecoin-gui && rm -rf bytecoin
