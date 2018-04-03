@@ -29,31 +29,32 @@ public:
 		Entry()
 		    : PeerlistEntry{}  // Initialize all fields
 		{}
-		Timestamp banUntil              = 0;
-		Timestamp nextConnectionAttempt = 0;
-		uint64_t shuffleRandom = 0;  // We assign random number to each record, for deterministic order of equal items
-		std::string error;           // last ban reason
+		Timestamp ban_until               = 0;
+		Timestamp next_connection_attempt = 0;
+		uint64_t shuffle_random = 0;  // We assign random number to each record, for deterministic order of equal items
+		std::string error;            // last ban reason
 	};
 
 	struct by_addr {};
-	struct by_banUntil {};
-	struct by_nextConnectionAttempt {};
+	struct by_ban_until {};
+	struct by_next_connection_attempt {};
 
 	typedef boost::multi_index_container<Entry,
 	    boost::multi_index::indexed_by<
 	        boost::multi_index::ordered_unique<boost::multi_index::tag<by_addr>,
 	            boost::multi_index::member<PeerlistEntry, NetworkAddress, &PeerlistEntry::adr>>,
-	        boost::multi_index::ordered_non_unique<boost::multi_index::tag<by_banUntil>,
-	            boost::multi_index::composite_key<Entry, boost::multi_index::member<Entry, Timestamp, &Entry::banUntil>,
+	        boost::multi_index::ordered_non_unique<boost::multi_index::tag<by_ban_until>,
+	            boost::multi_index::composite_key<Entry,
+	                boost::multi_index::member<Entry, Timestamp, &Entry::ban_until>,
 	                boost::multi_index::member<PeerlistEntry, Timestamp, &PeerlistEntry::last_seen>,
-	                boost::multi_index::member<Entry, uint64_t, &Entry::shuffleRandom>>,
+	                boost::multi_index::member<Entry, uint64_t, &Entry::shuffle_random>>,
 	            boost::multi_index::composite_key_compare<std::less<Timestamp>, std::greater<Timestamp>,
 	                std::less<uint64_t>>>,
-	        boost::multi_index::ordered_non_unique<boost::multi_index::tag<by_nextConnectionAttempt>,
+	        boost::multi_index::ordered_non_unique<boost::multi_index::tag<by_next_connection_attempt>,
 	            boost::multi_index::composite_key<Entry,
-	                boost::multi_index::member<Entry, Timestamp, &Entry::nextConnectionAttempt>,
+	                boost::multi_index::member<Entry, Timestamp, &Entry::next_connection_attempt>,
 	                boost::multi_index::member<PeerlistEntry, Timestamp, &PeerlistEntry::last_seen>,
-	                boost::multi_index::member<Entry, uint64_t, &Entry::shuffleRandom>>,
+	                boost::multi_index::member<Entry, uint64_t, &Entry::shuffle_random>>,
 	            boost::multi_index::composite_key_compare<std::less<Timestamp>, std::greater<Timestamp>,
 	                std::less<uint64_t>>>>>
 	    peers_indexed;

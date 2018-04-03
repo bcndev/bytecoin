@@ -63,11 +63,11 @@ bool TransactionBuilder::generate_key_image_helper(const AccountKeys &ack, const
 	if (!r)
 		return false;
 	r = crypto::derive_public_key(
-	    recv_derivation, real_output_index, ack.address.spend_public_key, in_ephemeral.publicKey);
+	    recv_derivation, real_output_index, ack.address.spend_public_key, in_ephemeral.public_key);
 	if (!r)
 		return false;
-	crypto::derive_secret_key(recv_derivation, real_output_index, ack.spend_secret_key, in_ephemeral.secretKey);
-	crypto::generate_key_image(in_ephemeral.publicKey, in_ephemeral.secretKey, ki);
+	crypto::derive_secret_key(recv_derivation, real_output_index, ack.spend_secret_key, in_ephemeral.secret_key);
+	crypto::generate_key_image(in_ephemeral.public_key, in_ephemeral.secret_key, ki);
 	return true;
 }
 
@@ -117,8 +117,8 @@ KeyPair TransactionBuilder::deterministic_keys_from_seed(const Hash &tx_inputs_h
 	common::append(ba, std::begin(tx_derivation_seed.data), std::end(tx_derivation_seed.data));
 
 	KeyPair tx_keys{};
-	crypto::hash_to_scalar(ba.data(), ba.size(), tx_keys.secretKey);
-	crypto::secret_key_to_public_key(tx_keys.secretKey, tx_keys.publicKey);
+	crypto::hash_to_scalar(ba.data(), ba.size(), tx_keys.secret_key);
+	crypto::secret_key_to_public_key(tx_keys.secret_key, tx_keys.public_key);
 	return tx_keys;
 }
 
@@ -135,20 +135,20 @@ Transaction TransactionBuilder::sign(const Hash &tx_derivation_seed) {
 	m_transaction.inputs.resize(m_input_descs.size());
 	for (size_t i                  = 0; i != m_input_descs.size(); ++i)
 		m_transaction.inputs.at(i) = std::move(m_input_descs[i].input);
-	KeyPair txKeys                 = deterministic_keys_from_seed(m_transaction, tx_derivation_seed);
+	KeyPair tx_keys                = deterministic_keys_from_seed(m_transaction, tx_derivation_seed);
 
-	TransactionExtraPublicKey pk = {txKeys.publicKey};
+	TransactionExtraPublicKey pk = {tx_keys.public_key};
 	m_extra.set(pk);
 	m_transaction.extra = m_extra.serialize();
 	// Now when we set tx keys we can derive output keys
 	m_transaction.outputs.resize(m_output_descs.size());
 	for (size_t i = 0; i != m_output_descs.size(); ++i) {
-		KeyOutput outKey;
-		if (!derive_public_key(m_output_descs[i].addr, txKeys.secretKey, i, outKey.key))
+		KeyOutput out_key;
+		if (!derive_public_key(m_output_descs[i].addr, tx_keys.secret_key, i, out_key.key))
 			throw std::runtime_error("output keys detected as corrupted during output key derivation");
 		TransactionOutput out;  // TODO - return {} initializer after NDK compiler upgrade
 		out.amount                  = m_output_descs[i].amount;
-		out.target                  = outKey;
+		out.target                  = out_key;
 		m_transaction.outputs.at(i) = out;
 	}
 
@@ -160,11 +160,11 @@ Transaction TransactionBuilder::sign(const Hash &tx_derivation_seed) {
 		std::vector<Signature> signatures;
 		std::vector<const PublicKey *> keys_ptrs;
 		for (const auto &o : desc.outputs) {
-			keys_ptrs.push_back(&o.public_key);  // reinterpret_cast<const PublicKey*>(&o.targetKey));
+			keys_ptrs.push_back(&o.public_key);
 		}
 		signatures.resize(keys_ptrs.size(), Signature{});
-		if (!generate_ring_signature(
-		        hash, input.key_image, keys_ptrs, desc.eph_keys.secretKey, desc.real_output_index, signatures.data())) {
+		if (!generate_ring_signature(hash, input.key_image, keys_ptrs, desc.eph_keys.secret_key, desc.real_output_index,
+		        signatures.data())) {
 			throw std::runtime_error("output keys detected as corrupted during ring signing");
 		}
 		m_transaction.signatures.at(i) = signatures;
@@ -202,10 +202,10 @@ void UnspentSelector::add_mixed_inputs(const SecretKey &view_secret_key,
 		AccountKeys sender_keys;
 		sender_keys.view_secret_key = view_secret_key;
 		if (!m_currency.parse_account_address_string(uu.address, sender_keys.address))
-			throw json_rpc::Error(json_rpc::errInvalidParams, "Could not parse address " + uu.address);
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Could not parse address " + uu.address);
 		auto rit = wallet_records.find(sender_keys.address.spend_public_key);
 		if (rit == wallet_records.end() || rit->second.spend_public_key != sender_keys.address.spend_public_key)
-			throw json_rpc::Error(json_rpc::errInvalidParams, "No keys in wallet for address " + uu.address);
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "No keys in wallet for address " + uu.address);
 		sender_keys.spend_secret_key = rit->second.spend_secret_key;
 		builder.add_input(sender_keys, uu, mix_outputs);
 	}

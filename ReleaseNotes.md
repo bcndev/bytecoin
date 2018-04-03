@@ -1,5 +1,12 @@
 ## Release Notes
 
+### v3.0.1
+
+- Added `walletd` option `--export-keys` to export keys in legacy format (for example, to print on paper and put in a vault).
+- Changed logic of how `walletd` truncates cache in old wallet files: On writable media, it now tries to do that right after opening.
+- Fixed issue in wallet state undo logic, which rarely leads to sync crashes/stucks in version 3.0.0.
+- Added test wallets for import/export testing.
+
 ### v3.0.0
 
 - Added HTTPS support between walletd and bytecoind.

@@ -23,7 +23,8 @@ public:
 
 	uint64_t seek(uint64_t pos, int whence);  // SEEK_SET, SEEK_CUR, SEEK_END
 	uint64_t tellp() const { return const_cast<FileStream *>(this)->seek(0, SEEK_CUR); }
-	void fdatasync();  // top reason for existence of this class
+	void fdatasync();              // top reason for existence of this class
+	void truncate(uint64_t size);  // also sets pointer to the new end of file
 
 #ifdef _WIN32
 	static std::wstring utf8_to_utf16(const std::string &str);  // Used by various Windows API wrappers

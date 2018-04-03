@@ -9,7 +9,7 @@ namespace common {
 
 namespace {
 
-const uint8_t characterValues[256] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+const uint8_t character_values[256] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x01, 0x02,
     0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
@@ -28,35 +28,35 @@ const uint8_t characterValues[256] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 
 std::string as_string(const void *data, size_t size) { return std::string(static_cast<const char *>(data), size); }
 
 BinaryArray as_binary_array(const std::string &data) {
-	auto dataPtr = reinterpret_cast<const uint8_t *>(data.data());
-	return BinaryArray(dataPtr, dataPtr + data.size());
+	auto data_ptr = reinterpret_cast<const uint8_t *>(data.data());
+	return BinaryArray(data_ptr, data_ptr + data.size());
 }
 
 uint8_t from_hex(char character) {
-	uint8_t value = characterValues[static_cast<unsigned char>(character)];
+	uint8_t value = character_values[static_cast<unsigned char>(character)];
 	if (value > 0x0f) {
-		throw std::runtime_error("fromHex: invalid character");
+		throw std::runtime_error("from_hex: invalid character");
 	}
 
 	return value;
 }
 
 bool from_hex(char character, uint8_t &value) {
-	if (characterValues[static_cast<unsigned char>(character)] > 0x0f) {
+	if (character_values[static_cast<unsigned char>(character)] > 0x0f) {
 		return false;
 	}
 
-	value = characterValues[static_cast<unsigned char>(character)];
+	value = character_values[static_cast<unsigned char>(character)];
 	return true;
 }
 
-size_t from_hex(const std::string &text, void *data, size_t bufferSize) {
+size_t from_hex(const std::string &text, void *data, size_t buffer_size) {
 	if ((text.size() & 1) != 0) {
-		throw std::runtime_error("fromHex: invalid string size");
+		throw std::runtime_error("from_hex: invalid string size");
 	}
 
-	if (text.size() >> 1 > bufferSize) {
-		throw std::runtime_error("fromHex: invalid buffer size");
+	if (text.size() >> 1 > buffer_size) {
+		throw std::runtime_error("from_hex: invalid buffer size");
 	}
 
 	for (size_t i = 0; i<text.size()>> 1; ++i) {
@@ -66,12 +66,12 @@ size_t from_hex(const std::string &text, void *data, size_t bufferSize) {
 	return text.size() >> 1;
 }
 
-bool from_hex(const std::string &text, void *data, size_t bufferSize, size_t &size) {
+bool from_hex(const std::string &text, void *data, size_t buffer_size, size_t &size) {
 	if ((text.size() & 1) != 0) {
 		return false;
 	}
 
-	if (text.size() >> 1 > bufferSize) {
+	if (text.size() >> 1 > buffer_size) {
 		return false;
 	}
 
@@ -95,7 +95,7 @@ bool from_hex(const std::string &text, void *data, size_t bufferSize, size_t &si
 
 BinaryArray from_hex(const std::string &text) {
 	if ((text.size() & 1) != 0) {
-		throw std::runtime_error("fromHex: invalid string size");
+		throw std::runtime_error("from_hex: invalid string size");
 	}
 
 	BinaryArray data(text.size() >> 1);
@@ -163,23 +163,23 @@ void append_hex(const BinaryArray &data, std::string &text) {
 }
 
 std::string extract(std::string &text, char delimiter) {
-	size_t delimiterPosition = text.find(delimiter);
-	std::string subText;
-	if (delimiterPosition != std::string::npos) {
-		subText = text.substr(0, delimiterPosition);
-		text    = text.substr(delimiterPosition + 1);
+	size_t delimiter_pos = text.find(delimiter);
+	std::string sub_text;
+	if (delimiter_pos != std::string::npos) {
+		sub_text = text.substr(0, delimiter_pos);
+		text     = text.substr(delimiter_pos + 1);
 	} else {
-		subText.swap(text);
+		sub_text.swap(text);
 	}
 
-	return subText;
+	return sub_text;
 }
 
 std::string extract(const std::string &text, char delimiter, size_t &offset) {
-	size_t delimiterPosition = text.find(delimiter, offset);
-	if (delimiterPosition != std::string::npos) {
-		offset = delimiterPosition + 1;
-		return text.substr(offset, delimiterPosition);
+	size_t delimiter_pos = text.find(delimiter, offset);
+	if (delimiter_pos != std::string::npos) {
+		offset = delimiter_pos + 1;
+		return text.substr(offset, delimiter_pos);
 	} else {
 		offset = text.size();
 		return text.substr(offset);
@@ -189,9 +189,9 @@ std::string extract(const std::string &text, char delimiter, size_t &offset) {
 bool load_file(const std::string &filepath, std::string &buf) {
 	try {
 		platform::FileStream fs(filepath, platform::FileStream::READ_EXISTING);
-		size_t fileSize = boost::lexical_cast<size_t>(fs.seek(0, SEEK_END));
+		size_t file_size = boost::lexical_cast<size_t>(fs.seek(0, SEEK_END));
 		fs.seek(0, SEEK_SET);
-		buf.resize(fileSize);
+		buf.resize(file_size);
 		fs.read(&buf[0], buf.size());
 	} catch (const std::exception &) {
 		return false;
@@ -202,9 +202,9 @@ bool load_file(const std::string &filepath, std::string &buf) {
 bool load_file(const std::string &filepath, BinaryArray &buf) {
 	try {
 		platform::FileStream fs(filepath, platform::FileStream::READ_EXISTING);
-		size_t fileSize = boost::lexical_cast<size_t>(fs.seek(0, SEEK_END));
+		size_t file_size = boost::lexical_cast<size_t>(fs.seek(0, SEEK_END));
 		fs.seek(0, SEEK_SET);
-		buf.resize(fileSize);
+		buf.resize(file_size);
 		fs.read(buf.data(), buf.size());
 	} catch (const std::exception &) {
 		return false;

@@ -3,11 +3,11 @@
 
 #include "test_hash.hpp"
 
-#include <cstddef>
+//#include <cstddef>
 #include <fstream>
-#include <iomanip>
-#include <ios>
-#include <string>
+//#include <iomanip>
+//#include <ios>
+//#include <string>
 
 #include "../io.hpp"
 #include "common/StringTools.hpp"

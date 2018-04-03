@@ -22,8 +22,7 @@ struct EncryptedWalletRecord {
 	uint8_t data[sizeof(crypto::PublicKey) + sizeof(crypto::SecretKey) + sizeof(uint64_t)]{};
 };
 struct ContainerStoragePrefix {
-	//	uint8_t version; // We moved version out of this struct, because with it
-	// other fields become unaligned
+	// We moved uint8_t version out of this struct, because with it other fields become unaligned
 	crypto::chacha8_iv next_iv;
 	EncryptedWalletRecord encrypted_view_keys;
 };
@@ -52,6 +51,10 @@ static void encrypt_key_pair(EncryptedWalletRecord &r, PublicKey pk, SecretKey s
 	chacha8(&rec, sizeof(r.data), key, r.iv, r.data);
 }
 
+size_t Wallet::wallet_file_size(size_t records) {
+	return 1 + sizeof(ContainerStoragePrefix) + sizeof(uint64_t) * 2 + sizeof(EncryptedWalletRecord) * records;
+}
+
 void Wallet::load_container_storage() {
 	uint8_t version = 0;
 	ContainerStoragePrefix prefix{};
@@ -71,7 +74,7 @@ void Wallet::load_container_storage() {
 	if (!keys_match(m_view_secret_key, m_view_public_key))
 		throw Exception(api::WALLET_FILE_DECRYPT_ERROR, "Restored view public key doesn't correspond to secret key");
 
-	size_t item_count =
+	const size_t item_count =
 	    boost::lexical_cast<size_t>(std::min(f_item_count, f_item_capacity));  // Protection against write shredding
 	std::vector<EncryptedWalletRecord> all_encrypted(item_count);
 	file->read(reinterpret_cast<char *>(all_encrypted.data()), sizeof(EncryptedWalletRecord) * item_count);
@@ -102,6 +105,15 @@ void Wallet::load_container_storage() {
 		}
 		m_oldest_timestamp = std::min(m_oldest_timestamp, wallet_record.creation_timestamp);
 		m_wallet_records.insert(std::make_pair(wallet_record.spend_public_key, wallet_record));
+	}
+	auto file_size           = file->seek(0, SEEK_END);
+	auto should_be_file_size = wallet_file_size(item_count);
+	if (file_size > should_be_file_size) {  // We truncate legacy wallet cache
+		try {
+			file->truncate(should_be_file_size);
+			std::cout << "Truncated wallet cache legacy wallet file to size=" << should_be_file_size << std::endl;
+		} catch (const std::exception &) {  // probably read only, ignore
+		}
 	}
 }
 
@@ -178,6 +190,11 @@ Wallet::Wallet(const std::string &path, const std::string &password, bool create
 			throw Exception(api::WALLET_FILE_DECRYPT_ERROR, std::string("Error decrypting wallet file ") + ex.what());
 		}
 		file.reset();  // Indicates legacy format
+		try {
+			save_and_check();  // We try to overwrite legacy format with new format
+			std::cout << "Overwritten legacy wallet file with new data format" << std::endl;
+		} catch (const std::exception &) {  // probably read only, ignore
+		}
 	} else {
 		load_container_storage();
 	}
@@ -234,6 +251,20 @@ void Wallet::save(const std::string &export_path, bool view_only) {
 		f.write(&record, sizeof(record));
 	}
 	f.fdatasync();
+}
+
+BinaryArray Wallet::export_keys() const {
+	BinaryArray result;
+	if (m_wallet_records.size() != 1)
+		throw Exception(
+		    api::WALLETD_EXPORTKEYS_MORETHANONE, "You can only export keys from a wallet containing 1 address");
+	common::append(
+	    result, std::begin(first_record.spend_public_key.data), std::end(first_record.spend_public_key.data));
+	common::append(result, std::begin(m_view_public_key.data), std::end(m_view_public_key.data));
+	common::append(
+	    result, std::begin(first_record.spend_secret_key.data), std::end(first_record.spend_secret_key.data));
+	common::append(result, std::begin(m_view_secret_key.data), std::end(m_view_secret_key.data));
+	return result;
 }
 
 void Wallet::save_and_check() {
@@ -304,8 +335,7 @@ std::vector<WalletRecord> Wallet::generate_new_addresses(const std::vector<Secre
 	if (!file.get()) {  // Legacy format, now overwrite
 		save_and_check();
 	}
-	size_t append_pos = 1 + sizeof(ContainerStoragePrefix) + sizeof(uint64_t) * 2 +
-	                    sizeof(EncryptedWalletRecord) * m_wallet_records.size();
+	size_t append_pos = wallet_file_size(m_wallet_records.size());
 	file->seek(append_pos, SEEK_SET);
 	for (auto &&sk : sks) {
 		auto new_rit = generate_new_address(sk, ct);

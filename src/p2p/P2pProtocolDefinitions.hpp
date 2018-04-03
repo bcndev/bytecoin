@@ -96,11 +96,11 @@ struct proof_of_trust {
 };
 
 struct CoreStatistics {  // TODO - convert to json blob
-	uint64_t transactionPoolSize   = 0;
-	uint64_t blockchainHeight      = 0;
-	uint64_t miningSpeed           = 0;
-	uint64_t alternativeBlockCount = 0;
-	std::string topBlockHashString;
+	uint64_t tx_pool_size       = 0;
+	uint64_t blockchain_height  = 0;
+	uint64_t mining_speed       = 0;
+	uint64_t alternative_blocks = 0;
+	std::string top_block_id_str;
 };
 
 struct COMMAND_REQUEST_STAT_INFO {

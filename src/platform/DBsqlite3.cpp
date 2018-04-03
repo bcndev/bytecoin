@@ -45,13 +45,26 @@ DBsqlite::DBsqlite(const std::string &full_path, uint64_t max_db_size) : full_pa
 	    "sqlite3_prepare_v2 stmt_update ");
 	sqlite_check(sqlite3_prepare_v2(db_dbi.handle, "DELETE FROM kv_table WHERE kk = ?", -1, &stmt_del.handle, 0),
 	    "sqlite3_prepare_v2 stmt_del ");
+	sqlite_check(sqlite3_prepare_v2(db_dbi.handle, "SELECT count(kk) FROM kv_table", -1, &stmt_select_star.handle, 0),
+	    "sqlite3_prepare_v2 stmt_select_star ");
+
 	sqlite_check(sqlite3_exec(db_dbi.handle, "BEGIN TRANSACTION", 0, 0, &err_msg), err_msg);
+	std::cout << "SQLite applying DB journal, can take up to several minutes..." << std::endl;
 	commit_db_txn();  // We apply journal from last crash/exit immediately
+	                  //	std::cout << "rows=" << get_approximate_items_count() << std::endl;
 }
 
 size_t DBsqlite::test_get_approximate_size() const { return 0; }
 
-size_t DBsqlite::get_approximate_items_count() const { return 0; }  // TODO
+size_t DBsqlite::get_approximate_items_count() const {
+	return 1;  // Sqlite does full table scan on select count(*), we do not want that behavior
+	           //	sqlite3_reset(stmt_select_star.handle);
+	           //	auto rc = sqlite3_step(stmt_select_star.handle);
+	           //	if (rc != SQLITE_ROW)
+	           //		throw platform::sqlite::Error("DB::get_approximate_items_count failed sqlite3_step in get " +
+	           // common::to_string(rc));
+	           //	return boost::lexical_cast<size_t>(sqlite3_column_int64(stmt_select_star.handle, 0));
+}
 
 static const size_t max_key_size = 128;
 

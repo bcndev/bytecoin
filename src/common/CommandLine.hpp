@@ -33,7 +33,7 @@ class CommandLine {  // Lean command line parsing. Best! :)
 	bool positional_used = false;
 
 public:
-	CommandLine(int argc, const char *argv[]);
+	CommandLine(int argc, const char *const argv[]);
 	// gets are non-const because they mark used options and remember wrong types
 	const char *get(const char *key, const char *deprecation_text = nullptr);
 	bool get_bool(const char *key, const char *deprecation_text = nullptr);

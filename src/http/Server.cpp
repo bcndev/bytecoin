@@ -53,7 +53,7 @@ bool Client::read_next(RequestData &req) {
 
 void Client::write() {
 	while (!responses.empty()) {
-		responses.front().copyTo(sock);
+		responses.front().copy_to(sock);
 		if (responses.front().size() != 0)
 			break;
 		responses.pop_front();
@@ -84,7 +84,7 @@ void Client::advance_state(bool called_from_runloop) {
 		return;  // do not process new request until previous response completely sent. TODO - process.short responses
 	}
 	if (!receiving_body) {
-		buffer.copyFrom(sock);
+		buffer.copy_from(sock);
 		// Twice to have a chance to read both parts of buffer
 		auto ptr = parser.parse(request, buffer.read_ptr(), buffer.read_ptr() + buffer.read_count());
 		buffer.did_read(ptr - buffer.read_ptr());
@@ -102,13 +102,13 @@ void Client::advance_state(bool called_from_runloop) {
 	while (true) {
 		size_t expect_count = request.has_content_length() ? request.content_length : 0;
 		size_t max_count    = expect_count - receiving_body_stream.size();
-		buffer.copyTo(receiving_body_stream, max_count);
+		buffer.copy_to(receiving_body_stream, max_count);
 		if (expect_count == receiving_body_stream.size()) {
 			if (called_from_runloop)
 				r_handler();
 			return;
 		}
-		buffer.copyFrom(sock);
+		buffer.copy_from(sock);
 		if (buffer.empty())
 			break;
 	}

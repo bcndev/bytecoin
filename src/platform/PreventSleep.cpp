@@ -10,20 +10,8 @@
 #if defined(__ANDROID__)
 #include <QAndroidJniObject>
 
-static QAndroidJniObject m_wakeLock;
+static QAndroidJniObject m_wake_lock;
 static std::atomic<int> counter{0};
-
-/*static void setActivityFlags(const char * method){
-    QAndroidJniObject activity = QAndroidJniObject::callStaticObjectMethod("org/qtproject/qt5/android/QtNative",
-"activity", "()Landroid/app/Activity;");
-    if (activity.isValid()) {
-        QAndroidJniObject window = activity.callObjectMethod("getWindow", "()Landroid/view/Window;");
-        if (window.isValid()) {
-            const int FLAG_KEEP_SCREEN_ON = 128;
-            window.callMethod<void>(method, "(I)V", FLAG_KEEP_SCREEN_ON);
-        }
-    }
-}*/
 
 platform::PreventSleep::PreventSleep(const char *reason) {
 	if (++counter == 1) {
@@ -41,22 +29,22 @@ platform::PreventSleep::PreventSleep(const char *reason) {
 
 					QAndroidJniObject tag = QAndroidJniObject::fromString("My Tag");
 
-					m_wakeLock = powerMgr.callObjectMethod("newWakeLock",
+					m_wake_lock = powerMgr.callObjectMethod("newWakeLock",
 					    "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;", levelAndFlags,
 					    tag.object<jstring>());
 				}
 			}
 		}
-		if (m_wakeLock.isValid()) {
-			m_wakeLock.callMethod<void>("acquire", "()V");
+		if (m_wake_lock.isValid()) {
+			m_wake_lock.callMethod<void>("acquire", "()V");
 			//            qDebug() << "Locked device, can't go to standby anymore";
 		}
 	}
 }
 platform::PreventSleep::~PreventSleep() {
 	if (--counter == 0) {
-		if (m_wakeLock.isValid()) {
-			m_wakeLock.callMethod<void>("release", "()V");
+		if (m_wake_lock.isValid()) {
+			m_wake_lock.callMethod<void>("release", "()V");
 			//            qDebug() << "Unlocked device, can now go to standby";
 		}
 	}
@@ -76,10 +64,10 @@ static IOPMAssertionID assertionID = 0;
 
 platform::PreventSleep::PreventSleep(const char *reason) {
 	if (++counter == 1) {
-		CFStringRef reasonForActivity = CFStringCreateWithCString(kCFAllocatorDefault, reason, kCFStringEncodingUTF8);
-		IOReturn success              = IOPMAssertionCreateWithName(
-		    kIOPMAssertionTypeNoDisplaySleep, kIOPMAssertionLevelOn, reasonForActivity, &assertionID);
-		CFRelease(reasonForActivity);
+		CFStringRef reason_for_activity = CFStringCreateWithCString(kCFAllocatorDefault, reason, kCFStringEncodingUTF8);
+		IOReturn success                = IOPMAssertionCreateWithName(
+		    kIOPMAssertionTypeNoDisplaySleep, kIOPMAssertionLevelOn, reason_for_activity, &assertionID);
+		CFRelease(reason_for_activity);
 		std::cout << "Preventing sleep " << reason << " success=" << success << std::endl;
 	}
 }

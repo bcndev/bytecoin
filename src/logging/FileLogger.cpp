@@ -23,11 +23,11 @@ void FileLogger::do_log_string(const std::string &message) {
 	std::string real_message;
 	real_message.reserve(message.size());
 
-	for (size_t charPos = 0; charPos < message.size(); ++charPos) {
-		if (message[charPos] == ILogger::COLOR_PREFIX) {
-			charPos += 1;
+	for (size_t char_pos = 0; char_pos < message.size(); ++char_pos) {
+		if (message[char_pos] == ILogger::COLOR_PREFIX) {
+			char_pos += 1;
 		} else {
-			real_message += message[charPos];
+			real_message += message[char_pos];
 		}
 	}
 	try {
@@ -40,7 +40,7 @@ void FileLogger::do_log_string(const std::string &message) {
 		std::string cur  = fullfilenamenoext + "_0.log";
 		std::string prev = fullfilenamenoext + "_1.log";
 		if (!platform::atomic_replace_file(cur, prev)) {
-			// StreamLogger::doLogString("FileLogger failed to rotate log file, doubling size of next rotation...");
+			// StreamLogger::do_log_string("FileLogger failed to rotate log file, doubling size of next rotation...");
 			max_size *= 2;
 			return;
 		}

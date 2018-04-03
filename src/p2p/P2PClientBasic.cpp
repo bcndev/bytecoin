@@ -12,7 +12,7 @@ const float TIMED_SYNC_TIMEOUT = 60 * 4;
 using namespace bytecoin;
 
 template<typename Cmd>
-bytecoin::P2PClientBasic::LevinHandlerFunction levinMethod(void (bytecoin::P2PClientBasic::*handler)(Cmd &&)) {
+bytecoin::P2PClientBasic::LevinHandlerFunction levin_method(void (bytecoin::P2PClientBasic::*handler)(Cmd &&)) {
 	return [handler](P2PClientBasic *who, BinaryArray &&body) {
 
 		Cmd req{};
@@ -26,36 +26,37 @@ bytecoin::P2PClientBasic::LevinHandlerFunction levinMethod(void (bytecoin::P2PCl
 }
 
 std::map<std::pair<uint32_t, bool>, P2PClientBasic::LevinHandlerFunction> P2PClientBasic::before_handshake_handlers = {
-    {{COMMAND_PING::ID, false}, levinMethod<COMMAND_PING::request>(&P2PClientBasic::msg_ping)},
-    {{COMMAND_PING::ID, true}, levinMethod<COMMAND_PING::response>(&P2PClientBasic::msg_ping)},
-    {{COMMAND_HANDSHAKE::ID, false}, levinMethod<COMMAND_HANDSHAKE::request>(&P2PClientBasic::msg_handshake)},
-    {{COMMAND_HANDSHAKE::ID, true}, levinMethod<COMMAND_HANDSHAKE::response>(&P2PClientBasic::msg_handshake)}};
+    {{COMMAND_PING::ID, false}, levin_method<COMMAND_PING::request>(&P2PClientBasic::msg_ping)},
+    {{COMMAND_PING::ID, true}, levin_method<COMMAND_PING::response>(&P2PClientBasic::msg_ping)},
+    {{COMMAND_HANDSHAKE::ID, false}, levin_method<COMMAND_HANDSHAKE::request>(&P2PClientBasic::msg_handshake)},
+    {{COMMAND_HANDSHAKE::ID, true}, levin_method<COMMAND_HANDSHAKE::response>(&P2PClientBasic::msg_handshake)}};
+
 std::map<std::pair<uint32_t, bool>, P2PClientBasic::LevinHandlerFunction> P2PClientBasic::after_handshake_handlers = {
-    {{COMMAND_TIMED_SYNC::ID, false}, levinMethod<COMMAND_TIMED_SYNC::request>(&P2PClientBasic::msg_timed_sync)},
-    {{COMMAND_TIMED_SYNC::ID, true}, levinMethod<COMMAND_TIMED_SYNC::response>(&P2PClientBasic::msg_timed_sync)},
+    {{COMMAND_TIMED_SYNC::ID, false}, levin_method<COMMAND_TIMED_SYNC::request>(&P2PClientBasic::msg_timed_sync)},
+    {{COMMAND_TIMED_SYNC::ID, true}, levin_method<COMMAND_TIMED_SYNC::response>(&P2PClientBasic::msg_timed_sync)},
 #if bytecoin_ALLOW_DEBUG_COMMANDS
     {{COMMAND_REQUEST_NETWORK_STATE::ID, false},
-        levinMethod<COMMAND_REQUEST_NETWORK_STATE::request>(&P2PClientBasic::on_msg_network_state)},
+        levin_method<COMMAND_REQUEST_NETWORK_STATE::request>(&P2PClientBasic::on_msg_network_state)},
     {{COMMAND_REQUEST_NETWORK_STATE::ID, true},
-        levinMethod<COMMAND_REQUEST_NETWORK_STATE::response>(&P2PClientBasic::on_msg_network_state)},
+        levin_method<COMMAND_REQUEST_NETWORK_STATE::response>(&P2PClientBasic::on_msg_network_state)},
     {{COMMAND_REQUEST_STAT_INFO::ID, false},
-        levinMethod<COMMAND_REQUEST_STAT_INFO::request>(&P2PClientBasic::on_msg_stat_info)},
+        levin_method<COMMAND_REQUEST_STAT_INFO::request>(&P2PClientBasic::on_msg_stat_info)},
     {{COMMAND_REQUEST_STAT_INFO::ID, true},
-        levinMethod<COMMAND_REQUEST_STAT_INFO::response>(&P2PClientBasic::on_msg_stat_info)},
+        levin_method<COMMAND_REQUEST_STAT_INFO::response>(&P2PClientBasic::on_msg_stat_info)},
 #endif
-    {{NOTIFY_NEW_BLOCK::ID, false}, levinMethod<NOTIFY_NEW_BLOCK::request>(&P2PClientBasic::on_msg_notify_new_block)},
+    {{NOTIFY_NEW_BLOCK::ID, false}, levin_method<NOTIFY_NEW_BLOCK::request>(&P2PClientBasic::on_msg_notify_new_block)},
     {{NOTIFY_NEW_TRANSACTIONS::ID, false},
-        levinMethod<NOTIFY_NEW_TRANSACTIONS::request>(&P2PClientBasic::on_msg_notify_new_transactions)},
+        levin_method<NOTIFY_NEW_TRANSACTIONS::request>(&P2PClientBasic::on_msg_notify_new_transactions)},
     {{NOTIFY_REQUEST_TX_POOL::ID, false},
-        levinMethod<NOTIFY_REQUEST_TX_POOL::request>(&P2PClientBasic::on_msg_notify_request_tx_pool)},
+        levin_method<NOTIFY_REQUEST_TX_POOL::request>(&P2PClientBasic::on_msg_notify_request_tx_pool)},
     {{NOTIFY_REQUEST_CHAIN::ID, false},
-        levinMethod<NOTIFY_REQUEST_CHAIN::request>(&P2PClientBasic::on_msg_notify_request_chain)},
+        levin_method<NOTIFY_REQUEST_CHAIN::request>(&P2PClientBasic::on_msg_notify_request_chain)},
     {{NOTIFY_RESPONSE_CHAIN_ENTRY::ID, false},
-        levinMethod<NOTIFY_RESPONSE_CHAIN_ENTRY::request>(&P2PClientBasic::on_msg_notify_request_chain)},
+        levin_method<NOTIFY_RESPONSE_CHAIN_ENTRY::request>(&P2PClientBasic::on_msg_notify_request_chain)},
     {{NOTIFY_REQUEST_GET_OBJECTS::ID, false},
-        levinMethod<NOTIFY_REQUEST_GET_OBJECTS::request>(&P2PClientBasic::on_msg_notify_request_objects)},
+        levin_method<NOTIFY_REQUEST_GET_OBJECTS::request>(&P2PClientBasic::on_msg_notify_request_objects)},
     {{NOTIFY_RESPONSE_GET_OBJECTS::ID, false},
-        levinMethod<NOTIFY_RESPONSE_GET_OBJECTS::request>(&P2PClientBasic::on_msg_notify_request_objects)}};
+        levin_method<NOTIFY_RESPONSE_GET_OBJECTS::request>(&P2PClientBasic::on_msg_notify_request_objects)}};
 
 P2PClientBasic::P2PClientBasic(const Config &config, uint64_t unique_number, bool incoming, D_handler d_handler)
     : P2PClient(LevinProtocol::HEADER_SIZE(), incoming, d_handler)

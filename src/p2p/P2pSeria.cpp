@@ -55,11 +55,11 @@ void ser_members(bytecoin::connection_entry &v, seria::ISeria &s) {
 }
 
 void ser_members(bytecoin::CoreStatistics &v, seria::ISeria &s) {
-	seria::seria_kv("tx_pool_size", v.transactionPoolSize, s);
-	seria::seria_kv("blockchain_height", v.blockchainHeight, s);
-	seria::seria_kv("mining_speed", v.miningSpeed, s);
-	seria::seria_kv("alternative_blocks", v.alternativeBlockCount, s);
-	seria::seria_kv("top_block_id_str", v.topBlockHashString, s);
+	seria::seria_kv("tx_pool_size", v.tx_pool_size, s);
+	seria::seria_kv("blockchain_height", v.blockchain_height, s);
+	seria::seria_kv("mining_speed", v.mining_speed, s);
+	seria::seria_kv("alternative_blocks", v.alternative_blocks, s);
+	seria::seria_kv("top_block_id_str", v.top_block_id_str, s);
 }
 
 // P2pProtocolDefinitions

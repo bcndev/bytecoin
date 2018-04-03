@@ -94,12 +94,25 @@ size_t FileStream::read_some(void *data, size_t size) {
 void FileStream::fdatasync() {
 #ifdef _WIN32
 	if (!FlushFileBuffers(handle))
+		throw common::StreamError("Error syncing file to disk, GetLastError()=" + common::to_string(GetLastError()));
 #elif defined(__MACH__)
 	if (::fsync(fd) == -1)  // No fdatasync on Mac OS :)
+		throw common::StreamError("Error syncing file to disk, errno=" + common::to_string(errno));
 #else
 	if (::fdatasync(fd) == -1)
-#endif
 		throw common::StreamError("Error syncing file to disk, errno=" + common::to_string(errno));
+#endif
+}
+
+void FileStream::truncate(uint64_t size) {
+	seek(size, SEEK_SET);  // Required only on Windows, but we make behavior consistent between platforms
+#ifdef _WIN32
+	if (!SetEndOfFile(handle))
+		throw common::StreamError("Error truncating file on disk, GetLastError()=" + common::to_string(GetLastError()));
+#else
+	if (::ftruncate(fd, size) == -1)
+		throw common::StreamError("Error truncating file on disk, errno=" + common::to_string(errno));
+#endif
 }
 
 #ifdef _WIN32

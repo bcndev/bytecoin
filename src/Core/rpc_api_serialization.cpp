@@ -29,10 +29,10 @@ void ser_members(bytecoin::SendProof &v, ISeria &s) {
 	const uint64_t CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 6;  // TODO - hard to get reference to our currency here
 	std::string addr;
 	if (!s.is_input())
-		addr = Currency::getAccountAddressAsStr(CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, v.address);
+		addr = Currency::get_account_address_as_str(CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, v.address);
 	seria_kv("address", addr, s);
 	uint64_t prefix = 0;
-	if (s.is_input() && (!Currency::parseAccountAddressString(prefix, v.address, addr) ||
+	if (s.is_input() && (!Currency::parse_account_address_string(prefix, v.address, addr) ||
 	                        prefix != CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX))
 		throw std::runtime_error("Wrong address format - " + addr);
 	std::string proof;
@@ -128,11 +128,11 @@ void ser_members(TransactionOutput &v, ISeria &s) {
 	seria_kv("amount", v.amount, s);
 	seria_kv("target", v.target, s);
 }
-void ser_members(CoinbaseInput &v, ISeria &s) { seria_kv("blockIndex", v.block_index, s); }
+void ser_members(CoinbaseInput &v, ISeria &s) { seria_kv("block_index", v.block_index, s); }
 void ser_members(KeyInput &v, ISeria &s) {
 	seria_kv("amount", v.amount, s);
 	seria_kv("output_indexes", v.output_indexes, s);
-	seria_kv("keyImage", v.key_image, s);
+	seria_kv("key_image", v.key_image, s);
 }
 
 void ser_members(KeyOutput &v, ISeria &s) { seria_kv("key", v.key, s); }
@@ -152,7 +152,7 @@ void ser_members(BaseTransaction &v, ISeria &s) {
 	}
 }
 
-size_t getSignaturesCount(const TransactionInput &input) {
+static size_t get_signatures_count(const TransactionInput &input) {
 	struct txin_signature_size_visitor : public boost::static_visitor<size_t> {
 		size_t operator()(const CoinbaseInput &) const { return 0; }
 		size_t operator()(const KeyInput &txin) const { return txin.output_indexes.size(); }
@@ -165,32 +165,32 @@ void ser_members(Transaction &v, ISeria &s) {
 
 	//        seria_kv("signatures", v.signatures, s);
 
-	bool isBase    = (v.inputs.size() == 1) && (v.inputs[0].type() == typeid(CoinbaseInput));
-	size_t sigSize = isBase ? 0 : v.inputs.size();
+	bool is_base    = (v.inputs.size() == 1) && (v.inputs[0].type() == typeid(CoinbaseInput));
+	size_t sig_size = is_base ? 0 : v.inputs.size();
 
 	// ignore base transaction
 	if (s.is_input()) {
-		v.signatures.resize(sigSize);
+		v.signatures.resize(sig_size);
 	}
-	// const bool signaturesExpected = !v.signatures.empty();
-	if (sigSize && v.inputs.size() != v.signatures.size())
+	// const bool signatures_expected = !v.signatures.empty();
+	if (sig_size && v.inputs.size() != v.signatures.size())
 		throw std::runtime_error("Serialization error: unexpected signatures size");
 
 	s.object_key("signatures");
-	s.begin_array(sigSize, true);
-	for (size_t i = 0; i < sigSize; ++i) {
-		size_t signatureSize = getSignaturesCount(v.inputs[i]);
+	s.begin_array(sig_size, true);
+	for (size_t i = 0; i < sig_size; ++i) {
+		size_t signature_size = get_signatures_count(v.inputs[i]);
 		if (!s.is_input()) {
-			if (signatureSize != v.signatures[i].size())
+			if (signature_size != v.signatures[i].size())
 				throw std::runtime_error("Serialization error: unexpected signatures size");
-			s.begin_array(signatureSize, true);
+			s.begin_array(signature_size, true);
 			for (crypto::Signature &sig : v.signatures[i]) {
 				s(sig);
 			}
 			s.end_array();
 		} else {
-			std::vector<crypto::Signature> signatures(signatureSize);
-			s.begin_array(signatureSize, true);
+			std::vector<crypto::Signature> signatures(signature_size);
+			s.begin_array(signature_size, true);
 			for (crypto::Signature &sig : signatures) {
 				s(sig);
 			}
@@ -212,9 +212,8 @@ void ser_members(ParentBlock &v, ISeria &s) {
 void ser_members(BlockTemplate &v, ISeria &s) {
 	ser_members(static_cast<BlockHeader &>(v), s);
 	if (v.major_version >= 2) {
-		auto parentBlockSerializer = makeParentBlockSerializer(v, false, false);
-		// serializer(parentBlockSerializer, "parent_block");
-		seria_kv("parent_block", parentBlockSerializer, s);
+		auto parent_block_serializer = make_parent_block_serializer(v, false, false);
+		seria_kv("parent_block", parent_block_serializer, s);
 	}
 	seria_kv("miner_tx", v.base_transaction, s);
 	seria_kv("tx_hashes", v.transaction_hashes, s);

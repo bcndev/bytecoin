@@ -157,15 +157,15 @@ void Timer::once(float after_seconds) {
 }
 
 void TCPSocket::close() {
-	if (readStream) {
-		CFReadStreamClose(readStream);
-		CFRelease(readStream);
-		readStream = nullptr;
+	if (read_stream) {
+		CFReadStreamClose(read_stream);
+		CFRelease(read_stream);
+		read_stream = nullptr;
 	}
-	if (writeStream) {
-		CFWriteStreamClose(writeStream);
-		CFRelease(writeStream);
-		writeStream = nullptr;
+	if (write_stream) {
+		CFWriteStreamClose(write_stream);
+		CFRelease(write_stream);
+		write_stream = nullptr;
 	}
 }
 
@@ -176,7 +176,7 @@ void TCPSocket::close_and_call() {
 		d_handler();
 }
 
-bool TCPSocket::is_open() const { return readStream || writeStream; }
+bool TCPSocket::is_open() const { return read_stream || write_stream; }
 
 bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 	close();
@@ -185,66 +185,66 @@ bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 	CFHostRef host    = CFHostCreateWithName(kCFAllocatorDefault, hname);
 	CFRelease(hname);
 	hname = nullptr;
-	CFStreamCreatePairWithSocketToCFHost(kCFAllocatorDefault, host, port, &readStream, &writeStream);
+	CFStreamCreatePairWithSocketToCFHost(kCFAllocatorDefault, host, port, &read_stream, &write_stream);
 	CFRelease(host);
 	host = nullptr;
-	//	CFReadStreamSetProperty(readStream, NSStreamSocketSecurityLevelKey, securityDictRef);
+	//	CFReadStreamSetProperty(read_stream, NSStreamSocketSecurityLevelKey, securityDictRef);
 	if (ssl_addr.first) {
-		CFMutableDictionaryRef securityDictRef = CFDictionaryCreateMutable(
+		CFMutableDictionaryRef security_dict_ref = CFDictionaryCreateMutable(
 		    kCFAllocatorDefault, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-		if (!securityDictRef) {
+		if (!security_dict_ref) {
 			close();
 			return false;
 		}
-		CFDictionarySetValue(securityDictRef, kCFStreamSSLValidatesCertificateChain, kCFBooleanTrue);
-		CFReadStreamSetProperty(readStream, kCFStreamPropertySSLSettings, securityDictRef);
-		CFRelease(securityDictRef);
-		securityDictRef = nullptr;
+		CFDictionarySetValue(security_dict_ref, kCFStreamSSLValidatesCertificateChain, kCFBooleanTrue);
+		CFReadStreamSetProperty(read_stream, kCFStreamPropertySSLSettings, security_dict_ref);
+		CFRelease(security_dict_ref);
+		security_dict_ref = nullptr;
 	}
-	CFStreamClientContext myContext = {0, this, nullptr, nullptr, nullptr};
-	if (!CFReadStreamSetClient(readStream,
+	CFStreamClientContext my_context = {0, this, nullptr, nullptr, nullptr};
+	if (!CFReadStreamSetClient(read_stream,
 	        kCFStreamEventHasBytesAvailable | kCFStreamEventErrorOccurred | kCFStreamEventEndEncountered,
-	        &TCPSocket::read_callback, &myContext)) {
+	        &TCPSocket::read_callback, &my_context)) {
 		close();
 		return false;
 	}
-	if (!CFWriteStreamSetClient(writeStream,
+	if (!CFWriteStreamSetClient(write_stream,
 	        kCFStreamEventCanAcceptBytes | kCFStreamEventErrorOccurred | kCFStreamEventEndEncountered,
-	        &TCPSocket::write_callback, &myContext)) {
+	        &TCPSocket::write_callback, &my_context)) {
 		close();
 		return false;
 	}
-	CFReadStreamScheduleWithRunLoop(readStream, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
-	CFWriteStreamScheduleWithRunLoop(writeStream, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
-	CFReadStreamOpen(readStream);    // TODO check err
-	CFWriteStreamOpen(writeStream);  // TODO check err
+	CFReadStreamScheduleWithRunLoop(read_stream, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+	CFWriteStreamScheduleWithRunLoop(write_stream, CFRunLoopGetCurrent(), kCFRunLoopDefaultMode);
+	CFReadStreamOpen(read_stream);
+	CFWriteStreamOpen(write_stream);
 	return true;
 }
 
 size_t TCPSocket::read_some(void *val, size_t count) {
-	if (!readStream || !CFReadStreamHasBytesAvailable(readStream))
+	if (!read_stream || !CFReadStreamHasBytesAvailable(read_stream))
 		return 0;
-	CFIndex bytesRead = CFReadStreamRead(readStream, (unsigned char *)val, count);
-	if (bytesRead <= 0) {  // error or end of stream
+	CFIndex bytes_read = CFReadStreamRead(read_stream, (unsigned char *)val, count);
+	if (bytes_read <= 0) {  // error or end of stream
 		return 0;
 	}
-	return bytesRead;
+	return bytes_read;
 }
 
 size_t TCPSocket::write_some(const void *val, size_t count) {
-	if (!writeStream || !CFWriteStreamCanAcceptBytes(writeStream))
+	if (!write_stream || !CFWriteStreamCanAcceptBytes(write_stream))
 		return 0;
-	CFIndex bytesWritten = CFWriteStreamWrite(writeStream, (const unsigned char *)val, count);
-	if (bytesWritten <= 0) {  // error or end of stream
+	CFIndex bytes_written = CFWriteStreamWrite(write_stream, (const unsigned char *)val, count);
+	if (bytes_written <= 0) {  // error or end of stream
 		return 0;
 	}
-	return bytesWritten;
+	return bytes_written;
 }
 
 void TCPSocket::shutdown_both() {
 	if (!is_open())
 		return;
-	CFDataRef da = (CFDataRef)CFWriteStreamCopyProperty(writeStream, kCFStreamPropertySocketNativeHandle);
+	CFDataRef da = (CFDataRef)CFWriteStreamCopyProperty(write_stream, kCFStreamPropertySocketNativeHandle);
 	if (!da)
 		return;
 	CFSocketNativeHandle handle;
@@ -253,8 +253,8 @@ void TCPSocket::shutdown_both() {
 	::shutdown(handle, SHUT_RDWR);
 }
 
-void TCPSocket::read_callback(CFReadStreamRef stream, CFStreamEventType event, void *myPtr) {
-	TCPSocket *s = (TCPSocket *)myPtr;
+void TCPSocket::read_callback(CFReadStreamRef stream, CFStreamEventType event, void *my_ptr) {
+	TCPSocket *s = (TCPSocket *)my_ptr;
 	switch (event) {
 	case kCFStreamEventHasBytesAvailable:
 		s->rw_handler(true, true);
@@ -273,8 +273,8 @@ void TCPSocket::read_callback(CFReadStreamRef stream, CFStreamEventType event, v
 	}
 }
 
-void TCPSocket::write_callback(CFWriteStreamRef stream, CFStreamEventType event, void *myPtr) {
-	TCPSocket *s = (TCPSocket *)myPtr;
+void TCPSocket::write_callback(CFWriteStreamRef stream, CFStreamEventType event, void *my_ptr) {
+	TCPSocket *s = (TCPSocket *)my_ptr;
 	switch (event) {
 	case kCFStreamEventCanAcceptBytes:
 		s->rw_handler(true, true);
@@ -282,7 +282,7 @@ void TCPSocket::write_callback(CFWriteStreamRef stream, CFStreamEventType event,
 	case kCFStreamEventErrorOccurred:
 		s->close_and_call();
 		// CFStreamError error = CFReadStreamGetError(stream);
-		// reportError(error);
+		// report_error(error);
 		break;
 	case kCFStreamEventEndEncountered:
 		s->close_and_call();
@@ -312,22 +312,22 @@ typedef ssl::stream<boost::asio::ip::tcp::socket> SSLSocket;
 #pragma comment(lib, "crypt32.lib")    // Windows SDK dependency of OpenSSL
 
 static void add_system_root_certs(ssl::context &ctx) {
-	HCERTSTORE hStore = CertOpenSystemStore(0, "ROOT");
-	if (hStore == NULL)
+	HCERTSTORE h_store = CertOpenSystemStore(0, "ROOT");
+	if (h_store == NULL)
 		return;
-	X509_STORE *store       = X509_STORE_new();
-	PCCERT_CONTEXT pContext = NULL;
-	while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) != NULL) {
+	X509_STORE *store        = X509_STORE_new();
+	PCCERT_CONTEXT p_context = NULL;
+	while ((p_context = CertEnumCertificatesInStore(h_store, p_context)) != NULL) {
 		// convert from DER to internal format
-		X509 *x509 = d2i_X509(NULL, (const unsigned char **)&pContext->pbCertEncoded, pContext->cbCertEncoded);
+		X509 *x509 = d2i_X509(NULL, (const unsigned char **)&p_context->pbCertEncoded, p_context->cbCertEncoded);
 		if (x509 != NULL) {
 			X509_STORE_add_cert(store, x509);
 			X509_free(x509);
 		}
 	}
 
-	CertFreeCertificateContext(pContext);
-	CertCloseStore(hStore, 0);
+	CertFreeCertificateContext(p_context);
+	CertCloseStore(h_store, 0);
 
 	SSL_CTX_set_cert_store(ctx.native_handle(), store);
 }

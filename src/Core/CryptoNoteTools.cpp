@@ -56,19 +56,19 @@ void decompose_amount_into_digits(
 	}
 }
 
-void bytecoin::decompose_amount(Amount amount, Amount dustThreshold, std::vector<Amount> &decomposedAmounts) {
-	decompose_amount_into_digits(amount, dustThreshold, [&](Amount amount) { decomposedAmounts.push_back(amount); },
+void bytecoin::decompose_amount(Amount amount, Amount dust_threshold, std::vector<Amount> &decomposed_amounts) {
+	decompose_amount_into_digits(amount, dust_threshold, [&](Amount amount) { decomposed_amounts.push_back(amount); },
 	    [&](Amount dust) {
 		    Amount du0 = dust % 1000;
 		    Amount du1 = dust - du0;
 		    if (du0 != 0)
-			    decomposedAmounts.push_back(du0);
+			    decomposed_amounts.push_back(du0);
 		    if (du1 != 0)
-			    decomposedAmounts.push_back(du1);
+			    decomposed_amounts.push_back(du1);
 		});
 }
 
-size_t bytecoin::get_maximum_tx_size(size_t inputCount, size_t outputCount, size_t mixinCount) {
+size_t bytecoin::get_maximum_tx_size(size_t input_count, size_t output_count, size_t mixin_count) {
 	const size_t KEY_IMAGE_SIZE                    = sizeof(crypto::KeyImage);
 	const size_t OUTPUT_KEY_SIZE                   = sizeof(crypto::PublicKey);
 	const size_t AMOUNT_SIZE                       = sizeof(uint64_t) + 2;  // varint
@@ -83,13 +83,13 @@ size_t bytecoin::get_maximum_tx_size(size_t inputCount, size_t outputCount, size
 	const size_t TRANSACTION_VERSION_SIZE          = sizeof(uint8_t);
 	const size_t TRANSACTION_UNLOCK_TIME_SIZE      = sizeof(uint64_t);
 
-	const size_t outputsSize = outputCount * (OUTPUT_TAG_SIZE + OUTPUT_KEY_SIZE + AMOUNT_SIZE);
-	const size_t headerSize =
+	const size_t outputs_size = output_count * (OUTPUT_TAG_SIZE + OUTPUT_KEY_SIZE + AMOUNT_SIZE);
+	const size_t header_size =
 	    TRANSACTION_VERSION_SIZE + TRANSACTION_UNLOCK_TIME_SIZE + EXTRA_TAG_SIZE + PUBLIC_KEY_SIZE;
-	const size_t inputSize = INPUT_TAG_SIZE + AMOUNT_SIZE + KEY_IMAGE_SIZE + SIGNATURE_SIZE +
-	                         GLOBAL_INDEXES_VECTOR_SIZE_SIZE + GLOBAL_INDEXES_INITIAL_VALUE_SIZE +
-	                         mixinCount * (GLOBAL_INDEXES_DIFFERENCE_SIZE + SIGNATURE_SIZE);
-	return headerSize + outputsSize + inputSize * inputCount;
+	const size_t input_size = INPUT_TAG_SIZE + AMOUNT_SIZE + KEY_IMAGE_SIZE + SIGNATURE_SIZE +
+	                          GLOBAL_INDEXES_VECTOR_SIZE_SIZE + GLOBAL_INDEXES_INITIAL_VALUE_SIZE +
+	                          mixin_count * (GLOBAL_INDEXES_DIFFERENCE_SIZE + SIGNATURE_SIZE);
+	return header_size + outputs_size + input_size * input_count;
 }
 
 bool bytecoin::get_tx_fee(const Transaction &tx, uint64_t &fee) {
@@ -131,16 +131,16 @@ void seria::ser_members(ParentBlockSerializer &v, ISeria &s) {
 	s.binary(&v.m_nonce, sizeof(v.m_nonce));  // TODO - fix endianess
 
 	if (v.m_hashing_serialization) {
-		crypto::Hash minerTxHash = get_base_transaction_hash(v.m_parent_block.base_transaction);
-		crypto::Hash merkleRoot  = crypto::tree_hash_from_branch(v.m_parent_block.base_transaction_branch.data(),
-		    v.m_parent_block.base_transaction_branch.size(), minerTxHash, 0);
+		crypto::Hash miner_tx_hash = get_base_transaction_hash(v.m_parent_block.base_transaction);
+		crypto::Hash merkle_root   = crypto::tree_hash_from_branch(v.m_parent_block.base_transaction_branch.data(),
+		    v.m_parent_block.base_transaction_branch.size(), miner_tx_hash, 0);
 
-		seria_kv("merkle_root", merkleRoot, s);
+		seria_kv("merkle_root", merkle_root, s);
 	}
 
-	uint64_t txNum = static_cast<uint64_t>(v.m_parent_block.transaction_count);
-	seria_kv("transaction_count", txNum, s);
-	v.m_parent_block.transaction_count = static_cast<uint16_t>(txNum);
+	uint64_t tx_num = static_cast<uint64_t>(v.m_parent_block.transaction_count);
+	seria_kv("transaction_count", tx_num, s);
+	v.m_parent_block.transaction_count = static_cast<uint16_t>(tx_num);
 	if (v.m_parent_block.transaction_count < 1)
 		throw std::runtime_error("Wrong transactions number");
 
@@ -148,20 +148,17 @@ void seria::ser_members(ParentBlockSerializer &v, ISeria &s) {
 		return;
 	}
 
-	size_t branchSize = crypto::tree_depth(v.m_parent_block.transaction_count);
+	size_t branch_size = crypto::tree_depth(v.m_parent_block.transaction_count);
 	if (!s.is_input()) {
-		if (v.m_parent_block.base_transaction_branch.size() != branchSize)
+		if (v.m_parent_block.base_transaction_branch.size() != branch_size)
 			throw std::runtime_error("Wrong miner transaction branch size");
 	} else {
-		v.m_parent_block.base_transaction_branch.resize(branchSize);
+		v.m_parent_block.base_transaction_branch.resize(branch_size);
 	}
 
-	//  serializer(m_parent_block.baseTransactionBranch, "baseTransactionBranch");
 	s.object_key("base_transaction_branch");
 	size_t btb_size = v.m_parent_block.base_transaction_branch.size();
 	s.begin_array(btb_size, true);
-	// TODO: Make arrays with computable size! This code won't work with json
-	// serialization!
 	for (crypto::Hash &hash : v.m_parent_block.base_transaction_branch) {
 		s(hash);
 	}
@@ -169,22 +166,19 @@ void seria::ser_members(ParentBlockSerializer &v, ISeria &s) {
 
 	seria_kv("miner_tx", v.m_parent_block.base_transaction, s);
 
-	TransactionExtraMergeMiningTag mmTag;
-	if (!get_merge_mining_tag_from_extra(v.m_parent_block.base_transaction.extra, mmTag))
+	TransactionExtraMergeMiningTag mm_tag;
+	if (!get_merge_mining_tag_from_extra(v.m_parent_block.base_transaction.extra, mm_tag))
 		throw std::runtime_error("Can't get extra merge mining tag");
-	if (mmTag.depth > 8 * sizeof(crypto::Hash))
+	if (mm_tag.depth > 8 * sizeof(crypto::Hash))
 		throw std::runtime_error("Wrong merge mining tag depth");
 
 	if (!s.is_input()) {
-		if (mmTag.depth != v.m_parent_block.blockchain_branch.size())
+		if (mm_tag.depth != v.m_parent_block.blockchain_branch.size())
 			throw std::runtime_error("Blockchain branch size must be equal to merge mining tag depth");
 	} else {
-		v.m_parent_block.blockchain_branch.resize(mmTag.depth);
+		v.m_parent_block.blockchain_branch.resize(mm_tag.depth);
 	}
 
-	//  serializer(m_parent_block.blockchainBranch, "blockchainBranch");
-	// TODO: Make arrays with computable size! This code won't work with json
-	// serialization!
 	s.object_key("blockchain_branch");
 	btb_size = v.m_parent_block.blockchain_branch.size();
 	s.begin_array(btb_size, true);

@@ -53,10 +53,7 @@ bool get_payment_id_from_transaction_extra_nonce(const BinaryArray &extra_nonce,
 bool append_merge_mining_tag_to_extra(BinaryArray &tx_extra, const TransactionExtraMergeMiningTag &mm_tag);
 bool get_merge_mining_tag_from_extra(const BinaryArray &tx_extra, TransactionExtraMergeMiningTag &mm_tag);
 
-// bool createTxExtraWithPaymentId(const std::string &paymentIdString, BinaryArray &extra);
-// returns false if payment id is not found or parse error
-bool get_payment_id_from_tx_extra(const BinaryArray &extra, crypto::Hash &paymentId);
-// bool parsePaymentId(const std::string &paymentIdString, crypto::Hash &paymentId);
+bool get_payment_id_from_tx_extra(const BinaryArray &extra, crypto::Hash &payment_id);
 
 class TransactionExtra {
 public:

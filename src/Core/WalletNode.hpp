@@ -76,7 +76,7 @@ private:
 	typedef std::unordered_map<std::string, JSONRPCHandlerFunction> HandlersMap;
 	static const HandlersMap m_jsonrpc3_handlers;
 
-	api::walletd::GetStatus::Response createStatusResponse3() const;
+	api::walletd::GetStatus::Response create_status_response3() const;
 
 	bool on_api_http_request(http::Client *, http::RequestData &&, http::ResponseData &);
 	void on_api_http_disconnect(http::Client *);

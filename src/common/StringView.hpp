@@ -20,12 +20,10 @@ public:
 
 	StringView() : m_data(nullptr), m_size(0) {}
 
-	StringView(const Char *stringData, Size stringSize) : m_data(stringData), m_size(stringSize) {
-		assert(m_data != nullptr || m_size == 0);
-	}
+	StringView(const Char *data, Size size) : m_data(data), m_size(size) { assert(m_data != nullptr || m_size == 0); }
 
-	template<Size stringSize>
-	StringView(const Char (&stringData)[stringSize]) : m_data(stringData), m_size(stringSize - 1) {
+	template<Size size>
+	StringView(const Char (&data)[size]) : m_data(data), m_size(size - 1) {
 		assert(m_data != nullptr || m_size == 0);
 	}
 

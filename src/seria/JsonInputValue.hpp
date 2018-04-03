@@ -49,13 +49,13 @@ private:
 	const common::JsonValue *get_value();
 
 	template<typename T>
-	void getInteger(T &v) {
+	void get_integer(T &v) {
 		const common::JsonValue *val = get_value();
 		if (val)
 			v = static_cast<T>(val->get_integer());
 	}
 	template<typename T>
-	void getUnsigned(T &v) {
+	void get_unsigned(T &v) {
 		const common::JsonValue *val = get_value();
 		if (val)
 			v = static_cast<T>(val->get_unsigned());

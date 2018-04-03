@@ -16,7 +16,7 @@ int CommandLine::SView::compare(const SView &other) const {
 	return memcmp(data, other.data, size);
 }
 
-CommandLine::CommandLine(int argc, const char *argv[]) {
+CommandLine::CommandLine(int argc, const char *const argv[]) {
 	bool positional_only = false;
 	std::vector<Option> flat_options;  // first gather all options
 	flat_options.reserve(argc - 1);

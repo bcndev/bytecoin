@@ -13,17 +13,17 @@
 using namespace bytecoin;
 
 const WalletNode::HandlersMap WalletNode::m_jsonrpc3_handlers = {
-    {api::walletd::GetStatus::method(), json_rpc::makeMemberMethod(&WalletNode::handle_get_status3)},
-    {api::walletd::GetAddresses::method(), json_rpc::makeMemberMethod(&WalletNode::handle_get_addresses3)},
-    {api::walletd::CreateAddresses::method(), json_rpc::makeMemberMethod(&WalletNode::handle_create_address_list3)},
-    {api::walletd::GetViewKeyPair::method(), json_rpc::makeMemberMethod(&WalletNode::handle_get_view_key3)},
-    {api::walletd::GetBalance::method(), json_rpc::makeMemberMethod(&WalletNode::handle_get_balance3)},
-    {api::walletd::GetUnspents::method(), json_rpc::makeMemberMethod(&WalletNode::handle_get_unspent3)},
-    {api::walletd::GetTransfers::method(), json_rpc::makeMemberMethod(&WalletNode::handle_get_transfers3)},
-    {api::walletd::CreateTransaction::method(), json_rpc::makeMemberMethod(&WalletNode::handle_create_transaction3)},
-    {api::walletd::SendTransaction::method(), json_rpc::makeMemberMethod(&WalletNode::handle_send_transaction3)},
-    {api::walletd::CreateSendProof::method(), json_rpc::makeMemberMethod(&WalletNode::handle_create_send_proof3)},
-    {api::walletd::GetTransaction::method(), json_rpc::makeMemberMethod(&WalletNode::handle_get_transaction3)}};
+    {api::walletd::GetStatus::method(), json_rpc::make_member_method(&WalletNode::handle_get_status3)},
+    {api::walletd::GetAddresses::method(), json_rpc::make_member_method(&WalletNode::handle_get_addresses3)},
+    {api::walletd::CreateAddresses::method(), json_rpc::make_member_method(&WalletNode::handle_create_address_list3)},
+    {api::walletd::GetViewKeyPair::method(), json_rpc::make_member_method(&WalletNode::handle_get_view_key3)},
+    {api::walletd::GetBalance::method(), json_rpc::make_member_method(&WalletNode::handle_get_balance3)},
+    {api::walletd::GetUnspents::method(), json_rpc::make_member_method(&WalletNode::handle_get_unspent3)},
+    {api::walletd::GetTransfers::method(), json_rpc::make_member_method(&WalletNode::handle_get_transfers3)},
+    {api::walletd::CreateTransaction::method(), json_rpc::make_member_method(&WalletNode::handle_create_transaction3)},
+    {api::walletd::SendTransaction::method(), json_rpc::make_member_method(&WalletNode::handle_send_transaction3)},
+    {api::walletd::CreateSendProof::method(), json_rpc::make_member_method(&WalletNode::handle_create_send_proof3)},
+    {api::walletd::GetTransaction::method(), json_rpc::make_member_method(&WalletNode::handle_get_transaction3)}};
 
 WalletNode::WalletNode(Node *inproc_node, logging::ILogger &log, const Config &config, WalletState &wallet_state)
     : WalletSync(log, config, wallet_state, std::bind(&WalletNode::advance_long_poll, this))
@@ -103,7 +103,7 @@ bool WalletNode::process_json_rpc_request(const HandlersMap &handlers,
 			//			m_log(logging::INFO) << "json request method not
 			// found - " << json_req.get_method() << std::endl;
 			//			throw
-			// json_rpc::Error(json_rpc::errMethodNotFound);
+			// json_rpc::Error(json_rpc::METHOD_NOT_FOUND);
 		}
 		method_found = true;
 		if (!m_config.walletd_authorization.empty() &&
@@ -122,7 +122,7 @@ bool WalletNode::process_json_rpc_request(const HandlersMap &handlers,
 	} catch (const json_rpc::Error &err) {
 		json_resp.set_error(err);
 	} catch (const std::exception &e) {
-		json_resp.set_error(json_rpc::Error(json_rpc::errInternalError, e.what()));
+		json_resp.set_error(json_rpc::Error(json_rpc::INTERNAL_ERROR, e.what()));
 	}
 
 	response.set_body(json_resp.get_body());
@@ -132,7 +132,7 @@ bool WalletNode::process_json_rpc_request(const HandlersMap &handlers,
 
 // New protocol
 
-api::walletd::GetStatus::Response WalletNode::createStatusResponse3() const {
+api::walletd::GetStatus::Response WalletNode::create_status_response3() const {
 	api::walletd::GetStatus::Response response = m_last_node_status;
 	response.top_block_height                  = m_wallet_state.get_tip_height();
 	response.top_block_hash                    = m_wallet_state.get_tip().hash;
@@ -150,9 +150,9 @@ api::walletd::GetStatus::Response WalletNode::createStatusResponse3() const {
 bool WalletNode::handle_get_status3(http::Client *who, http::RequestData &&raw_request,
     json_rpc::Request &&raw_js_request, api::walletd::GetStatus::Request &&request,
     api::walletd::GetStatus::Response &response) {
-	response = createStatusResponse3();
+	response = create_status_response3();
 	if (request == response) {
-		//		m_log(logging::INFO) << "handleGetStatus3 will long poll, json="
+		//		m_log(logging::INFO) << "handle_get_status3 will long poll, json="
 		//<<
 		// raw_request.body << std::endl;
 		LongPollClient lpc;
@@ -196,7 +196,7 @@ bool WalletNode::handle_create_address_list3(http::Client *, http::RequestData &
 	    request.creation_timestamp != 0 ? request.creation_timestamp : static_cast<Timestamp>(std::time(nullptr));
 	auto records = m_wallet_state.generate_new_addresses(request.secret_spend_keys, ct);
 	if (records.empty())
-		throw json_rpc::Error(json_rpc::errInvalidParams, "wallet is view-only, impossible to create addresses");
+		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "wallet is view-only, impossible to create addresses");
 	response.addresses.reserve(records.size());
 	response.secret_spend_keys.reserve(records.size());
 	for (auto &&rec : records) {
@@ -273,7 +273,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 	if (request.fee_per_byte == 0)
 		request.fee_per_byte = m_last_node_status.recommended_fee_per_byte;
 	if (request.fee_per_byte == 0)
-		throw json_rpc::Error(json_rpc::errInvalidParams,
+		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
 		    "'fee_per_byte' set to 0, and it is impossible to "
 		    "set it to 'status.recommended_fee_per_byte', "
 		    "because walletd never connected to bytecoind after "
@@ -283,20 +283,20 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 	// We require change address, even if you are lucky and got zero change this
 	// time
 	if (m_wallet_state.get_wallet().is_view_only())
-		throw json_rpc::Error(json_rpc::errInvalidParams,
+		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
 		    "Unable to create transaction - view-only wallet "
 		    "contains no spend keys");
 	if (!m_wallet_state.get_currency().parse_account_address_string(request.change_address, change_addr))
-		throw json_rpc::Error(json_rpc::errInvalidParams, "Failed to parse change address " + request.change_address);
+		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Failed to parse change address " + request.change_address);
 	if (!request.spend_address.empty() &&
 	    !m_wallet_state.get_currency().parse_account_address_string(request.spend_address, spend_addr))
-		throw json_rpc::Error(json_rpc::errInvalidParams, "Failed to parse change address " + request.change_address);
+		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Failed to parse change address " + request.change_address);
 	if (request.spend_address.empty() && !request.any_spend_address)
-		throw json_rpc::Error(json_rpc::errInvalidParams,
+		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
 		    "Empty spend address requires setting "
 		    "'any_spend_address':true for additional protection");
 	if (!request.spend_address.empty() && request.any_spend_address)
-		throw json_rpc::Error(json_rpc::errInvalidParams,
+		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
 		    "Non-empty spend address requires setting "
 		    "'any_spend_address':false for additional "
 		    "protection");
@@ -310,11 +310,11 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 
 	for (auto &&tr : request.transaction.transfers) {
 		if (tr.amount <= 0)  // Not an output
-			throw json_rpc::Error(json_rpc::errInvalidParams,
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS,
 			    "Negative transfer amount " + std::to_string(tr.amount) + " for address " + tr.address);
 		AccountPublicAddress addr;
 		if (!m_wallet_state.get_currency().parse_account_address_string(tr.address, addr))
-			throw json_rpc::Error(json_rpc::errInvalidParams, "Failed to parse address " + tr.address);
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Failed to parse address " + tr.address);
 		combined_outputs[addr] += tr.amount;
 		history.insert(addr);
 		sum_positive_transfers += tr.amount;
@@ -326,7 +326,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		total_outputs += decomposed_amounts.size();
 	}
 	if (sum_positive_transfers == 0)
-		throw json_rpc::Error(json_rpc::errInvalidParams, "Sum of amounts of all outgoing transfers cannot be 0");
+		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Sum of amounts of all outgoing transfers cannot be 0");
 	const std::string optimization =
 	    request.transaction.unlock_time == 0 ? request.optimization : "minimal";  // Do not lock excess coins :)
 	Amount change = 0;
@@ -345,7 +345,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		        request.transaction.anonymity, sum_positive_transfers, total_outputs, request.fee_per_byte,
 		        optimization, change))
 			throw json_rpc::Error(
-			    json_rpc::errInvalidParams, "Not enough funds on selected addresses with desired confirmations");
+			    json_rpc::INVALID_PARAMS, "Not enough funds on selected addresses with desired confirmations");
 	}
 	// Selector ensures the change should be as "round" as possible
 	if (change > 0) {
@@ -425,7 +425,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		},
 	    [=](const WaitingClient &wc, std::string err) mutable {
 		    http::ResponseData last_http_response = json_rpc::create_error_response(
-		        wc.original_request, json_rpc::Error(json_rpc::errInternalError, err), wc.original_jsonrpc_id);
+		        wc.original_request, json_rpc::Error(json_rpc::INTERNAL_ERROR, err), wc.original_jsonrpc_id);
 		    wc.original_who->write(std::move(last_http_response));
 		});
 	return false;
@@ -445,7 +445,7 @@ bool WalletNode::handle_create_send_proof3(http::Client *, http::RequestData &&,
 	for (auto &&addr : request.addresses) {
 		AccountPublicAddress address;
 		if (!m_wallet_state.get_currency().parse_account_address_string(addr, address))
-			throw json_rpc::Error(json_rpc::errInvalidParams, "Address failed to parse " + addr);
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Address failed to parse " + addr);
 		addresses.insert(address);
 	}
 	for (auto &&address : addresses) {
@@ -487,18 +487,18 @@ bool WalletNode::handle_send_transaction3(http::Client *who, http::RequestData &
 			    wc2.original_who->write(std::move(resp));
 		    } catch (const std::exception &ex) {
 			    http::ResponseData resp = json_rpc::create_error_response(wc2.original_request,
-			        json_rpc::Error(json_rpc::errInternalError, ex.what()), wc2.original_jsonrpc_id);
+			        json_rpc::Error(json_rpc::INTERNAL_ERROR, ex.what()), wc2.original_jsonrpc_id);
 			    wc2.original_who->write(std::move(resp));
 		    } catch (...) {
 			    http::ResponseData resp = json_rpc::create_error_response(wc2.original_request,
-			        json_rpc::Error(json_rpc::errInternalError, "catch..."), wc2.original_jsonrpc_id);
+			        json_rpc::Error(json_rpc::INTERNAL_ERROR, "catch..."), wc2.original_jsonrpc_id);
 			    wc2.original_who->write(std::move(resp));
 		    }
 		},
 	    [=](const WaitingClient &wc2, std::string err) {
 		    transient_transactions_counter -= 1;
 		    http::ResponseData resp = json_rpc::create_error_response(
-		        wc2.original_request, json_rpc::Error(json_rpc::errInternalError, err), wc2.original_jsonrpc_id);
+		        wc2.original_request, json_rpc::Error(json_rpc::INTERNAL_ERROR, err), wc2.original_jsonrpc_id);
 		    wc2.original_who->write(std::move(resp));
 		});
 	return false;
@@ -571,7 +571,7 @@ void WalletNode::add_waiting_command(http::Client *who, http::RequestData &&orig
 void WalletNode::advance_long_poll() {
 	if (m_long_poll_http_clients.empty())
 		return;
-	api::walletd::GetStatus::Response resp = createStatusResponse3();
+	api::walletd::GetStatus::Response resp = create_status_response3();
 	json_rpc::Response last_json_resp;
 	last_json_resp.set_result(resp);
 

@@ -39,7 +39,7 @@ public:
 	JsonValue();
 	JsonValue(const JsonValue &other);
 	JsonValue(JsonValue &&other);
-	JsonValue(Type valueType);
+	JsonValue(Type value_type);
 	JsonValue(const Array &value);
 	JsonValue(Array &&value);
 	explicit JsonValue(Bool value);
@@ -53,7 +53,7 @@ public:
 	JsonValue(String &&value);
 	template<size_t size>
 	JsonValue(const char (&value)[size]) {
-		new (&valueString) String(value, size - 1);
+		new (&value_string) String(value, size - 1);
 		type = STRING;
 	}
 
@@ -75,11 +75,11 @@ public:
 	template<size_t size>
 	JsonValue &operator=(const char (&value)[size]) {
 		if (type != STRING) {
-			destructValue();
-			new (&valueString) String(value, size - 1);
+			destruct_value();
+			new (&value_string) String(value, size - 1);
 			type = STRING;
 		} else {
-			reinterpret_cast<String *>(&valueString)->assign(value, size - 1);
+			reinterpret_cast<String *>(&value_string)->assign(value, size - 1);
 		}
 		return *this;
 	}
@@ -92,7 +92,7 @@ public:
 	bool is_double() const { return type == DOUBLE; }
 	bool is_string() const { return type == STRING; }
 
-	//	Type getType() const { return type; }
+	//	Type get_type() const { return type; }
 	Array &get_array();
 	const Array &get_array() const;
 	Bool get_bool() const;
@@ -128,29 +128,29 @@ public:
 
 	// those operators should no be used because they do not check for correct end of object (example - extra comma
 	// after json object)
-	friend std::ostream &operator<<(std::ostream &out, const JsonValue &jsonValue);
-	friend std::istream &operator>>(std::istream &in, JsonValue &jsonValue);
+	friend std::ostream &operator<<(std::ostream &out, const JsonValue &json_value);
+	friend std::istream &operator>>(std::istream &in, JsonValue &json_value);
 
 private:
 	Type type;
 	union {
-		typename std::aligned_storage<sizeof(Array), alignof(Array)>::type valueArray;
-		Bool valueBool;
-		Integer valueInteger;
-		Unsigned valueUnsigned;
-		typename std::aligned_storage<sizeof(Object), alignof(Object)>::type valueObject;
-		Double valueReal;
-		typename std::aligned_storage<sizeof(std::string), alignof(std::string)>::type valueString;
+		typename std::aligned_storage<sizeof(Array), alignof(Array)>::type value_array;
+		Bool value_bool;
+		Integer value_integer;
+		Unsigned value_unsigned;
+		typename std::aligned_storage<sizeof(Object), alignof(Object)>::type value_object;
+		Double value_real;
+		typename std::aligned_storage<sizeof(std::string), alignof(std::string)>::type value_string;
 	};
 
-	void destructValue();
+	void destruct_value();
 
-	void readArray(std::istream &in);
-	void readTrue(std::istream &in);
-	void readFalse(std::istream &in);
-	void readNull(std::istream &in);
-	void readNumber(std::istream &in, char c);
-	void readObject(std::istream &in);
-	void readString(std::istream &in);
+	void read_array(std::istream &in);
+	void read_true(std::istream &in);
+	void read_false(std::istream &in);
+	void read_null(std::istream &in);
+	void read_number(std::istream &in, char c);
+	void read_object(std::istream &in);
+	void read_string(std::istream &in);
 };
 }

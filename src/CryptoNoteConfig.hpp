@@ -110,7 +110,7 @@ const char *const SEED_NODES[] = {
 
 struct CheckpointData {
 	uint32_t index;
-	const char *blockId;
+	const char *block_id;
 };
 
 constexpr const CheckpointData CHECKPOINTS[] = {

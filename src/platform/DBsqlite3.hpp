@@ -36,6 +36,7 @@ class DBsqlite {
 	sqlite::Stmt stmt_insert;
 	sqlite::Stmt stmt_update;
 	sqlite::Stmt stmt_del;
+	sqlite::Stmt stmt_select_star;
 
 public:
 	explicit DBsqlite(const std::string &full_path, uint64_t max_db_size = 0);  // no max size in sqlite3

@@ -16,11 +16,11 @@
 namespace bytecoin {
 namespace json_rpc {
 
-const int errParseError     = -32700;
-const int errInvalidRequest = -32600;
-const int errMethodNotFound = -32601;
-const int errInvalidParams  = -32602;
-const int errInternalError  = -32603;
+const int PARSE_ERROR     = -32700;
+const int INVALID_REQUEST = -32600;
+const int METHOD_NOT_FOUND = -32601;
+const int INVALID_PARAMS  = -32602;
+const int INTERNAL_ERROR  = -32603;
 
 class Error : public std::exception {
 public:
@@ -55,10 +55,10 @@ class Request {
 		try {
 			ps_req = common::JsonValue::from_string(request_body);
 		} catch (std::exception &) {
-			throw Error(errParseError);
+			throw Error(PARSE_ERROR);
 		}
 		if (!ps_req.is_object() || !ps_req.contains("method"))
-			throw Error(errInvalidRequest);
+			throw Error(INVALID_REQUEST);
 		method = ps_req("method").get_string();
 		if (ps_req.contains("id"))
 			id = ps_req("id");
@@ -107,10 +107,10 @@ class Response {
 		try {
 			ps_req = common::JsonValue::from_string(response_body);
 		} catch (std::exception &) {
-			throw Error(errParseError);
+			throw Error(PARSE_ERROR);
 		}
 		if (!ps_req.is_object())
-			throw Error(errInvalidRequest);
+			throw Error(INVALID_REQUEST);
 		if (ps_req.contains("id"))
 			id = ps_req("id");
 		if (ps_req.contains("result"))
@@ -163,20 +163,20 @@ private:
 };
 
 template<typename Agent, typename RawRequest, typename RequestType, typename ResponseType, typename Handler>
-bool invoke_method(Agent *agent, RawRequest &&raw_request, Request &&jsReq, Response &jsRes, Handler handler) {
+bool invoke_method(Agent *agent, RawRequest &&raw_request, Request &&js_req, Response &js_res, Handler handler) {
 	RequestType req{};
 	ResponseType res{};
-	jsReq.load_params(req);
+	js_req.load_params(req);
 
-	bool result = handler(agent, std::move(raw_request), std::move(jsReq), std::move(req), res);
+	bool result = handler(agent, std::move(raw_request), std::move(js_req), std::move(req), res);
 
 	if (result)
-		jsRes.set_result(res);
+		js_res.set_result(res);
 	return result;
 }
 
 template<typename Owner, typename Agent, typename RawRequest, typename Params, typename Result>
-std::function<bool(Owner *, Agent *, RawRequest &&raw_request, Request &&, Response &)> makeMemberMethod(
+std::function<bool(Owner *, Agent *, RawRequest &&raw_request, Request &&, Response &)> make_member_method(
     bool (Owner::*handler)(Agent *, RawRequest &&, json_rpc::Request &&, Params &&, Result &)) {
 	return [handler](Owner *obj, Agent *agent, RawRequest &&raw_request, Request &&req, Response &res) -> bool {
 		return json_rpc::invoke_method<Agent, RawRequest, Params, Result>(agent, std::move(raw_request), std::move(req),

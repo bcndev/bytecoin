@@ -16,7 +16,7 @@ public:
 
 	virtual bool is_input() const override { return false; }
 
-	virtual void begin_object() override;  // isMap forces saving keys even in binary serializer
+	virtual void begin_object() override;
 	virtual void object_key(common::StringView name) override;
 	virtual void end_object() override;
 
@@ -53,7 +53,7 @@ private:
 		size_t count;
 
 		Level(common::StringView nm) : name(nm), state(State::Object), count(0) {}
-		Level(common::StringView nm, size_t arraySize) : name(nm), state(State::ArrayPrefix), count(arraySize) {}
+		Level(common::StringView nm, size_t array_size) : name(nm), state(State::ArrayPrefix), count(array_size) {}
 		Level(Level &&rv) {
 			state = rv.state;
 			name  = std::move(rv.name);

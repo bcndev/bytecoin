@@ -13,29 +13,29 @@ namespace common {
 
 class MemoryInputStream : public IInputStream {
 public:
-	MemoryInputStream(const void *buffer, size_t bufferSize);
-	size_t size() const { return bufferSize - inPosition; }
+	MemoryInputStream(const void *buffer, size_t buffer_size);
+	size_t size() const { return buffer_size - in_position; }
 	bool empty() const { return size() == 0; }
 	virtual size_t read_some(void *data, size_t size) override;
 
 private:
 	const char *buffer;
-	size_t bufferSize;
-	size_t inPosition;
+	size_t buffer_size;
+	size_t in_position;
 };
 
 // Cannot be implemented with MemoryInputStream because string might be reallocated between reads (for rw stream)
 class StringInputStream : public IInputStream, private common::Nocopy {
 public:
-	StringInputStream(const std::string &in) : in(&in), inPosition(0) {}
+	StringInputStream(const std::string &in) : in(&in), in_position(0) {}
 	size_t read_some(void *data, size_t size) override;
-	size_t size() const { return in->size() - inPosition; }
+	size_t size() const { return in->size() - in_position; }
 	bool empty() const { return size() == 0; }
-	size_t copyTo(IOutputStream &out, size_t max_count = std::numeric_limits<size_t>::max());
+	size_t copy_to(IOutputStream &out, size_t max_count = std::numeric_limits<size_t>::max());
 
 protected:
 	const std::string *in;
-	size_t inPosition;
+	size_t in_position;
 };
 
 class StringOutputStream : public IOutputStream {
@@ -56,13 +56,13 @@ public:
 	    : StringInputStream(m_buffer), StringOutputStream(m_buffer), m_buffer(std::move(data)) {}
 	StringStream(StringStream &&other) noexcept
 	    : StringInputStream(m_buffer), StringOutputStream(m_buffer), m_buffer(std::move(other.m_buffer)) {
-		inPosition = other.inPosition;
+		in_position = other.in_position;
 	}
 	StringStream &operator=(StringStream &&other) noexcept {
-		m_buffer   = std::move(other.m_buffer);
-		in         = &m_buffer;
-		out        = &m_buffer;
-		inPosition = other.inPosition;
+		m_buffer    = std::move(other.m_buffer);
+		in          = &m_buffer;
+		out         = &m_buffer;
+		in_position = other.in_position;
 		return *this;
 	}
 
@@ -70,7 +70,7 @@ public:
 	const std::string &buffer() const { return m_buffer; }
 
 	void clear() {
-		inPosition = 0;
+		in_position = 0;
 		m_buffer.clear();
 	}
 
@@ -81,17 +81,17 @@ private:
 // Cannot be implemented with MemoryInputStream because string might be reallocated between reads (for rw stream)
 class VectorInputStream : public IInputStream, private common::Nocopy {
 public:
-	VectorInputStream(const BinaryArray &in) : in(&in), inPosition(0) {}
+	VectorInputStream(const BinaryArray &in) : in(&in), in_position(0) {}
 
 	size_t read_some(void *data, size_t size) override;
-	size_t size() const { return in->size() - inPosition; }
+	size_t size() const { return in->size() - in_position; }
 	bool empty() const { return size() == 0; }
 
-	size_t copyTo(IOutputStream &out, size_t max_count = std::numeric_limits<size_t>::max());
+	size_t copy_to(IOutputStream &out, size_t max_count = std::numeric_limits<size_t>::max());
 
 protected:
 	const BinaryArray *in;
-	size_t inPosition;
+	size_t in_position;
 };
 
 class VectorOutputStream : public IOutputStream {
@@ -112,13 +112,13 @@ public:
 	    : VectorInputStream(m_buffer), VectorOutputStream(m_buffer), m_buffer(std::move(data)) {}
 	VectorStream(VectorStream &&other) noexcept
 	    : VectorInputStream(m_buffer), VectorOutputStream(m_buffer), m_buffer(std::move(other.m_buffer)) {
-		inPosition = other.inPosition;
+		in_position = other.in_position;
 	}
 	VectorStream &operator=(VectorStream &&other) noexcept {
-		m_buffer   = std::move(other.m_buffer);
-		in         = &m_buffer;
-		out        = &m_buffer;
-		inPosition = other.inPosition;
+		m_buffer    = std::move(other.m_buffer);
+		in          = &m_buffer;
+		out         = &m_buffer;
+		in_position = other.in_position;
 		return *this;
 	}
 
@@ -126,7 +126,7 @@ public:
 	const BinaryArray &buffer() const { return m_buffer; }
 
 	void clear() {
-		inPosition = 0;
+		in_position = 0;
 		m_buffer.clear();
 	}
 
@@ -169,7 +169,7 @@ public:
 	size_t write_count2() const { return write_pos < impl.size() ? read_pos : 0; }
 	unsigned char *write_ptr2() { return impl.data(); }
 
-	void copyFrom(IInputStream &in);
-	size_t copyTo(IOutputStream &out, size_t max_count = std::numeric_limits<size_t>::max());
+	void copy_from(IInputStream &in);
+	size_t copy_to(IOutputStream &out, size_t max_count = std::numeric_limits<size_t>::max());
 };
 }

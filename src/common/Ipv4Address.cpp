@@ -53,9 +53,9 @@ bool parse_ip_address(const std::string &addr, uint32_t &ip) {
 
 bool parse_ip_address_and_port(const std::string &addr, uint32_t &ip, uint32_t &port) {
 	uint32_t v[4]{};
-	uint32_t localPort = 0;
+	uint32_t local_port = 0;
 
-	if (sscanf(addr.c_str(), "%u.%u.%u.%u:%u", &v[0], &v[1], &v[2], &v[3], &localPort) != 5) {
+	if (sscanf(addr.c_str(), "%u.%u.%u.%u:%u", &v[0], &v[1], &v[2], &v[3], &local_port) != 5) {
 		return false;
 	}
 
@@ -66,9 +66,9 @@ bool parse_ip_address_and_port(const std::string &addr, uint32_t &ip, uint32_t &
 	}
 
 	ip = (v[3] << 24) | (v[2] << 16) | (v[1] << 8) | v[0];
-	if (localPort > 65535)
+	if (local_port > 65535)
 		return false;
-	port = localPort;
+	port = local_port;
 	return true;
 }
 

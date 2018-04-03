@@ -13,54 +13,28 @@ Error::Error() : code(0) {}
 Error::Error(int c) : code(c), message(get_message(c)) {}
 std::string Error::get_message(int code) {
 	switch (code) {
-	case errParseError:
+	case PARSE_ERROR:
 		return "Parse error";
-	case errInvalidRequest:
+	case INVALID_REQUEST:
 		return "Invalid request";
-	case errMethodNotFound:
+	case METHOD_NOT_FOUND:
 		return "Method not found";
-	case errInvalidParams:
+	case INVALID_PARAMS:
 		return "Invalid params";
-	case errInternalError:
+	case INTERNAL_ERROR:
 		return "Internal error";
 	}
 	return "Unknown error";
 }
 
 Error::Error(int c, const std::string &msg) : code(c), message(msg) {}
-/*void makeErrorResponse(const std::error_code &ec, common::JsonValue &resp) {
-    common::JsonValue error(common::JsonValue::OBJECT);
 
-    // JsonValue code;
-    // code = static_cast<int64_t>(-32000); //Application specific error code
-
-    //        JsonValue message;
-    //        message = ;
-
-    common::JsonValue data(common::JsonValue::OBJECT);
-    //        JsonValue appCode;
-    //        appCode = static_cast<int64_t>();
-    data.insert("application_code", common::JsonValue::Integer(ec.value()));
-
-    error.insert("code", common::JsonValue::Integer(-32000));
-    error.insert("message", ec.message());
-    error.insert("data", data);
-
-    resp.insert("error", error);
-}*/
-
-void makeGenericErrorReponse(common::JsonValue &resp, const std::string &what, int errorCode) {
+void make_generic_error_reponse(common::JsonValue &resp, const std::string &what, int error_code) {
 	common::JsonValue error(common::JsonValue::OBJECT);
 
-	//        JsonValue code;
-	//        code = static_cast<int64_t>(errorCode);
+	std::string msg = !what.empty() ? what : Error::get_message(error_code);
 
-	std::string msg = !what.empty() ? what : Error::get_message(errorCode);
-
-	//        JsonValue message;
-	//        message = msg;
-
-	error.insert("code", common::JsonValue::Integer(errorCode));
+	error.insert("code", common::JsonValue::Integer(error_code));
 	error.insert("message", msg);
 
 	resp.insert("error", error);

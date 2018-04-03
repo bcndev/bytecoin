@@ -43,27 +43,26 @@ void LoggerManager::configure(const JsonValue &val) {
 	std::unique_lock<std::mutex> lock(reconfigure_lock);  // TODO - investigate possible deadlocks
 	loggers.clear();
 	LoggerGroup::loggers.clear();
-	Level globalLevel;
+	Level global_level;
 	if (val.contains("globalLevel")) {
-		auto levelVal = val("globalLevel");
-		if (levelVal.is_integer()) {
-			globalLevel = static_cast<Level>(levelVal.get_integer());
+		auto level_val = val("globalLevel");
+		if (level_val.is_integer()) {
+			global_level = static_cast<Level>(level_val.get_integer());
 		} else {
 			throw std::runtime_error("parameter globalLevel has wrong type");
 		}
 	} else {
-		globalLevel = TRACE;
+		global_level = TRACE;
 	}
-	std::vector<std::string> globalDisabledCategories;
+	std::vector<std::string> global_disabled_categories;
 
 	if (val.contains("globalDisabledCategories")) {
-		auto globalDisabledCategoriesList = val("globalDisabledCategories");
-		if (globalDisabledCategoriesList.is_array()) {
-			size_t countOfCategories = globalDisabledCategoriesList.size();
-			for (size_t i = 0; i < countOfCategories; ++i) {
-				auto categoryVal = globalDisabledCategoriesList[i];
-				if (categoryVal.is_string()) {
-					globalDisabledCategories.push_back(categoryVal.get_string());
+		auto gdc = val("globalDisabledCategories");
+		if (gdc.is_array()) {
+			for (size_t i = 0; i < gdc.size(); ++i) {
+				auto category_val = gdc[i];
+				if (category_val.is_string()) {
+					global_disabled_categories.push_back(category_val.get_string());
 				}
 			}
 		} else {
@@ -72,45 +71,43 @@ void LoggerManager::configure(const JsonValue &val) {
 	}
 
 	if (val.contains("loggers")) {
-		auto loggersList = val("loggers");
-		if (loggersList.is_array()) {
-			size_t countOfLoggers = loggersList.size();
-			for (size_t i = 0; i < countOfLoggers; ++i) {
-				auto loggerConfiguration = loggersList[i];
-				if (!loggerConfiguration.is_object()) {
+		auto loggers_list = val("loggers");
+		if (loggers_list.is_array()) {
+			for (size_t i = 0; i < loggers_list.size(); ++i) {
+				auto logger_configuration = loggers_list[i];
+				if (!logger_configuration.is_object()) {
 					throw std::runtime_error("loggers element must be objects");
 				}
 
 				Level level = INFO;
-				if (loggerConfiguration.contains("level")) {
-					level = static_cast<Level>(loggerConfiguration("level").get_integer());
+				if (logger_configuration.contains("level")) {
+					level = static_cast<Level>(logger_configuration("level").get_integer());
 				}
 
-				std::string type = loggerConfiguration("type").get_string();
+				std::string type = logger_configuration("type").get_string();
 				std::unique_ptr<logging::CommonLogger> logger;
 
 				if (type == "console") {
 					logger.reset(new ConsoleLogger(level));
 				} else if (type == "file") {
-					std::string filename = loggerConfiguration("filename").get_string();
-					auto fileLogger      = new FileLogger(filename, level);
-					logger.reset(fileLogger);
+					std::string filename = logger_configuration("filename").get_string();
+					auto file_logger     = new FileLogger(filename, level);
+					logger.reset(file_logger);
 				} else {
 					throw std::runtime_error("Unknown logger type: " + type);
 				}
 
-				if (loggerConfiguration.contains("pattern")) {
-					logger->set_pattern(loggerConfiguration("pattern").get_string());
+				if (logger_configuration.contains("pattern")) {
+					logger->set_pattern(logger_configuration("pattern").get_string());
 				}
 
-				std::vector<std::string> disabledCategories;
-				if (loggerConfiguration.contains("disabledCategories")) {
-					auto disabledCategoriesVal = loggerConfiguration("disabledCategories");
-					size_t countOfCategories   = disabledCategoriesVal.size();
-					for (size_t i = 0; i < countOfCategories; ++i) {
-						auto categoryVal = disabledCategoriesVal[i];
-						if (categoryVal.is_string()) {
-							logger->disable_category(categoryVal.get_string());
+				std::vector<std::string> disabled_categories;
+				if (logger_configuration.contains("disabledCategories")) {
+					auto dcv = logger_configuration("disabledCategories");
+					for (size_t i = 0; i < dcv.size(); ++i) {
+						auto category_val = dcv[i];
+						if (category_val.is_string()) {
+							logger->disable_category(category_val.get_string());
 						}
 					}
 				}
@@ -124,8 +121,8 @@ void LoggerManager::configure(const JsonValue &val) {
 	} else {
 		throw std::runtime_error("loggers parameter missing");
 	}
-	set_max_level(globalLevel);
-	for (const auto &category : globalDisabledCategories) {
+	set_max_level(global_level);
+	for (const auto &category : global_disabled_categories) {
 		disable_category(category);
 	}
 }

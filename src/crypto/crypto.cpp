@@ -97,8 +97,8 @@ static void derivation_to_scalar(const KeyDerivation &derivation, size_t output_
 }
 
 static void derivation_to_scalar(const KeyDerivation &derivation, size_t output_index, const uint8_t *suffix,
-    size_t suffixLength, EllipticCurveScalar &res) {
-	assert(suffixLength <= 32);
+    size_t suffix_length, EllipticCurveScalar &res) {
+	assert(suffix_length <= 32);
 	struct {
 		KeyDerivation derivation;
 		uint8_t output_index[(sizeof(size_t) * 8 + 6) / 7 + 32];
@@ -107,9 +107,9 @@ static void derivation_to_scalar(const KeyDerivation &derivation, size_t output_
 	buf.derivation = derivation;
 	write_varint(end, output_index);
 	assert(end <= buf.output_index + sizeof buf.output_index);
-	size_t bufSize = end - reinterpret_cast<uint8_t *>(&buf);
-	memcpy(end, suffix, suffixLength);
-	hash_to_scalar(&buf, bufSize + suffixLength, res);
+	size_t buf_size = end - reinterpret_cast<uint8_t *>(&buf);
+	memcpy(end, suffix, suffix_length);
+	hash_to_scalar(&buf, buf_size + suffix_length, res);
 }
 
 bool derive_public_key(
@@ -133,7 +133,7 @@ bool derive_public_key(
 }
 
 bool derive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &base,
-    const uint8_t *suffix, size_t suffixLength, PublicKey &derived_key) {
+    const uint8_t *suffix, size_t suffix_length, PublicKey &derived_key) {
 	EllipticCurveScalar scalar;
 	ge_p3 point1;
 	ge_p3 point2;
@@ -143,7 +143,7 @@ bool derive_public_key(const KeyDerivation &derivation, size_t output_index, con
 	if (ge_frombytes_vartime(&point1, &base) != 0) {
 		return false;
 	}
-	derivation_to_scalar(derivation, output_index, suffix, suffixLength, scalar);
+	derivation_to_scalar(derivation, output_index, suffix, suffix_length, scalar);
 	ge_scalarmult_base(&point2, &scalar);
 	ge_p3_to_cached(&point3, &point2);
 	ge_add(&point4, &point1, &point3);
@@ -180,10 +180,10 @@ void derive_secret_key(
 }
 
 void derive_secret_key(const KeyDerivation &derivation, size_t output_index, const SecretKey &base,
-    const uint8_t *suffix, size_t suffixLength, SecretKey &derived_key) {
+    const uint8_t *suffix, size_t suffix_length, SecretKey &derived_key) {
 	EllipticCurveScalar scalar;
 	assert(sc_isvalid_vartime(&base));
-	derivation_to_scalar(derivation, output_index, suffix, suffixLength, scalar);
+	derivation_to_scalar(derivation, output_index, suffix, suffix_length, scalar);
 	sc_add(&derived_key, &base, &scalar);
 }
 
@@ -208,7 +208,7 @@ bool underive_public_key(
 }
 
 bool underive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &derived_key,
-    const uint8_t *suffix, size_t suffixLength, PublicKey &base) {
+    const uint8_t *suffix, size_t suffix_length, PublicKey &base) {
 	EllipticCurveScalar scalar;
 	ge_p3 point1;
 	ge_p3 point2;
@@ -219,7 +219,7 @@ bool underive_public_key(const KeyDerivation &derivation, size_t output_index, c
 		return false;
 	}
 
-	derivation_to_scalar(derivation, output_index, suffix, suffixLength, scalar);
+	derivation_to_scalar(derivation, output_index, suffix, suffix_length, scalar);
 	ge_scalarmult_base(&point2, &scalar);
 	ge_p3_to_cached(&point3, &point2);
 	ge_sub(&point4, &point1, &point3);
@@ -399,7 +399,7 @@ bool generate_ring_signature(const Hash &prefix_hash, const KeyImage &image, con
 }
 
 bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey *const pubs[],
-    size_t pubs_count, const Signature sigs[], bool checkKeyImage, bool *key_corrupted) {
+    size_t pubs_count, const Signature sigs[], bool check_key_image, bool *key_corrupted) {
 	if (key_corrupted)
 		*key_corrupted = false;
 	ge_p3 image_unp;
@@ -411,7 +411,7 @@ bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const 
 		return false;
 	}
 	ge_dsm_precomp(image_pre, &image_unp);
-	if (checkKeyImage && ge_check_subgroup_precomp_vartime(image_pre) != 0) {
+	if (check_key_image && ge_check_subgroup_precomp_vartime(image_pre) != 0) {
 		return false;
 	}
 	sc_0(&sum);

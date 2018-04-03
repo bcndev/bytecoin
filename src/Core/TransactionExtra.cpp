@@ -23,15 +23,14 @@ bool find_transaction_extra_field_by_type(const std::vector<TransactionExtraFiel
 	return true;
 }
 
-bool parse_transaction_extra(const BinaryArray &transactionExtra,
-    std::vector<TransactionExtraField> &transactionExtraFields) {
-	transactionExtraFields.clear();
+bool parse_transaction_extra(const BinaryArray &extra, std::vector<TransactionExtraField> &extra_fields) {
+	extra_fields.clear();
 
-	if (transactionExtra.empty())
+	if (extra.empty())
 		return true;
 
 	try {
-		common::MemoryInputStream iss(transactionExtra.data(), transactionExtra.size());
+		common::MemoryInputStream iss(extra.data(), extra.size());
 		seria::BinaryInputStream ar(iss);
 
 		int c = 0;
@@ -52,38 +51,37 @@ bool parse_transaction_extra(const BinaryArray &transactionExtra,
 				}
 				TransactionExtraPadding padding;
 				padding.size = size;
-				transactionExtraFields.push_back(
-				    padding);  // TODO - return {} initializer when Google updates NDK copmiler
+				extra_fields.push_back(padding);  // TODO - return {} initializer when Google updates NDK copmiler
 				break;
 			}
 
 			case TransactionExtraPublicKey::tag: {
-				TransactionExtraPublicKey extraPk;
-				iss.read(extraPk.public_key.data, sizeof(extraPk.public_key.data));
-				transactionExtraFields.push_back(extraPk);
+				TransactionExtraPublicKey extra_pk;
+				iss.read(extra_pk.public_key.data, sizeof(extra_pk.public_key.data));
+				extra_fields.push_back(extra_pk);
 				break;
 			}
 
 			case TransactionExtraNonce::tag: {
-				TransactionExtraNonce extraNonce;
+				TransactionExtraNonce extra_nonce;
 				uint8_t size = common::read<uint8_t>(iss);
 				if (size > 0) {
-					extraNonce.nonce.resize(size);
-					iss.read(extraNonce.nonce.data(), extraNonce.nonce.size());
+					extra_nonce.nonce.resize(size);
+					iss.read(extra_nonce.nonce.data(), extra_nonce.nonce.size());
 					// We have some base transactions (like in blocks 558479, 558984)
 					// which have wrong
 					// extra nonce size, so they will not parse and throw here from
 					// iss.read
 				}
 
-				transactionExtraFields.push_back(extraNonce);
+				extra_fields.push_back(extra_nonce);
 				break;
 			}
 
 			case TransactionExtraMergeMiningTag::tag: {
-				TransactionExtraMergeMiningTag mmTag;
-				ar(mmTag);
-				transactionExtraFields.push_back(mmTag);
+				TransactionExtraMergeMiningTag mm_tag;
+				ar(mm_tag);
+				extra_fields.push_back(mm_tag);
 				break;
 			}
 			}
@@ -166,12 +164,6 @@ bool add_extra_nonce_to_transaction_extra(BinaryArray &tx_extra, const BinaryArr
 
 bool append_merge_mining_tag_to_extra(BinaryArray &tx_extra, const TransactionExtraMergeMiningTag &mm_tag) {
 	BinaryArray blob = seria::to_binary(mm_tag);
-	//	BinaryArray blob2;
-	//	if (!toBinaryArray(mm_tag, blob2)) { // TODO - investigate
-	//		return false;
-	//	}
-	//	if( blob != blob2 )
-	//		throw std::logic_error("MMTag serialization wrong");
 	tx_extra.push_back(TransactionExtraMergeMiningTag::tag);
 	common::append(tx_extra, blob.begin(), blob.end());
 	return true;
@@ -199,40 +191,19 @@ bool get_payment_id_from_transaction_extra_nonce(const BinaryArray &extra_nonce,
 	return true;
 }
 
-// bool parsePaymentId(const std::string &paymentIdString, Hash &paymentId) {
-//	return common::pod_from_hex(paymentIdString, paymentId);
-//}
-
-/*bool createTxExtraWithPaymentId(const std::string &paymentIdString, BinaryArray &extra) {
-    Hash paymentIdBin;
-
-    if (!parsePaymentId(paymentIdString, paymentIdBin)) {
-        return false;
-    }
-
-    BinaryArray extraNonce;
-    bytecoin::set_payment_id_to_transaction_extra_nonce(extraNonce, paymentIdBin);
-
-    if (!bytecoin::add_extra_nonce_to_transaction_extra(extra, extraNonce)) {
-        return false;
-    }
-
-    return true;
-}*/
-
-bool get_payment_id_from_tx_extra(const BinaryArray &extra, Hash &paymentId) {
+bool get_payment_id_from_tx_extra(const BinaryArray &extra, Hash &payment_id) {
 	std::vector<TransactionExtraField> tx_extra_fields;
 	parse_transaction_extra(extra, tx_extra_fields);
 	TransactionExtraNonce extra_nonce;
 	if (!find_transaction_extra_field_by_type(tx_extra_fields, extra_nonce))
 		return false;
-	if (!get_payment_id_from_transaction_extra_nonce(extra_nonce.nonce, paymentId))
+	if (!get_payment_id_from_transaction_extra_nonce(extra_nonce.nonce, payment_id))
 		return false;
 	return true;
 }
 }
 
-static void doSerialize(bytecoin::TransactionExtraMergeMiningTag &tag, seria::ISeria &s) {
+static void do_serialize(bytecoin::TransactionExtraMergeMiningTag &tag, seria::ISeria &s) {
 	s.begin_object();
 	uint64_t depth = static_cast<uint64_t>(tag.depth);
 	seria_kv("depth", depth, s);
@@ -247,12 +218,12 @@ void seria::ser(bytecoin::TransactionExtraMergeMiningTag &v, ISeria &s) {
 		s(field);
 		common::MemoryInputStream stream(field.data(), field.size());
 		seria::BinaryInputStream input(stream);
-		doSerialize(v, input);
+		do_serialize(v, input);
 	} else {
 		std::string field;
 		common::StringOutputStream os(field);
 		seria::BinaryOutputStream output(os);
-		doSerialize(v, output);
+		do_serialize(v, output);
 		s(field);
 	}
 }

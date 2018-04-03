@@ -106,9 +106,9 @@ public:
 		return block_time + locked_tx_allowed_delta_seconds >= unlock_time;
 	}
 	static bool is_dust(Amount am);
-	static uint64_t getPenalizedAmount(uint64_t amount, size_t medianSize, size_t currentBlockSize);
-	static std::string getAccountAddressAsStr(uint64_t prefix, const AccountPublicAddress &adr);
-	static bool parseAccountAddressString(uint64_t &prefix, AccountPublicAddress &adr, const std::string &str);
+	static uint64_t get_penalized_amount(uint64_t amount, size_t median_size, size_t current_block_size);
+	static std::string get_account_address_as_str(uint64_t prefix, const AccountPublicAddress &adr);
+	static bool parse_account_address_string(uint64_t &prefix, AccountPublicAddress &adr, const std::string &str);
 	static std::string format_amount(size_t number_of_decimal_places, Amount);
 	static std::string format_amount(size_t number_of_decimal_places, SignedAmount);
 	static bool parse_amount(size_t number_of_decimal_places, const std::string &, Amount &);

@@ -16,11 +16,11 @@ struct MiningConfig {
 	std::string bytecoind_ip;
 	uint16_t bytecoind_port = 0;
 	size_t thread_count     = 0;
-	//	size_t scanPeriod; // We are using longpoll now
+	//	size_t scan_period; // We are using longpoll now
 	//	uint8_t log_level;
 	size_t blocks_limit = 0;  // Mine specified number of blocks, then exit, 0 == indefinetely
 	                          //	uint64_t first_block_timestamp;
-	                          //	int64_t blockTimestampInterval;
+	                          //	int64_t block_timestamp_interval;
 	                          //	bool help;
 };
 

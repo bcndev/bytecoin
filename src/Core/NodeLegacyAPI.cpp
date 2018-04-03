@@ -37,7 +37,7 @@ bool Node::process_json_rpc_request(http::Client *who, http::RequestData &&reque
 		auto it = m_jsonrpc_handlers.find(json_req.get_method());
 		if (it == m_jsonrpc_handlers.end()) {
 			m_log(logging::INFO) << "jsonrpc request method not found - " << json_req.get_method() << std::endl;
-			throw json_rpc::Error(json_rpc::errMethodNotFound);
+			throw json_rpc::Error(json_rpc::METHOD_NOT_FOUND);
 		}
 		//		m_log(logging::INFO) << "jsonrpc request method=" <<
 		// json_req.get_method() << std::endl;
@@ -48,7 +48,7 @@ bool Node::process_json_rpc_request(http::Client *who, http::RequestData &&reque
 	} catch (const json_rpc::Error &err) {
 		json_resp.set_error(err);
 	} catch (const std::exception &e) {
-		json_resp.set_error(json_rpc::Error(json_rpc::errInternalError, e.what()));
+		json_resp.set_error(json_rpc::Error(json_rpc::INTERNAL_ERROR, e.what()));
 	}
 
 	response.set_body(json_resp.get_body());
@@ -124,8 +124,7 @@ void Node::getblocktemplate(const api::bytecoind::GetBlockTemplate::Request &req
 	}
 
 	BinaryArray block_blob = seria::to_binary(block_template);
-	//	BinaryArray block_blob = toBinaryArray(block_template);
-	PublicKey tx_pub_key = get_transaction_public_key_from_extra(block_template.base_transaction.extra);
+	PublicKey tx_pub_key   = get_transaction_public_key_from_extra(block_template.base_transaction.extra);
 	if (tx_pub_key == PublicKey{}) {
 		m_log(logging::ERROR) << "Failed to find tx pub key in coinbase extra";
 		throw json_rpc::Error{
@@ -168,13 +167,6 @@ bool Node::on_submitblock(http::Client *, http::RequestData &&, json_rpc::Reques
 	BinaryArray blockblob = req.blocktemplate_blob;
 
 	BlockTemplate block_template;
-	//	bool result = fromBinaryArray(block_template, blockblob);
-	//	if (!result) {
-	// logger(Logging::WARNING) << "Couldn't deserialize block template";
-	//		throw json_rpc::Error{CORE_RPC_ERROR_CODE_WRONG_BLOCKBLOB,
-	//"Wrong
-	// block blob 2"};
-	//	}
 	seria::from_binary(block_template, blockblob);
 	RawBlock raw_block;
 	api::BlockHeader info;

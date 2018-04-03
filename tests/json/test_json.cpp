@@ -3,12 +3,10 @@
 
 #include "test_json.hpp"
 
-#include <cstddef>
+//#include <cstddef>
 #include <fstream>
-#include <iomanip>
-#include <ios>
+//#include <iomanip>
 #include <iostream>
-#include <string>
 
 #include "common/JsonValue.hpp"
 #include "common/StringTools.hpp"
@@ -22,7 +20,7 @@ void test_json(const std::string &filename, bool should_be) {
 		common::JsonValue val = common::JsonValue::from_string(content);
 		success               = true;
 	} catch (const std::exception &ex) {
-		std::cout << filename << " fail reason: " << ex.what() << std::endl;
+		//		std::cout << filename << " fail reason: " << ex.what() << std::endl;
 	}
 	if (success != should_be)
 		throw std::runtime_error("test case failed " + filename);

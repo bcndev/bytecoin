@@ -40,7 +40,7 @@ void random_keypair(PublicKey &pub, SecretKey &sec);
 
 inline KeyPair random_keypair() {
 	KeyPair k;
-	crypto::random_keypair(k.publicKey, k.secretKey);
+	crypto::random_keypair(k.public_key, k.secret_key);
 	return k;
 }
 
@@ -60,7 +60,7 @@ bool keys_match(const SecretKey &secret_key, const PublicKey &expected_public_ke
 bool generate_key_derivation(const PublicKey &key1, const SecretKey &key2, KeyDerivation &derivation);
 
 bool derive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &base,
-    const uint8_t *prefix, size_t prefixLength, PublicKey &derived_key);
+    const uint8_t *prefix, size_t prefix_length, PublicKey &derived_key);
 
 bool derive_public_key(
     const KeyDerivation &derivation, size_t output_index, const PublicKey &base, PublicKey &derived_key);
@@ -69,7 +69,7 @@ bool underive_public_key_and_get_scalar(const KeyDerivation &derivation, std::si
     const PublicKey &derived_key, PublicKey &base, EllipticCurveScalar &hashed_derivation);
 
 void derive_secret_key(const KeyDerivation &derivation, std::size_t output_index, const SecretKey &base,
-    const uint8_t *prefix, size_t prefixLength, SecretKey &derived_key);
+    const uint8_t *prefix, size_t prefix_length, SecretKey &derived_key);
 
 void derive_secret_key(
     const KeyDerivation &derivation, std::size_t output_index, const SecretKey &base, SecretKey &derived_key);
@@ -77,7 +77,7 @@ void derive_secret_key(
 // Inverse function of derive_public_key. It can be used by the receiver to find which "spend" key was used to generate
 // a transaction. This may be useful if the receiver used multiple addresses which only differ in "spend" key.
 bool underive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &derived_key,
-    const uint8_t *prefix, size_t prefixLength, PublicKey &base);
+    const uint8_t *prefix, size_t prefix_length, PublicKey &base);
 
 bool underive_public_key(
     const KeyDerivation &derivation, size_t output_index, const PublicKey &derived_key, PublicKey &base);
@@ -101,7 +101,7 @@ void generate_key_image(const PublicKey &pub, const SecretKey &sec, KeyImage &im
 bool generate_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey *const pubs[],
     std::size_t pubs_count, const SecretKey &sec, std::size_t sec_index, Signature sigs[]);
 bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey *const pubs[],
-    size_t pubs_count, const Signature sigs[], bool checkKeyImage, bool *key_corrupted = nullptr);
+    size_t pubs_count, const Signature sigs[], bool check_key_image, bool *key_corrupted = nullptr);
 // TODO - remove one pair of funs
 // returns false if keys are corrupted/invalid
 inline bool generate_ring_signature(const Hash &prefix_hash, const KeyImage &image,
@@ -109,9 +109,9 @@ inline bool generate_ring_signature(const Hash &prefix_hash, const KeyImage &ima
 	return generate_ring_signature(prefix_hash, image, pubs.data(), pubs.size(), sec, sec_index, sigs);
 }
 inline bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image,
-    const std::vector<const PublicKey *> &pubs, const Signature sigs[], bool checkKeyImage,
+    const std::vector<const PublicKey *> &pubs, const Signature sigs[], bool check_key_image,
     bool *key_corrupted = nullptr) {
-	return check_ring_signature(prefix_hash, image, pubs.data(), pubs.size(), sigs, checkKeyImage, key_corrupted);
+	return check_ring_signature(prefix_hash, image, pubs.data(), pubs.size(), sigs, check_key_image, key_corrupted);
 }
 
 bool generate_send_proof(const PublicKey &txkey_pub, const SecretKey &txkey_sec, const PublicKey &receiver_view_key_pub,

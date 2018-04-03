@@ -15,7 +15,7 @@
 #endif
 
 namespace platform {
-std::string getDefaultDataDirectory(
+std::string get_default_data_directory(
     const std::string &cryptonote_name);  // we avoid including app-specific headers into our platform code
 // Old method
 // Windows < Vista: C:\Documents and Settings\Username\Application Data\CRYPTONOTE_NAME
@@ -32,11 +32,10 @@ std::string getDefaultDataDirectory(
 // Unix: fullpath of ~/.<app_name>
 std::string get_app_data_folder(const std::string &app_name);
 
-//  std::string getDefaultCacheFile(const std::string& dataDir);
 std::string get_os_version_string();
 bool directory_exists(const std::string &path);
 bool create_directory_if_necessary(const std::string &path);    // Only last element
 bool create_directories_if_necessary(const std::string &path);  // Recursively all elements
 bool atomic_replace_file(const std::string &replacement_name, const std::string &old_file_name);
-//  bool directoryExists(const std::string& path);
+bool copy_file(const std::string &to_path, const std::string &from_path);
 }

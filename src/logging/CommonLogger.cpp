@@ -7,7 +7,7 @@ namespace logging {
 
 namespace {
 
-std::string formatPattern(
+std::string format_pattern(
     const std::string &pattern, const std::string &category, Level level, boost::posix_time::ptime time) {
 	std::stringstream s;
 
@@ -49,11 +49,11 @@ void CommonLogger::operator()(
 	if (level <= log_level && m_disabled_categories.count(category) == 0) {
 		std::string body2 = body;
 		if (!pattern.empty()) {
-			size_t insertPos = 0;
+			size_t insert_pos = 0;
 			if (body2.size() >= 2 && body2[0] == ILogger::COLOR_PREFIX) {
-				insertPos = 2;
+				insert_pos = 2;
 			}
-			body2.insert(insertPos, formatPattern(pattern, category, level, time));
+			body2.insert(insert_pos, format_pattern(pattern, category, level, time));
 		}
 
 		do_log_string(body2);

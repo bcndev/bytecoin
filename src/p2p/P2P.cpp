@@ -24,7 +24,7 @@ P2PClient::P2PClient(size_t header_size, bool incoming, D_handler d_handler)
 
 void P2PClient::write() {
 	while (!responses.empty()) {
-		responses.front().copyTo(sock);
+		responses.front().copy_to(sock);
 		if (responses.front().size() != 0)
 			break;
 		responses.pop_front();
@@ -35,7 +35,7 @@ void P2PClient::write() {
 
 void P2PClient::read(bool called_from_runloop) {
 	if (!receiving_body) {
-		buffer.copyFrom(sock);
+		buffer.copy_from(sock);
 		if (buffer.size() < header_size)
 			return;
 		request.resize(header_size);
@@ -55,13 +55,13 @@ void P2PClient::read(bool called_from_runloop) {
 		if (receiving_body_stream.size() > request_body_length)
 			throw std::logic_error("P2PClient::read request_body.size() > request_body_length");
 		size_t max_count = request_body_length - receiving_body_stream.size();
-		buffer.copyTo(receiving_body_stream, max_count);
+		buffer.copy_to(receiving_body_stream, max_count);
 		if (receiving_body_stream.size() == request_body_length) {
 			if (called_from_runloop)
 				on_request_ready();
 			return;
 		}
-		buffer.copyFrom(sock);
+		buffer.copy_from(sock);
 		if (buffer.empty())
 			break;
 	}

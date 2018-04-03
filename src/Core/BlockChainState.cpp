@@ -260,16 +260,14 @@ std::string BlockChainState::get_standalone_consensus_error(
 	        0, info.base_reward, emission_change) ||
 	    !m_currency.get_block_reward(block.header.major_version, info.effective_size_median, info.block_size,
 	        already_generated_coins, cumulative_fee, info.reward, emission_change)) {
-		//        log(Logging::WARNING) << "Block " << cachedBlock.getBlockHash() <<
-		//        " has too big cumulative size";
+		// log(Logging::WARNING) << "Block " << hash << " has too big cumulative size";
 		return "CUMULATIVE_BLOCK_SIZE_TOO_BIG";
 	}
 
 	if (miner_reward != info.reward) {
 		//        log(Logging::WARNING) << "Block reward mismatch for block " <<
-		//        cachedBlock.getBlockHash()
-		//        << ". Expected reward: " << reward << ", got reward: " <<
-		//        minerReward;
+		//        hash <<  ". Expected reward: " << reward << ", got reward: " <<
+		//        miner_reward;
 		return "BLOCK_REWARD_MISMATCH";
 	}
 	info.already_generated_coins        = prev_info.already_generated_coins + emission_change;
@@ -306,7 +304,7 @@ void BlockChainState::calculate_consensus_values(Height height_delta, uint32_t &
 			timestamps.push_back(it->timestamp);
 		next_median_timestamp = common::median_value(timestamps);  // sorts timestamps
 		next_unlock_timestamp = timestamps[timestamps.size() / 2];
-		// unlike medianValue, here we select lesser of 2 middle values for
+		// unlike median_value, here we select lesser of 2 middle values for
 		// even-sized array, so
 		// that m_next_unlock_timestamp will never decrease with block number
 		if (next_unlock_timestamp < m_currency.block_future_time_limit)
@@ -408,7 +406,7 @@ bool BlockChainState::create_mining_block_template(BlockTemplate &b, const Accou
 		BlockGlobalIndices global_indices;
 		std::string result =
 		    redo_transaction_get_error(false, tit->second, &memory_state, global_indices, true, single_fee,
-		        fatal);  // nextMedianTimestamp
+		        fatal);  // next_median_timestamp
 		if (!result.empty()) {
 			m_log(logging::ERROR) << "Transaction " << common::pod_to_hex(tit->first)
 			                      << " is in pool, but could not be redone result=" << result << std::endl;
@@ -463,7 +461,7 @@ bool BlockChainState::create_mining_block_template(BlockTemplate &b, const Accou
 					m_log(logging::ERROR)
 					    << logging::BrightRed << "unexpected case: cumulative_size=" << cumulative_size
 					    << " + 1 is not equal txs_cumulative_size=" << txs_size
-					    << " + get_object_blobsize(b.baseTransaction)=" << seria::binary_size(b.base_transaction);
+					    << " + get_object_blobsize(b.base_transaction)=" << seria::binary_size(b.base_transaction);
 					return false;
 				}
 
@@ -487,7 +485,7 @@ bool BlockChainState::create_mining_block_template(BlockTemplate &b, const Accou
 		if (cumulative_size != txs_size + seria::binary_size(b.base_transaction)) {
 			m_log(logging::ERROR) << logging::BrightRed << "unexpected case: cumulative_size=" << cumulative_size
 			                      << " is not equal txs_cumulative_size=" << txs_size
-			                      << " + get_object_blobsize(b.baseTransaction)="
+			                      << " + get_object_blobsize(b.base_transaction)="
 			                      << seria::binary_size(b.base_transaction);
 			return false;
 		}
@@ -541,7 +539,7 @@ void BlockChainState::clear_mining_transactions() const {
 			++tit;
 }
 
-static std::string validateSemantic(bool generating, const Transaction &tx, uint64_t &fee, bool check_output_key) {
+static std::string validate_semantic(bool generating, const Transaction &tx, uint64_t &fee, bool check_output_key) {
 	if (tx.inputs.empty())
 		return "EMPTY_INPUTS";
 	uint64_t summary_output_amount = 0;
@@ -575,7 +573,7 @@ static std::string validateSemantic(bool generating, const Transaction &tx, uint
 				return "INPUT_IDENTICAL_KEYIMAGES";
 			if (in.output_indexes.empty())
 				return "INPUT_EMPTY_OUTPUT_USAGE";
-			// outputIndexes are packed here, first is absolute, others are offsets to
+			// output_indexes are packed here, first is absolute, others are offsets to
 			// previous,
 			// so first can be zero, others can't
 			if (std::find(++std::begin(in.output_indexes), std::end(in.output_indexes), 0) !=
@@ -617,7 +615,7 @@ BroadcastAction BlockChainState::add_transaction(const Hash &tid, const Transact
 	bool fatal    = false;
 	BlockGlobalIndices global_indices;
 	std::string result = redo_transaction_get_error(false, tx, &memory_state, global_indices, check_sigs, my_fee,
-	    fatal);  // nextMedianTimestamp
+	    fatal);  // next_median_timestamp
 	if (!result.empty()) {
 		return BroadcastAction::NOTHING;  // TODO - ban if fatal
 	}
@@ -842,7 +840,7 @@ bool RingCheckerMulticore::signatures_valid() const {
 std::string BlockChainState::redo_transaction_get_error(bool generating, const Transaction &transaction,
     DeltaState *delta_state, BlockGlobalIndices &global_indices, bool check_sigs, Amount &fee, bool &fatal) const {
 	const bool check_outputs = check_sigs;
-	std::string error        = validateSemantic(generating, transaction, fee, check_outputs);
+	std::string error        = validate_semantic(generating, transaction, fee, check_outputs);
 	fatal                    = false;  // for now we do not distinguish between fatal and non-fatal
 	                                   // errors
 	if (!error.empty())
@@ -998,7 +996,7 @@ void BlockChainState::undo_block(const Hash &bhash, const Block &block, Height h
 		if (m_memory_state_total_complexity < MAX_POOL_COMPLEXITY * 2) {
 			auto thash = get_transaction_hash(*tit);
 			// undo is rare, otherwise we'd optimize to use
-			// block.header.transactionHashes
+			// block.header.transaction_hashes
 			add_transaction(thash, *tit, height, get_tip().timestamp + m_currency.block_future_time_limit * 2,
 			    std::numeric_limits<size_t>::max(), false);
 			// we use increased timestamp so that just unlocked transactions will not

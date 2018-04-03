@@ -32,6 +32,11 @@ WalletSync::WalletSync(
 	m_commit_timer.once(DB_COMMIT_PERIOD_WALLET_CACHE);
 }
 
+void WalletSync::db_commit() {
+	m_wallet_state.db_commit();
+	m_commit_timer.once(DB_COMMIT_PERIOD_WALLET_CACHE);
+}
+
 void WalletSync::send_get_status() {
 	api::bytecoind::GetStatus::Request req;
 	req.top_block_hash           = m_wallet_state.get_tip_bid();
@@ -94,7 +99,7 @@ void WalletSync::send_sync_pool() {
 	api::bytecoind::SyncMemPool::Request msg;
 	msg.known_hashes = m_wallet_state.get_tx_pool_hashes();
 	http::RequestData req_header;
-	req_header.r.set_firstline("POST", api::bytecoind::SyncMemPool::binMethod(), 1, 1);
+	req_header.r.set_firstline("POST", api::bytecoind::SyncMemPool::bin_method(), 1, 1);
 	req_header.r.basic_authorization = m_config.bytecoind_authorization;
 	req_header.set_body(seria::to_binary_str(msg));
 	m_sync_request = std::make_unique<http::Request>(m_sync_agent, std::move(req_header),
@@ -124,7 +129,7 @@ void WalletSync::send_get_blocks() {
 	msg.sparse_chain          = m_wallet_state.get_sparse_chain();
 	msg.first_block_timestamp = m_wallet_state.get_wallet().get_oldest_timestamp();
 	http::RequestData req_header;
-	req_header.r.set_firstline("POST", api::bytecoind::SyncBlocks::binMethod(), 1, 1);
+	req_header.r.set_firstline("POST", api::bytecoind::SyncBlocks::bin_method(), 1, 1);
 	req_header.r.basic_authorization = m_config.bytecoind_authorization;
 	req_header.set_body(seria::to_binary_str(msg));
 	m_sync_request = std::make_unique<http::Request>(m_sync_agent, std::move(req_header),

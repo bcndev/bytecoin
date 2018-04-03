@@ -35,8 +35,8 @@ void BinaryOutputStream::seria_v(int64_t &value) { write_varint(stream, static_c
 void BinaryOutputStream::seria_v(uint64_t &value) { write_varint(stream, value); }
 
 void BinaryOutputStream::seria_v(bool &value) {
-	char boolVal = value;
-	stream.write(&boolVal, 1);
+	char bool_val = value;
+	stream.write(&bool_val, 1);
 }
 
 void BinaryOutputStream::seria_v(std::string &value) {

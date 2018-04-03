@@ -43,9 +43,9 @@ bool Block::from_raw_block(const RawBlock &raw_block) {
 		seria::from_binary(bheader, raw_block.block);
 		transactions.resize(0);
 		transactions.reserve(raw_block.transactions.size());
-		for (auto &&rawTransaction : raw_block.transactions) {
+		for (auto &&raw_transaction : raw_block.transactions) {
 			Transaction transaction;
-			seria::from_binary(transaction, rawTransaction);
+			seria::from_binary(transaction, raw_transaction);
 			transactions.push_back(std::move(transaction));
 		}
 	} catch (...) {
@@ -61,8 +61,8 @@ bool Block::to_raw_block(RawBlock &raw_block) const {
 		raw_block.transactions.resize(0);
 		raw_block.transactions.reserve(transactions.size());
 		for (auto &&transaction : transactions) {
-			BinaryArray rawTransaction = seria::to_binary(transaction);
-			raw_block.transactions.push_back(std::move(rawTransaction));
+			BinaryArray raw_transaction = seria::to_binary(transaction);
+			raw_block.transactions.push_back(std::move(raw_transaction));
 		}
 	} catch (...) {
 		return false;

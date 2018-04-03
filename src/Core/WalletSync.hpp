@@ -38,11 +38,7 @@ protected:
 
 	std::unique_ptr<platform::PreventSleep> prevent_sleep;
 	platform::Timer m_commit_timer;
-	void db_commit() {
-		m_wallet_state.db_commit();
-		m_commit_timer.once(DB_COMMIT_PERIOD_WALLET_CACHE);
-	}
-
+	void db_commit();
 	void send_get_status();
 	void send_sync_pool();
 	void send_get_blocks();

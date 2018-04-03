@@ -185,7 +185,7 @@ $bcndev/bytecoin/build> time make -j4
 
 ## Building on Windows
 
-You need Microsoft Visual Studio Community 2017. [Download](https://microsoft.com) and install it selecting `C++`, `git`, `cmake integration` packages.
+You need Microsoft Visual Studio Community 2017. [Download](https://www.visualstudio.com/vs/) and install it selecting `C++`, `git`, `cmake integration` packages.
 Run `Visual Studio x64 command prompt` from start menu.
 
 Create directory `bcndev` somewhere:

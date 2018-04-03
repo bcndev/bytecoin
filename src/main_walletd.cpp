@@ -32,6 +32,7 @@ Options:
   --import-keys                        Create wallet file with imported keys read as a line from stdin. Must be used with --create-wallet.
   --set-password                       Read new password as a line from stdin (twice) and reencrypt wallet file.
   --export-view-only=<file>            Export view-only version of wallet file with the same password, then exit.
+  --export-keys                        Export wallet keys to stdout, then exit.
   --testnet                            Configure for testnet.
   --walletd-bind-address=<ip:port>     Interface and port for walletd RPC [default: 127.0.0.1:8070].
   --data-folder=<full-path>            Folder for wallet cache, blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
@@ -55,43 +56,26 @@ int main(int argc, const char *argv[]) try {
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	common::CommandLine cmd(argc, argv);
 	std::string wallet_file, password, new_password, export_view_only, import_keys_value;
-	bool set_password  = false;
-	bool ask_password  = true;
-	bool import_keys   = false;
-	bool create_wallet = false;
+	const bool set_password  = cmd.get_bool("--set-password");
+	bool ask_password        = true;
+	const bool export_keys   = cmd.get_bool("--export-keys");
+	const bool create_wallet = cmd.get_bool("--create-wallet");
+	const bool import_keys   = create_wallet && cmd.get_bool("--import-keys");
 	if (const char *pa = cmd.get("--wallet-file"))
 		wallet_file = pa;
-	if (const char *pa = cmd.get("--container-file", "Use --wallet-file instead"))
-		wallet_file = pa;
-	if (cmd.get_bool("--create-wallet"))
-		create_wallet = true;
-	else if (cmd.get_bool("--generate-container", "Use --create-wallet instead"))
-		create_wallet = true;
 	if (const char *pa = cmd.get("--export-view-only"))
 		export_view_only = pa;
 	if (const char *pa = cmd.get("--wallet-password")) {
 		password     = pa;
 		ask_password = false;
-	} else if (const char *pa = cmd.get("--container-password", "Use --wallet-password instead")) {
-		password     = pa;
-		ask_password = false;
 	}
-	if (!ask_password) {
-		if (create_wallet) {
-			std::cout
-			    << "When generating wallet, you cannot use --wallet-password. Wallet password will be read from stdin"
-			    << std::endl;
-			return api::WALLETD_WRONG_ARGS;
-		}
-		common::console::set_text_color(common::console::BrightRed);
-		std::cout << "Password on command line is a security risk. Use echo <pwd> | ./walletd" << std::endl;
-		common::console::set_text_color(common::console::Default);
+	if (!ask_password && create_wallet) {
+		std::cout << "When generating wallet, you cannot use --wallet-password. Wallet password will be read from stdin"
+		          << std::endl;
+		return api::WALLETD_WRONG_ARGS;
 	}
-	set_password = cmd.get_bool("--set-password");  // mark option as used
-	if (create_wallet)
-		import_keys = cmd.get_bool("--import-keys");
-	bytecoin::Config config(cmd);
 
+	bytecoin::Config config(cmd);
 	bytecoin::Currency currency(config.is_testnet);
 
 	if (cmd.should_quit(USAGE, bytecoin::app_version()))
@@ -142,6 +126,60 @@ int main(int argc, const char *argv[]) try {
 			return api::WALLETD_WRONG_ARGS;
 		}
 	}
+	const std::string coinFolder = config.get_data_folder();
+	//	if (wallet_file.empty() && !generate_wallet) // No args can be provided when debugging with MSVC
+	//		wallet_file = "C:\\Users\\user\\test.wallet";
+
+	std::unique_ptr<platform::ExclusiveLock> walletcache_lock;
+	std::unique_ptr<Wallet> wallet;
+	try {
+		wallet = std::make_unique<Wallet>(
+		    wallet_file, create_wallet ? new_password : password, create_wallet, import_keys_value);
+	} catch (const common::StreamError &ex) {
+		std::cout << ex.what() << std::endl;
+		return api::WALLET_FILE_READ_ERROR;
+	} catch (const Wallet::Exception &ex) {
+		std::cout << ex.what() << std::endl;
+		return ex.return_code;
+	}
+	try {
+		if (set_password)
+			wallet->set_password(new_password);
+		if (!export_view_only.empty()) {
+			wallet->export_view_only(export_view_only);
+			return 0;
+		}
+		if (export_keys) {
+			std::cout << common::to_hex(wallet->export_keys()) << std::endl;
+			return 0;
+		}
+	} catch (const common::StreamError &ex) {
+		std::cout << ex.what() << std::endl;
+		return api::WALLET_FILE_WRITE_ERROR;
+	} catch (const Wallet::Exception &ex) {
+		std::cout << ex.what() << std::endl;
+		return ex.return_code;
+	}
+	std::unique_ptr<platform::ExclusiveLock> blockchain_lock;
+	try {
+		if (!config.bytecoind_remote_port)
+			blockchain_lock = std::make_unique<platform::ExclusiveLock>(coinFolder, "bytecoind.lock");
+	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
+		std::cout << "Bytecoind already running - " << ex.what() << std::endl;
+		return api::BYTECOIND_ALREADY_RUNNING;
+	}
+	try {
+		walletcache_lock = std::make_unique<platform::ExclusiveLock>(
+		    config.get_data_folder("wallet_cache"), wallet->get_cache_name() + ".lock");
+	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
+		std::cout << "Wallet with the same viewkey is in use - " << ex.what() << std::endl;
+		return api::WALLET_WITH_THE_SAME_VIEWKEY_IN_USE;
+	}
+	if (!ask_password) {
+		common::console::set_text_color(common::console::BrightRed);
+		std::cout << "Password on command line is a security risk. Use echo <pwd> | ./walletd" << std::endl;
+		common::console::set_text_color(common::console::Default);
+	}
 	std::cout << "Enter HTTP authorization <user>:<password> for walletd RPC: " << std::flush;
 	std::string auth;
 	if (!std::getline(std::cin, auth)) {
@@ -159,49 +197,6 @@ int main(int argc, const char *argv[]) try {
 			std::cout << "HTTP authorization must be in the format <user>:<password>" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
-	}
-	const std::string coinFolder = config.get_data_folder();
-	//	if (wallet_file.empty() && !generate_wallet) // No args can be provided when debugging with MSVC
-	//		wallet_file = "C:\\Users\\user\\test.wallet";
-
-	std::unique_ptr<platform::ExclusiveLock> blockchain_lock;
-	std::unique_ptr<platform::ExclusiveLock> walletcache_lock;
-	std::unique_ptr<Wallet> wallet;
-	try {
-		if (!config.bytecoind_remote_port)
-			blockchain_lock = std::make_unique<platform::ExclusiveLock>(coinFolder, "bytecoind.lock");
-	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
-		std::cout << "Bytecoind already running - " << ex.what() << std::endl;
-		return api::BYTECOIND_ALREADY_RUNNING;
-	}
-	try {
-		wallet = std::make_unique<Wallet>(
-		    wallet_file, create_wallet ? new_password : password, create_wallet, import_keys_value);
-		walletcache_lock = std::make_unique<platform::ExclusiveLock>(
-		    config.get_data_folder("wallet_cache"), wallet->get_cache_name() + ".lock");
-	} catch (const common::StreamError &ex) {
-		std::cout << ex.what() << std::endl;
-		return api::WALLET_FILE_READ_ERROR;
-	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
-		std::cout << ex.what() << std::endl;
-		return api::WALLET_WITH_THE_SAME_VIEWKEY_IN_USE;
-	} catch (const Wallet::Exception &ex) {
-		std::cout << ex.what() << std::endl;
-		return ex.return_code;
-	}
-	try {
-		if (set_password)
-			wallet->set_password(new_password);
-		if (!export_view_only.empty()) {
-			wallet->export_view_only(export_view_only);
-			return 0;
-		}
-	} catch (const common::StreamError &ex) {
-		std::cout << ex.what() << std::endl;
-		return api::WALLET_FILE_WRITE_ERROR;
-	} catch (const Wallet::Exception &ex) {
-		std::cout << ex.what() << std::endl;
-		return ex.return_code;
 	}
 	logging::LoggerManager logManagerWalletNode;
 	logManagerWalletNode.configure_default(config.get_data_folder("logs"), "walletd-");

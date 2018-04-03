@@ -22,8 +22,8 @@ public:
 	Height locked_tx_allowed_delta_blocks;
 
 	Timestamp mempool_tx_live_time;
-	//  Timestamp mempoolTxFromAltBlockLiveTime;
-	//  size_t numberOfPeriodsToForgetTxDeletedFromPool;
+	//  Timestamp mempool_tx_from_alt_block_live_time;
+	//  size_t number_of_periods_to_forget_tx_deleted_from_pool;
 
 	std::string blocks_file_name;
 	std::string block_indexes_file_name;

@@ -128,11 +128,11 @@ private:
 	friend class TCPAcceptor;
 	RW_handler rw_handler;
 	D_handler d_handler;
-	CFReadStreamRef readStream   = nullptr;
-	CFWriteStreamRef writeStream = nullptr;
+	CFReadStreamRef read_stream   = nullptr;
+	CFWriteStreamRef write_stream = nullptr;
 	void close_and_call();
-	static void read_callback(CFReadStreamRef stream, CFStreamEventType event, void *myPtr);
-	static void write_callback(CFWriteStreamRef stream, CFStreamEventType event, void *myPtr);
+	static void read_callback(CFReadStreamRef stream, CFStreamEventType event, void *my_ptr);
+	static void write_callback(CFWriteStreamRef stream, CFStreamEventType event, void *my_ptr);
 };
 class TCPAcceptor : private common::Nocopy {
 public:

@@ -27,24 +27,24 @@ struct bucket_head2 {
 #pragma pack(pop)
 }
 
-BinaryArray LevinProtocol::send_message(uint32_t command, const BinaryArray &out, bool needResponse) {
+BinaryArray LevinProtocol::send_message(uint32_t command, const BinaryArray &out, bool need_response) {
 	bucket_head2 head          = {};
 	head.m_signature           = LEVIN_SIGNATURE;
 	head.m_cb                  = out.size();
-	head.m_have_to_return_data = needResponse;
+	head.m_have_to_return_data = need_response;
 	head.m_command             = command;
 	head.m_protocol_version    = LEVIN_PROTOCOL_VER_1;
 	head.m_flags               = LEVIN_PACKET_REQUEST;
 
 	// write header and body in one operation
-	BinaryArray writeBuffer;
-	writeBuffer.reserve(sizeof(head) + out.size());
+	BinaryArray write_buffer;
+	write_buffer.reserve(sizeof(head) + out.size());
 
-	common::VectorOutputStream stream(writeBuffer);
+	common::VectorOutputStream stream(write_buffer);
 	stream.write_some(&head, sizeof(head));
 	stream.write_some(out.data(), out.size());
 
-	return writeBuffer;
+	return write_buffer;
 }
 
 size_t LevinProtocol::HEADER_SIZE() { return sizeof(bucket_head2); }
@@ -75,7 +75,7 @@ size_t LevinProtocol::read_command_header(const BinaryArray &raw_header, Command
 	return static_cast<size_t>(head.m_cb);
 }
 
-BinaryArray LevinProtocol::send_reply(uint32_t command, const BinaryArray &out, int32_t returnCode) {
+BinaryArray LevinProtocol::send_reply(uint32_t command, const BinaryArray &out, int32_t return_code) {
 	bucket_head2 head          = {};
 	head.m_signature           = LEVIN_SIGNATURE;
 	head.m_cb                  = out.size();
@@ -83,14 +83,14 @@ BinaryArray LevinProtocol::send_reply(uint32_t command, const BinaryArray &out, 
 	head.m_command             = command;
 	head.m_protocol_version    = LEVIN_PROTOCOL_VER_1;
 	head.m_flags               = LEVIN_PACKET_RESPONSE;
-	head.m_return_code         = returnCode;
+	head.m_return_code         = return_code;
 
-	BinaryArray writeBuffer;
-	writeBuffer.reserve(sizeof(head) + out.size());
+	BinaryArray write_buffer;
+	write_buffer.reserve(sizeof(head) + out.size());
 
-	common::VectorOutputStream stream(writeBuffer);
+	common::VectorOutputStream stream(write_buffer);
 	stream.write_some(&head, sizeof(head));
 	stream.write_some(out.data(), out.size());
 
-	return writeBuffer;
+	return write_buffer;
 }

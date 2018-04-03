@@ -43,8 +43,8 @@ public:
 	static size_t HEADER_SIZE();
 	static size_t read_command_header(const BinaryArray &raw_header, Command &cmd, std::string &ban_reason);
 
-	static BinaryArray send_message(uint32_t command, const BinaryArray &out, bool needResponse);
-	static BinaryArray send_reply(uint32_t command, const BinaryArray &out, int32_t returnCode);
+	static BinaryArray send_message(uint32_t command, const BinaryArray &out, bool need_response);
+	static BinaryArray send_reply(uint32_t command, const BinaryArray &out, int32_t return_code);
 
 	template<typename T>
 	static bool decode(const BinaryArray &buf, T &value) {

@@ -256,24 +256,24 @@ static std::string get_special_folder_path(int nfolder, bool iscreate) {
 #endif
 
 #if !TARGET_OS_IPHONE
-std::string getDefaultDataDirectory(const std::string &cryptonote_name) {
+std::string get_default_data_directory(const std::string &cryptonote_name) {
 #ifdef _WIN32
 	return get_special_folder_path(CSIDL_APPDATA, true) + "/" + cryptonote_name;
 #else
-	std::string pathRet;
-	const char *pszHome = getenv("HOME");
-	if (pszHome)
-		pathRet = pszHome;
+	std::string path_ret;
+	const char *psz_home = getenv("HOME");
+	if (psz_home)
+		path_ret = psz_home;
 	// Unix, including MAC_OSX
-	return pathRet + "/." + cryptonote_name;
+	return path_ret + "/." + cryptonote_name;
 #endif
 }
 #endif  // #if !TARGET_OS_IPHONE
 
 #ifdef __ANDROID__
 std::string get_app_data_folder(const std::string &app_name) {
-	QString dataPath = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-	return dataPath.toStdString();
+	QString data_path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+	return data_path.toStdString();
 }
 #elif !TARGET_OS_IPHONE
 std::string get_app_data_folder(const std::string &app_name) {
@@ -281,14 +281,14 @@ std::string get_app_data_folder(const std::string &app_name) {
 	// Windows
 	return get_special_folder_path(CSIDL_APPDATA, true) + "\\" + app_name;
 #else
-	std::string pathRet;
-	const char *pszHome = getenv("HOME");
-	if (pszHome)
-		pathRet = pszHome;
+	std::string path_ret;
+	const char *psz_home = getenv("HOME");
+	if (psz_home)
+		path_ret = psz_home;
 #if defined(__MACH__)
-	return pathRet + "/Library/Application Support/" + app_name;
+	return path_ret + "/Library/Application Support/" + app_name;
 #endif
-	return pathRet + "/." + app_name;
+	return path_ret + "/." + app_name;
 #endif
 }
 #endif  // #if !TARGET_OS_IPHONE
@@ -353,5 +353,17 @@ bool atomic_replace_file(const std::string &replacement_name, const std::string 
 #endif
 	// if(err) *err = std::error_code(code, std::system_category());
 	return ok;
+}
+bool copy_file(const std::string &to_path, const std::string &from_path) {
+	{  // TODO - optimize
+		platform::FileStream from(from_path, platform::FileStream::READ_EXISTING);
+		platform::FileStream to(to_path, platform::FileStream::TRUNCATE_READ_WRITE);
+		auto si = from.seek(0, SEEK_END);
+		from.seek(0, SEEK_SET);
+		common::BinaryArray data(si);
+		from.read(data.data(), data.size());
+		to.write(data.data(), data.size());
+	}
+	return true;
 }
 }

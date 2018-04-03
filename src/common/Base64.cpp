@@ -26,10 +26,10 @@ static const char to_base64[65] =
 std::string encode(const BinaryArray &data) {
 	std::string ret;
 	const uint8_t *const buf = data.data();
-	const size_t bufLen      = data.size();
+	const size_t buf_len     = data.size();
 	// Calculate how many bytes that needs to be added to get a multiple of 3
 	size_t missing  = 0;
-	size_t ret_size = bufLen;
+	size_t ret_size = buf_len;
 	while ((ret_size % 3) != 0) {
 		++ret_size;
 		++missing;
@@ -43,9 +43,9 @@ std::string encode(const BinaryArray &data) {
 	for (size_t i = 0; i < ret_size / 4; ++i) {
 		// Read a group of three bytes (avoid buffer overrun by replacing with 0)
 		const size_t index = i * 3;
-		const uint8_t b3_0 = (index + 0 < bufLen) ? buf[index + 0] : 0;
-		const uint8_t b3_1 = (index + 1 < bufLen) ? buf[index + 1] : 0;
-		const uint8_t b3_2 = (index + 2 < bufLen) ? buf[index + 2] : 0;
+		const uint8_t b3_0 = (index + 0 < buf_len) ? buf[index + 0] : 0;
+		const uint8_t b3_1 = (index + 1 < buf_len) ? buf[index + 1] : 0;
+		const uint8_t b3_2 = (index + 2 < buf_len) ? buf[index + 2] : 0;
 
 		// Transform into four base 64 characters
 		const uint8_t b4_0 = ((b3_0 & 0xfc) >> 2);

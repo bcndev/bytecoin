@@ -47,8 +47,8 @@ static_assert(sizeof(Hash) == 32 && sizeof(PublicKey) == 32 && sizeof(SecretKey)
     "Invalid structure size");
 
 struct KeyPair {  // Never used as a pod
-	PublicKey publicKey;
-	SecretKey secretKey;
+	PublicKey public_key;
+	SecretKey secret_key;
 };
 }
 

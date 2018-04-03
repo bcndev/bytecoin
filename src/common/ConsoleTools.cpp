@@ -40,7 +40,7 @@ void set_text_color(Color color) {
 
 #ifdef _WIN32
 
-	static WORD winColors[] = {// default
+	static WORD win_colors[] = {// default
 	    FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE,
 	    // main
 	    FOREGROUND_BLUE, FOREGROUND_GREEN, FOREGROUND_RED, FOREGROUND_RED | FOREGROUND_GREEN,
@@ -53,18 +53,18 @@ void set_text_color(Color color) {
 	    FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY,
 	    FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY};
 
-	SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), winColors[static_cast<size_t>(color)]);
+	SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), win_colors[static_cast<size_t>(color)]);
 
 #else
 
-	static const char *ansiColors[] = {// default
+	static const char *ansi_colors[] = {// default
 	    "\033[0m",
 	    // main
 	    "\033[0;34m", "\033[0;32m", "\033[0;31m", "\033[0;33m", "\033[0;37m", "\033[0;36m", "\033[0;35m",
 	    // bright
 	    "\033[1;34m", "\033[1;32m", "\033[1;31m", "\033[1;33m", "\033[1;37m", "\033[1;36m", "\033[1;35m"};
 
-	std::cout << ansiColors[static_cast<size_t>(color)];
+	std::cout << ansi_colors[static_cast<size_t>(color)];
 
 #endif
 }
