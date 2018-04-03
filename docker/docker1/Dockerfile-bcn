@@ -6,7 +6,7 @@ FROM fedora:27
 #Debian and Ubuntu image
 
 #Fedora setup requirements
-RUN dnf -y update && dnf -y install gcc-c++ boost-static boost-devel qt5-devel cmake git lmdb-devel openssl-devel && clean all
+RUN dnf -y update && dnf -y install gcc-c++ boost-static boost-devel qt5-devel cmake git lmdb-devel openssl-devel && dnf clean all
 
 #Debian and Ubuntu setup requirements
 #RUN apt-get -y update && apt-get -y install build-essential cmake libboost-all-dev liblmdb-dev git qtbase5-dev libssl-dev && apt-get clean all

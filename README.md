@@ -19,6 +19,12 @@ Result stored to save
 $cd docker
 $./make-bcn.sh
 
+You can try compiled (via script upper) docker image, via Dockerfile:
+FROM homdx/bytecoin-docker
+
+#CMD ["/bin/walletd"]
+#CMD ["/bin/bytecoind"]
+
 ### Building with standard options
 
 To go futher you have to have a number of packages and utilities.
