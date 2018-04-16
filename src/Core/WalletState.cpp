@@ -412,18 +412,18 @@ std::vector<Hash> WalletState::get_tx_pool_hashes() const {
 	return std::vector<Hash>(m_pool_hashes.begin(), m_pool_hashes.end());
 }
 
-bool WalletState::sync_with_blockchain(const api::bytecoind::SyncMemPool::Response &resp) {
+bool WalletState::sync_with_blockchain(api::bytecoind::SyncMemPool::Response &resp) {
 	for (auto tid : resp.removed_hashes) {
 		if (m_pool_hashes.erase(tid) != 0) {
 		}
 		m_memory_state.undo_transaction(tid);
 	}
-	for (size_t i = 0; i != resp.added_binary_transactions.size(); ++i) {
-		Transaction tx;
-		seria::from_binary(tx, resp.added_binary_transactions[i]);
+	for (size_t i = 0; i != resp.added_bc_transactions.size(); ++i) {
+		TransactionPrefix &tx = resp.added_bc_transactions[i];
+		//		seria::from_binary(tx, resp.added_binary_transactions[i]);
 		std::vector<uint32_t> global_indices(tx.outputs.size(), 0);
-		Hash tid = get_transaction_hash(tx);
-		if (!m_pool_hashes.insert(tid).second) {  // Already there
+		Hash tid = resp.added_transactions.at(i).hash;  // get_transaction_hash(tx);
+		if (!m_pool_hashes.insert(tid).second) {        // Already there
 			continue;
 		}
 		PreparedWalletTransaction pwtx(std::move(tx), m_wallet.get_view_secret_key());
@@ -574,8 +574,9 @@ bool WalletState::parse_raw_transaction(api::Transaction &ptx, const Transaction
 	        get_tip().timestamp_unlock))  // TODO +1 ?
 		return false;
 	Amount input_amount = 0;
-	api::Transfer input_transfer;  // We do not know "from" addresses, so leave
-	                               // address empty
+	std::map<std::string, api::Transfer> transfer_map2;
+	api::Transfer input_transfer;
+	// We do not know "from" addresses, so leave address empty
 	input_transfer.ours = true;
 	for (const auto &input : tx.inputs) {
 		if (input.type() == typeid(KeyInput)) {
@@ -583,11 +584,26 @@ bool WalletState::parse_raw_transaction(api::Transaction &ptx, const Transaction
 			input_amount += in.amount;
 			ptx.fee += in.amount;
 			ptx.anonymity = std::min(ptx.anonymity, static_cast<uint32_t>(in.output_indexes.size() - 1));
-
-			input_transfer.amount -= static_cast<SignedAmount>(in.amount);
+			auto key      = KEYIMAGE_PREFIX + to_binary_key(in.key_image);
+			BinaryArray rb;
+			if (m_db.get(key, rb)) {
+				api::Output output;
+				seria::from_binary(output, rb);
+				
+				api::Transfer &transfer = transfer_map2[output.address];
+				transfer.amount -= static_cast<SignedAmount>(output.amount);
+				transfer.ours = true;
+				transfer.outputs.push_back(output);
+			}else
+				input_transfer.amount -= static_cast<SignedAmount>(in.amount);
 		}
 	}
-	ptx.transfers.push_back(input_transfer);
+	for (auto &&tm : transfer_map2) {
+		tm.second.address = tm.first;
+		ptx.transfers.push_back(tm.second);
+	}
+	if (input_transfer.amount != 0)
+		ptx.transfers.push_back(input_transfer);
 	ptx.amount = std::max(input_amount, output_amount);
 	if (ptx.anonymity == std::numeric_limits<uint32_t>::max())
 		ptx.anonymity = 0;  // No key inputs
@@ -1089,14 +1105,13 @@ void WalletState::undo_height_keyimage(Height height, const KeyImage &keyimage) 
 	//	db.del(hekey, true); // Removed during iteration in undo_block
 }
 
-std::vector<api::Output> WalletState::api_get_unspent(
-    const std::string &address, Height height, Amount max_amount) const {
-	std::vector<api::Output> result;
+bool WalletState::api_add_unspent(std::vector<api::Output> &result, Amount &total_amount, const std::string &address,
+    Height height, Amount max_amount) const {
 	auto prefix = HEIGHT_UNSPENT_PREFIX;
 	if (!address.empty())
-		prefix             = UNSPENT_HEIGHT_PREFIX + address + "/";
-	auto unlocked_outputs  = api_get_unlocked_outputs(address, height, m_tip_height);
-	Amount total_amount    = 0;
+		prefix            = UNSPENT_HEIGHT_PREFIX + address + "/";
+	auto unlocked_outputs = api_get_unlocked_outputs(address, height, m_tip_height);
+	//	Amount total_amount    = 0;
 	const size_t min_count = 10000;  // We return up to 10k outputs after we find requested sum
 	for (DB::Cursor cur = m_db.begin(prefix); !cur.end(); cur.next()) {
 		std::string shei, rest;
@@ -1112,9 +1127,9 @@ std::vector<api::Output> WalletState::api_get_unspent(
 		if (!item.dust)  // We ensure total can be spent with non-zero anonymity
 			total_amount += item.amount;
 		if (total_amount >= max_amount && result.size() >= min_count)
-			break;
+			return false;  // Stop looking for
 	}
-	return result;
+	return true;
 }
 
 std::vector<api::Output> WalletState::api_get_locked_or_unconfirmed_unspent(const std::string &address,

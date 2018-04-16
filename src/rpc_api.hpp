@@ -283,8 +283,9 @@ struct CreateTransaction {
 		                               // payment_id) and transfers. All positive transfers (amount > 0) will be added
 		                               // as outputs. For all negative transfers (amount < 0), spendable for requested
 		                               // sum and address will be selected and added as inputs
-		std::string spend_address;  // If this is not empty, will spend (and optimize) outputs for this address to get
-		                            // neccessary funds. Otherwise will spend any output in the wallet
+		std::vector<std::string>
+		    spend_addresses;  // If this is not empty, will spend (and optimize) outputs for this addresses to get
+		                      // neccessary funds. Otherwise will spend any output in the wallet
 		bool any_spend_address = false;  // if you set spend_address to empty, you should set any_spend_address to true.
 		                                 // This is protection against client bug when spend_address is forgotten or
 		                                 // accidentally set to null, etc
@@ -387,10 +388,10 @@ struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoin
 	};
 	struct SyncBlock {  // Signatures are checked by bytecoind so usually they are of no interest
 		api::BlockHeader header;
-		bytecoin::BlockTemplate
-		    bc_header;  // the only method returning actual BlockHeader from blockchain, not api::BlockHeader
-		std::vector<bytecoin::TransactionPrefix>
-		    bc_transactions;  // the only method returning actual Transaction from blockchain, not api::Transaction
+		bytecoin::BlockTemplate bc_header;
+		// the only method returning actual BlockHeader from blockchain, not api::BlockHeader
+		std::vector<bytecoin::TransactionPrefix> bc_transactions;
+		// the only method returning actual Transaction from blockchain, not api::Transaction
 		Hash base_transaction_hash;                         // BlockTemplate does not contain it
 		std::vector<std::vector<uint32_t>> global_indices;  // for each transaction
 	};
@@ -409,10 +410,10 @@ struct SyncMemPool {  // Used by walletd sync process
 		std::vector<Hash> known_hashes;  // Should be sent sorted
 	};
 	struct Response {
-		std::vector<Hash> removed_hashes;                    // Hashes no more in pool
-		std::vector<BinaryArray> added_binary_transactions;  // New raw transactions in pool
-		std::vector<api::Transaction>
-		    added_transactions;      // binary version of this method returns only hash and timestamp here
+		std::vector<Hash> removed_hashes;                                // Hashes no more in pool
+		std::vector<bytecoin::TransactionPrefix> added_bc_transactions;  // New raw transactions in pool
+		std::vector<api::Transaction> added_transactions;
+		// binary version of this method returns only hash and timestamp here
 		GetStatus::Response status;  // We save roundtrip during sync by also sending status here
 	};
 };

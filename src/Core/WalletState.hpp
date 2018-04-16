@@ -121,8 +121,8 @@ public:
 	const api::BlockHeader &get_tip() const { return m_tip; }
 
 	std::vector<Hash> get_sparse_chain() const;
-	bool sync_with_blockchain(api::bytecoind::SyncBlocks::Response &);  // We move from it
-	bool sync_with_blockchain(const api::bytecoind::SyncMemPool::Response &);
+	bool sync_with_blockchain(api::bytecoind::SyncBlocks::Response &);   // We move from it
+	bool sync_with_blockchain(api::bytecoind::SyncMemPool::Response &);  // We move from it
 	void add_transient_transaction(const Hash &tid, const TransactionPrefix &tx);
 
 	bool parse_raw_transaction(api::Transaction &ptx, const TransactionPrefix &tx, Hash tid) const;
@@ -137,8 +137,8 @@ public:
 	api::Block api_get_pool_as_history(const std::string &address) const;
 	std::map<std::pair<Amount, uint32_t>, api::Output> api_get_unlocked_outputs(
 	    const std::string &address, Height from_height, Height to_height = std::numeric_limits<Height>::max()) const;
-	std::vector<api::Output> api_get_unspent(
-	    const std::string &address, Height height, Amount max_amount = std::numeric_limits<Amount>::max()) const;
+	bool api_add_unspent(std::vector<api::Output> &result, Amount &total_amount, const std::string &address,
+	    Height height, Amount max_amount = std::numeric_limits<Amount>::max()) const;
 	std::vector<api::Output> api_get_locked_or_unconfirmed_unspent(const std::string &address, Height height) const;
 	api::Balance get_balance(const std::string &address, Height height) const;
 

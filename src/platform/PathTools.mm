@@ -41,7 +41,7 @@ std::string get_default_data_directory() {
 }
 
 std::string get_app_data_folder(const std::string & app_name) {
-	return getDefaultDataDirectory();
+	return get_default_data_directory();
 }
 
 }

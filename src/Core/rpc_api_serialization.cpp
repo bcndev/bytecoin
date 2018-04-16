@@ -361,7 +361,7 @@ seria_kv("transactions", v.transactions, s); }
  */
 void ser_members(api::walletd::CreateTransaction::Request &v, ISeria &s) {
 	seria_kv("transaction", v.transaction, s);
-	seria_kv("spend_address", v.spend_address, s);
+	seria_kv("spend_addresses", v.spend_addresses, s);
 	seria_kv("any_spend_address", v.any_spend_address, s);
 	seria_kv("change_address", v.change_address, s);
 	seria_kv("confirmed_height_or_depth", v.confirmed_height_or_depth, s);
@@ -428,7 +428,7 @@ void ser_members(api::bytecoind::SyncMemPool::Request &v, ISeria &s) {
 }
 void ser_members(api::bytecoind::SyncMemPool::Response &v, ISeria &s) {
 	seria_kv("removed_hashes", v.removed_hashes, s);
-	seria_kv("added_binary_transactions", v.added_binary_transactions, s);
+	seria_kv("added_bc_transactions", v.added_bc_transactions, s);
 	seria_kv("added_transactions", v.added_transactions, s);
 	seria_kv("status", v.status, s);
 }

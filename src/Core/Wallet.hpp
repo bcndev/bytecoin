@@ -74,7 +74,7 @@ public:
 	const PublicKey &get_view_public_key() const { return m_view_public_key; }
 	const SecretKey &get_view_secret_key() const { return m_view_secret_key; }
 	const std::unordered_map<PublicKey, WalletRecord> &get_records() const { return m_wallet_records; }
-	std::unordered_map<PublicKey, WalletRecord> get_single_record(const AccountPublicAddress &) const;
+	bool get_only_record(std::unordered_map<PublicKey, WalletRecord> &records, const AccountPublicAddress &) const;
 
 	bool spend_keys_for_address(const AccountPublicAddress &, AccountKeys &) const;
 	AccountPublicAddress get_first_address() const;

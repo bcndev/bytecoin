@@ -223,7 +223,8 @@ bool WalletNode::handle_get_unspent3(http::Client *, http::RequestData &&, json_
 		request.height_or_depth =
 		    std::max(0, static_cast<api::HeightOrDepth>(m_wallet_state.get_tip_height()) + 1 + request.height_or_depth);
 	// TODO - error if address does not exist
-	response.spendable = m_wallet_state.api_get_unspent(request.address, request.height_or_depth);
+	Amount total_amount = 0;
+	m_wallet_state.api_add_unspent(response.spendable, total_amount, request.address, request.height_or_depth);
 	response.locked_or_unconfirmed =
 	    m_wallet_state.api_get_locked_or_unconfirmed_unspent(request.address, request.height_or_depth);
 	return true;
@@ -278,28 +279,30 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		    "set it to 'status.recommended_fee_per_byte', "
 		    "because walletd never connected to bytecoind after "
 		    "it was restarted");
-	AccountPublicAddress change_addr;
-	AccountPublicAddress spend_addr;
-	// We require change address, even if you are lucky and got zero change this
-	// time
+	AccountPublicAddress change_addr;  // We require change address, even if you are lucky and would get zero change
 	if (m_wallet_state.get_wallet().is_view_only())
 		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
 		    "Unable to create transaction - view-only wallet "
 		    "contains no spend keys");
 	if (!m_wallet_state.get_currency().parse_account_address_string(request.change_address, change_addr))
 		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Failed to parse change address " + request.change_address);
-	if (!request.spend_address.empty() &&
-	    !m_wallet_state.get_currency().parse_account_address_string(request.spend_address, spend_addr))
-		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Failed to parse change address " + request.change_address);
-	if (request.spend_address.empty() && !request.any_spend_address)
+	if (request.spend_addresses.empty() && !request.any_spend_address)
 		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
-		    "Empty spend address requires setting "
+		    "Empty spend addresses requires setting "
 		    "'any_spend_address':true for additional protection");
-	if (!request.spend_address.empty() && request.any_spend_address)
+	if (!request.spend_addresses.empty() && request.any_spend_address)
 		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
-		    "Non-empty spend address requires setting "
+		    "Non-empty spend addresses requires setting "
 		    "'any_spend_address':false for additional "
 		    "protection");
+	std::unordered_map<PublicKey, WalletRecord> only_records;
+	for (auto &&ad : request.spend_addresses) {
+		AccountPublicAddress addr;
+		if (!m_wallet_state.get_currency().parse_account_address_string(ad, addr))
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Failed to parse change address " + ad);
+		if (!m_wallet_state.get_wallet().get_only_record(only_records, addr))
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Spend address does not belong to wallet " + ad);
+	}
 	TransactionBuilder builder(m_wallet_state.get_currency(), request.transaction.unlock_time);
 	Wallet::History history;
 	if (request.transaction.payment_id != Hash{})
@@ -330,16 +333,32 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 	const std::string optimization =
 	    request.transaction.unlock_time == 0 ? request.optimization : "minimal";  // Do not lock excess coins :)
 	Amount change = 0;
-	UnspentSelector selector(m_wallet_state.get_currency(),
-	    m_wallet_state.api_get_unspent(
-	        request.spend_address, request.confirmed_height_or_depth, sum_positive_transfers * 2));
+	std::vector<api::Output> unspents;
+	Amount total_unspents = 0;
+	if (!request.spend_addresses.empty())
+		for (auto &&ad : request.spend_addresses) {
+			if (!m_wallet_state.api_add_unspent(
+					unspents, total_unspents, ad, request.confirmed_height_or_depth, sum_positive_transfers * 2))
+				break;  // found enough funds
+		}
+	else
+		m_wallet_state.api_add_unspent( unspents, total_unspents, std::string(), request.confirmed_height_or_depth, sum_positive_transfers * 2);
+	UnspentSelector selector(m_wallet_state.get_currency(), std::move(unspents));
 	// First we select just outputs with sum = 2x requires sum
 	if (!selector.select_optimal_outputs(m_wallet_state.get_tip_height(), m_wallet_state.get_tip().timestamp,
 	        request.confirmed_height_or_depth, m_last_node_status.next_block_effective_median_size,
 	        request.transaction.anonymity, sum_positive_transfers, total_outputs, request.fee_per_byte, optimization,
 	        change)) {
 		// If selected outputs do not fit in next_block_effective_median_size, we try all outputs
-		selector.reset(m_wallet_state.api_get_unspent(request.spend_address, request.confirmed_height_or_depth));
+		unspents.clear();
+		total_unspents = 0;
+		if (!request.spend_addresses.empty())
+			for (auto &&ad : request.spend_addresses) {
+				m_wallet_state.api_add_unspent(unspents, total_unspents, ad, request.confirmed_height_or_depth);
+			}
+		else
+			m_wallet_state.api_add_unspent( unspents, total_unspents, std::string(), request.confirmed_height_or_depth);
+		selector.reset(std::move(unspents));
 		if (!selector.select_optimal_outputs(m_wallet_state.get_tip_height(), m_wallet_state.get_tip().timestamp,
 		        request.confirmed_height_or_depth, m_last_node_status.next_block_effective_median_size,
 		        request.transaction.anonymity, sum_positive_transfers, total_outputs, request.fee_per_byte,
@@ -367,10 +386,8 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 	if (m_inproc_node) {
 		m_inproc_node->on_get_random_outputs3(
 		    nullptr, http::RequestData(raw_request), json_rpc::Request(), std::move(ra_request), ra_response);
-		std::unordered_map<PublicKey, WalletRecord> single_record =
-		    m_wallet_state.get_wallet().get_single_record(spend_addr);
 		selector.add_mixed_inputs(m_wallet_state.get_wallet().get_view_secret_key(),
-		    request.any_spend_address ? m_wallet_state.get_wallet().get_records() : single_record, builder,
+		    request.any_spend_address ? m_wallet_state.get_wallet().get_records() : only_records, builder,
 		    request.transaction.anonymity, std::move(ra_response));
 		Transaction tx              = builder.sign(m_wallet_state.get_wallet().get_tx_derivation_seed());
 		response.binary_transaction = seria::to_binary(tx);
@@ -402,10 +419,8 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		    json_rpc::Response json_resp(random_response.body);
 		    api::bytecoind::GetRandomOutputs::Response ra_response;
 		    json_resp.get_result(ra_response);
-		    std::unordered_map<PublicKey, WalletRecord> single_record =
-		        m_wallet_state.get_wallet().get_single_record(spend_addr);
 		    selector.add_mixed_inputs(m_wallet_state.get_wallet().get_view_secret_key(),
-		        request.any_spend_address ? m_wallet_state.get_wallet().get_records() : single_record, builder,
+		        request.any_spend_address ? m_wallet_state.get_wallet().get_records() : only_records, builder,
 		        request.transaction.anonymity, std::move(ra_response));
 		    tx                               = builder.sign(m_wallet_state.get_wallet().get_tx_derivation_seed());
 		    last_response.binary_transaction = seria::to_binary(tx);

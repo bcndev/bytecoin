@@ -589,7 +589,8 @@ bool Node::on_sync_mempool3(http::Client *, http::RequestData &&, json_rpc::Requ
 			res.removed_hashes.push_back(ex);
 	for (auto &&tx : pool)
 		if (!std::binary_search(req.known_hashes.begin(), req.known_hashes.end(), tx.first)) {
-			res.added_binary_transactions.push_back(seria::to_binary(tx.second));
+			//			res.added_binary_transactions.push_back(seria::to_binary(tx.second));
+			res.added_bc_transactions.push_back(tx.second);
 			res.added_transactions.push_back(api::Transaction{});
 			res.added_transactions.back().hash      = tx.first;
 			res.added_transactions.back().timestamp = m_block_chain.read_first_seen_timestamp(tx.first);
@@ -660,74 +661,3 @@ bool Node::handle_check_send_proof3(http::Client *, http::RequestData &&, json_r
 	// here proof is checked, validation_error is empty
 	return true;
 }
-
-/*static void parse_raw_transaction(api::Transaction & ptx, const Currency &
-currency, const Transaction & tx, const std::vector<uint32_t> &global_indices,
-Hash tid, Height block_height, Timestamp block_unlock_timestamp){
-        PublicKey tx_public_key = get_transaction_public_key_from_extra(tx.extra);
-        KeyPair tx_keys;
-        ptx.hash         = tid;
-        ptx.block_height = block_height;
-        ptx.anonymity    = std::numeric_limits<uint32_t>::max();
-        ptx.unlock_time  = tx.unlock_time;
-        const bool tx_unlocked =
-currency.is_transaction_spend_time_unlocked(ptx.unlock_time, block_height,
-block_unlock_timestamp);
-        ptx.public_key   = tx_public_key;
-        ptx.extra        = tx.extra;
-        get_payment_id_from_tx_extra(tx.extra, ptx.payment_id);
-        size_t key_index     = 0;
-        uint32_t out_index   = 0;
-        Amount output_amount = 0;
-        // We combine outputs into transfers by address
-        for (const auto &output : tx.outputs) {
-                const auto global_index = global_indices.at(out_index);
-                output_amount += output.amount;
-                ptx.fee -= output.amount;
-                if (output.target.type() == typeid(KeyOutput)) {
-                        const KeyOutput &key_output =
-boost::get<KeyOutput>(output.target);
-                        api::Output out;
-                        out.amount      = output.amount;
-                        out.dust      = Currency::is_dust(output.amount);
-                        out.global_index = global_index;
-                        out.height      = block_height;
-                        out.index_in_tx   = out_index;
-                        out.public_key         = key_output.key;
-                        out.transaction_public_key       = tx_public_key;
-                        out.unlock_time = tx.unlock_time;
-                        api::Transfer transfer;
-                        transfer.amount  = output.amount;
-                        transfer.locked = !tx_unlocked;
-                        transfer.outputs.push_back(out);
-                        ptx.transfers.push_back(std::move(transfer));
-                        ++key_index;
-                }
-                ++out_index;
-        }
-        Amount input_amount  = 0;
-        for (const auto &input : tx.inputs) {
-                if (input.type() == typeid(CoinbaseInput)) {
-                        api::Transfer transfer;
-                        transfer.amount =
--static_cast<SignedAmount>(output_amount);
-                        ptx.transfers.push_back(std::move(transfer));
-                } else if (input.type() == typeid(KeyInput)) {
-                        const KeyInput &in = boost::get<KeyInput>(input);
-                        input_amount += in.amount;
-                        ptx.fee += in.amount;
-                        ptx.anonymity = std::min(ptx.anonymity,
-static_cast<uint32_t>(in.output_indexes.size()));
-                        api::Output out;
-                        out.key_image = in.key_image;
-                        api::Transfer transfer;
-                        transfer.amount -= in.amount;
-                        transfer.outputs.push_back(out);
-                        ptx.transfers.push_back(std::move(transfer));
-                }
-        }
-        ptx.amount = std::max(input_amount, output_amount);
-        if (ptx.anonymity == std::numeric_limits<uint32_t>::max())
-                ptx.anonymity = 0;  // No key inputs
-}
-*/
