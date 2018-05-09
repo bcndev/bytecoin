@@ -5,7 +5,7 @@
 
 // defines are for Windows resource compiler
 #define bytecoin_VERSION_WINDOWS_COMMA 3, 18, 5, 9
-#define bytecoin_VERSION_STRING "3.0.3"
+#define bytecoin_VERSION_STRING "3.0.4"
 
 #ifndef RC_INVOKED  // Windows resource compiler
 

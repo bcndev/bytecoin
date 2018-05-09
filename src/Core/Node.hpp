@@ -142,36 +142,6 @@ protected:
 		return std::make_unique<P2PClientBytecoin>(this, incoming, d_handler);
 	}
 
-	class DownloaderV1 {  // sync&download from legacy v1 clients
-		Node *const m_node;
-		BlockChainState &m_block_chain;
-
-		size_t m_ask_blocks_count;
-		std::set<P2PClientBytecoin *> m_good_clients;
-		P2PClientBytecoin *m_sync_client = nullptr;
-		platform::Timer m_sync_timer;  // If sync_client does not respond for long, disconnect it
-		bool m_sync_sent = false;
-
-		std::deque<Hash> m_wanted_blocks;  // If it is not empty, we are downloading first part
-		Height m_wanted_start_height = 0;
-
-		void reset_sync_client();
-		void on_sync_timer();
-
-	public:
-		DownloaderV1(Node *node, BlockChainState &block_chain);
-
-		void advance_download(Hash last_downloaded_block);
-
-		uint32_t get_known_block_count(uint32_t my) const;
-		void on_connect(P2PClientBytecoin *);
-		void on_disconnect(P2PClientBytecoin *);
-		const std::set<P2PClientBytecoin *> &get_good_clients() const { return m_good_clients; }
-		void on_msg_notify_request_chain(P2PClientBytecoin *, const NOTIFY_RESPONSE_CHAIN_ENTRY::request &);
-		void on_msg_notify_request_objects(P2PClientBytecoin *, const NOTIFY_RESPONSE_GET_OBJECTS::request &);
-		void on_msg_timed_sync(const CORE_SYNC_DATA &payload_data);
-	};
-
 	class DownloaderV11 {  // torrent-style sync&download from legacy v1 clients
 		Node *const m_node;
 		BlockChainState &m_block_chain;

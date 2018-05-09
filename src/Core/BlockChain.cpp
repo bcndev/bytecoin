@@ -235,6 +235,7 @@ bool BlockChain::reorganize_blocks(const Hash &switch_to_chain,
 		if (read_chain(m_tip_height) != m_tip_bid)
 			throw std::logic_error(
 			    "Invariant dead - after undo tip does not match read_chain" + common::pod_to_hex(m_tip_bid));
+		tip_changed();
 	}
 	// Now redo all blocks we have in storage, will ask for the rest of blocks
 	while (!chain2.empty()) {
@@ -615,7 +616,6 @@ void BlockChain::pop_chain() {
 		throw std::logic_error("pop_chain tip_height == 0");
 	m_db.del(TIP_CHAIN_PREFIX + version_current + "/" + common::write_varint_sqlite4(m_tip_height), true);
 	m_tip_height -= 1;
-	tip_changed();
 }
 
 bool BlockChain::read_chain(uint32_t height, Hash &bid) const {
@@ -787,11 +787,14 @@ void BlockChain::test_undo_everything() {
 		if (get_tip_bid() == m_genesis_bid)
 			break;
 		pop_chain();
-		api::BlockHeader info = get_tip();
 		m_tip_bid             = block.header.previous_block_hash;
-		m_tip_cumulative_difficulty -= info.cumulative_difficulty;
+		api::BlockHeader info = get_tip();
+		m_tip_cumulative_difficulty = info.cumulative_difficulty;
+		tip_changed();
 		if (get_tip_height() % 50000 == 1 )
 			db_commit();
+		if( get_tip_height() <= 1525025 )
+			return;
 	}
 	std::cout << "---- After undo everything ---- " << std::endl;
 	int counter = 0;

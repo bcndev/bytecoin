@@ -1,8 +1,12 @@
 ## Release Notes
 
+### v3.0.4
+
+- Made early fixes to downloader to prevent long lagging behind.
+
 ### v3.0.3
 
-- Fix consensus bug.
+- Fixed consensus bug.
 
 ### v3.0.2
 

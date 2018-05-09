@@ -141,6 +141,7 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
 		if (add_block(pb, info) == BroadcastAction::BAN)
 			throw std::logic_error("Genesis block failed to add");
 	}
+	m_log(logging::INFO) << "BlockChainState::BlockChainState height=" << get_tip_height() << " bid=" << common::pod_to_hex(get_tip_bid()) << std::endl;
 	BlockChainState::tip_changed();
 }
 
@@ -971,15 +972,18 @@ bool BlockChainState::redo_block(const Hash &bhash, const Block &block, const ap
 	if (std::chrono::duration_cast<std::chrono::milliseconds>(now - log_redo_block_timestamp).count() > 1000) {
 		log_redo_block_timestamp = now;
 		std::cout << "redo_block {" << block.transactions.size() << "} height=" << info.height
-		          << " bid=" << common::pod_to_hex(bhash) << " old tip_bid=" << common::pod_to_hex(get_tip_bid())
-		          << std::endl;
+		          << " bid=" << common::pod_to_hex(bhash) << std::endl;
 	}
+	m_log(logging::TRACE) << "redo_block {" << block.transactions.size() << "} height=" << info.height
+		          << " bid=" << common::pod_to_hex(bhash) << std::endl;
 	return true;
 }
 
 void BlockChainState::undo_block(const Hash &bhash, const Block &block, Height height) {
-	if (height % 100 == 0)
-		std::cout << "undo_block height=" << height << " bid=" << common::pod_to_hex(bhash)
+//	if (height % 100 == 0)
+//		std::cout << "undo_block height=" << height << " bid=" << common::pod_to_hex(bhash)
+//		          << " new tip_bid=" << common::pod_to_hex(block.header.previous_block_hash) << std::endl;
+	m_log(logging::INFO) << "undo_block height=" << height << " bid=" << common::pod_to_hex(bhash)
 		          << " new tip_bid=" << common::pod_to_hex(block.header.previous_block_hash) << std::endl;
 	for (auto tit = block.transactions.rbegin(); tit != block.transactions.rend(); ++tit) {
 		undo_transaction(this, height, *tit);

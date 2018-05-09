@@ -10,7 +10,7 @@ namespace logging {
 
 class LoggerGroup : public CommonLogger {
 public:
-	explicit LoggerGroup(Level level = DEBUGGING);
+	explicit LoggerGroup(Level level = TRACE);
 
 	void add_logger(ILogger &logger);
 	void remove_logger(ILogger &logger);

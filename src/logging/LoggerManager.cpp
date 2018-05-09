@@ -20,23 +20,26 @@ void LoggerManager::operator()(
 }
 
 void LoggerManager::configure_default(const std::string &log_folder, const std::string &log_prefix) {
-	std::unique_lock<std::mutex> lock(reconfigure_lock);  // TODO - investigate possible deadlocks
-	loggers.clear();
-	LoggerGroup::loggers.clear();
+	{
+		std::unique_lock<std::mutex> lock(reconfigure_lock);  // TODO - investigate possible deadlocks
+		loggers.clear();
+		LoggerGroup::loggers.clear();
 
-	std::unique_ptr<logging::CommonLogger> logger(
-	    new FileLogger(log_folder + "/" + log_prefix + "verbose", 128 * 1024, TRACE));
-	loggers.emplace_back(std::move(logger));
-	add_logger(*loggers.back());
+		std::unique_ptr<logging::CommonLogger> logger(
+			new FileLogger(log_folder + "/" + log_prefix + "verbose", 128 * 1024, TRACE));
+		loggers.emplace_back(std::move(logger));
+		add_logger(*loggers.back());
 
-	logger.reset(new FileLogger(log_folder + "/" + log_prefix + "errors", 128 * 1024, WARNING));
-	loggers.emplace_back(std::move(logger));
-	add_logger(*loggers.back());
+		logger.reset(new FileLogger(log_folder + "/" + log_prefix + "errors", 128 * 1024, WARNING));
+		loggers.emplace_back(std::move(logger));
+		add_logger(*loggers.back());
 
-	logger.reset(new ConsoleLogger(INFO));
-	logger->set_pattern("%T %l %C ");
-	loggers.emplace_back(std::move(logger));
-	add_logger(*loggers.back());
+		logger.reset(new ConsoleLogger(INFO));
+		logger->set_pattern("%T %l %C ");
+		loggers.emplace_back(std::move(logger));
+		add_logger(*loggers.back());
+	}
+	(*this)("START", TRACE, boost::posix_time::microsec_clock::local_time(), "----------------------------------------\n");
 }
 
 void LoggerManager::configure(const JsonValue &val) {
