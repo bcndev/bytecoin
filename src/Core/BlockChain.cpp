@@ -152,8 +152,9 @@ BlockChain::BlockChain(const Hash &genesis_bid, const std::string &coin_folder)
 }
 
 void BlockChain::db_commit() {
-	std::cout << "BlockChain::db_commit started... tip_height=" << m_tip_height << std::endl;
+	std::cout << "BlockChain::db_commit started... tip_height=" << m_tip_height << " header_cache.size=" << header_cache.size() << std::endl;
 	m_db.commit_db_txn();
+	header_cache.clear(); // Most simple cache policy ever
 	std::cout << "BlockChain::db_commit finished..." << std::endl;
 }
 
@@ -465,15 +466,14 @@ bool BlockChain::redo_block(const Hash &bhash, const RawBlock &, const Block &bl
 		m_db.put(bkey, std::string(), true);
 	}
 
-	m_tip_segment.push_back(info);
-	if (m_tip_segment.size() > 2048)  // TODO - should be enough for all block windows we use
-		m_tip_segment.pop_front();
-
+//	m_tip_segment.push_back(info);
+//	if (m_tip_segment.size() > 2048)  // TODO - should be enough for all block windows we use
+//		m_tip_segment.pop_front();
 	return true;
 }
 void BlockChain::undo_block(const Hash &bhash, const RawBlock &, const Block &block, Height height) {
-	if (!m_tip_segment.empty())
-		m_tip_segment.pop_back();
+//	if (!m_tip_segment.empty())
+//		m_tip_segment.pop_back();
 	undo_block(bhash, block, height);
 
 	auto tikey = TIMESTAMP_BLOCK_PREFIX + common::write_varint_sqlite4(block.header.timestamp) +
@@ -521,15 +521,22 @@ void BlockChain::store_header(const Hash &bid, const api::BlockHeader &header) {
 }
 
 bool BlockChain::read_header(const Hash &bid, api::BlockHeader &header) const {
-	if (bid == m_tip_bid && !m_tip_segment.empty()) {
-		header = m_tip_segment.back();
+	auto cit = header_cache.find(bid);
+	if( cit != header_cache.end() ){
+		header = cit->second;
 		return true;
 	}
+//	if (bid == m_tip_bid && !m_tip_segment.empty()) {
+//		header = m_tip_segment.back();
+//		return true;
+//	}
 	BinaryArray rb;
 	auto key = HEADER_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + HEADER_SUFFIX;
 	if (!m_db.get(key, rb))
 		return false;
+	Hash bbid = bid;
 	seria::from_binary(header, rb);
+	header_cache.insert(std::make_pair(bbid, header));
 	return true;
 }
 
@@ -541,25 +548,49 @@ api::BlockHeader BlockChain::read_header(const Hash &bid) const {
 }
 
 const api::BlockHeader &BlockChain::get_tip() const {
-	if (m_tip_segment.empty())
-		m_tip_segment.push_back(read_header(get_tip_bid()));
-	return m_tip_segment.back();
+	auto cit = header_cache.find(get_tip_bid());
+	if( cit != header_cache.end() ){
+		return cit->second;
+	}
+	read_header(get_tip_bid());
+	cit = header_cache.find(get_tip_bid());
+	if( cit == header_cache.end() )
+		throw std::logic_error("After read_header, header should be in header_cache");
+	return cit->second;
+//	if (m_tip_segment.empty())
+//		m_tip_segment.push_back(read_header(get_tip_bid()));
+//	return m_tip_segment.back();
 }
 
-std::pair<std::deque<api::BlockHeader>::const_iterator, std::deque<api::BlockHeader>::const_iterator>
-BlockChain::get_tip_segment(Height height_delta, Height window, bool add_genesis) const {
-	if (get_tip_height() == (Height)-1 || height_delta > get_tip_height())
-		return std::make_pair(m_tip_segment.end(), m_tip_segment.end());
-	while (m_tip_segment.size() < height_delta + window && m_tip_segment.size() < m_tip_height + 1) {
-		Hash ha = read_chain(static_cast<uint32_t>(m_tip_height - m_tip_segment.size()));
-		m_tip_segment.push_front(read_header(ha));
+std::vector<api::BlockHeader>
+BlockChain::get_tip_segment(const api::BlockHeader & prev_info, Height window, bool add_genesis) const {
+	std::vector<api::BlockHeader> result;
+	if( prev_info.height == Height(-1))
+		return result;
+	api::BlockHeader pi = prev_info;
+	while(result.size() < window && pi.height != 0){
+		result.push_back(pi);
+		if( !read_header(pi.previous_block_hash, pi) )
+			throw std::logic_error("Invariant dead - previous block header not found in get_tip_segment");
 	}
-	if (m_tip_height + 1 <= height_delta + window) {
-		//	if( m_tip_segment.size() == m_tip_height + 1 ) {
+	if( result.size() < window && add_genesis){
+		if( pi.height != 0)
+			throw std::logic_error("Invariant dead - window size not reached, but genesis not found in get_tip_segment");
+		result.push_back(pi);
+	}
+//	if (get_tip_height() == (Height)-1 || height_delta > get_tip_height())
+//		return std::make_pair(m_tip_segment.end(), m_tip_segment.end());
+//	while (m_tip_segment.size() < height_delta + window && m_tip_segment.size() < m_tip_height + 1) {
+//		Hash ha = read_chain(static_cast<uint32_t>(m_tip_height - m_tip_segment.size()));
+//		m_tip_segment.push_front(read_header(ha));
+//	}
+//	if (m_tip_height + 1 <= height_delta + window) {
+//			if( m_tip_segment.size() == m_tip_height + 1 ) {
 		//	if (height_delta + window >= m_tip_segment.size()) {
-		return std::make_pair(m_tip_segment.begin() + (add_genesis ? 0 : 1), m_tip_segment.end() - height_delta);
-	}
-	return std::make_pair(m_tip_segment.end() - window - height_delta, m_tip_segment.end() - height_delta);
+//		return std::make_pair(m_tip_segment.begin() + (add_genesis ? 0 : 1), m_tip_segment.end() - height_delta);
+//	}
+	std::reverse(result.begin(), result.end());
+	return result;// std::make_pair(m_tip_segment.end() - window - height_delta, m_tip_segment.end() - height_delta);
 }
 
 void BlockChain::read_tip() {
@@ -759,7 +790,7 @@ void BlockChain::test_undo_everything() {
 		api::BlockHeader info = get_tip();
 		m_tip_bid             = block.header.previous_block_hash;
 		m_tip_cumulative_difficulty -= info.cumulative_difficulty;
-		if (get_tip_height() % 50000 == 1)
+		if (get_tip_height() % 50000 == 1 )
 			db_commit();
 	}
 	std::cout << "---- After undo everything ---- " << std::endl;

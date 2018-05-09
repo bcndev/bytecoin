@@ -164,7 +164,7 @@ private:
 	Timestamp m_next_unlock_timestamp = 0;
 	uint32_t m_next_median_size       = 0;
 	virtual void tip_changed() override;  // Updates values above
-	void calculate_consensus_values(Height height_delta, uint32_t &next_median_size, Timestamp &next_median_timestamp,
+	void calculate_consensus_values(const api::BlockHeader & prev_info, uint32_t &next_median_size, Timestamp &next_median_timestamp,
 	    Timestamp &next_unlock_timestamp) const;
 
 	RingCheckerMulticore ring_checker;

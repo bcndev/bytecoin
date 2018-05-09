@@ -4,6 +4,7 @@
 #pragma once
 
 #include <deque>
+#include <unordered_map>
 #include "CryptoNote.hpp"
 #include "Currency.hpp"
 #include "platform/DB.hpp"
@@ -43,8 +44,8 @@ public:
 	Height get_tip_height() const { return m_tip_height; }
 	const api::BlockHeader &get_tip() const;
 
-	std::pair<std::deque<api::BlockHeader>::const_iterator, std::deque<api::BlockHeader>::const_iterator>
-	get_tip_segment(Height height_delta, Height window, bool add_genesis) const;
+	std::vector<api::BlockHeader>
+	get_tip_segment(const api::BlockHeader & prev_info, Height window, bool add_genesis) const;
 
 	bool read_chain(Height height, Hash &bid) const;
 	bool read_block(const Hash &bid, RawBlock &rb) const;
@@ -102,7 +103,7 @@ private:
 	void read_tip();
 	void push_chain(Hash bid, Difficulty cumulative_difficulty);
 	void pop_chain();
-	mutable std::deque<api::BlockHeader> m_tip_segment;
+	mutable std::unordered_map<Hash, api::BlockHeader> header_cache;
 	// We cache recent headers for quick calculation in block windows
 
 	void store_block(const Hash &bid, const BinaryArray &block_data);

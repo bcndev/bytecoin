@@ -44,7 +44,7 @@ Options for built-in bytecoind (run when no --bytecoind-remote-address specified
   --allow-local-ip                     Allow local ip add to peer list, mostly in debug purposes.
   --p2p-bind-address=<ip:port>         Interface and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>           External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
-  --bytecoind-bind-address=<ip:port>   Interface and port for bytecoind RPC [default: 0.0.0.0:8081].
+  --bytecoind-bind-address=<ip:port>   Interface and port for bytecoind RPC [default: 127.0.0.1:8081].
   --seed-node-address=<ip:port>        Specify list (one or more) of nodes to start connecting to.
   --priority-node-address=<ip:port>    Specify list (one or more) of nodes to connect to and attempt to keep the connection open.
   --exclusive-node-address=<ip:port>   Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.)";

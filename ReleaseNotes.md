@@ -1,5 +1,9 @@
 ## Release Notes
 
+### v3.0.3
+
+- Fix consensus bug.
+
 ### v3.0.2
 
 - __API change:__ In `create_transaction`, `spend_address` parameter of type `string` is changed to `spend_addresses` of type `[]string`. This change is likely to affect only Web wallets developers.

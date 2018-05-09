@@ -28,7 +28,7 @@ Options:
   --testnet                            Configure for testnet.
   --p2p-bind-address=<ip:port>         Interface and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>           External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
-  --bytecoind-bind-address=<ip:port>   Interface and port for bytecoind RPC [default: 0.0.0.0:8081].
+  --bytecoind-bind-address=<ip:port>   Interface and port for bytecoind RPC [default: 127.0.0.1:8081].
   --seed-node-address=<ip:port>        Specify list (one or more) of nodes to start connecting to.
   --priority-node-address=<ip:port>    Specify list (one or more) of nodes to connect to and attempt to keep the connection open.
   --exclusive-node-address=<ip:port>   Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.
@@ -72,6 +72,7 @@ int main(int argc, const char *argv[]) try {
 	logManager.configure_default(config.get_data_folder("logs"), "bytecoind-");
 
 	BlockChainState block_chain(logManager, config, currency);
+//	block_chain.test_undo_everything();
 
 	if (!export_blocks.empty()) {
 		if (!LegacyBlockChainWriter::export_blockchain2(export_blocks, block_chain))
