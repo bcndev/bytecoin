@@ -73,10 +73,22 @@ public:
 	typedef std::vector<std::vector<uint32_t>> BlockGlobalIndices;
 	bool read_block_output_global_indices(const Hash &bid, BlockGlobalIndices &) const;
 
-	BroadcastAction add_transaction(const Transaction &, Timestamp now);
+	Amount minimum_pool_fee_per_byte(Hash &minimal_tid) const;
+	AddTransactionResult add_transaction(
+	    const Hash &tid, const Transaction &, const BinaryArray &binary_tx, Timestamp now);
+
 	uint32_t get_tx_pool_version() const { return m_tx_pool_version; }
+	struct PoolTransaction {
+		Transaction tx;
+		BinaryArray binary_tx;
+		Amount fee;
+
+		PoolTransaction(const Transaction &tx, const BinaryArray &binary_tx, Amount fee);
+		Amount fee_per_byte() const { return fee / binary_tx.size(); }
+	};
 	typedef std::map<Hash, Transaction> TransMap;
-	const TransMap &get_memory_state_transactions() const { return m_memory_state_tx; }
+	typedef std::map<Hash, PoolTransaction> PoolTransMap;
+	const PoolTransMap &get_memory_state_transactions() const { return m_memory_state_tx; }
 
 	bool create_mining_block_template(
 	    BlockTemplate &, const AccountPublicAddress &, const BinaryArray &extra_nonce, Difficulty &, Height &) const;
@@ -85,10 +97,10 @@ public:
 
 	static api::BlockHeader fill_genesis(Hash genesis_bid, const BlockTemplate &);
 
+	void test_print_outputs();
+
 protected:
-	std::string get_standalone_consensus_error(
-	    const PreparedBlock &pb, api::BlockHeader &info, const api::BlockHeader &prev_info) const;
-	virtual bool check_standalone_consensus(
+	virtual std::string check_standalone_consensus(
 	    const PreparedBlock &pb, api::BlockHeader &info, const api::BlockHeader &prev_info) const override;
 	virtual bool redo_block(const Hash &bhash, const Block &, const api::BlockHeader &) override;
 	virtual void undo_block(const Hash &bhash, const Block &, Height) override;
@@ -131,13 +143,13 @@ private:
 	virtual uint32_t next_global_index_for_amount(Amount) const override;
 	virtual bool read_amount_output(Amount, uint32_t global_index, UnlockMoment &, PublicKey &) const override;
 
-	std::string redo_transaction_get_error(bool generating, const Transaction &, DeltaState *, BlockGlobalIndices &,
-	    bool check_sigs, Amount &fee, bool &fatal) const;
+	std::string redo_transaction_get_error(
+	    bool generating, const Transaction &, DeltaState *, BlockGlobalIndices &, bool check_sigs) const;
 	bool redo_block(const Block &, const api::BlockHeader &, DeltaState *, BlockGlobalIndices &) const;
 
 	void undo_transaction(IBlockChainState *delta_state, Height, const Transaction &);
 
-	const Config &m_config;
+	//	const Config &m_config;
 	const Currency &m_currency;
 	logging::LoggerRef m_log;
 	mutable crypto::CryptoNightContext m_hash_crypto_context;
@@ -146,17 +158,18 @@ private:
 
 	void update_first_seen_timestamp(const Hash &tid, Timestamp now);  // 0 to delete
 
-	BroadcastAction add_transaction(const Hash &tid, const Transaction &tx, Height unlock_height,
-	    Timestamp unlock_timestamp, size_t max_pool_complexity, bool check_sigs);
+	AddTransactionResult add_transaction(const Hash &tid, const Transaction &tx, const BinaryArray &binary_tx,
+	    Height unlock_height, Timestamp unlock_timestamp, bool check_sigs);
 	void remove_from_pool(Hash tid);
 
 	uint32_t m_tx_pool_version = 2;  // Incremented every time pool changes, reset to 2 on redo block. 2 is selected
 	                                 // because wallet resets to 1, so after both reset pool versions do not equal
-	TransMap m_memory_state_tx;
+	PoolTransMap m_memory_state_tx;
 	std::map<KeyImage, Hash> m_memory_state_ki_tx;
 	std::map<Amount, std::set<Hash>> m_memory_state_fee_tx;
-	size_t m_memory_state_total_complexity;
-	mutable std::map<Hash, std::pair<Transaction, Height>> m_mining_transactions;
+	size_t m_memory_state_total_size = 0;
+
+	mutable std::map<Hash, std::pair<BinaryArray, Height>> m_mining_transactions;
 	// We remember them for several blocks
 	void clear_mining_transactions() const;
 
@@ -164,8 +177,10 @@ private:
 	Timestamp m_next_unlock_timestamp = 0;
 	uint32_t m_next_median_size       = 0;
 	virtual void tip_changed() override;  // Updates values above
-	void calculate_consensus_values(const api::BlockHeader & prev_info, uint32_t &next_median_size, Timestamp &next_median_timestamp,
-	    Timestamp &next_unlock_timestamp) const;
+	virtual void on_reorganization(
+	    const std::map<Hash, std::pair<Transaction, BinaryArray>> &undone_transactions, bool undone_blocks) override;
+	void calculate_consensus_values(const api::BlockHeader &prev_info, uint32_t &next_median_size,
+	    Timestamp &next_median_timestamp, Timestamp &next_unlock_timestamp) const;
 
 	RingCheckerMulticore ring_checker;
 	std::chrono::steady_clock::time_point log_redo_block_timestamp;

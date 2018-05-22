@@ -268,6 +268,13 @@ bool WalletNode::handle_get_transfers3(http::Client *, http::RequestData &&, jso
 bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData &&raw_request,
     json_rpc::Request &&raw_js_request, api::walletd::CreateTransaction::Request &&request,
     api::walletd::CreateTransaction::Response &response) {
+	for (auto &&tid : request.prevent_conflict_with_transactions) {
+		if (m_wallet_state.api_has_transaction(tid))
+			continue;
+		response.transactions_required.push_back(tid);
+	}
+	if (!response.transactions_required.empty())
+		return true;
 	if (request.confirmed_height_or_depth < 0)
 		request.confirmed_height_or_depth = std::max(0,
 		    static_cast<api::HeightOrDepth>(m_wallet_state.get_tip_height()) + 1 - request.confirmed_height_or_depth);
@@ -338,17 +345,20 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 	if (!request.spend_addresses.empty())
 		for (auto &&ad : request.spend_addresses) {
 			if (!m_wallet_state.api_add_unspent(
-					unspents, total_unspents, ad, request.confirmed_height_or_depth, sum_positive_transfers * 2))
+			        unspents, total_unspents, ad, request.confirmed_height_or_depth, sum_positive_transfers * 2))
 				break;  // found enough funds
 		}
 	else
-		m_wallet_state.api_add_unspent( unspents, total_unspents, std::string(), request.confirmed_height_or_depth, sum_positive_transfers * 2);
+		m_wallet_state.api_add_unspent(
+		    unspents, total_unspents, std::string(), request.confirmed_height_or_depth, sum_positive_transfers * 2);
 	UnspentSelector selector(m_wallet_state.get_currency(), std::move(unspents));
 	// First we select just outputs with sum = 2x requires sum
-	if (!selector.select_optimal_outputs(m_wallet_state.get_tip_height(), m_wallet_state.get_tip().timestamp,
-	        request.confirmed_height_or_depth, m_last_node_status.next_block_effective_median_size,
-	        request.transaction.anonymity, sum_positive_transfers, total_outputs, request.fee_per_byte, optimization,
-	        change)) {
+	if (!selector
+	         .select_optimal_outputs(m_wallet_state.get_tip_height(), m_wallet_state.get_tip().timestamp,
+	             request.confirmed_height_or_depth, m_last_node_status.next_block_effective_median_size,
+	             request.transaction.anonymity, sum_positive_transfers, total_outputs, request.fee_per_byte,
+	             optimization, change)
+	         .empty()) {
 		// If selected outputs do not fit in next_block_effective_median_size, we try all outputs
 		unspents.clear();
 		total_unspents = 0;
@@ -357,14 +367,14 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 				m_wallet_state.api_add_unspent(unspents, total_unspents, ad, request.confirmed_height_or_depth);
 			}
 		else
-			m_wallet_state.api_add_unspent( unspents, total_unspents, std::string(), request.confirmed_height_or_depth);
+			m_wallet_state.api_add_unspent(unspents, total_unspents, std::string(), request.confirmed_height_or_depth);
 		selector.reset(std::move(unspents));
-		if (!selector.select_optimal_outputs(m_wallet_state.get_tip_height(), m_wallet_state.get_tip().timestamp,
-		        request.confirmed_height_or_depth, m_last_node_status.next_block_effective_median_size,
-		        request.transaction.anonymity, sum_positive_transfers, total_outputs, request.fee_per_byte,
-		        optimization, change))
-			throw json_rpc::Error(
-			    json_rpc::INVALID_PARAMS, "Not enough funds on selected addresses with desired confirmations");
+		std::string error = selector.select_optimal_outputs(m_wallet_state.get_tip_height(),
+		    m_wallet_state.get_tip().timestamp, request.confirmed_height_or_depth,
+		    m_last_node_status.next_block_effective_median_size, request.transaction.anonymity, sum_positive_transfers,
+		    total_outputs, request.fee_per_byte, optimization, change);
+		if (!error.empty())
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Outputs cannot be selected for transaction " + error);
 	}
 	// Selector ensures the change should be as "round" as possible
 	if (change > 0) {
@@ -393,8 +403,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		response.binary_transaction = seria::to_binary(tx);
 		Hash transaction_hash       = get_transaction_hash(tx);
 		if (request.save_history && !m_wallet_state.get_wallet().save_history(transaction_hash, history)) {
-			m_log(logging::ERROR) << "Saving transaction history failed, proof of "
-			                         "sending will be unavailable for tx="
+			m_log(logging::ERROR) << "Saving transaction history failed, you will need to pass list of destination addresses to generate sending proof for tx="
 			                      << common::pod_to_hex(transaction_hash) << std::endl;
 			response.save_history_error = true;
 		}
@@ -410,9 +419,14 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 	api::walletd::CreateTransaction::Request request_copy = request;  // TODO ???
 	http::RequestData new_request =
 	    json_rpc::create_request(api::bytecoind::url(), api::bytecoind::GetRandomOutputs::method(), ra_request);
+	new_request.r.basic_authorization = m_config.bytecoind_authorization;
 	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id(), std::move(new_request),
-	    [=](const WaitingClient &wc, const http::ResponseData &random_response) mutable {
-		    m_log(logging::INFO) << "got random response" << std::endl;
+	    [=](const WaitingClient &wc, const http::ResponseData &&random_response) mutable {
+		    m_log(logging::INFO) << "got response to get_random_outputs, status=" << random_response.r.status
+		                         << " body starts with " << random_response.body.substr(0, 100) << std::endl;
+		    if (random_response.r.status != 200) {
+			    throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "got error as response on get_random_outputs");
+		    }
 		    Transaction tx{};
 		    api::walletd::CreateTransaction::Response last_response;
 		    Hash tx_hash{};
@@ -426,19 +440,18 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		    last_response.binary_transaction = seria::to_binary(tx);
 		    tx_hash                          = get_transaction_hash(tx);
 		    if (request.save_history && !m_wallet_state.get_wallet().save_history(tx_hash, history)) {
-			    m_log(logging::ERROR) << "Saving transaction history failed, proof "
-			                             "of sending will not be available for tx="
-			                          << common::pod_to_hex(tx_hash) << std::endl;
+				m_log(logging::ERROR) << "Saving transaction history failed, you will need to pass list of destination addresses to generate sending proof for tx="
+									  << common::pod_to_hex(tx_hash) << std::endl;
 			    last_response.save_history_error = true;
 		    }
-		    if (!m_wallet_state.parse_raw_transaction(last_response.transaction, tx, tx_hash)) {
-			    // TODO - process error
-		    }
+		    if (!m_wallet_state.parse_raw_transaction(last_response.transaction, tx, tx_hash))
+			    throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "Created trsnsaction cannot be parsed");
 		    http::ResponseData last_http_response =
 		        json_rpc::create_response(wc.original_request, last_response, wc.original_jsonrpc_id);
 		    wc.original_who->write(std::move(last_http_response));
 		},
 	    [=](const WaitingClient &wc, std::string err) mutable {
+		    m_log(logging::INFO) << "got error to get_random_outputs from bytecoind, " << err << std::endl;
 		    http::ResponseData last_http_response = json_rpc::create_error_response(
 		        wc.original_request, json_rpc::Error(json_rpc::INTERNAL_ERROR, err), wc.original_jsonrpc_id);
 		    wc.original_who->write(std::move(last_http_response));
@@ -490,8 +503,9 @@ bool WalletNode::handle_send_transaction3(http::Client *who, http::RequestData &
 	new_request.set_body(std::move(raw_request.body));  // We save on copying body here
 	new_request.r.set_firstline("POST", api::bytecoind::url(), 1, 1);
 	transient_transactions_counter += 1;
+	new_request.r.basic_authorization = m_config.bytecoind_authorization;
 	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id(), std::move(new_request),
-	    [=](const WaitingClient &wc2, const http::ResponseData &send_response) mutable {
+	    [=](const WaitingClient &wc2, const http::ResponseData &&send_response) mutable {
 		    transient_transactions_counter -= 1;
 		    try {  // Manual try to prevent double decrement of transient_transactions_counter
 			    advance_sync();

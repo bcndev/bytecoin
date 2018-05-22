@@ -41,7 +41,7 @@ FileStream::~FileStream() {
 	handle = nullptr;
 #else
 	close(fd);
-	fd        = 0;
+	fd        = -1;
 #endif
 }
 

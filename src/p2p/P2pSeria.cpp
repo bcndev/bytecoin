@@ -40,6 +40,10 @@ void ser_members(bytecoin::PeerlistEntry &v, seria::ISeria &s) {
 	seria_kv("adr", v.adr, s);
 	seria_kv("id", v.id, s);
 	seria_kv("last_seen", v.last_seen, s);
+	//	uint64_t last_seen_64 = v.last_seen;
+	//	seria_kv("last_seen", last_seen_64, s);
+	//	if (s.is_input())
+	//		v.last_seen = static_cast<uint32_t>(last_seen_64);
 	//	seria_kv("reserved", v.reserved, s);
 }
 

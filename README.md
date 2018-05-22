@@ -22,32 +22,41 @@ $> mkdir bcndev
 $> cd bcndev
 ```
 
-To go futher you have to have a number of packages and utilities.
+To go futher you have to have a number of packages and utilities. You need at least gcc 5.4.
 
 * `build-essential` package:
     ```
-    $> sudo apt-get install build-essential
+    $bcndev> sudo apt-get install build-essential
     ```
 
 * CMake (3.5 or newer):
     ```
-    $> sudo apt-get install cmake
-    $> cmake --version
+    $bcndev> sudo apt-get install cmake
+    $bcndev> cmake --version
     ```
     If version is too old, follow instructions on [the official site](https://cmake.org/download/).
 
 * Boost (1.62 or newer):
+    You need boost in `bcndev` folder. We do not configure to use boost installed by `apt-get`, because it is sometimes updated without your control by installing some unrelated packages. Also some users reported crashes after `find_package` finds headers from one version of boost and libraries from different version, or if installed boost uses dynamic linking.
     ```
-    $> sudo apt-get install libboost-all-dev
-    $> cat /usr/include/boost/version.hpp | grep "BOOST_LIB_VERSION"
-    ```
-    If version is too old, download boost from [boost.org](https://boost.org), unpack it into a folder inside `bcndev` and rename it from `boost_1_66_0` or similar to just `boost`
-    Build boost
-    ```
-    $> cd boost
+    $bcndev> wget -c 'http://sourceforge.net/projects/boost/files/boost/1.67.0/boost_1_67_0.tar.bz2/download'
+    $bcndev> tar xf download
+    $bcndev> rm download
+    $bcndev> mv boost_1_67_0 boost
+    $bcndev> cd boost
     $bcndev/boost> ./bootstrap.sh
     $bcndev/boost> ./b2 link=static -j 8 --build-dir=build64 --stagedir=stage
     cd ..
+    ```
+
+* OpenSSL (1.1.1 or newer):
+    Install OpenSSL to `bcndev/openssl` folder. (In below commands use switch `linux-x86_64-clang` instead of `linux-x86_64` if using clang.)
+    ```
+    $bcndev> git clone https://github.com/openssl/openssl.git
+    $bcndev> cd openssl
+    $bcndev/openssl> ./Configure linux-x86_64 no-shared
+    $bcndev/openssl> time make -j4
+    $bcndev/openssl> cd ..
     ```
 
 Git-clone (or git-pull) Bytecoin source code in that folder:
@@ -64,7 +73,7 @@ Create build directory inside bytecoin, go there and run CMake and Make:
 ```
 $bcndev> mkdir bytecoin/build
 $bcndev> cd bytecoin/build
-$bcndev/bytecoin/build> cmake -DUSE_SSL=0 ..
+$bcndev/bytecoin/build> cmake ..
 $bcndev/bytecoin/build> time make -j4
 ```
 
@@ -75,23 +84,14 @@ $bcndev/bytecoin/build> ../bin/bytecoind -v
 
 ### Building with specific options
 
-Install OpenSSL to `bcndev/openssl` folder. (Use switch `linux-x86_64-clang` instead of `linux-x86_64` if using clang.)
-```
-$bcndev> git clone https://github.com/openssl/openssl.git
-$bcndev> cd openssl
-$bcndev/openssl> ./Configure linux-x86_64 no-shared
-$bcndev/openssl> time make -j4
-$bcndev/openssl> cd ..
-```
-
 Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into `bcndev/sqlite` folder (source files are referenced via relative paths, so you do not need to separately build it).
 
-Below are the commands which add OpenSSL support and switch from LMDB to SQLite by providing options to CMake:
+Below are the commands which remove OpenSSL support and switch from LMDB to SQLite by providing options to CMake:
 
 ```
 $bcndev> mkdir bytecoin/build
 $bcndev> cd bytecoin/build
-$bcndev/bytecoin/build> cmake -DUSE_SSL=1 -DUSE_SQLITE=1 ..
+$bcndev/bytecoin/build> cmake -DUSE_SSL=0 -DUSE_SQLITE=1 ..
 $bcndev/bytecoin/build> time make -j4
 ```
 
@@ -108,8 +108,8 @@ Then open terminal and install CMake and Boost:
 
 Create directory `bcndev` somewhere and go there:
 ```
-$~/Downloads> mkdir <path-to-bcndev-folder>
-$~/Downloads> cd <path-to-bcndev-folder>
+$~/Downloads> mkdir bcndev
+$~/Downloads> cd bcndev
 ```
 
 Git-clone (or git-pull) Bytecoin source code in that folder:
@@ -147,9 +147,9 @@ Download and unpack [Boost](https://boost.org) to `Downloads` folder.
 
 Then build and install Boost:
 ```
-$~> cd ~/Downloads/boost_1_58_0/
-$~/Downloads/boost_1_58_0> ./bootstrap.sh
-$~/Downloads/boost_1_58_0> ./b2 -a -j 4 cxxflags="-stdlib=libc++ -std=c++14 -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk" install`
+$~> cd ~/Downloads/boost_1_67_0/
+$~/Downloads/boost_1_67_0> ./bootstrap.sh
+$~/Downloads/boost_1_67_0> ./b2 -a -j 4 cxxflags="-stdlib=libc++ -std=c++14 -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk" install`
 ```
 
 Install OpenSSL to `bcndev/openssl` folder:

@@ -68,8 +68,9 @@ platform::lmdb::Cur::~Cur() {
 }
 
 DBlmdb::DBlmdb(const std::string &full_path, uint64_t max_db_size) : full_path(full_path) {
-	std::cout << "lmdb libversion=" << mdb_version(nullptr, nullptr, nullptr) << std::endl;
+	//	std::cout << "lmdb libversion=" << mdb_version(nullptr, nullptr, nullptr) << std::endl;
 	lmdb_check(::mdb_env_set_mapsize(db_env.handle, max_db_size), "mdb_env_set_mapsize ");
+	// VALGRIND is limited to 32GB, modify line above to use (max_db_size > 28000000000 ? 28000000000 : max_db_size)
 	create_directories_if_necessary(full_path);
 	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(), MDB_NOMETASYNC, 0644), "mdb_env_open ");
 	// MDB_NOMETASYNC - We agree to trade chance of losing 1 last transaction for 2x performance boost

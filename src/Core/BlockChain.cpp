@@ -7,6 +7,7 @@
 #include <chrono>
 #include <iostream>
 #include "CryptoNoteTools.hpp"
+#include "DifficultyCheck.hpp"
 #include "TransactionExtra.hpp"
 #include "common/StringTools.hpp"
 #include "common/Varint.hpp"
@@ -18,7 +19,9 @@ using namespace bytecoin;
 using namespace platform;
 
 static const std::string previous_versions[] = {"B"};  // most recent previous version should be first in list
-static const std::string version_current     = "1";
+                                                       // 1 -> 2 we fix difficulty for consensus
+static const std::string version_1            = "1";
+const std::string BlockChain::version_current = "2";
 // We increment when making incompatible changes to indices.
 
 // We use suffixes so all keys related to the same block are close to each other
@@ -36,6 +39,9 @@ static const std::string CHILDREN_PREFIX = "x-ch/";
 static const std::string CD_TIPS_PREFIX  = "x-tips/";
 // We store bid->children counter, with counter=1 default (absent from index)
 // We store cumulative_difficulty->bid for bids with no children
+
+static const size_t HEADER_CACHE_MAX_SIZE          = 100000;  // when lots of read_header called without commit
+static const std::string delete_blockchain_message = "database corrupted, please delete ";
 
 bool Block::from_raw_block(const RawBlock &raw_block) {
 	try {
@@ -97,8 +103,15 @@ PreparedBlock::PreparedBlock(RawBlock &&rba, crypto::CryptoNightContext *context
 BlockChain::BlockChain(const Hash &genesis_bid, const std::string &coin_folder)
     : m_genesis_bid(genesis_bid), m_coin_folder(coin_folder), m_db(coin_folder + "/blockchain") {
 	std::string version;
-	m_db.get("$version", version);
-	if (version != version_current) {
+	if (!m_db.get("$version", version)) {
+		DB::Cursor cur = m_db.begin(std::string());
+		if (!cur.end())
+			throw std::runtime_error(
+			    "Blockchain database format unknown version, please delete " + coin_folder + "/blockchain");
+		version = version_current;
+		m_db.put("$version", version, false);
+	}
+	if (version == previous_versions[0]) {
 		std::cout << "Data format changed, old version=" << version << " current version=" << version_current
 		          << ", deleting bytecoind cache..." << std::endl;
 		std::set<Hash> main_chain_bids;
@@ -135,7 +148,8 @@ BlockChain::BlockChain(const Hash &genesis_bid, const std::string &coin_folder)
 			cur.erase();
 			erased += 1;
 		}
-		m_db.put("$version", version_current, true);
+		version = "2";  // Deleting all block headers fixes difficulty
+		m_db.put("$version", version, false);
 		std::cout << "Deleted " << erased << " records, skipped " << skipped << " records" << std::endl;
 		db_commit();
 	}
@@ -152,9 +166,10 @@ BlockChain::BlockChain(const Hash &genesis_bid, const std::string &coin_folder)
 }
 
 void BlockChain::db_commit() {
-	std::cout << "BlockChain::db_commit started... tip_height=" << m_tip_height << " header_cache.size=" << header_cache.size() << std::endl;
+	std::cout << "BlockChain::db_commit started... tip_height=" << m_tip_height
+	          << " header_cache.size=" << header_cache.size() << std::endl;
 	m_db.commit_db_txn();
-	header_cache.clear(); // Most simple cache policy ever
+	header_cache.clear();  // Most simple cache policy ever
 	std::cout << "BlockChain::db_commit finished..." << std::endl;
 }
 
@@ -177,8 +192,19 @@ BroadcastAction BlockChain::add_block(const PreparedBlock &pb, api::BlockHeader 
 	info.hash                = pb.bid;
 	info.height              = prev_info.height + 1;
 	// Rest fields are filled by check_standalone_consensus
-	if (!check_standalone_consensus(pb, info, prev_info))
-		return BroadcastAction::BAN;
+	std::string check_error = check_standalone_consensus(pb, info, prev_info);
+	Hash first_difficulty_check_hash;
+	if (!common::pod_from_hex(difficulty_check[0].hash, first_difficulty_check_hash))
+		throw std::logic_error("DifficultyCheck table corrupted");
+	if (info.hash == first_difficulty_check_hash &&
+	    info.cumulative_difficulty != difficulty_check[0].cumulative_difficulty) {
+		std::cout << "Reached first difficulty checkpoint with wrong cumulative_difficulty "
+		          << info.cumulative_difficulty << ", should be " << difficulty_check[0].cumulative_difficulty << ", "
+		          << delete_blockchain_message << m_coin_folder << "/blockchain" << std::endl;
+		std::exit(api::BYTECOIND_DATABASE_ERROR);
+	}
+	if (!check_error.empty())
+		return BroadcastAction::BAN;  // TODO - return check_error
 	try {
 		if (!have_block)
 			store_block(pb.bid, pb.block_data);  // Do not commit between here and
@@ -199,13 +225,15 @@ BroadcastAction BlockChain::add_block(const PreparedBlock &pb, api::BlockHeader 
 				if (!redo_block(pb.bid, pb.raw_block, pb.block, info, pb.base_transaction_hash))
 					return BroadcastAction::BAN;
 				push_chain(pb.bid, info.cumulative_difficulty);
+				//				std::map<Hash, std::pair<Transaction, BinaryArray>> undone_transactions;
+				//				on_reorganization(undone_transactions, true);
 			} else
 				reorganize_blocks(pb.bid, pb, info);
 		}
 	} catch (const std::exception &ex) {
 		std::cout << "Exception while reorganizing blockchain, probably out of "
 		             "disk space ex.what="
-		          << ex.what() << std::endl;
+		          << ex.what() << ", " << delete_blockchain_message << m_coin_folder << "/blockchain" << std::endl;
 		std::exit(api::BYTECOIND_DATABASE_ERROR);
 	}
 	if (get_tip_height() % 50000 == 0)
@@ -219,15 +247,24 @@ bool BlockChain::reorganize_blocks(const Hash &switch_to_chain,
 	// Header chain is better than block chain, undo upto splitting block
 	std::vector<Hash> chain1, chain2;
 	Hash common = get_common_block(m_tip_bid, switch_to_chain, &chain1, &chain2);
-	for (auto &&chha : chain2)
+	for (auto &&chha : chain2) {
 		if (!has_block(chha))
 			return false;  // Full new chain not yet downloaded
+	}
+	std::map<Hash, std::pair<Transaction, BinaryArray>> undone_transactions;
+	bool undone_blocks = false;
 	while (m_tip_bid != common) {
 		RawBlock raw_block;
 		Block block;
 		if (!read_block(m_tip_bid, raw_block) || !block.from_raw_block(raw_block))
 			throw std::logic_error("Block to undo not found or failed to convert" + common::pod_to_hex(m_tip_bid));
+		undone_blocks = true;
 		undo_block(m_tip_bid, raw_block, block, m_tip_height);
+		for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
+			Hash tid = block.header.transaction_hashes.at(tx_index);
+			undone_transactions.insert(std::make_pair(tid, std::make_pair(std::move(block.transactions.at(tx_index)),
+			                                                   std::move(raw_block.transactions.at(tx_index)))));
+		}
 		pop_chain();
 		m_tip_bid                   = block.header.previous_block_hash;
 		api::BlockHeader info       = get_tip();
@@ -238,37 +275,49 @@ bool BlockChain::reorganize_blocks(const Hash &switch_to_chain,
 		tip_changed();
 	}
 	// Now redo all blocks we have in storage, will ask for the rest of blocks
+	bool result = true;
 	while (!chain2.empty()) {
 		Hash chha = chain2.back();
 		chain2.pop_back();
 		if (chha == recent_pb.bid) {
 			if (recent_pb.block.header.previous_block_hash != m_tip_bid)
 				throw std::logic_error("Unexpected block prev, invariant dead");
-			if (!redo_block(
-			        recent_pb.bid, recent_pb.raw_block, recent_pb.block, recent_info, recent_pb.base_transaction_hash))
+			if (!redo_block(recent_pb.bid, recent_pb.raw_block, recent_pb.block, recent_info,
+			        recent_pb.base_transaction_hash)) {
 				// invalid block on longest subchain, make no attempt to download the
 				// rest
 				// we will forever stuck on this block until longer chain appears, that
 				// does not include it
-				return false;
+				result = false;
+				break;
+			}
 			push_chain(chha, recent_info.cumulative_difficulty);
+			for (auto &&tid : recent_pb.block.header.transaction_hashes)
+				undone_transactions.erase(tid);
 		} else {
 			RawBlock raw_block;
 			Block block;
-			if (!read_block(chha, raw_block) || !block.from_raw_block(raw_block))
-				return false;  // Strange, we checked has_block, somehow "bad block" got
-			                   // into DB. TODO - throw?
+			if (!read_block(chha, raw_block) || !block.from_raw_block(raw_block)) {
+				result = false;
+				break;  // Strange, we checked has_block, somehow "bad block" got
+				        // into DB. TODO - throw?
+			}
 			if (block.header.previous_block_hash != m_tip_bid)
 				throw std::logic_error("Unexpected block prev, invariant dead");
 			api::BlockHeader info = read_header(chha);
 			// if redo fails, we will forever stuck on this block until longer chain
 			// appears, that does not include it
-			if (!redo_block(chha, raw_block, block, info, get_transaction_hash(block.header.base_transaction)))
-				return false;
+			if (!redo_block(chha, raw_block, block, info, get_transaction_hash(block.header.base_transaction))) {
+				result = false;
+				break;
+			}
 			push_chain(chha, info.cumulative_difficulty);
+			for (auto &&tid : block.header.transaction_hashes)
+				undone_transactions.erase(tid);
 		}
 	}
-	return true;
+	on_reorganization(undone_transactions, undone_blocks);
+	return result;
 }
 
 Hash BlockChain::get_common_block(
@@ -420,30 +469,34 @@ void ser_members(APITransactionPos &v, ISeria &s) {
 }
 }  // namespace seria
 
-bool BlockChain::read_transaction(const Hash &tid, Transaction &tx, Height &height, size_t &index_in_block) const {
+bool BlockChain::read_transaction(
+    const Hash &tid, Transaction &tx, Height &block_height, Hash &block_hash, size_t &index_in_block) const {
 	auto txkey = TRANSATION_PREFIX + DB::to_binary_key(tid.data, TRANSACTION_PREFIX_BYTES);
 	for (DB::Cursor cur = m_db.begin(txkey); !cur.end(); cur.next()) {
 		const std::string &suf = cur.get_suffix();
 		const char *be         = suf.data();
 		const char *en         = be + suf.size();
-		height                 = boost::lexical_cast<Height>(common::read_varint_sqlite4(be, en));
-		index_in_block         = boost::lexical_cast<size_t>(common::read_varint_sqlite4(be, en));
+		Height ha              = boost::lexical_cast<Height>(common::read_varint_sqlite4(be, en));
+		size_t in              = boost::lexical_cast<size_t>(common::read_varint_sqlite4(be, en));
 		Hash bid;
-		if (!read_chain(height, bid))
+		if (!read_chain(ha, bid))
 			throw std::logic_error("transaction index corrupted while reading tid=" + common::pod_to_hex(tid));
 		RawBlock rb;
 		Block block;
 		if (!read_block(bid, rb) || !block.from_raw_block(rb))
 			throw std::logic_error("transaction index corrupted while reading bid=" + common::pod_to_hex(bid));
-		if (index_in_block == 0) {
+		if (in == 0) {
 			if (get_transaction_hash(block.header.base_transaction) != tid)
 				continue;
 			tx = block.header.base_transaction;
-			return true;
+		} else {
+			if (block.header.transaction_hashes.at(in - 1) != tid)
+				continue;
+			tx = block.transactions.at(in - 1);
 		}
-		if (block.header.transaction_hashes.at(index_in_block - 1) != tid)
-			continue;
-		tx = block.transactions.at(index_in_block - 1);
+		block_hash     = bid;
+		block_height   = ha;
+		index_in_block = in;
 		return true;
 	}
 	return false;
@@ -467,14 +520,14 @@ bool BlockChain::redo_block(const Hash &bhash, const RawBlock &, const Block &bl
 		m_db.put(bkey, std::string(), true);
 	}
 
-//	m_tip_segment.push_back(info);
-//	if (m_tip_segment.size() > 2048)  // TODO - should be enough for all block windows we use
-//		m_tip_segment.pop_front();
+	//	m_tip_segment.push_back(info);
+	//	if (m_tip_segment.size() > 2048)  // TODO - should be enough for all block windows we use
+	//		m_tip_segment.pop_front();
 	return true;
 }
 void BlockChain::undo_block(const Hash &bhash, const RawBlock &, const Block &block, Height height) {
-//	if (!m_tip_segment.empty())
-//		m_tip_segment.pop_back();
+	//	if (!m_tip_segment.empty())
+	//		m_tip_segment.pop_back();
 	undo_block(bhash, block, height);
 
 	auto tikey = TIMESTAMP_BLOCK_PREFIX + common::write_varint_sqlite4(block.header.timestamp) +
@@ -523,19 +576,19 @@ void BlockChain::store_header(const Hash &bid, const api::BlockHeader &header) {
 
 bool BlockChain::read_header(const Hash &bid, api::BlockHeader &header) const {
 	auto cit = header_cache.find(bid);
-	if( cit != header_cache.end() ){
+	if (cit != header_cache.end()) {
 		header = cit->second;
 		return true;
 	}
-//	if (bid == m_tip_bid && !m_tip_segment.empty()) {
-//		header = m_tip_segment.back();
-//		return true;
-//	}
+	if (header_cache.size() > HEADER_CACHE_MAX_SIZE) {
+		std::cout << "HEADER_CACHE_MAX_SIZE cleared" << std::endl;
+		header_cache.clear();  // very simple policy
+	}
 	BinaryArray rb;
 	auto key = HEADER_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + HEADER_SUFFIX;
 	if (!m_db.get(key, rb))
 		return false;
-	Hash bbid = bid;
+	Hash bbid = bid;  // next line can modify bid, because it can be reference to header.previous_block_hash
 	seria::from_binary(header, rb);
 	header_cache.insert(std::make_pair(bbid, header));
 	return true;
@@ -550,52 +603,53 @@ api::BlockHeader BlockChain::read_header(const Hash &bid) const {
 
 const api::BlockHeader &BlockChain::get_tip() const {
 	auto cit = header_cache.find(get_tip_bid());
-	if( cit != header_cache.end() ){
+	if (cit != header_cache.end()) {
 		return cit->second;
 	}
 	read_header(get_tip_bid());
 	cit = header_cache.find(get_tip_bid());
-	if( cit == header_cache.end() )
+	if (cit == header_cache.end())
 		throw std::logic_error("After read_header, header should be in header_cache");
 	return cit->second;
-//	if (m_tip_segment.empty())
-//		m_tip_segment.push_back(read_header(get_tip_bid()));
-//	return m_tip_segment.back();
+	//	if (m_tip_segment.empty())
+	//		m_tip_segment.push_back(read_header(get_tip_bid()));
+	//	return m_tip_segment.back();
 }
 
-std::vector<api::BlockHeader>
-BlockChain::get_tip_segment(const api::BlockHeader & prev_info, Height window, bool add_genesis) const {
+std::vector<api::BlockHeader> BlockChain::get_tip_segment(
+    const api::BlockHeader &prev_info, Height window, bool add_genesis) const {
 	std::vector<api::BlockHeader> result;
-	if( prev_info.height == Height(-1))
+	if (prev_info.height == Height(-1))
 		return result;
 	api::BlockHeader pi = prev_info;
-	while(result.size() < window && pi.height != 0){
+	while (result.size() < window && pi.height != 0) {
 		result.push_back(pi);
-		if( !read_header(pi.previous_block_hash, pi) )
+		if (!read_header(pi.previous_block_hash, pi))
 			throw std::logic_error("Invariant dead - previous block header not found in get_tip_segment");
 	}
-	if( result.size() < window && add_genesis){
-		if( pi.height != 0)
-			throw std::logic_error("Invariant dead - window size not reached, but genesis not found in get_tip_segment");
+	if (result.size() < window && add_genesis) {
+		if (pi.height != 0)
+			throw std::logic_error(
+			    "Invariant dead - window size not reached, but genesis not found in get_tip_segment");
 		result.push_back(pi);
 	}
-//	if (get_tip_height() == (Height)-1 || height_delta > get_tip_height())
-//		return std::make_pair(m_tip_segment.end(), m_tip_segment.end());
-//	while (m_tip_segment.size() < height_delta + window && m_tip_segment.size() < m_tip_height + 1) {
-//		Hash ha = read_chain(static_cast<uint32_t>(m_tip_height - m_tip_segment.size()));
-//		m_tip_segment.push_front(read_header(ha));
-//	}
-//	if (m_tip_height + 1 <= height_delta + window) {
-//			if( m_tip_segment.size() == m_tip_height + 1 ) {
-		//	if (height_delta + window >= m_tip_segment.size()) {
-//		return std::make_pair(m_tip_segment.begin() + (add_genesis ? 0 : 1), m_tip_segment.end() - height_delta);
-//	}
+	//	if (get_tip_height() == (Height)-1 || height_delta > get_tip_height())
+	//		return std::make_pair(m_tip_segment.end(), m_tip_segment.end());
+	//	while (m_tip_segment.size() < height_delta + window && m_tip_segment.size() < m_tip_height + 1) {
+	//		Hash ha = read_chain(static_cast<uint32_t>(m_tip_height - m_tip_segment.size()));
+	//		m_tip_segment.push_front(read_header(ha));
+	//	}
+	//	if (m_tip_height + 1 <= height_delta + window) {
+	//			if( m_tip_segment.size() == m_tip_height + 1 ) {
+	//	if (height_delta + window >= m_tip_segment.size()) {
+	//		return std::make_pair(m_tip_segment.begin() + (add_genesis ? 0 : 1), m_tip_segment.end() - height_delta);
+	//	}
 	std::reverse(result.begin(), result.end());
-	return result;// std::make_pair(m_tip_segment.end() - window - height_delta, m_tip_segment.end() - height_delta);
+	return result;  // std::make_pair(m_tip_segment.end() - window - height_delta, m_tip_segment.end() - height_delta);
 }
 
 void BlockChain::read_tip() {
-	DB::Cursor cur2 = m_db.rbegin(TIP_CHAIN_PREFIX + version_current + "/");
+	DB::Cursor cur2 = m_db.rbegin(TIP_CHAIN_PREFIX + version_1 + "/");
 	m_tip_height    = cur2.end() ? -1 : boost::lexical_cast<Height>(common::read_varint_sqlite4(cur2.get_suffix()));
 	seria::from_binary(m_tip_bid, cur2.get_value_array());
 	api::BlockHeader tip_block  = read_header(m_tip_bid);
@@ -605,7 +659,7 @@ void BlockChain::read_tip() {
 void BlockChain::push_chain(Hash bid, Difficulty cumulative_difficulty) {
 	m_tip_height += 1;
 	BinaryArray ba = seria::to_binary(bid);
-	m_db.put(TIP_CHAIN_PREFIX + version_current + "/" + common::write_varint_sqlite4(m_tip_height), ba, true);
+	m_db.put(TIP_CHAIN_PREFIX + version_1 + "/" + common::write_varint_sqlite4(m_tip_height), ba, true);
 	m_tip_bid                   = bid;
 	m_tip_cumulative_difficulty = cumulative_difficulty;
 	tip_changed();
@@ -614,13 +668,13 @@ void BlockChain::push_chain(Hash bid, Difficulty cumulative_difficulty) {
 void BlockChain::pop_chain() {
 	if (m_tip_height == 0)
 		throw std::logic_error("pop_chain tip_height == 0");
-	m_db.del(TIP_CHAIN_PREFIX + version_current + "/" + common::write_varint_sqlite4(m_tip_height), true);
+	m_db.del(TIP_CHAIN_PREFIX + version_1 + "/" + common::write_varint_sqlite4(m_tip_height), true);
 	m_tip_height -= 1;
 }
 
 bool BlockChain::read_chain(uint32_t height, Hash &bid) const {
 	BinaryArray ba;
-	if (!m_db.get(TIP_CHAIN_PREFIX + version_current + "/" + common::write_varint_sqlite4(height), ba))
+	if (!m_db.get(TIP_CHAIN_PREFIX + version_1 + "/" + common::write_varint_sqlite4(height), ba))
 		return false;
 	seria::from_binary(bid, ba);
 	return true;
@@ -708,11 +762,24 @@ void BlockChain::test_prune_oldest() {
 	}
 }
 
-void BlockChain::test_print_structure() const {
+void BlockChain::test_print_structure(Height n_confirmations) const {
 	Difficulty ocd;
 	Hash obid;
 	if (get_oldest_tip(ocd, obid))
 		std::cout << "oldest tip cd=" << ocd << " bid=" << common::pod_to_hex(obid) << std::endl;
+	for (DB::Cursor cur = m_db.begin(CHILDREN_PREFIX); !cur.end(); cur.next()) {
+		Hash bid;
+		DB::from_binary_key(cur.get_suffix(), 0, bid.data, sizeof(bid.data));
+		uint32_t counter = 1;
+		seria::from_binary(counter, cur.get_value_array());
+
+		std::cout << "children counter=" << counter << " bid=" << common::pod_to_hex(bid) << std::endl;
+	}
+	size_t total_forked_transactions      = 0;
+	size_t total_possible_ds_transactions = 0;
+	Amount total_possible_ds_amount       = 0;
+	size_t total_forked_blocks            = 0;
+	size_t total_forked_blocks_not_found  = 0;
 	for (DB::Cursor cur = m_db.begin(CD_TIPS_PREFIX); !cur.end(); cur.next()) {
 		const std::string &suf = cur.get_suffix();
 		const char *be         = suf.data();
@@ -723,15 +790,191 @@ void BlockChain::test_print_structure() const {
 			throw std::logic_error("CD_TIPS_PREFIX corrupted");
 		DB::from_binary_key(cur.get_suffix(), cur.get_suffix().size() - sizeof(bid.data), bid.data, sizeof(bid.data));
 		std::cout << "tip cd=" << cd << " bid=" << common::pod_to_hex(bid) << std::endl;
+		Height t_height = Height(-1);
+		while (true) {
+			api::BlockHeader header = read_header(bid);
+			if (t_height == Height(-1))
+				t_height = header.height;
+			Hash main_bid;
+			if (read_chain(header.height, main_bid) && main_bid == header.hash)
+				break;  // Reached main trunk
+			const bool confirmed = t_height >= header.height + n_confirmations;
+			std::cout << "    fork height=" << header.height << " confirmed=" << confirmed
+			          << " bid=" << common::pod_to_hex(bid) << std::endl;
+			RawBlock rb;
+			Block block;
+			if (confirmed) {
+				total_forked_blocks += 1;
+				if (read_block(bid, rb) && block.from_raw_block(rb)) {
+					for (size_t tx_pos = 0; tx_pos != block.header.transaction_hashes.size(); ++tx_pos) {
+						Hash tid = block.header.transaction_hashes.at(tx_pos);
+						total_forked_transactions += 1;
+						Transaction tx;
+						Height height = 0;
+						Hash block_hash;
+						size_t index_in_block = 0;
+						if (!read_transaction(tid, tx, height, block_hash, index_in_block)) {
+							Amount input_amount = 0;
+							for (const auto &input : block.transactions.at(tx_pos).inputs)
+								if (input.type() == typeid(KeyInput)) {
+									const KeyInput &in = boost::get<KeyInput>(input);
+									input_amount += in.amount;
+								}
+							total_possible_ds_transactions += 1;
+							total_possible_ds_amount += input_amount;
+							std::cout << "        Potential ds tx amount=" << input_amount
+							          << " tid=" << common::pod_to_hex(tid) << std::endl;
+						}
+					}
+				} else
+					total_forked_blocks_not_found += 1;
+			}
+			bid = header.previous_block_hash;
+		}
 	}
-	for (DB::Cursor cur = m_db.begin(CHILDREN_PREFIX); !cur.end(); cur.next()) {
-		Hash bid;
-		DB::from_binary_key(cur.get_suffix(), 0, bid.data, sizeof(bid.data));
-		uint32_t counter = 1;
-		seria::from_binary(counter, cur.get_value_array());
+	std::cout << "n_confirmations=" << n_confirmations << std::endl;
+	std::cout << "total forked blocks=" << total_forked_blocks << ", not found " << total_forked_blocks_not_found
+	          << std::endl;
+	std::cout << "total forked transactions=" << total_forked_transactions << ", possible ds "
+	          << total_possible_ds_transactions << " total amount=" << total_possible_ds_amount << std::endl;
+}
 
-		std::cout << "children counter=" << counter << " bid=" << common::pod_to_hex(bid) << std::endl;
+bool BlockChain::fix_consensus(Hash bid, const api::BlockHeader &was_info) {
+	RawBlock rb;
+	Block block;
+	if (!read_block(bid, rb))
+		throw std::logic_error("Block for fix consensus not found - please delete " + m_coin_folder + "/blockchain");
+	PreparedBlock pb(std::move(rb), nullptr);
+
+	api::BlockHeader info;
+	api::BlockHeader prev_info;
+	prev_info.height = -1;
+	if (pb.bid != m_genesis_bid)
+		prev_info            = read_header(pb.block.header.previous_block_hash);
+	info.major_version       = pb.block.header.major_version;
+	info.minor_version       = pb.block.header.minor_version;
+	info.timestamp           = pb.block.header.timestamp;
+	info.previous_block_hash = pb.block.header.previous_block_hash;
+	info.nonce               = pb.block.header.nonce;
+	info.hash                = pb.bid;
+	info.height              = prev_info.height + 1;
+
+	std::string check_error = check_standalone_consensus(pb, info, prev_info);
+	if (!check_error.empty())
+		throw std::runtime_error("Failed to fix consensus differences for block " + common::pod_to_hex(bid) +
+		                         ", because " + check_error + ", " + delete_blockchain_message + m_coin_folder +
+		                         "/blockchain");
+	if (info.cumulative_difficulty != was_info.cumulative_difficulty) {
+		//		std::cout << "Cumulative difficulty difference for height=" << start_height << " mustbe="
+		//				  << info.cumulative_difficulty << " was=" << was_info.cumulative_difficulty << std::endl;
+		auto key       = HEADER_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + HEADER_SUFFIX;
+		BinaryArray ba = seria::to_binary(info);
+		m_db.put(key, ba, false);
+		header_cache.erase(bid);
+		return true;
 	}
+	return false;
+}
+
+void BlockChain::test_consensus(Height start_height) {
+	int fixed_counter = 0;
+	while (true) {
+		Hash bid;
+		if (!read_chain(start_height, bid))
+			break;  // Reached main trunk
+		api::BlockHeader was_info = read_header(bid);
+		if (start_height % 100 == 0)
+			std::cout << "Testing consensus difference. Will take several minutes. height=" << start_height
+			          << " fixed so far " << fixed_counter << std::endl;
+		if (fix_consensus(bid, was_info))
+			fixed_counter += 1;
+		start_height += 1;
+	}
+	if (fixed_counter != 0)
+		throw std::runtime_error(
+		    "test_consensus fixed_counter=" + std::to_string(fixed_counter) + " will not commit changes.");
+	std::cout << "Testing consesus complete, no differences" << std::endl;
+}
+
+void BlockChain::fix_consensus() {
+	//	const size_t max_ch = sizeof(difficulty_check)/sizeof(*difficulty_check);
+	int fixed_counter = 0;
+	std::set<Hash> fixed_headers;
+	for (size_t ch = 0; ch != difficulty_check_count; ++ch) {
+		Hash bid;
+		if (!common::pod_from_hex(difficulty_check[ch].hash, bid))
+			throw std::logic_error("DifficultyCheck table corrupted");
+		api::BlockHeader was_info;
+		if (!read_header(bid, was_info))
+			break;
+		if (ch % 1000 == 0)
+			std::cout << "Checking consensus difference. Will take several minutes. Remained blocks "
+			          << difficulty_check_count - ch << " fixed so far " << fixed_counter << std::endl;
+		fixed_headers.insert(bid);
+		if (was_info.cumulative_difficulty != difficulty_check[ch].cumulative_difficulty) {
+			if (ch == 0)  // We are not sure previous block has right difficulty, aborting
+				throw std::runtime_error("Failed to fix zero consensus differences, " + delete_blockchain_message +
+				                         m_coin_folder + "/blockchain");
+			if (fixed_counter % 100 == 0)
+				std::cout << "Fixing consensus difference for height " << difficulty_check[ch].height
+				          << ". Will take several minutes. remained blocks " << difficulty_check_count - ch
+				          << " fixed so far " << fixed_counter << std::endl;
+			fixed_counter += 1;
+			fix_consensus(bid, was_info);
+			api::BlockHeader now_info = read_header(bid);
+			if (now_info.cumulative_difficulty != difficulty_check[ch].cumulative_difficulty) {
+				throw std::runtime_error("Failed to fix consensus differences, " + delete_blockchain_message +
+				                         m_coin_folder + "/blockchain");
+			}
+		}
+	}
+	std::cout << "Checked " << difficulty_check_count << " headers for consensus differences, fixed " << fixed_counter
+	          << std::endl;
+	//	start_height = difficulty_check[0].height;
+	//	std::cout << "Found header with consensus differences at height"<< start_height << ", fixing (can take several
+	//minutes)..." << std::endl;
+	int progress_counter = 0;
+	for (DB::Cursor cur = m_db.rbegin(CD_TIPS_PREFIX); !cur.end(); cur.next()) {
+		const std::string &suf = cur.get_suffix();
+		const char *be         = suf.data();
+		const char *en         = be + suf.size();
+		Difficulty cd          = common::read_varint_sqlite4(be, en);
+		Hash tip_bid;
+		if (en - be != sizeof(tip_bid.data))
+			throw std::logic_error("CD_TIPS_PREFIX corrupted");
+		DB::from_binary_key(
+		    cur.get_suffix(), cur.get_suffix().size() - sizeof(tip_bid.data), tip_bid.data, sizeof(tip_bid.data));
+		//		if( tip_bid == get_tip_bid())
+		//			std::cout << "Main chain" << std::endl;
+		std::vector<Hash> side_chain;
+		for (Hash bid = tip_bid;;) {
+			api::BlockHeader header = read_header(bid);
+			Hash main_bid;
+			if (fixed_headers.count(bid) != 0 || header.height < difficulty_check[0].height)
+				break;  // Do not fix beyond table start, or beyond fixed header
+			side_chain.push_back(bid);
+			bid = header.previous_block_hash;
+		}
+		//		std::reverse(side_chain.begin(), side_chain.end());
+		std::cout << "tip cd=" << cd << " len=" << side_chain.size() << " bid=" << common::pod_to_hex(tip_bid)
+		          << std::endl;
+		for (; !side_chain.empty(); side_chain.pop_back()) {
+			Hash bid                  = side_chain.back();
+			api::BlockHeader was_info = read_header(bid);
+			if (progress_counter % 100 == 0)
+				std::cout << "Fixing consensus difference. Will take several minutes. Remained blocks "
+				          << side_chain.size() << " fixed so far " << fixed_counter << std::endl;
+			progress_counter += 1;
+			if (fix_consensus(bid, was_info))
+				fixed_counter += 1;
+			fixed_headers.insert(bid);
+		}
+	}
+	api::BlockHeader tip_block  = read_header(m_tip_bid);
+	m_tip_cumulative_difficulty = tip_block.cumulative_difficulty;
+	tip_changed();
+	std::cout << "Checked consensus, made " << fixed_counter << " fixes" << std::endl;
+	//	throw std::runtime_error("Preventing DB commit");
 }
 
 bool BlockChain::read_next_internal_block(Hash &bid) const {
@@ -787,13 +1030,13 @@ void BlockChain::test_undo_everything() {
 		if (get_tip_bid() == m_genesis_bid)
 			break;
 		pop_chain();
-		m_tip_bid             = block.header.previous_block_hash;
-		api::BlockHeader info = get_tip();
+		m_tip_bid                   = block.header.previous_block_hash;
+		api::BlockHeader info       = get_tip();
 		m_tip_cumulative_difficulty = info.cumulative_difficulty;
 		tip_changed();
-		if (get_tip_height() % 50000 == 1 )
+		if (get_tip_height() % 50000 == 1)
 			db_commit();
-		if( get_tip_height() <= 1525025 )
+		if (get_tip_height() <= 1525025)
 			return;
 	}
 	std::cout << "---- After undo everything ---- " << std::endl;

@@ -416,8 +416,10 @@ bool Wallet::save_history(const Hash &bid, const History &used_addresses) const 
 	common::append(filename_data, std::begin(m_history_filename_seed.data), std::end(m_history_filename_seed.data));
 	Hash filename_hash = crypto::cn_fast_hash(filename_data.data(), filename_data.size());
 
-	return common::save_file(history_folder + "/" + common::pod_to_hex(filename_hash) + ".txh", encrypted_data.data(),
-	    encrypted_data.size());
+	const auto tmp_path = history_folder + "/_tmp.txh";
+	if( !common::save_file(tmp_path, encrypted_data.data(), encrypted_data.size()) )
+		return false;
+	return platform::atomic_replace_file(tmp_path, history_folder + "/" + common::pod_to_hex(filename_hash) + ".txh");
 }
 
 Wallet::History Wallet::load_history(const Hash &bid) const {

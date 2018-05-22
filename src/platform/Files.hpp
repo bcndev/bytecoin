@@ -34,7 +34,7 @@ private:
 #ifdef _WIN32
 	void *handle = nullptr;
 #else
-	int fd = 0;
+	int fd = -1;
 #endif
 };
 }

@@ -18,7 +18,9 @@ protected:
 
 private:
 	std::mutex mutex;
+	const size_t initial_max_size;
 	size_t max_size;
+	bool using_prev = false;  // atomic_replaced success, but create new file failed
 	const std::string fullfilenamenoext;
 	std::unique_ptr<platform::FileStream> file_stream;
 };

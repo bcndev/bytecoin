@@ -368,14 +368,13 @@ void ser_members(api::walletd::CreateTransaction::Request &v, ISeria &s) {
 	seria_kv("fee_per_byte", v.fee_per_byte, s);
 	seria_kv("optimization", v.optimization, s);
 	seria_kv("save_history", v.save_history, s);
-	//	seria_kv("send_immediately", v.send_immediately, s);
+	seria_kv("prevent_conflict_with_transactions", v.prevent_conflict_with_transactions, s);
 }
 void ser_members(api::walletd::CreateTransaction::Response &v, ISeria &s) {
 	seria_kv("transaction", v.transaction, s);
 	seria_kv("binary_transaction", v.binary_transaction, s);
 	seria_kv("save_history_error", v.save_history_error, s);
-	//	seria_kv("transaction_hash", v.transaction_hash, s);
-	//	seria_kv("send_result", v.send_result, s);
+	seria_kv("transactions_required", v.transactions_required, s);
 }
 void ser_members(api::walletd::CreateSendProof::Request &v, ISeria &s) {
 	seria_kv("transaction_hash", v.transaction_hash, s);
@@ -409,8 +408,8 @@ void ser_members(api::bytecoind::SyncBlocks::Request &v, ISeria &s) {
 }
 void ser_members(bytecoin::api::bytecoind::SyncBlocks::SyncBlock &v, ISeria &s) {
 	seria_kv("header", v.header, s);
-	seria_kv("bc_header", v.bc_header, s);
-	seria_kv("bc_transactions", v.bc_transactions, s);
+	seria_kv("raw_header", v.raw_header, s);
+	seria_kv("raw_transactions", v.raw_transactions, s);
 	seria_kv("base_transaction_hash", v.base_transaction_hash, s);
 	seria_kv("global_indices", v.global_indices, s);
 }
@@ -419,6 +418,12 @@ void ser_members(api::bytecoind::SyncBlocks::Response &v, ISeria &s) {
 	seria_kv("start_height", v.start_height, s);
 	seria_kv("status", v.status, s);
 }
+void ser_members(api::bytecoind::GetRawTransaction::Request &v, ISeria &s) { seria_kv("hash", v.hash, s); }
+void ser_members(api::bytecoind::GetRawTransaction::Response &v, ISeria &s) {
+	seria_kv("transaction", v.transaction, s);
+	seria_kv("raw_transaction", v.raw_transaction, s);
+}
+
 void ser_members(api::bytecoind::SyncMemPool::Request &v, ISeria &s) {
 	if (!s.is_input())
 		std::sort(v.known_hashes.begin(), v.known_hashes.end());
@@ -428,7 +433,7 @@ void ser_members(api::bytecoind::SyncMemPool::Request &v, ISeria &s) {
 }
 void ser_members(api::bytecoind::SyncMemPool::Response &v, ISeria &s) {
 	seria_kv("removed_hashes", v.removed_hashes, s);
-	seria_kv("added_bc_transactions", v.added_bc_transactions, s);
+	seria_kv("added_raw_transactions", v.added_raw_transactions, s);
 	seria_kv("added_transactions", v.added_transactions, s);
 	seria_kv("status", v.status, s);
 }
@@ -445,9 +450,9 @@ void ser_members(api::bytecoind::SendTransaction::Response &v, ISeria &s) { seri
 void ser_members(bytecoin::api::bytecoind::CheckSendProof::Request &v, ISeria &s) {
 	seria_kv("send_proof", v.send_proof, s);
 }
-void ser_members(bytecoin::api::bytecoind::CheckSendProof::Response &v, ISeria &s) {
-	seria_kv("validation_error", v.validation_error, s);
-}
+// void ser_members(bytecoin::api::bytecoind::CheckSendProof::Response &v, ISeria &s) {
+//	seria_kv("validation_error", v.validation_error, s);
+//}
 /*void ser_members(bytecoin::api::walletd::GetBlock::Request &v, ISeria &s) {
         seria_kv("hash", v.hash, s);
         seria_kv("height", v.height, s);

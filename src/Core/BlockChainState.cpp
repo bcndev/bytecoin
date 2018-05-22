@@ -24,23 +24,13 @@ static const std::string UNLOCK_BLOCK_PREFIX = "u";
 static const std::string UNLOCK_TIME_PREFIX  = "U";
 // We store locked outputs in separate indexes
 
-const size_t MAX_POOL_COMPLEXITY = 100000;  // ~1000 "normal" transactions
+const size_t MAX_POOL_SIZE = 2000000;  // ~1000 "normal" transactions with 10 inputs and 10 outputs
 
 using namespace bytecoin;
 using namespace platform;
 
-static size_t get_complexity(const Transaction &tx) {  // For pool
-	size_t result = 0;
-	result += 20 * tx.inputs.size();  // ring signature checking is expensive
-	result += tx.outputs.size();
-	for (const auto &input : tx.inputs) {
-		if (input.type() == typeid(KeyInput)) {
-			const KeyInput &in = boost::get<KeyInput>(input);
-			result += 10 * in.output_indexes.size();  // ring signature checking is expensive
-		}
-	}
-	return result;
-}
+BlockChainState::PoolTransaction::PoolTransaction(const Transaction &tx, const BinaryArray &binary_tx, Amount fee)
+    : tx(tx), binary_tx(binary_tx), fee(fee) {}
 
 void BlockChainState::DeltaState::store_keyimage(const KeyImage &keyimage, Height height) {
 	if (!m_keyimages.insert(std::make_pair(keyimage, height)).second)
@@ -123,12 +113,67 @@ api::BlockHeader BlockChainState::fill_genesis(Hash genesis_bid, const BlockTemp
 	return result;
 }
 
+static std::string validate_semantic(bool generating, const Transaction &tx, uint64_t &fee, bool check_output_key) {
+	if (tx.inputs.empty())
+		return "EMPTY_INPUTS";
+	uint64_t summary_output_amount = 0;
+	for (const auto &output : tx.outputs) {
+		if (output.amount == 0)
+			return "OUTPUT_ZERO_AMOUNT";
+		if (output.target.type() == typeid(KeyOutput)) {
+			const KeyOutput &key_output = boost::get<KeyOutput>(output.target);
+			if (check_output_key && !key_isvalid(key_output.key))
+				return "OUTPUT_INVALID_KEY";
+		} else
+			return "OUTPUT_UNKNOWN_TYPE";
+		if (std::numeric_limits<uint64_t>::max() - output.amount < summary_output_amount)
+			return "OUTPUTS_AMOUNT_OVERFLOW";
+		summary_output_amount += output.amount;
+	}
+	uint64_t summary_input_amount = 0;
+	std::unordered_set<KeyImage> ki;
+	std::set<std::pair<uint64_t, uint32_t>> outputs_usage;
+	for (const auto &input : tx.inputs) {
+		uint64_t amount = 0;
+		if (input.type() == typeid(CoinbaseInput)) {
+			if (!generating)
+				return "INPUT_UNKNOWN_TYPE";
+		} else if (input.type() == typeid(KeyInput)) {
+			if (generating)
+				return "INPUT_UNKNOWN_TYPE";
+			const KeyInput &in = boost::get<KeyInput>(input);
+			amount             = in.amount;
+			if (!ki.insert(in.key_image).second)
+				return "INPUT_IDENTICAL_KEYIMAGES";
+			if (in.output_indexes.empty())
+				return "INPUT_EMPTY_OUTPUT_USAGE";
+			// output_indexes are packed here, first is absolute, others are offsets to
+			// previous, so first can be zero, others can't
+			if (std::find(++std::begin(in.output_indexes), std::end(in.output_indexes), 0) !=
+			    std::end(in.output_indexes)) {
+				return "INPUT_IDENTICAL_OUTPUT_INDEXES";
+			}
+		} else
+			return "INPUT_UNKNOWN_TYPE";
+		if (std::numeric_limits<uint64_t>::max() - amount < summary_input_amount)
+			return "INPUTS_AMOUNT_OVERFLOW";
+		summary_input_amount += amount;
+	}
+	if (summary_output_amount > summary_input_amount && !generating)
+		return "WRONG_AMOUNT";
+	if (tx.signatures.size() != tx.inputs.size() && !generating)
+		return "INPUT_UNKNOWN_TYPE";
+	if (!tx.signatures.empty() && generating)
+		return "INPUT_UNKNOWN_TYPE";
+	fee = summary_input_amount - summary_output_amount;
+	return std::string();
+}
+
 BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, const Currency &currency)
     : BlockChain(currency.genesis_block_hash, config.get_data_folder())
-    , m_config(config)
+    //    , m_config(config)
     , m_currency(currency)
     , m_log(log, "BlockChainState")
-    , m_memory_state_total_complexity(0)
     , log_redo_block_timestamp(std::chrono::steady_clock::now()) {
 	if (get_tip_height() == (Height)-1) {
 		Block genesis_block;
@@ -141,17 +186,25 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
 		if (add_block(pb, info) == BroadcastAction::BAN)
 			throw std::logic_error("Genesis block failed to add");
 	}
-	m_log(logging::INFO) << "BlockChainState::BlockChainState height=" << get_tip_height() << " bid=" << common::pod_to_hex(get_tip_bid()) << std::endl;
 	BlockChainState::tip_changed();
+	std::string version;
+	m_db.get("$version", version);
+	if (version == "1") {  // 1 -> 2
+		std::cout << "Database version 1, advancing to version 2" << std::endl;
+		fix_consensus();
+		version = "2";
+		m_db.put("$version", version, false);
+		db_commit();
+	}
+	if (version != version_current)
+		throw std::runtime_error("Blockchain database format unknown (version=" + version + "), please delete " +
+		                         config.get_data_folder() + "/blockchain");
+	m_log(logging::INFO) << "BlockChainState::BlockChainState height=" << get_tip_height()
+	                     << " cumulative_difficulty=" << get_tip_cumulative_difficulty()
+	                     << " bid=" << common::pod_to_hex(get_tip_bid()) << std::endl;
 }
 
-bool BlockChainState::check_standalone_consensus(
-    const PreparedBlock &pb, api::BlockHeader &info, const api::BlockHeader &prev_info) const {
-	auto err = get_standalone_consensus_error(pb, info, prev_info);
-	return err.empty();
-}
-
-std::string BlockChainState::get_standalone_consensus_error(
+std::string BlockChainState::check_standalone_consensus(
     const PreparedBlock &pb, api::BlockHeader &info, const api::BlockHeader &prev_info) const {
 	const auto &block = pb.block;
 	if (block.transactions.size() != block.header.transaction_hashes.size())
@@ -212,7 +265,7 @@ std::string BlockChainState::get_standalone_consensus_error(
 
 	const bool check_keys = !m_currency.is_in_checkpoint_zone(info.height);
 	uint64_t miner_reward = 0;
-	for (const auto &output : block.header.base_transaction.outputs) {
+	for (const auto &output : block.header.base_transaction.outputs) {  // TODO - call validate_semantic
 		if (output.amount == 0)
 			return "OUTPUT_ZERO_AMOUNT";
 		if (output.target.type() == typeid(KeyOutput)) {
@@ -274,6 +327,12 @@ std::string BlockChainState::get_standalone_consensus_error(
 	info.already_generated_transactions = prev_info.already_generated_transactions + block.transactions.size() + 1;
 	info.total_fee_amount               = cumulative_fee;
 	info.transactions_cumulative_size   = static_cast<uint32_t>(cumulative_size);
+	for (auto &&tx : pb.block.transactions) {
+		Amount tx_fee         = 0;
+		std::string tx_result = validate_semantic(false, tx, tx_fee, check_keys);
+		if (!tx_result.empty())
+			return tx_result;
+	}
 	bool is_checkpoint;
 	if (m_currency.is_in_checkpoint_zone(info.height)) {
 		if (!m_currency.check_block_checkpoint(info.height, info.hash, is_checkpoint))
@@ -287,7 +346,7 @@ std::string BlockChainState::get_standalone_consensus_error(
 	return std::string();
 }
 
-void BlockChainState::calculate_consensus_values(const api::BlockHeader & prev_info, uint32_t &next_median_size,
+void BlockChainState::calculate_consensus_values(const api::BlockHeader &prev_info, uint32_t &next_median_size,
     Timestamp &next_median_timestamp, Timestamp &next_unlock_timestamp) const {
 	std::vector<uint32_t> last_blocks_sizes;
 	auto window = get_tip_segment(prev_info, m_currency.reward_blocks_window, true);
@@ -318,7 +377,8 @@ void BlockChainState::calculate_consensus_values(const api::BlockHeader & prev_i
 }
 
 void BlockChainState::tip_changed() {
-	calculate_consensus_values(read_header(get_tip_bid()), m_next_median_size, m_next_median_timestamp, m_next_unlock_timestamp);
+	calculate_consensus_values(
+	    read_header(get_tip_bid()), m_next_median_size, m_next_median_timestamp, m_next_unlock_timestamp);
 }
 
 bool BlockChainState::create_mining_block_template(BlockTemplate &b, const AccountPublicAddress &adr,
@@ -397,16 +457,14 @@ bool BlockChainState::create_mining_block_template(BlockTemplate &b, const Accou
 			assert(false);
 			continue;
 		}
-		size_t block_size_limit = max_total_size;
-		size_t tx_size          = seria::binary_size(tit->second);  // TODO - remember size in tx index
+		const size_t block_size_limit = max_total_size;
+		const size_t tx_size          = tit->second.binary_tx.size();
 		if (txs_size + tx_size > block_size_limit)
 			continue;
-		Amount single_fee = 0;
-		bool fatal        = false;
+		Amount single_fee = tit->second.fee;
 		BlockGlobalIndices global_indices;
-		std::string result =
-		    redo_transaction_get_error(false, tit->second, &memory_state, global_indices, true, single_fee,
-		        fatal);  // next_median_timestamp
+		const std::string result =
+		    redo_transaction_get_error(false, tit->second.tx, &memory_state, global_indices, true);
 		if (!result.empty()) {
 			m_log(logging::ERROR) << "Transaction " << common::pod_to_hex(tit->first)
 			                      << " is in pool, but could not be redone result=" << result << std::endl;
@@ -415,7 +473,7 @@ bool BlockChainState::create_mining_block_template(BlockTemplate &b, const Accou
 		txs_size += tx_size;
 		fee += single_fee;
 		b.transaction_hashes.emplace_back(tit->first);
-		m_mining_transactions.insert(std::make_pair(tit->first, std::make_pair(tit->second, height)));
+		m_mining_transactions.insert(std::make_pair(tit->first, std::make_pair(tit->second.binary_tx, height)));
 		m_log(logging::TRACE) << "Transaction " << common::pod_to_hex(tit->first) << " included to block template";
 	}
 
@@ -477,7 +535,7 @@ bool BlockChainState::create_mining_block_template(BlockTemplate &b, const Accou
 					continue;
 				}
 
-				m_log(logging::DEBUGGING)
+				m_log(logging::TRACE)
 				    << logging::BrightGreen << "Setting extra for block: " << b.base_transaction.extra.size()
 				    << ", try_count=" << try_count;
 			}
@@ -511,10 +569,10 @@ BroadcastAction BlockChainState::add_mined_block(
 	raw_block.transactions.reserve(block_template.transaction_hashes.size());
 	raw_block.transactions.clear();
 	for (const auto &tx_hash : block_template.transaction_hashes) {
-		auto tit              = m_memory_state_tx.find(tx_hash);
-		const Transaction *tx = nullptr;
+		auto tit                     = m_memory_state_tx.find(tx_hash);
+		const BinaryArray *binary_tx = nullptr;
 		if (tit != m_memory_state_tx.end())
-			tx = &(tit->second);
+			binary_tx = &(tit->second.binary_tx);
 		else {
 			auto tit2 = m_mining_transactions.find(tx_hash);
 			if (tit2 == m_mining_transactions.end()) {
@@ -522,9 +580,9 @@ BroadcastAction BlockChainState::add_mined_block(
 				                        << " is absent in transaction pool on submit mined block";
 				return BroadcastAction::NOTHING;
 			}
-			tx = &(tit2->second.first);
+			binary_tx = &(tit2->second.first);
 		}
-		raw_block.transactions.emplace_back(seria::to_binary(*tx));
+		raw_block.transactions.emplace_back(*binary_tx);
 	}
 	PreparedBlock pb(std::move(raw_block), nullptr);
 	raw_block = pb.raw_block;
@@ -539,132 +597,165 @@ void BlockChainState::clear_mining_transactions() const {
 			++tit;
 }
 
-static std::string validate_semantic(bool generating, const Transaction &tx, uint64_t &fee, bool check_output_key) {
-	if (tx.inputs.empty())
-		return "EMPTY_INPUTS";
-	uint64_t summary_output_amount = 0;
-	for (const auto &output : tx.outputs) {
-		if (output.amount == 0)
-			return "OUTPUT_ZERO_AMOUNT";
-		if (output.target.type() == typeid(KeyOutput)) {
-			const KeyOutput &key_output = boost::get<KeyOutput>(output.target);
-			if (check_output_key && !key_isvalid(key_output.key))
-				return "OUTPUT_INVALID_KEY";
-		} else
-			return "OUTPUT_UNKNOWN_TYPE";
-		if (std::numeric_limits<uint64_t>::max() - output.amount < summary_output_amount)
-			return "OUTPUTS_AMOUNT_OVERFLOW";
-		summary_output_amount += output.amount;
+Amount BlockChainState::minimum_pool_fee_per_byte(Hash &minimal_tid) const {
+	if (m_memory_state_fee_tx.empty()) {
+		minimal_tid = Hash();
+		return 0;
 	}
-	uint64_t summary_input_amount = 0;
-	std::unordered_set<KeyImage> ki;
-	std::set<std::pair<uint64_t, uint32_t>> outputs_usage;
-	for (const auto &input : tx.inputs) {
-		uint64_t amount = 0;
-		if (input.type() == typeid(CoinbaseInput)) {
-			if (!generating)
-				return "INPUT_UNKNOWN_TYPE";
-		} else if (input.type() == typeid(KeyInput)) {
-			if (generating)
-				return "INPUT_UNKNOWN_TYPE";
-			const KeyInput &in = boost::get<KeyInput>(input);
-			amount             = in.amount;
-			if (!ki.insert(in.key_image).second)
-				return "INPUT_IDENTICAL_KEYIMAGES";
-			if (in.output_indexes.empty())
-				return "INPUT_EMPTY_OUTPUT_USAGE";
-			// output_indexes are packed here, first is absolute, others are offsets to
-			// previous,
-			// so first can be zero, others can't
-			if (std::find(++std::begin(in.output_indexes), std::end(in.output_indexes), 0) !=
-			    std::end(in.output_indexes)) {
-				return "INPUT_IDENTICAL_OUTPUT_INDEXES";
-			}
-		} else
-			return "INPUT_UNKNOWN_TYPE";
-		if (std::numeric_limits<uint64_t>::max() - amount < summary_input_amount)
-			return "INPUTS_AMOUNT_OVERFLOW";
-		summary_input_amount += amount;
-	}
-	if (summary_output_amount > summary_input_amount && !generating)
-		return "WRONG_AMOUNT";
-	if (tx.signatures.size() != tx.inputs.size() && !generating)
-		return "INPUT_UNKNOWN_TYPE";
-	if (!tx.signatures.empty() && generating)
-		return "INPUT_UNKNOWN_TYPE";
-	fee = summary_input_amount - summary_output_amount;
-	return std::string();
+	auto be = m_memory_state_fee_tx.begin();
+	if (be->second.empty())
+		throw std::logic_error("Invariant dead, memory_state_fee_tx empty set");
+	minimal_tid = *(be->second.begin());
+	return be->first;
 }
 
-BroadcastAction BlockChainState::add_transaction(const Transaction &tx, Timestamp now) {
-	auto thash            = get_transaction_hash(tx);
-	Timestamp g_timestamp = read_first_seen_timestamp(thash);
-	if (g_timestamp != 0 && now > g_timestamp + m_config.mempool_tx_live_time)
-		return BroadcastAction::NOTHING;
-	return add_transaction(thash, tx, get_tip_height() + 1, get_tip().timestamp, MAX_POOL_COMPLEXITY, true);
+void BlockChainState::on_reorganization(
+    const std::map<Hash, std::pair<Transaction, BinaryArray>> &undone_transactions, bool undone_blocks) {
+	// TODO - remove/add only those transactions that could have their referenced output keys changed
+	if (undone_blocks) {
+		PoolTransMap old_memory_state_tx;
+		std::swap(old_memory_state_tx, m_memory_state_tx);
+		m_memory_state_ki_tx.clear();
+		m_memory_state_fee_tx.clear();
+		m_memory_state_total_size = 0;
+		for (auto &&msf : old_memory_state_tx) {
+			add_transaction(
+			    msf.first, msf.second.tx, msf.second.binary_tx, get_tip_height() + 1, get_tip().timestamp, true);
+		}
+	}
+	for (auto ud : undone_transactions) {
+		add_transaction(ud.first, ud.second.first, ud.second.second, get_tip_height() + 1, get_tip().timestamp, true);
+	}
+	m_tx_pool_version = 2;  // add_transaction will erroneously increase
 }
 
-BroadcastAction BlockChainState::add_transaction(const Hash &tid, const Transaction &tx, Height unlock_height,
-    Timestamp unlock_timestamp, size_t max_pool_complexity, bool check_sigs) {
-	const size_t my_size = seria::binary_size(tx);
+AddTransactionResult BlockChainState::add_transaction(
+    const Hash &tid, const Transaction &tx, const BinaryArray &binary_tx, Timestamp now) {
+	//	Timestamp g_timestamp = read_first_seen_timestamp(tid);
+	//	if (g_timestamp != 0 && now > g_timestamp + m_config.mempool_tx_live_time)
+	//		return AddTransactionResult::TOO_OLD;
+	return add_transaction(tid, tx, binary_tx, get_tip_height() + 1, get_tip().timestamp, true);
+}
+
+AddTransactionResult BlockChainState::add_transaction(const Hash &tid, const Transaction &tx,
+    const BinaryArray &binary_tx, Height unlock_height, Timestamp unlock_timestamp, bool check_sigs) {
 	if (m_memory_state_tx.count(tid) != 0)
-		return BroadcastAction::NOTHING;
-	DeltaState memory_state(unlock_height, unlock_timestamp, this);  // timestamp_unlock after fork
-
-	Amount my_fee = 0;
-	bool fatal    = false;
-	BlockGlobalIndices global_indices;
-	std::string result = redo_transaction_get_error(false, tx, &memory_state, global_indices, check_sigs, my_fee,
-	    fatal);  // next_median_timestamp
-	if (!result.empty()) {
-		return BroadcastAction::NOTHING;  // TODO - ban if fatal
+		return AddTransactionResult::ALREADY_IN_POOL;
+	//	std::cout << "add_transaction " << common::pod_to_hex(tid) << std::endl;
+	const size_t my_size         = binary_tx.size();
+	const Amount my_fee          = bytecoin::get_tx_fee(tx);
+	const Amount my_fee_per_byte = my_fee / my_size;
+	Hash minimal_tid;
+	Amount minimal_fee = minimum_pool_fee_per_byte(minimal_tid);
+	// Invariant is if 1 byte of cheapest transaction fits, then all transaction fits
+	if (m_memory_state_total_size >= MAX_POOL_SIZE && my_fee_per_byte < minimal_fee)
+		return AddTransactionResult::INCREASE_FEE;
+	// Deterministic behaviour here and below so tx pools have tendency to stay the same
+	if (m_memory_state_total_size >= MAX_POOL_SIZE && my_fee_per_byte == minimal_fee && tid < minimal_tid)
+		return AddTransactionResult::INCREASE_FEE;
+	for (const auto &input : tx.inputs) {
+		if (input.type() == typeid(KeyInput)) {
+			const KeyInput &in = boost::get<KeyInput>(input);
+			auto tit           = m_memory_state_ki_tx.find(in.key_image);
+			if (tit == m_memory_state_ki_tx.end())
+				continue;
+			const PoolTransaction &other_tx = m_memory_state_tx.at(tit->second);
+			const Amount other_fee_per_byte = other_tx.fee_per_byte();
+			if (my_fee_per_byte < other_fee_per_byte)
+				return AddTransactionResult::INCREASE_FEE;
+			if (my_fee_per_byte == other_fee_per_byte && tid < tit->second)
+				return AddTransactionResult::INCREASE_FEE;
+			break;  // Can displace another transaction from the pool, Will have to make heavy-lifting for this tx
+		}
 	}
+	for (const auto &input : tx.inputs) {
+		if (input.type() == typeid(KeyInput)) {
+			const KeyInput &in = boost::get<KeyInput>(input);
+			if (read_keyimage(in.key_image)) {
+				//				std::cout << common::pod_to_hex(tid) << " " << common::pod_to_hex(in.key_image) <<
+				//std::endl;
+				return AddTransactionResult::OUTPUT_ALREADY_SPENT;  // Already spent in main chain
+			}
+		}
+	}
+	Amount my_fee3                    = 0;
+	const std::string validate_result = validate_semantic(false, tx, my_fee3, check_sigs);
+	if (!validate_result.empty()) {
+		m_log(logging::ERROR) << "add_transaction validation failed " << validate_result << " in transaction "
+		                      << common::pod_to_hex(tid) << std::endl;
+		return AddTransactionResult::BAN;
+	}
+	DeltaState memory_state(unlock_height, unlock_timestamp, this);
+	BlockGlobalIndices global_indices;
+	const std::string redo_result = redo_transaction_get_error(false, tx, &memory_state, global_indices, check_sigs);
+	if (!redo_result.empty()) {
+		//		std::cout << "Addding anyway for test " << std::endl;
+		m_log(logging::TRACE) << "add_transaction redo failed " << redo_result << " in transaction "
+		                      << common::pod_to_hex(tid) << std::endl;
+		return AddTransactionResult::FAILED_TO_REDO;  // Not a ban because reorg can change indices
+	}
+	if (my_fee != my_fee3)
+		m_log(logging::ERROR) << "Inconsistent fees " << my_fee << ", " << my_fee3 << " in transaction "
+		                      << common::pod_to_hex(tid) << std::endl;
 	// Only good transactions are recorded in tx_first_seen, because they require
 	// space there
 	update_first_seen_timestamp(tid, unlock_timestamp);
-	const Amount my_fee_per_byte = my_fee / my_size;
 	for (auto &&ki : memory_state.get_keyimages()) {
 		auto tit = m_memory_state_ki_tx.find(ki.first);
 		if (tit == m_memory_state_ki_tx.end())
 			continue;
-		const Transaction &other_tx     = m_memory_state_tx.at(tit->second);
-		const Amount other_fee          = bytecoin::get_tx_fee(other_tx);  // TODO - optimize get fee
-		const size_t other_size         = seria::binary_size(other_tx);
-		const Amount other_fee_per_byte = other_fee / other_size;
+		const PoolTransaction &other_tx = m_memory_state_tx.at(tit->second);
+		const Amount other_fee_per_byte = other_tx.fee_per_byte();
 		if (my_fee_per_byte < other_fee_per_byte)
-			return BroadcastAction::NOTHING;
-		if (my_fee_per_byte == other_fee_per_byte &&
-		    tid < tit->second)  // Deterministic behaviour so tx pools have tendency
-			                    // to stay the same
-			return BroadcastAction::NOTHING;
-		Hash rhash = tit->second;
-		remove_from_pool(rhash);
+			return AddTransactionResult::INCREASE_FEE;  // Never because checked above
+		if (my_fee_per_byte == other_fee_per_byte && tid < tit->second)
+			return AddTransactionResult::INCREASE_FEE;  // Never because checked above
+		remove_from_pool(tit->second);
 	}
 	bool all_inserted = true;
 	for (auto &&ki : memory_state.get_keyimages()) {
 		if (!m_memory_state_ki_tx.insert(std::make_pair(ki.first, tid)).second)
 			all_inserted = false;
 	}
-	if (!m_memory_state_tx.insert(std::make_pair(tid, tx)).second)
+	if (!m_memory_state_tx.insert(std::make_pair(tid, PoolTransaction(tx, binary_tx, my_fee))).second)
 		all_inserted = false;
 	if (!m_memory_state_fee_tx[my_fee_per_byte].insert(tid).second)
 		all_inserted = false;
 	if (!all_inserted)  // insert all before throw
 		throw std::logic_error("Invariant dead, memory_state_fee_tx empty");
-	max_pool_complexity = std::max(max_pool_complexity, m_memory_state_total_complexity);
-	// We do not reset pool complexity immediately after undo_block
-	m_memory_state_total_complexity += get_complexity(tx);
-	while (m_memory_state_total_complexity > max_pool_complexity) {
+	m_memory_state_total_size += my_size;
+	while (m_memory_state_total_size > MAX_POOL_SIZE) {
 		if (m_memory_state_fee_tx.empty())
 			throw std::logic_error("Invariant dead, memory_state_fee_tx empty");
 		auto &be = m_memory_state_fee_tx.begin()->second;
 		if (be.empty())
 			throw std::logic_error("Invariant dead, memory_state_fee_tx empty set");
-		Hash rhash = *(be.begin());
+		Hash rhash                        = *(be.begin());
+		const PoolTransaction &minimal_tx = m_memory_state_tx.at(rhash);
+		if (m_memory_state_total_size < MAX_POOL_SIZE + minimal_tx.binary_tx.size())
+			break;  // Removing would diminish pool below max size
 		remove_from_pool(rhash);
 	}
+	auto min_size = m_memory_state_fee_tx.empty() || m_memory_state_fee_tx.begin()->second.empty()
+	                    ? 0
+	                    : m_memory_state_tx.at(*(m_memory_state_fee_tx.begin()->second.begin())).binary_tx.size();
+	auto min_fee_per_byte = m_memory_state_fee_tx.empty() || m_memory_state_fee_tx.begin()->second.empty()
+	                            ? 0
+	                            : m_memory_state_fee_tx.begin()->first;
+	//	if( m_memory_state_total_size-min_size >= MAX_POOL_SIZE)
+	//		std::cout << "Aha" << std::endl;
+	m_log(logging::INFO) << "Added transaction with hash=" << common::pod_to_hex(tid) << " size=" << my_size
+	                     << " fee=" << my_fee << " fee/byte=" << my_fee_per_byte << " now pool has size=("
+	                     << m_memory_state_total_size - min_size << "+" << min_size << ")=" << m_memory_state_total_size
+	                     << " count=" << m_memory_state_tx.size() << " min fee/byte=" << min_fee_per_byte << std::endl;
+	//	for(auto && bb : m_memory_state_fee_tx)
+	//		for(auto ff : bb.second){
+	//			const PoolTransaction &other_tx = m_memory_state_tx.at(ff);
+	//			std::cout << "\t" << other_tx.fee_per_byte() << "\t" << other_tx.binary_tx.size() << "\t" <<
+	//common::pod_to_hex(ff) << std::endl;
+	//		}
 	m_tx_pool_version += 1;
-	return BroadcastAction::BROADCAST_ALL;
+	return AddTransactionResult::BROADCAST_ALL;
 }
 
 void BlockChainState::remove_from_pool(Hash tid) {
@@ -672,7 +763,7 @@ void BlockChainState::remove_from_pool(Hash tid) {
 	if (tit == m_memory_state_tx.end())
 		return;
 	bool all_erased       = true;
-	const Transaction &tx = tit->second;
+	const Transaction &tx = tit->second.tx;
 	for (const auto &input : tx.inputs) {
 		if (input.type() == typeid(KeyInput)) {
 			const KeyInput &in = boost::get<KeyInput>(input);
@@ -680,19 +771,28 @@ void BlockChainState::remove_from_pool(Hash tid) {
 				all_erased = false;
 		}
 	}
-	const Amount my_fee          = bytecoin::get_tx_fee(tx);  // TODO - optimize get fee
-	const size_t my_size         = seria::binary_size(tx);
-	const Amount my_fee_per_byte = my_fee / my_size;
+	const size_t my_size         = tit->second.binary_tx.size();
+	const Amount my_fee_per_byte = tit->second.fee_per_byte();
 	if (m_memory_state_fee_tx[my_fee_per_byte].erase(tid) != 1)
 		all_erased = false;
 	if (m_memory_state_fee_tx[my_fee_per_byte].empty())
 		m_memory_state_fee_tx.erase(my_fee_per_byte);
-	m_memory_state_total_complexity -= get_complexity(tx);
+	m_memory_state_total_size -= my_size;
 	m_memory_state_tx.erase(tit);
 	if (!all_erased)
 		throw std::logic_error("Invariant dead, remove_memory_pool failed to erase everything");
 	// We do not increment m_tx_pool_version, because removing tx from pool is
 	// always followed by reset or increment
+	auto min_size = m_memory_state_fee_tx.empty() || m_memory_state_fee_tx.begin()->second.empty()
+	                    ? 0
+	                    : m_memory_state_tx.at(*(m_memory_state_fee_tx.begin()->second.begin())).binary_tx.size();
+	auto min_fee_per_byte = m_memory_state_fee_tx.empty() || m_memory_state_fee_tx.begin()->second.empty()
+	                            ? 0
+	                            : m_memory_state_fee_tx.begin()->first;
+	m_log(logging::INFO) << "Removed transaction with h=" << common::pod_to_hex(tid) << " s=" << my_size
+	                     << " now pool has s=(" << m_memory_state_total_size - min_size << "+" << min_size << "="
+	                     << m_memory_state_total_size << ") count=" << m_memory_state_tx.size()
+	                     << " min f/b=" << min_fee_per_byte << std::endl;
 }
 
 Timestamp BlockChainState::read_first_seen_timestamp(const Hash &tid) const {
@@ -837,14 +937,10 @@ bool RingCheckerMulticore::signatures_valid() const {
 	}
 }
 
+// Called only on transactions which passed validate_semantic()
 std::string BlockChainState::redo_transaction_get_error(bool generating, const Transaction &transaction,
-    DeltaState *delta_state, BlockGlobalIndices &global_indices, bool check_sigs, Amount &fee, bool &fatal) const {
+    DeltaState *delta_state, BlockGlobalIndices &global_indices, bool check_sigs) const {
 	const bool check_outputs = check_sigs;
-	std::string error        = validate_semantic(generating, transaction, fee, check_outputs);
-	fatal                    = false;  // for now we do not distinguish between fatal and non-fatal
-	                                   // errors
-	if (!error.empty())
-		return error;
 	Hash tx_prefix_hash;
 	if (check_sigs)
 		tx_prefix_hash = get_transaction_prefix_hash(transaction);
@@ -855,15 +951,14 @@ std::string BlockChainState::redo_transaction_get_error(bool generating, const T
 
 	size_t input_index = 0;
 	for (const auto &input : transaction.inputs) {
-		if (input.type() == typeid(CoinbaseInput)) {
-		} else if (input.type() == typeid(KeyInput)) {
+		if (input.type() == typeid(KeyInput)) {
 			const KeyInput &in = boost::get<KeyInput>(input);
 
 			if (check_sigs || check_outputs) {
 				if (tx_delta.read_keyimage(in.key_image))
 					return "INPUT_KEYIMAGE_ALREADY_SPENT";
 				if (in.output_indexes.empty())
-					return "INPUT_UNKNOWN_TYPE";
+					return "INPUT_UNKNOWN_TYPE";  // Never - checked in validate_semantic
 				std::vector<uint32_t> global_indexes(in.output_indexes.size());
 				global_indexes[0] = in.output_indexes[0];
 				for (size_t i = 1; i < in.output_indexes.size(); ++i) {
@@ -892,8 +987,7 @@ std::string BlockChainState::redo_transaction_get_error(bool generating, const T
 				}
 			}
 			tx_delta.store_keyimage(in.key_image, delta_state->get_block_height());
-		} else
-			return "INPUT_UNKNOWN_TYPE";
+		}
 		input_index++;
 	}
 	for (const auto &output : transaction.outputs) {
@@ -902,11 +996,10 @@ std::string BlockChainState::redo_transaction_get_error(bool generating, const T
 			auto global_index           = tx_delta.push_amount_output(output.amount, transaction.unlock_time, 0, 0,
 			    key_output.key);  // DeltaState ignores unlock point
 			my_indices.push_back(global_index);
-		} else
-			return "OUTPUT_UNKNOWN_TYPE";
+		}
 	}
-	tx_delta.apply(delta_state);  // delta_state might be memory pool, we protect
-	                              // it from half-modification
+	tx_delta.apply(delta_state);
+	// delta_state might be memory pool, we protect it from half-modification
 	return std::string();
 }
 
@@ -928,19 +1021,14 @@ bool BlockChainState::redo_block(const Block &block,
     const api::BlockHeader &info,
     DeltaState *delta_state,
     BlockGlobalIndices &global_indices) const {
-	// We will need info.timestamp_unlock after first hard fork
-	Amount fee = 0;
-	bool fatal = false;
 	std::string result =
-	    redo_transaction_get_error(true, block.header.base_transaction, delta_state, global_indices, false, fee, fatal);
+	    redo_transaction_get_error(true, block.header.base_transaction, delta_state, global_indices, false);
 	if (!result.empty())
 		return false;
-	SignedAmount sum_fee = 0;
 	for (auto tit = block.transactions.begin(); tit != block.transactions.end(); ++tit) {
-		std::string result = redo_transaction_get_error(false, *tit, delta_state, global_indices, false, fee, fatal);
+		std::string result = redo_transaction_get_error(false, *tit, delta_state, global_indices, false);
 		if (!result.empty())
 			return false;
-		sum_fee += fee;
 	}
 	return true;
 }
@@ -956,7 +1044,7 @@ bool BlockChainState::redo_block(const Hash &bhash, const Block &block, const ap
 		return false;
 	if (check_sigs && !ring_checker.signatures_valid())
 		return false;
-	delta.apply(this);
+	delta.apply(this);  // Will remove from pool by keyimage
 	m_tx_pool_version = 2;
 
 	auto key =
@@ -965,7 +1053,6 @@ bool BlockChainState::redo_block(const Hash &bhash, const Block &block, const ap
 	m_db.put(key, ba, true);
 
 	for (auto th : block.header.transaction_hashes) {
-		remove_from_pool(th);
 		update_first_seen_timestamp(th, 0);
 	}
 	auto now = std::chrono::steady_clock::now();
@@ -975,16 +1062,16 @@ bool BlockChainState::redo_block(const Hash &bhash, const Block &block, const ap
 		          << " bid=" << common::pod_to_hex(bhash) << std::endl;
 	}
 	m_log(logging::TRACE) << "redo_block {" << block.transactions.size() << "} height=" << info.height
-		          << " bid=" << common::pod_to_hex(bhash) << std::endl;
+	                      << " bid=" << common::pod_to_hex(bhash) << std::endl;
 	return true;
 }
 
 void BlockChainState::undo_block(const Hash &bhash, const Block &block, Height height) {
-//	if (height % 100 == 0)
-//		std::cout << "undo_block height=" << height << " bid=" << common::pod_to_hex(bhash)
-//		          << " new tip_bid=" << common::pod_to_hex(block.header.previous_block_hash) << std::endl;
+	//	if (height % 100 == 0)
+	//		std::cout << "undo_block height=" << height << " bid=" << common::pod_to_hex(bhash)
+	//		          << " new tip_bid=" << common::pod_to_hex(block.header.previous_block_hash) << std::endl;
 	m_log(logging::INFO) << "undo_block height=" << height << " bid=" << common::pod_to_hex(bhash)
-		          << " new tip_bid=" << common::pod_to_hex(block.header.previous_block_hash) << std::endl;
+	                     << " new tip_bid=" << common::pod_to_hex(block.header.previous_block_hash) << std::endl;
 	for (auto tit = block.transactions.rbegin(); tit != block.transactions.rend(); ++tit) {
 		undo_transaction(this, height, *tit);
 	}
@@ -993,21 +1080,6 @@ void BlockChainState::undo_block(const Hash &bhash, const Block &block, Height h
 	auto key =
 	    BLOCK_GLOBAL_INDICES_PREFIX + DB::to_binary_key(bhash.data, sizeof(bhash.data)) + BLOCK_GLOBAL_INDICES_SUFFIX;
 	m_db.del(key, true);
-
-	// Now put transactions to pool
-	for (auto tit = block.transactions.begin(); tit != block.transactions.end(); ++tit) {
-		if (m_memory_state_total_complexity < MAX_POOL_COMPLEXITY * 2) {
-			auto thash = get_transaction_hash(*tit);
-			// undo is rare, otherwise we'd optimize to use
-			// block.header.transaction_hashes
-			add_transaction(thash, *tit, height, get_tip().timestamp + m_currency.block_future_time_limit * 2,
-			    std::numeric_limits<size_t>::max(), false);
-			// we use increased timestamp so that just unlocked transactions will not
-			// be thrown out of the pool
-			// we set no limit on complexity to overshoot MAX_POOL_COMPLEXITY * 2 and
-			// stop doing work in case of large undo
-		}
-	}
 }
 
 bool BlockChainState::read_block_output_global_indices(const Hash &bid, BlockGlobalIndices &indices) const {
@@ -1058,6 +1130,10 @@ std::vector<api::Output> BlockChainState::get_outputs_by_amount(
 void BlockChainState::store_keyimage(const KeyImage &keyimage, Height height) {
 	auto key = KEYIMAGE_PREFIX + DB::to_binary_key(keyimage.data, sizeof(keyimage.data));
 	m_db.put(key, std::string(), true);
+	auto tit = m_memory_state_ki_tx.find(keyimage);
+	if (tit == m_memory_state_ki_tx.end())
+		return;
+	remove_from_pool(tit->second);
 }
 
 void BlockChainState::delete_keyimage(const KeyImage &keyimage) {
@@ -1149,4 +1225,52 @@ bool BlockChainState::read_amount_output(
 	unlock_time = was.first;
 	pk          = was.second;
 	return true;
+}
+
+void BlockChainState::test_print_outputs() {
+	Amount previous_amount     = (Amount)-1;
+	uint32_t next_global_index = 0;
+	int total_counter          = 0;
+	std::map<Amount, uint32_t> coins;
+	for (DB::Cursor cur = m_db.begin(AMOUNT_OUTPUT_PREFIX); !cur.end(); cur.next()) {
+		const char *be        = cur.get_suffix().data();
+		const char *en        = be + cur.get_suffix().size();
+		auto amount           = common::read_varint_sqlite4(be, en);
+		uint32_t global_index = boost::lexical_cast<uint32_t>(common::read_varint_sqlite4(be, en));
+		if (be != en)
+			std::cout << "Excess value bytes for amount=" << amount << " global_index=" << global_index << std::endl;
+		if (amount != previous_amount) {
+			if (previous_amount != (Amount)-1) {
+				if (!coins.insert(std::make_pair(previous_amount, next_global_index)).second) {
+					std::cout << "Duplicate amount for previous_amount=" << previous_amount
+					          << " next_global_index=" << next_global_index << std::endl;
+				}
+			}
+			previous_amount   = amount;
+			next_global_index = 0;
+		}
+		if (global_index != next_global_index) {
+			std::cout << "Bad output index for amount=" << amount << " global_index=" << global_index << std::endl;
+		}
+		next_global_index += 1;
+		if (++total_counter % 2000000 == 0)
+			std::cout << "Working on amount=" << amount << " global_index=" << global_index << std::endl;
+	}
+	total_counter = 0;
+	std::cout << "Total coins=" << total_counter << " total stacks=" << coins.size() << std::endl;
+	for (auto &&co : coins) {
+		auto total_count = next_global_index_for_amount(co.first);
+		if (total_count != co.second)
+			std::cout << "Wrong next_global_index_for_amount amount=" << co.first << " total_count=" << total_count
+			          << " should be " << co.second << std::endl;
+		for (uint32_t i = 0; i != total_count; ++i) {
+			api::Output item;
+			item.amount       = co.first;
+			item.global_index = i;
+			if (!read_amount_output(co.first, i, item.unlock_time, item.public_key))
+				std::cout << "Failed to read amount=" << co.first << " global_index=" << i << std::endl;
+			if (++total_counter % 1000000 == 0)
+				std::cout << "Working on amount=" << co.first << " global_index=" << i << std::endl;
+		}
+	}
 }

@@ -52,7 +52,7 @@ void test_blockchain(common::CommandLine &cmd) {
 	bytecoin::BlockChain::DB::delete_db(config.data_folder + "/blockchain");
 	Currency currency(config.is_testnet);
 	BlockChainState block_chain(logger, config, currency);
-	block_chain.test_print_structure();
+	block_chain.test_print_structure(0);
 	AccountPublicAddress address;
 	crypto::CryptoNightContext cryptoContext;
 	if (!currency.parse_account_address_string(
@@ -87,7 +87,7 @@ void test_blockchain(common::CommandLine &cmd) {
 		          << " bid=" << common::pod_to_hex(info.hash) << std::endl;
 	}
 	// Mine alternatives
-	block_chain.test_print_structure();
+	block_chain.test_print_structure(0);
 	for (int i = 0; i != 100; ++i) {
 		size_t ha             = crypto::rand<size_t>() % templates.size();
 		BlockTemplate block   = templates.at(ha);
@@ -108,10 +108,10 @@ void test_blockchain(common::CommandLine &cmd) {
 		          << " bid=" << common::pod_to_hex(info.hash) << std::endl;
 	}
 	block_chain.db_commit();
-	block_chain.test_print_structure();
+	block_chain.test_print_structure(0);
 	for (int i = 0; i != 50; ++i) {
 		block_chain.test_prune_oldest();
-		block_chain.test_print_structure();
+		block_chain.test_print_structure(0);
 	}
 }
 

@@ -25,7 +25,6 @@ Usage:
 Options:
   --export-blocks=<directory>          Export blockchain into specified directory as blocks.bin and blockindexes.bin, then exit. This overwrites existing files.
   --allow-local-ip                     Allow local ip add to peer list, mostly in debug purposes.
-  --testnet                            Configure for testnet.
   --p2p-bind-address=<ip:port>         Interface and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>           External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
   --bytecoind-bind-address=<ip:port>   Interface and port for bytecoind RPC [default: 127.0.0.1:8081].
@@ -72,7 +71,6 @@ int main(int argc, const char *argv[]) try {
 	logManager.configure_default(config.get_data_folder("logs"), "bytecoind-");
 
 	BlockChainState block_chain(logManager, config, currency);
-//	block_chain.test_undo_everything();
 
 	if (!export_blocks.empty()) {
 		if (!LegacyBlockChainWriter::export_blockchain2(export_blocks, block_chain))

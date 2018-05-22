@@ -87,7 +87,7 @@ public:
 	    const std::unordered_map<PublicKey, WalletRecord> &wallet_records, TransactionBuilder &builder,
 	    uint32_t anonymity, api::bytecoind::GetRandomOutputs::Response &&ra_response);
 
-	bool select_optimal_outputs(Height block_height, Timestamp block_time, Height confirmed_height,
+	std::string select_optimal_outputs(Height block_height, Timestamp block_time, Height confirmed_height,
 	    size_t effective_median_size, size_t anonymity, Amount total_amount, size_t total_outputs, Amount fee_per_byte,
 	    std::string optimization_level, Amount &change);
 	Amount get_used_total() const { return m_used_total; }

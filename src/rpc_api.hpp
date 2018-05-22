@@ -307,11 +307,17 @@ struct CreateTransaction {
 		bool save_history = true;  // If true, wallet will save encrypted transaction data (~100 bytes per used address)
 		                           // in <wallet_file>.history/. With this data it is possible to generate
 		                           // public-checkable proofs of sending funds to specific addresses.
+		std::vector<Hash>
+		    prevent_conflict_with_transactions;  // Experimental API for guaranteed payouts under any circumstances
 	};
 	struct Response {
-		BinaryArray binary_transaction;   // Empty if error
-		api::Transaction transaction;     // contains only fee, hash, blockIndex and anonymity for now...
-		bool save_history_error = false;  // Read-only media
+		BinaryArray binary_transaction;  // Empty if error
+		api::Transaction
+		    transaction;  // block_hash will be empty, block_height set to current pool height (may change later)
+		bool save_history_error = false;          // When wallet on read-only media. Most clients should ignore this
+		std::vector<Hash> transactions_required;  // Works together with prevent_conflict_with_transactions
+		// If not empty, you should resend those transactions before trying create_transaction again to prevent
+		// conflicts
 	};
 };
 
@@ -388,9 +394,9 @@ struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoin
 	};
 	struct SyncBlock {  // Signatures are checked by bytecoind so usually they are of no interest
 		api::BlockHeader header;
-		bytecoin::BlockTemplate bc_header;
+		bytecoin::BlockTemplate raw_header;
 		// the only method returning actual BlockHeader from blockchain, not api::BlockHeader
-		std::vector<bytecoin::TransactionPrefix> bc_transactions;
+		std::vector<bytecoin::TransactionPrefix> raw_transactions;
 		// the only method returning actual Transaction from blockchain, not api::Transaction
 		Hash base_transaction_hash;                         // BlockTemplate does not contain it
 		std::vector<std::vector<uint32_t>> global_indices;  // for each transaction
@@ -402,6 +408,19 @@ struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoin
 	};
 };
 
+struct GetRawTransaction {
+	static std::string method() { return "get_raw_transaction"; }
+	struct Request {
+		Hash hash;
+	};
+	struct Response {
+		api::Transaction transaction;
+		// only hash, block_height and block_hash returned in transaction
+		// empty transaction with no hash returned if not in blockchain/mempool
+		bytecoin::TransactionPrefix raw_transaction;
+	};
+};
+
 // Signature of this method will stabilize to the end of beta
 struct SyncMemPool {  // Used by walletd sync process
 	static std::string method() { return "sync_mem_pool"; }
@@ -410,10 +429,10 @@ struct SyncMemPool {  // Used by walletd sync process
 		std::vector<Hash> known_hashes;  // Should be sent sorted
 	};
 	struct Response {
-		std::vector<Hash> removed_hashes;                                // Hashes no more in pool
-		std::vector<bytecoin::TransactionPrefix> added_bc_transactions;  // New raw transactions in pool
+		std::vector<Hash> removed_hashes;                                 // Hashes no more in pool
+		std::vector<bytecoin::TransactionPrefix> added_raw_transactions;  // New raw transactions in pool
 		std::vector<api::Transaction> added_transactions;
-		// binary version of this method returns only hash and timestamp here
+		// binary version of this method returns only hash, timestamp and fee here
 		GetStatus::Response status;  // We save roundtrip during sync by also sending status here
 	};
 };
@@ -442,10 +461,7 @@ struct CheckSendProof {
 	struct Request {
 		std::string send_proof;
 	};
-
-	struct Response {
-		std::string validation_error;  // empty when sucessfully validated
-	};
+	typedef EmptyStruct Response;  // All errors are reported as json rpc errors
 };
 
 // Methods below are used by miners
@@ -561,6 +577,8 @@ void ser_members(bytecoin::api::bytecoind::GetStatus::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::SyncBlocks::Request &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::SyncBlocks::SyncBlock &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::SyncBlocks::Response &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetRawTransaction::Request &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetRawTransaction::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::SyncMemPool::Request &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::SyncMemPool::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetRandomOutputs::Request &v, ISeria &s);
@@ -568,7 +586,7 @@ void ser_members(bytecoin::api::bytecoind::GetRandomOutputs::Response &v, ISeria
 void ser_members(bytecoin::api::bytecoind::SendTransaction::Request &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::SendTransaction::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::CheckSendProof::Request &v, ISeria &s);
-void ser_members(bytecoin::api::bytecoind::CheckSendProof::Response &v, ISeria &s);
+// void ser_members(bytecoin::api::bytecoind::CheckSendProof::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetBlockTemplate::Request &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetBlockTemplate::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetCurrencyId::Response &v, ISeria &s);

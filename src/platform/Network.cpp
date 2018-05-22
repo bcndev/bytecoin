@@ -305,6 +305,10 @@ void TCPSocket::write_callback(CFWriteStreamRef stream, CFStreamEventType event,
 namespace ssl = boost::asio::ssl;
 typedef ssl::stream<boost::asio::ip::tcp::socket> SSLSocket;
 
+// We need a timer fix from 1.62 to prevent (very rare) segfaults in asio::detail::timer_queue::remove_timer
+static_assert(BOOST_VERSION / 100000 == 1 && ((BOOST_VERSION / 100) % 1000) >= 62,
+    "You need at least boost 1.62, you are compiling with " BOOST_LIB_VERSION);
+
 #ifdef _WIN32
 #include <Wincrypt.h>
 #pragma comment(lib, "libcrypto.lib")  // OpenSSL library
@@ -426,9 +430,23 @@ void EventLoop::wake() {
 	io_service.post([](void) {});
 }
 
+// static bool ispowerof2(unsigned int x) {
+//    return x && !(x & (x - 1));
+//}
+// static unsigned global_timer_impl_counter = 0;
+
 class Timer::Impl {
 public:
-	explicit Impl(Timer *owner) : owner(owner), pending_wait(false), timer(EventLoop::current()->io()) {}
+	explicit Impl(Timer *owner) : owner(owner), pending_wait(false), timer(EventLoop::current()->io()) {
+		//		global_timer_impl_counter += 1;
+		//		if( ispowerof2(global_timer_impl_counter) )
+		//		    std::cout << "++Timer::Impl::counter=" << global_timer_impl_counter << std::endl;
+	}
+	~Impl() {
+		//      if( ispowerof2(global_timer_impl_counter) )
+		//            std::cout << "--Timer::Impl::counter=" << global_timer_impl_counter << std::endl;
+		//		global_timer_impl_counter -= 1;
+	}
 	Timer *owner;
 	bool pending_wait;
 	boost::asio::deadline_timer timer;
@@ -438,6 +456,8 @@ public:
 		if (pending_wait) {
 			owner = nullptr;
 			was_owner->impl.reset();
+			boost::system::error_code ec;
+			timer.cancel(ec);  // Prevent exceptions
 		}
 	}
 	void handle_timeout(const boost::system::error_code &e) {
@@ -840,8 +860,10 @@ bool TCPAcceptor::accept(TCPSocket &socket, std::string &accepted_addr) {
 	auto endpoint = socket.impl->socket.remote_endpoint(ec);
 #endif
 
-	if (ec)
+	if (ec) {
+		impl->start_accept();
 		return false;
+	}
 	accepted_addr = endpoint.address().to_string();
 #if platform_USE_SSL
 	if (impl->ssl) {
@@ -861,3 +883,34 @@ bool TCPAcceptor::accept(TCPSocket &socket, std::string &accepted_addr) {
 }
 
 #endif  // #if TARGET_OS_IPHONE
+
+// Code to stress-test timers
+// std::vector<std::unique_ptr<platform::Timer>> timers;
+//
+// void timers_handler(size_t pos){
+//	std::cout << "Fired " << pos << std::endl;
+//	size_t rand1 = crypto::rand<uint64_t>() % timers.size();
+//	size_t rand2 = crypto::rand<uint64_t>() % timers.size();
+//	size_t rand3 = crypto::rand<uint64_t>() % timers.size();
+//	size_t rand4 = crypto::rand<uint64_t>() % timers.size();
+//	float rand_t = (crypto::rand<uint64_t>() % 5000) / 1000.0f;
+//	timers.at(rand1)->cancel();
+//	timers.at(rand2)->cancel();
+//	timers.at(rand3)->once(rand_t);
+//	timers.at(rand3)->once(rand_t);
+//	timers.at(rand4)->once(rand_t + 0.5f);
+//}
+//
+// static int test_timers(){
+//	boost::asio::io_service io;
+//	platform::EventLoop run_loop(io);
+//
+//	for(size_t i = 0; i != 50000; ++i)
+//		timers.push_back( std::make_unique<platform::Timer>(std::bind(&timers_handler, i)) );
+//	timers.at(0)->once(1);
+//
+//	while (!io.stopped()) {
+//		io.run_one();
+//	}
+//	return 0;
+//}

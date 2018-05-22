@@ -43,6 +43,8 @@ public:
 	    api::bytecoind::SyncBlocks::Request &&, api::bytecoind::SyncBlocks::Response &);
 	bool on_sync_mempool3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::SyncMemPool::Request &&, api::bytecoind::SyncMemPool::Response &);
+	bool on_get_raw_transaction3(http::Client *, http::RequestData &&, json_rpc::Request &&,
+	    api::bytecoind::GetRawTransaction::Request &&, api::bytecoind::GetRawTransaction::Response &);
 
 	api::bytecoind::GetStatus::Response create_status_response3() const;
 	// json_rpc_node
@@ -203,7 +205,36 @@ protected:
 		void on_msg_notify_request_objects(P2PClientBytecoin *, const NOTIFY_RESPONSE_GET_OBJECTS::request &);
 		void on_msg_timed_sync(const CORE_SYNC_DATA &payload_data);
 	};
+	/*	class DownloaderV1 {  // sync&download from legacy v1 clients
+	        Node *const m_node;
+	        BlockChainState &m_block_chain;
 
+	        size_t m_ask_blocks_count;
+	        std::map<P2PClientBytecoin *, size_t> m_good_clients;
+	        P2PClientBytecoin *m_sync_client = nullptr;
+	        platform::Timer m_sync_timer;  // If sync_client does not respond for long, disconnect it
+	        bool m_sync_sent = false;
+
+	        std::deque<Hash> m_wanted_blocks;  // If it is not empty, we are downloading first part
+	        Height m_wanted_start_height = 0;
+
+	        void reset_sync_client();
+	        void on_sync_timer();
+
+	    public:
+	        DownloaderV1(Node *node, BlockChainState &block_chain);
+
+	        void advance_download(Hash last_downloaded_block);
+	        bool on_idle() { return false; }
+
+	        uint32_t get_known_block_count(uint32_t my) const;
+	        void on_connect(P2PClientBytecoin *);
+	        void on_disconnect(P2PClientBytecoin *);
+	        const std::map<P2PClientBytecoin *, size_t> &get_good_clients() const { return m_good_clients; }
+	        void on_msg_notify_request_chain(P2PClientBytecoin *, const NOTIFY_RESPONSE_CHAIN_ENTRY::request &);
+	        void on_msg_notify_request_objects(P2PClientBytecoin *, const NOTIFY_RESPONSE_GET_OBJECTS::request &);
+	        void on_msg_timed_sync(const CORE_SYNC_DATA &payload_data);
+	    };*/
 	DownloaderV11 m_downloader;
 
 	bool on_api_http_request(http::Client *, http::RequestData &&, http::ResponseData &);

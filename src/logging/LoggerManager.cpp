@@ -26,11 +26,11 @@ void LoggerManager::configure_default(const std::string &log_folder, const std::
 		LoggerGroup::loggers.clear();
 
 		std::unique_ptr<logging::CommonLogger> logger(
-			new FileLogger(log_folder + "/" + log_prefix + "verbose", 128 * 1024, TRACE));
+		    new FileLogger(log_folder + "/" + log_prefix + "verbose", 1024 * 1024, TRACE));
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());
 
-		logger.reset(new FileLogger(log_folder + "/" + log_prefix + "errors", 128 * 1024, WARNING));
+		logger.reset(new FileLogger(log_folder + "/" + log_prefix + "errors", 1024 * 1024, ERROR));
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());
 
@@ -39,7 +39,8 @@ void LoggerManager::configure_default(const std::string &log_folder, const std::
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());
 	}
-	(*this)("START", TRACE, boost::posix_time::microsec_clock::local_time(), "----------------------------------------\n");
+	(*this)(
+	    "START", TRACE, boost::posix_time::microsec_clock::local_time(), "----------------------------------------\n");
 }
 
 void LoggerManager::configure(const JsonValue &val) {

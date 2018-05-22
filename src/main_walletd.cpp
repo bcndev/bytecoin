@@ -33,7 +33,6 @@ Options:
   --set-password                       Read new password as a line from stdin (twice) and reencrypt wallet file.
   --export-view-only=<file>            Export view-only version of wallet file with the same password, then exit.
   --export-keys                        Export wallet keys to stdout, then exit.
-  --testnet                            Configure for testnet.
   --walletd-bind-address=<ip:port>     Interface and port for walletd RPC [default: 127.0.0.1:8070].
   --data-folder=<full-path>            Folder for wallet cache, blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
     R"(bytecoin].
@@ -60,7 +59,12 @@ int main(int argc, const char *argv[]) try {
 	bool ask_password        = true;
 	const bool export_keys   = cmd.get_bool("--export-keys");
 	const bool create_wallet = cmd.get_bool("--create-wallet");
-	const bool import_keys   = create_wallet && cmd.get_bool("--import-keys");
+	const bool import_keys   = cmd.get_bool("--import-keys");
+	if (import_keys && !create_wallet){
+		std::cout << "When importing keys, you should use --create-wallet. You cannot import into existing wallet."
+		          << std::endl;
+		return api::WALLETD_WRONG_ARGS;
+	}
 	if (const char *pa = cmd.get("--wallet-file"))
 		wallet_file = pa;
 	if (const char *pa = cmd.get("--export-view-only"))
@@ -87,7 +91,7 @@ int main(int argc, const char *argv[]) try {
 		std::cout << "--wallet-file=<file> argument is mandatory" << std::endl;
 		return api::WALLETD_WRONG_ARGS;
 	}
-	if (create_wallet && import_keys && import_keys_value.empty()) {
+	if (create_wallet && import_keys && import_keys_value.empty()) {  // TODO import_keys_value always empty
 		std::cout << "Enter imported keys as hex bytes (05AB6F... etc.): " << std::flush;
 		if (!std::getline(std::cin, import_keys_value)) {
 			std::cout << "Unexpected end of stdin" << std::endl;
@@ -135,6 +139,8 @@ int main(int argc, const char *argv[]) try {
 	try {
 		wallet = std::make_unique<Wallet>(
 		    wallet_file, create_wallet ? new_password : password, create_wallet, import_keys_value);
+		std::cout << "Using wallet cache " << config.get_data_folder("wallet_cache") << "/" << wallet->get_cache_name()
+		          << std::endl;
 	} catch (const common::StreamError &ex) {
 		std::cout << ex.what() << std::endl;
 		return api::WALLET_FILE_READ_ERROR;
@@ -177,7 +183,9 @@ int main(int argc, const char *argv[]) try {
 	}
 	if (!ask_password) {
 		common::console::set_text_color(common::console::BrightRed);
-		std::cout << "Password on command line is a security risk. Use echo <pwd> | ./walletd" << std::endl;
+		std::cout << "Password on command line is a security risk. Use 'echo <pwd> | ./walletd' or 'cat secrets.txt | "
+		             "./walletd'"
+		          << std::endl;
 		common::console::set_text_color(common::console::Default);
 	}
 	std::cout << "Enter HTTP authorization <user>:<password> for walletd RPC: " << std::flush;
@@ -245,9 +253,11 @@ int main(int argc, const char *argv[]) try {
 			if (bytecoind_thread.joinable())
 				bytecoind_thread.join();  // otherwise terminate will be called in ~thread
 			return api::BYTECOIND_BIND_PORT_IN_USE;
+		} catch (const std::exception &ex) {  // On Windows what() is not printed if thrown from main
+			std::cout << "Exception in main() - " << ex.what() << std::endl;
+			throw;
 		}
 	}
-
 	std::unique_ptr<WalletNode> wallet_node;
 	try {
 		wallet_node = std::make_unique<WalletNode>(nullptr, logManagerWalletNode, config, wallet_state);

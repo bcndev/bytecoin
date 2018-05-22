@@ -202,6 +202,7 @@ JsonValue &JsonValue::operator=(const JsonValue &other) {
 	return *this;
 }
 
+// Analysers might warn about absense of this != &other
 JsonValue &JsonValue::operator=(JsonValue &&other) {
 	if (type != other.type) {
 		destruct_value();
