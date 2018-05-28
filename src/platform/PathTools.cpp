@@ -325,6 +325,13 @@ bool create_directory_if_necessary(const std::string &subpath) {
 #endif
 }
 
+std::string get_filename_without_directory(const std::string &path){
+	size_t delim1 = path.rfind("/");
+	size_t delim2 = path.rfind("\\");
+	size_t delim_pos = delim1 == std::string::npos ? delim2 : delim2 == std::string::npos ? delim1 : std::max(delim1, delim2);
+	return delim_pos != std::string::npos ? path.substr(delim_pos + 1) : path;
+}
+
 bool create_directories_if_necessary(const std::string &path) {
 	size_t delim_pos = std::min(path.find("/"), path.find("\\"));
 	while (delim_pos != std::string::npos) {

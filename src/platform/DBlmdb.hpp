@@ -27,8 +27,9 @@ struct Val {
 	const char *data() const noexcept { return reinterpret_cast<char *>(impl.mv_data); }
 };
 struct Env : private common::Nocopy {
+	const bool m_read_only;
 	MDB_env *handle = nullptr;
-	explicit Env();
+	explicit Env(bool read_only);
 	~Env();
 };
 struct Txn : private common::Nocopy {
@@ -56,13 +57,12 @@ public:
 }
 
 class DBlmdb {
-	const std::string full_path;
+	const std::string full_path; // TODO - change fields to m_
 	lmdb::Env db_env;
 	std::unique_ptr<lmdb::Dbi> db_dbi;
 	std::unique_ptr<lmdb::Txn> db_txn;
-
 public:
-	explicit DBlmdb(const std::string &full_path,
+	explicit DBlmdb(bool read_only, const std::string &full_path,
 	    uint64_t max_db_size = 0x8000000000);  // 0.5 Tb default, out of total 4 Tb on windows
 
 	void commit_db_txn();
@@ -118,6 +118,7 @@ public:
 	static std::string clean_key(const std::string &key);  // replace invalid chars for printing
 
 	static void run_tests();
-	static void delete_db(const std::string &path);
+	static void delete_db(const std::string &full_path);
+	static void backup_db(const std::string &full_path, const std::string &dst_path);
 };
 }

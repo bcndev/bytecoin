@@ -18,11 +18,11 @@ MiningConfig::MiningConfig(common::CommandLine &cmd)
 	if (const char *pa = cmd.get("--address"))
 		mining_address = pa;
 	if (const char *pa = cmd.get("--bytecoind-address")) {
-		if (!common::parse_ip_address_and_port(pa, bytecoind_ip, bytecoind_port))
+		if (!common::parse_ip_address_and_port(pa, &bytecoind_ip, &bytecoind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
 	if (const char *pa = cmd.get("--daemon-address", "Use --bytecoind-address instead")) {
-		if (!common::parse_ip_address_and_port(pa, bytecoind_ip, bytecoind_port))
+		if (!common::parse_ip_address_and_port(pa, &bytecoind_ip, &bytecoind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
 	if (const char *pa = cmd.get("--daemon-host", "Use --bytecoind-address instead"))

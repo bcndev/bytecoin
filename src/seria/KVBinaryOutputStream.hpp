@@ -70,6 +70,7 @@ private:
 
 template<typename T>
 common::BinaryArray to_binary_key_value(const T &v) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	common::BinaryArray ba;
 	common::VectorOutputStream stream(ba);
 	KVBinaryOutputStream s(stream);
@@ -78,6 +79,7 @@ common::BinaryArray to_binary_key_value(const T &v) {
 }
 template<typename T>
 std::string to_binary_key_value_str(const T &v) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	std::string ba;
 	common::StringOutputStream stream(ba);
 	KVBinaryOutputStream s(stream);

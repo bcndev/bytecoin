@@ -39,7 +39,7 @@ class DBsqlite {
 	sqlite::Stmt stmt_select_star;
 
 public:
-	explicit DBsqlite(const std::string &full_path, uint64_t max_db_size = 0);  // no max size in sqlite3
+	explicit DBsqlite(bool read_only, const std::string &full_path, uint64_t max_db_size = 0);  // no max size in sqlite3
 
 	void commit_db_txn();
 	size_t test_get_approximate_size() const;
@@ -97,5 +97,6 @@ public:
 
 	static void run_tests();
 	static void delete_db(const std::string &path);
+	static void backup_db(const std::string &path, const std::string &dst_path);
 };
 }

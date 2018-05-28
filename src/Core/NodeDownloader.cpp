@@ -306,7 +306,7 @@ bool Node::DownloaderV11::on_idle() {
 		DownloadCell dc = std::move(m_download_chain.front());
 		m_download_chain.pop_front();
 		api::BlockHeader info;
-		if (m_block_chain.add_block(dc.pb, info) == BroadcastAction::BAN) {
+		if (m_block_chain.add_block(dc.pb, &info) == BroadcastAction::BAN) {
 			std::cout << "DownloadCell BAN height=" << dc.expected_height << " wb=" << common::pod_to_hex(dc.bid)
 			          << std::endl;
 			m_node->m_log(logging::TRACE) << "DownloaderV11::on_idle DownloadCell BAN height=" << dc.expected_height

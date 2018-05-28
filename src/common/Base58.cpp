@@ -174,9 +174,9 @@ std::string encode(const BinaryArray &data) {
 	return res;
 }
 
-bool decode(const std::string &enc, BinaryArray &data) {
+bool decode(const std::string &enc, BinaryArray *data) {
 	if (enc.empty()) {
-		data.clear();
+		data->clear();
 		return true;
 	}
 
@@ -187,16 +187,16 @@ bool decode(const std::string &enc, BinaryArray &data) {
 		return false;  // Invalid enc length
 	size_t data_size = full_block_count * full_block_size + last_block_decoded_size;
 
-	data.resize(data_size, 0);
+	data->resize(data_size, 0);
 	for (size_t i = 0; i < full_block_count; ++i) {
 		if (!decode_block(
-		        enc.data() + i * full_encoded_block_size, full_encoded_block_size, &data[i * full_block_size]))
+		        enc.data() + i * full_encoded_block_size, full_encoded_block_size, &(*data)[i * full_block_size]))
 			return false;
 	}
 
 	if (0 < last_block_size) {
 		if (!decode_block(enc.data() + full_block_count * full_encoded_block_size, last_block_size,
-		        &data[full_block_count * full_block_size]))
+		        &(*data)[full_block_count * full_block_size]))
 			return false;
 	}
 
@@ -211,9 +211,9 @@ std::string encode_addr(uint64_t tag, const BinaryArray &data) {
 	return encode(buf);
 }
 
-bool decode_addr(std::string addr, uint64_t &tag, BinaryArray &data) {
+bool decode_addr(std::string addr, uint64_t *tag, BinaryArray *data) {
 	BinaryArray addr_data;
-	bool r = decode(addr, addr_data);
+	bool r = decode(addr, &addr_data);
 	if (!r)
 		return false;
 	if (addr_data.size() <= addr_checksum_size)
@@ -228,11 +228,11 @@ bool decode_addr(std::string addr, uint64_t &tag, BinaryArray &data) {
 	if (expected_checksum != checksum)
 		return false;
 
-	int read = common::read_varint(addr_data.begin(), addr_data.end(), tag);
+	int read = common::read_varint(addr_data.begin(), addr_data.end(), *tag);
 	if (read <= 0)
 		return false;
 
-	data.assign(addr_data.begin() + read, addr_data.end());  // addr_data.substr(read);
+	data->assign(addr_data.begin() + read, addr_data.end());  // addr_data.substr(read);
 	return true;
 }
 }

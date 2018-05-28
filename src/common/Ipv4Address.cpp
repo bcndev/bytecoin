@@ -34,7 +34,7 @@ std::string ip_address_and_port_to_string(uint32_t ip, uint32_t port) {
 	return std::string(buf);
 }
 
-bool parse_ip_address(const std::string &addr, uint32_t &ip) {
+bool parse_ip_address(const std::string &addr, uint32_t *ip) {
 	uint32_t v[4]{};
 
 	if (sscanf(addr.c_str(), "%u.%u.%u.%u", &v[0], &v[1], &v[2], &v[3]) != 4) {
@@ -47,11 +47,11 @@ bool parse_ip_address(const std::string &addr, uint32_t &ip) {
 		}
 	}
 
-	ip = (v[3] << 24) | (v[2] << 16) | (v[1] << 8) | v[0];
+	*ip = (v[3] << 24) | (v[2] << 16) | (v[1] << 8) | v[0];
 	return true;
 }
 
-bool parse_ip_address_and_port(const std::string &addr, uint32_t &ip, uint32_t &port) {
+bool parse_ip_address_and_port(const std::string &addr, uint32_t *ip, uint32_t *port) {
 	uint32_t v[4]{};
 	uint32_t local_port = 0;
 
@@ -65,19 +65,19 @@ bool parse_ip_address_and_port(const std::string &addr, uint32_t &ip, uint32_t &
 		}
 	}
 
-	ip = (v[3] << 24) | (v[2] << 16) | (v[1] << 8) | v[0];
+	*ip = (v[3] << 24) | (v[2] << 16) | (v[1] << 8) | v[0];
 	if (local_port > 65535)
 		return false;
-	port = local_port;
+	*port = local_port;
 	return true;
 }
 
-bool parse_ip_address_and_port(const std::string &addr, std::string &ip, uint16_t &port) {
+bool parse_ip_address_and_port(const std::string &addr, std::string *ip, uint16_t *port) {
 	uint32_t sip = 0, sport = 0;
-	if (!parse_ip_address_and_port(addr, sip, sport))
+	if (!parse_ip_address_and_port(addr, &sip, &sport))
 		return false;
-	port = static_cast<uint16_t>(sport);
-	ip   = ip_address_to_string(sip);
+	*port = static_cast<uint16_t>(sport);
+	*ip   = ip_address_to_string(sip);
 	return true;
 }
 

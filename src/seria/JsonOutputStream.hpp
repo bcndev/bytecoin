@@ -71,6 +71,7 @@ private:
 
 template<typename T>
 common::JsonValue to_json_value(const T &v) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	JsonOutputStream s;
 	s(const_cast<T &>(v));
 	return s.get_value();

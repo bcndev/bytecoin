@@ -68,28 +68,28 @@ class UnspentSelector {
 	Unspents m_unspents;
 	Unspents m_used_unspents;
 	Unspents m_optimization_unspents;
-	void create_have_coins(Height block_height, Timestamp block_time, Height confirmed_height, HaveCoins &have_coins,
-	    DustCoins &dust_coins, size_t &max_digit);
-	void unoptimize_amounts(HaveCoins &have_coins, DustCoins &dust_coins);
-	void optimize_amounts(HaveCoins &have_coins, size_t max_digit, Amount total_amount);
+	void create_have_coins(Height block_height, Timestamp block_time, Height confirmed_height, HaveCoins *have_coins,
+	    DustCoins *dust_coins, size_t *max_digit);
+	void unoptimize_amounts(HaveCoins *have_coins, DustCoins *dust_coins);
+	void optimize_amounts(HaveCoins *have_coins, size_t max_digit, Amount total_amount);
 	void combine_optimized_unspents();
 
 	Amount m_used_total   = 0;
 	size_t m_inputs_count = 0;
 	std::vector<Amount> m_ra_amounts;
-	bool select_optimal_outputs(HaveCoins &have_coins, DustCoins &dust_coins, size_t max_digit, Amount amount,
+	bool select_optimal_outputs(HaveCoins *have_coins, DustCoins *dust_coins, size_t max_digit, Amount amount,
 	    size_t anonymity, size_t optimization_count);
 
 public:
 	explicit UnspentSelector(const Currency &currency, Unspents &&unspents);
 	void reset(Unspents &&unspents);
 	void add_mixed_inputs(const SecretKey &view_secret_key,
-	    const std::unordered_map<PublicKey, WalletRecord> &wallet_records, TransactionBuilder &builder,
+	    const std::unordered_map<PublicKey, WalletRecord> &wallet_records, TransactionBuilder *builder,
 	    uint32_t anonymity, api::bytecoind::GetRandomOutputs::Response &&ra_response);
 
 	std::string select_optimal_outputs(Height block_height, Timestamp block_time, Height confirmed_height,
 	    size_t effective_median_size, size_t anonymity, Amount total_amount, size_t total_outputs, Amount fee_per_byte,
-	    std::string optimization_level, Amount &change);
+	    std::string optimization_level, Amount *change);
 	Amount get_used_total() const { return m_used_total; }
 	const std::vector<Amount> &get_ra_amounts() const { return m_ra_amounts; }
 };

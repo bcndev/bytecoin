@@ -110,7 +110,7 @@ void Node::getblocktemplate(const api::bytecoind::GetBlockTemplate::Request &req
 	AccountPublicAddress acc{};
 
 	if (req.wallet_address.empty() ||
-	    !m_block_chain.get_currency().parse_account_address_string(req.wallet_address, acc)) {
+	    !m_block_chain.get_currency().parse_account_address_string(req.wallet_address, &acc)) {
 		throw json_rpc::Error{CORE_RPC_ERROR_CODE_WRONG_WALLET_ADDRESS, "Failed to parse wallet address"};
 	}
 
@@ -118,7 +118,7 @@ void Node::getblocktemplate(const api::bytecoind::GetBlockTemplate::Request &req
 	BinaryArray blob_reserve;
 	blob_reserve.resize(req.reserve_size, 0);
 
-	if (!m_block_chain.create_mining_block_template(block_template, acc, blob_reserve, res.difficulty, res.height)) {
+	if (!m_block_chain.create_mining_block_template(&block_template, acc, blob_reserve, &res.difficulty, &res.height)) {
 		m_log(logging::ERROR) << "Failed to create block template";
 		throw json_rpc::Error{CORE_RPC_ERROR_CODE_INTERNAL_ERROR, "Internal error: failed to create block template"};
 	}
@@ -170,7 +170,7 @@ bool Node::on_submitblock(http::Client *, http::RequestData &&, json_rpc::Reques
 	seria::from_binary(block_template, blockblob);
 	RawBlock raw_block;
 	api::BlockHeader info;
-	auto broad = m_block_chain.add_mined_block(blockblob, raw_block, info);
+	auto broad = m_block_chain.add_mined_block(blockblob, &raw_block, &info);
 	if (broad == BroadcastAction::BAN)
 		throw json_rpc::Error{CORE_RPC_ERROR_CODE_BLOCK_NOT_ACCEPTED, "Block not accepted"};
 	NOTIFY_NEW_BLOCK::request msg;
@@ -211,12 +211,12 @@ bool Node::on_get_last_block_header(http::Client *, http::RequestData &&, json_r
 bool Node::on_get_block_header_by_hash(http::Client *, http::RequestData &&, json_rpc::Request &&,
     api::bytecoind::GetBlockHeaderByHashLegacy::Request &&request,
     api::bytecoind::GetBlockHeaderByHashLegacy::Response &response) {
-	if (!m_block_chain.read_header(request.hash, response.block_header))
+	if (!m_block_chain.read_header(request.hash, &response.block_header))
 		throw json_rpc::Error{CORE_RPC_ERROR_CODE_INTERNAL_ERROR,
 		    "Internal error: can't get block by hash. Hash = " + common::pod_to_hex(request.hash) + '.'};
 	Hash hash_at_height;
 	response.block_header.orphan_status =
-	    m_block_chain.read_chain(response.block_header.height, hash_at_height) && hash_at_height == request.hash;
+	    m_block_chain.read_chain(response.block_header.height, &hash_at_height) && hash_at_height == request.hash;
 	response.block_header.depth =
 	    api::HeightOrDepth(m_block_chain.get_tip_height()) - api::HeightOrDepth(response.block_header.height);
 	response.status = CORE_RPC_STATUS_OK;
@@ -227,12 +227,12 @@ bool Node::on_get_block_header_by_height(http::Client *, http::RequestData &&, j
     api::bytecoind::GetBlockHeaderByHeightLegacy::Request &&request,
     api::bytecoind::GetBlockHeaderByHeightLegacy::Response &response) {
 	Hash block_hash;
-	if (!m_block_chain.read_chain(request.height - 1, block_hash)) {  // This call counts blocks from 1
+	if (!m_block_chain.read_chain(request.height - 1, &block_hash)) {  // This call counts blocks from 1
 		throw json_rpc::Error{CORE_RPC_ERROR_CODE_TOO_BIG_HEIGHT,
 		    std::string("To big height: ") + common::to_string(request.height) +
 		        ", current blockchain height = " + common::to_string(m_block_chain.get_tip_height())};
 	}
-	if (!m_block_chain.read_header(block_hash, response.block_header))
+	if (!m_block_chain.read_header(block_hash, &response.block_header))
 		throw json_rpc::Error{CORE_RPC_ERROR_CODE_TOO_BIG_HEIGHT,
 		    std::string("To big height: ") + common::to_string(request.height) +
 		        ", current blockchain height = " + common::to_string(m_block_chain.get_tip_height())};

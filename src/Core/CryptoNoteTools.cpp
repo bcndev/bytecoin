@@ -56,15 +56,15 @@ void decompose_amount_into_digits(
 	}
 }
 
-void bytecoin::decompose_amount(Amount amount, Amount dust_threshold, std::vector<Amount> &decomposed_amounts) {
-	decompose_amount_into_digits(amount, dust_threshold, [&](Amount amount) { decomposed_amounts.push_back(amount); },
+void bytecoin::decompose_amount(Amount amount, Amount dust_threshold, std::vector<Amount> *decomposed_amounts) {
+	decompose_amount_into_digits(amount, dust_threshold, [&](Amount amount) { decomposed_amounts->push_back(amount); },
 	    [&](Amount dust) {
 		    Amount du0 = dust % 1000;
 		    Amount du1 = dust - du0;
 		    if (du0 != 0)
-			    decomposed_amounts.push_back(du0);
+			    decomposed_amounts->push_back(du0);
 		    if (du1 != 0)
-			    decomposed_amounts.push_back(du1);
+			    decomposed_amounts->push_back(du1);
 		});
 }
 
@@ -92,7 +92,7 @@ size_t bytecoin::get_maximum_tx_size(size_t input_count, size_t output_count, si
 	return header_size + outputs_size + input_size * input_count;
 }
 
-bool bytecoin::get_tx_fee(const Transaction &tx, uint64_t &fee) {
+bool bytecoin::get_tx_fee(const Transaction &tx, uint64_t *fee) {
 	uint64_t amount_in  = 0;
 	uint64_t amount_out = 0;
 
@@ -110,13 +110,13 @@ bool bytecoin::get_tx_fee(const Transaction &tx, uint64_t &fee) {
 		return false;
 	}
 
-	fee = amount_in - amount_out;
+	*fee = amount_in - amount_out;
 	return true;
 }
 
 uint64_t bytecoin::get_tx_fee(const Transaction &tx) {
 	uint64_t r = 0;
-	if (!get_tx_fee(tx, r))
+	if (!get_tx_fee(tx, &r))
 		return 0;
 	return r;
 }

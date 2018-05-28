@@ -24,7 +24,9 @@ sqlite::Stmt::~Stmt() {
 	handle = nullptr;
 }
 
-DBsqlite::DBsqlite(const std::string &full_path, uint64_t max_db_size) : full_path(full_path + ".sqlite") {
+DBsqlite::DBsqlite(bool read_only, const std::string &full_path, uint64_t max_db_size) : full_path(full_path + ".sqlite") {
+	if(read_only)
+		throw platform::sqlite::Error("SQLite cannot be used in read-only mode for now");
 	//	lmdb_check(::mdb_env_set_mapsize(db_env.handle, max_db_size), "mdb_env_set_mapsize ");
 	std::cout << "sqlite3_libversion=" << sqlite3_libversion() << std::endl;
 	//	create_directories_if_necessary(full_path);
@@ -249,11 +251,14 @@ void DBsqlite::delete_db(const std::string &path) {
 	//	std::remove((path + "/lock.mdb").c_str());
 	std::remove(path.c_str());
 }
+void DBsqlite::backup_db(const std::string &path, const std::string &dst_path){
+	throw platform::sqlite::Error("SQlite backed does not support hot backup - stop daemons, then copy database");
+}
 
 void DBsqlite::run_tests() {
 	delete_db("temp_db");
 	{
-		DBsqlite db("temp_db");
+		DBsqlite db(false, "temp_db");
 		std::string str;
 		bool res = db.get("history/ha", str);
 		std::cout << "res=" << res << std::endl;

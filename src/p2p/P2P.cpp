@@ -179,7 +179,7 @@ void P2P::accept_all() {
 		if (!la_socket->accept(next_client[incoming]->sock, addr))
 			return;
 		NetworkAddress address;
-		common::parse_ip_address(addr, address.ip);
+		common::parse_ip_address(addr, &address.ip);
 		address.port                   = config.p2p_bind_port;
 		next_client[incoming]->address = address;
 		if (peers.is_peer_banned(address, get_local_time())) {

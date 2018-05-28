@@ -42,7 +42,7 @@ class BlockChain {
 public:
 	typedef platform::DB DB;
 
-	explicit BlockChain(const Hash &genesis_bid, const std::string &coin_folder);
+	explicit BlockChain(const Hash &genesis_bid, const std::string &coin_folder, bool read_only);
 	virtual ~BlockChain() {}
 
 	const std::string &get_coin_folder() const { return m_coin_folder; }
@@ -55,30 +55,29 @@ public:
 	std::vector<api::BlockHeader> get_tip_segment(
 	    const api::BlockHeader &prev_info, Height window, bool add_genesis) const;
 
-	bool read_chain(Height height, Hash &bid) const;
-	bool read_block(const Hash &bid, RawBlock &rb) const;
+	bool read_chain(Height height, Hash *bid) const;
+	bool read_block(const Hash &bid, RawBlock *rb) const;
 	bool has_block(const Hash &bid) const;
-	bool read_header(const Hash &bid, api::BlockHeader &info) const;
+	bool read_header(const Hash &bid, api::BlockHeader *info) const;
 	bool read_transaction(
-	    const Hash &tid, Transaction &tx, Height &block_height, Hash &block_hash, size_t &index_in_block) const;
+	    const Hash &tid, Transaction *tx, Height *block_height, Hash *block_hash, size_t *index_in_block) const;
 
 	// Modify blockchain state. bytecoin header does not contain enough info for consensus calcs, so we cannot have
 	// header chain without block chain
-	BroadcastAction add_block(const PreparedBlock &pb, api::BlockHeader &info);
+	BroadcastAction add_block(const PreparedBlock &pb, api::BlockHeader *info);
 
 	// Facilitate sync and download
 	std::vector<Hash> get_sparse_chain() const;
 	std::vector<api::BlockHeader> get_sync_headers(const std::vector<Hash> &sparse_chain, size_t max_count) const;
 	std::vector<Hash> get_sync_headers_chain(
-	    const std::vector<Hash> &sparse_chain, Height &start_height, size_t max_count) const;
+	    const std::vector<Hash> &sparse_chain, Height *start_height, size_t max_count) const;
 
 	Height find_blockchain_supplement(const std::vector<Hash> &remote_block_ids) const;
 	Height get_timestamp_lower_bound_block_index(Timestamp) const;
 
-	void test_undo_everything();
+	void test_undo_everything(Height new_tip_height);
 	void test_print_structure(Height n_confirmations) const;
 
-	void fix_consensus();
 	void test_consensus(Height start_height);
 	void test_prune_oldest();
 
@@ -89,9 +88,9 @@ public:
 
 protected:
 	Difficulty get_tip_cumulative_difficulty() const { return m_tip_cumulative_difficulty; }
-	bool read_next_internal_block(Hash &bid) const;
+	bool read_next_internal_block(Hash *bid) const;
 	virtual std::string check_standalone_consensus(
-	    const PreparedBlock &pb, api::BlockHeader &info, const api::BlockHeader &prev_info) const = 0;
+	    const PreparedBlock &pb, api::BlockHeader *info, const api::BlockHeader &prev_info, bool check_pow) const = 0;
 	virtual bool redo_block(const Hash &bhash, const Block &block, const api::BlockHeader &info)  = 0;
 	virtual void undo_block(const Hash &bhash, const Block &block, Height height)                 = 0;
 	bool redo_block(const Hash &bhash, const RawBlock &raw_block, const Block &block, const api::BlockHeader &info,
@@ -100,11 +99,13 @@ protected:
 	virtual void tip_changed() {}  // Quick hack to allow BlockChainState to update next block params
 	virtual void on_reorganization(
 	    const std::map<Hash, std::pair<Transaction, BinaryArray>> &undone_transactions, bool undone_blocks) = 0;
+	void fix_difficulty_consensus();
+	void check_consensus_fast();
 
 	const Hash m_genesis_bid;
 	const std::string m_coin_folder;
 	Hash get_common_block(
-	    const Hash &bid1, const Hash &bid2, std::vector<Hash> *chain1, std::vector<Hash> *chain2) const;
+	    const Hash &bid1, const Hash &bid2, std::vector<Hash> *chain1, std::vector<Hash> *chain2) const; // both can be null
 
 	DB m_db;
 
@@ -134,9 +135,10 @@ private:
 
 	void check_children_counter(Difficulty cd, const Hash &bid, int value);
 	void modify_children_counter(Difficulty cd, const Hash &bid, int delta);
-	bool get_oldest_tip(Difficulty &cd, Hash &bid) const;
+	bool get_oldest_tip(Difficulty *cd, Hash *bid) const;
 	bool prune_branch(Difficulty cd, Hash bid);
 	bool fix_consensus(Hash bid, const api::BlockHeader &was_info);
+	void check_consensus_fast(Hash bid);
 };
 
 }  // namespace bytecoin

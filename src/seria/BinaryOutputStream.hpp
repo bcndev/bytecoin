@@ -45,6 +45,7 @@ private:
 
 template<typename T>
 common::BinaryArray to_binary(const T &obj) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	common::BinaryArray result;
 	common::VectorOutputStream stream(result);
 	BinaryOutputStream ba(stream);
@@ -53,6 +54,7 @@ common::BinaryArray to_binary(const T &obj) {
 }
 template<typename T>
 std::string to_binary_str(const T &obj) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	std::string result;
 	common::StringOutputStream stream(result);
 	BinaryOutputStream ba(stream);
@@ -61,6 +63,7 @@ std::string to_binary_str(const T &obj) {
 }
 template<typename T>
 size_t binary_size(const T &obj) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	common::BinaryArray result;
 	common::VectorOutputStream stream(result);
 	BinaryOutputStream ba(stream);

@@ -154,7 +154,7 @@ uint32_t Currency::block_granted_full_reward_zone_by_block_version(uint8_t block
 }
 
 bool Currency::get_block_reward(uint8_t block_major_version, size_t effective_median_size, size_t current_block_size,
-    Amount already_generated_coins, Amount fee, Amount &reward, SignedAmount &emission_change) const {
+    Amount already_generated_coins, Amount fee, Amount *reward, SignedAmount *emission_change) const {
 	assert(already_generated_coins <= money_supply);
 	assert(emission_speed_factor > 0 && emission_speed_factor <= 8 * sizeof(Amount));
 
@@ -164,8 +164,8 @@ bool Currency::get_block_reward(uint8_t block_major_version, size_t effective_me
 	Amount penalized_fee =
 	    block_major_version >= 2 ? get_penalized_amount(fee, effective_median_size, current_block_size) : fee;
 
-	emission_change = penalized_base_reward - (fee - penalized_fee);
-	reward          = penalized_base_reward + penalized_fee;
+	*emission_change = penalized_base_reward - (fee - penalized_fee);
+	*reward          = penalized_base_reward + penalized_fee;
 
 	return true;
 }
@@ -187,15 +187,15 @@ uint32_t Currency::max_transaction_allowed_size(uint32_t effective_block_size_me
 
 bool Currency::construct_miner_tx(uint8_t block_major_version, Height height, size_t effective_median_size,
     Amount already_generated_coins, size_t current_block_size, Amount fee, const AccountPublicAddress &miner_address,
-    Transaction &tx, const BinaryArray &extra_nonce, size_t max_outs) const {
-	tx.inputs.clear();
-	tx.outputs.clear();
-	tx.extra.clear();
+    Transaction *tx, const BinaryArray &extra_nonce, size_t max_outs) const {
+	tx->inputs.clear();
+	tx->outputs.clear();
+	tx->extra.clear();
 
 	KeyPair txkey = crypto::random_keypair();
-	add_transaction_public_key_to_extra(tx.extra, txkey.public_key);
+	add_transaction_public_key_to_extra(tx->extra, txkey.public_key);
 	if (!extra_nonce.empty()) {
-		if (!add_extra_nonce_to_transaction_extra(tx.extra, extra_nonce)) {
+		if (!add_extra_nonce_to_transaction_extra(tx->extra, extra_nonce)) {
 			return false;
 		}
 	}
@@ -206,13 +206,13 @@ bool Currency::construct_miner_tx(uint8_t block_major_version, Height height, si
 	Amount block_reward;
 	SignedAmount emission_change;
 	if (!get_block_reward(block_major_version, effective_median_size, current_block_size, already_generated_coins, fee,
-	        block_reward, emission_change)) {
+	        &block_reward, &emission_change)) {
 		//    logger(INFO) << "Block is too big";
 		return false;
 	}
 
 	std::vector<Amount> out_amounts;
-	decompose_amount(block_reward, default_dust_threshold, out_amounts);
+	decompose_amount(block_reward, default_dust_threshold, &out_amounts);
 
 	if (max_outs == 0)
 		max_outs = 1;  // :)
@@ -252,7 +252,7 @@ bool Currency::construct_miner_tx(uint8_t block_major_version, Height height, si
 		TransactionOutput out;
 		summary_amounts += out.amount = out_amounts[no];
 		out.target                    = tk;
-		tx.outputs.push_back(out);
+		tx->outputs.push_back(out);
 	}
 
 	if (summary_amounts != block_reward) {
@@ -262,10 +262,10 @@ bool Currency::construct_miner_tx(uint8_t block_major_version, Height height, si
 		return false;
 	}
 
-	tx.version = current_transaction_version;
+	tx->version = current_transaction_version;
 	// lock
-	tx.unlock_time = height + mined_money_unlock_window;
-	tx.inputs.push_back(in);
+	tx->unlock_time = height + mined_money_unlock_window;
+	tx->inputs.push_back(in);
 	return true;
 }
 
@@ -303,26 +303,26 @@ std::string Currency::get_account_address_as_str(uint64_t prefix, const AccountP
 	return common::base58::encode_addr(prefix, ba);
 }
 
-bool Currency::parse_account_address_string(uint64_t &prefix, AccountPublicAddress &adr, const std::string &str) {
+bool Currency::parse_account_address_string(uint64_t *prefix, AccountPublicAddress *adr, const std::string &str) {
 	BinaryArray data;
 
-	if (!common::base58::decode_addr(str, prefix, data))
+	if (!common::base58::decode_addr(str, prefix, &data))
 		return false;
 	try {
-		seria::from_binary(adr, data);
+		seria::from_binary(*adr, data);
 	} catch (const std::exception &) {
 		return false;
 	}
-	return key_isvalid(adr.spend_public_key) && key_isvalid(adr.view_public_key);
+	return key_isvalid(adr->spend_public_key) && key_isvalid(adr->view_public_key);
 }
 
 std::string Currency::account_address_as_string(const AccountPublicAddress &account_public_address) const {
 	return get_account_address_as_str(public_address_base58_prefix, account_public_address);
 }
 
-bool Currency::parse_account_address_string(const std::string &str, AccountPublicAddress &addr) const {
+bool Currency::parse_account_address_string(const std::string &str, AccountPublicAddress *addr) const {
 	uint64_t prefix;
-	if (!parse_account_address_string(prefix, addr, str)) {
+	if (!parse_account_address_string(&prefix, addr, str)) {
 		return false;
 	}
 	if (prefix != public_address_base58_prefix) {
@@ -348,7 +348,7 @@ std::string Currency::format_amount(size_t number_of_decimal_places, SignedAmoun
 	return s;
 }
 
-bool Currency::parse_amount(size_t number_of_decimal_places, const std::string &str, Amount &amount) {
+bool Currency::parse_amount(size_t number_of_decimal_places, const std::string &str, Amount *amount) {
 	std::string str_amount = str;
 	boost::algorithm::trim(str_amount);
 
@@ -380,7 +380,7 @@ bool Currency::parse_amount(size_t number_of_decimal_places, const std::string &
 		str_amount.append(number_of_decimal_places - fraction_size, '0');
 	}
 	std::istringstream stream(str_amount);
-	stream >> amount;
+	stream >> *amount;
 	return !stream.fail();
 }
 

@@ -1,5 +1,9 @@
 ## Release Notes
 
+### v3.1.1
+- Added `--backup-blockchain` `--backup-wallet` command-line flags to `bytecoind` and `walletd` resp. to hot-copy blockchain and wallet data (wallet file and wallet cache).
+- Fixed behavior of the `walletd`'s methods such as `get_balance`, which until now returned zero balance for addresses not belonging to the opened wallet file.
+
 ### v3.1.0
 
 - Updated `README` in the part of linking with `boost` libraries to prevent using inappropriate versions.
@@ -55,23 +59,3 @@
 - Changed logic of how `walletd` truncates cache in old wallet files: On writable media, it now tries to do that right after opening.
 - Fixed wallet state undo logic, which rarely lead to sync crashes/stucks in version 3.0.0.
 - Added test wallets for import/export testing.
-
-### v3.0.0
-
-- Added HTTPS support between walletd and bytecoind.
-- Added generating and checking send proofs.
-- Added SQLite database support as an alternative to LMDB.
-- Added several legacy bytecoind RPC API methods for miners.
-
-### v3.0.0-beta-20180219
-
-- Reworked creating transactions with 100,000+ unspent outputs to make it much faster.
-- Fixed rare crashes of `bytecoind` while downloading blockchain.
-- Fixed stuck dowloading from misbehaving nodes.
-- Added early support of JSON-RPC API basic authentification that prevents CSRF attacks.
-- Added (experimental) support of 32-bit platforms.
-
-
-### v3.0.0-beta-20180206
-
-- Project is moved to the new public GitHub repository.

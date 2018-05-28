@@ -251,7 +251,7 @@ void Wallet::save(const std::string &export_path, bool view_only) {
 
 		f.write(&record, sizeof(record));
 	}
-	f.fdatasync();
+	f.fsync();
 }
 
 BinaryArray Wallet::export_keys() const {
@@ -289,7 +289,7 @@ void Wallet::set_password(const std::string &password) {
 	save_and_check();
 }
 
-void Wallet::export_view_only(const std::string &export_path) {
+void Wallet::export_wallet(const std::string &export_path, bool view_only) {
 	std::unique_ptr<platform::FileStream> export_file;
 	try {
 		export_file.reset(new platform::FileStream(export_path, platform::FileStream::READ_EXISTING));
@@ -298,11 +298,20 @@ void Wallet::export_view_only(const std::string &export_path) {
 	}
 	if (export_file.get())  // opened ok
 		throw Exception(api::WALLET_FILE_EXISTS,
-		    "Will not overwrite existing "
-		    "wallet - delete it first or "
-		    "specify another file " +
+		    "Will not overwrite existing wallet - delete it first or specify another file " +
 		        export_path);
-	save(export_path, true);
+	for (auto &&r : m_wallet_records) {
+		if (r.second.spend_secret_key != SecretKey{}) {
+			if (!keys_match(r.second.spend_secret_key, r.second.spend_public_key))
+				throw Exception(
+						api::WALLET_FILE_DECRYPT_ERROR, "Spend public key doesn't correspond to secret key (corrupted wallet?)");
+		} else {
+			if (!key_isvalid(r.second.spend_public_key)) {
+				throw Exception(api::WALLET_FILE_DECRYPT_ERROR, "Public spend key is incorrect (corrupted wallet?)");
+			}
+		}
+	}
+	save(export_path, view_only);
 }
 
 bool Wallet::operator==(const Wallet &other) const {
@@ -350,12 +359,12 @@ std::vector<WalletRecord> Wallet::generate_new_addresses(const std::vector<Secre
 		file->write(&record, sizeof(record));
 		result.push_back(new_rit.first);
 	}
-	file->fdatasync();
+	file->fsync();
 	file->seek(1 + sizeof(ContainerStoragePrefix), SEEK_SET);
 	uint64_t item_count = m_wallet_records.size();
 	file->write(&item_count, sizeof(item_count));
 	file->write(&item_count, sizeof(item_count));
-	file->fdatasync();
+	file->fsync();
 	return result;
 }
 
@@ -372,7 +381,7 @@ void Wallet::on_first_output_found(Timestamp ts) {
 
 std::string Wallet::get_cache_name() const {
 	Hash h = crypto::cn_fast_hash(m_view_public_key.data, sizeof(m_view_public_key.data));
-	return common::pod_to_hex(h);
+	return common::pod_to_hex(h) + (is_view_only() ? "-view-only" : std::string());
 }
 
 bool Wallet::spend_keys_for_address(const AccountPublicAddress &addr, AccountKeys &keys) const {

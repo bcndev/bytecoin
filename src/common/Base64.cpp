@@ -66,7 +66,7 @@ std::string encode(const BinaryArray &data) {
 	return ret;
 }
 
-bool decode(const std::string &in, BinaryArray &ret) {
+bool decode(const std::string &in, BinaryArray *ret) {
 	// Make sure the *intended* string length is a multiple of 4
 	size_t encoded_size = in.size();
 
@@ -74,8 +74,8 @@ bool decode(const std::string &in, BinaryArray &ret) {
 		++encoded_size;
 
 	const size_t N = in.size();
-	ret.clear();
-	ret.reserve(3 * encoded_size / 4);
+	ret->clear();
+	ret->reserve(3 * encoded_size / 4);
 
 	for (size_t i = 0; i < encoded_size; i += 4) {
 		// Get values for each group of four base 64 characters
@@ -95,11 +95,11 @@ bool decode(const std::string &in, BinaryArray &ret) {
 
 		// Add the byte to the return value if it isn't part of an '=' character (indicated by 0xff)
 		if (b4_1 != 0xff)
-			ret.push_back(b3_0);
+			ret->push_back(b3_0);
 		if (b4_2 != 0xff)
-			ret.push_back(b3_1);
+			ret->push_back(b3_1);
 		if (b4_3 != 0xff)
-			ret.push_back(b3_2);
+			ret->push_back(b3_2);
 	}
 	return true;  // TODO - find decoder which returns false on invalid data
 }

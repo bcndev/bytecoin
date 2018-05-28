@@ -46,6 +46,7 @@ private:
 
 template<typename T>
 void from_binary(T &obj, const common::BinaryArray &blob) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	common::MemoryInputStream stream(blob.data(), blob.size());
 	BinaryInputStream ba(stream);
 	ba(obj);
@@ -54,6 +55,7 @@ void from_binary(T &obj, const common::BinaryArray &blob) {
 }
 template<typename T>
 void from_binary(T &obj, const std::string &blob) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	common::MemoryInputStream stream(blob.data(), blob.size());
 	BinaryInputStream ba(stream);
 	ba(obj);

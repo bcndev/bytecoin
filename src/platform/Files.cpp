@@ -91,15 +91,12 @@ size_t FileStream::read_some(void *data, size_t size) {
 #endif
 }
 
-void FileStream::fdatasync() {
+void FileStream::fsync() {
 #ifdef _WIN32
 	if (!FlushFileBuffers(handle))
 		throw common::StreamError("Error syncing file to disk, GetLastError()=" + common::to_string(GetLastError()));
-#elif defined(__MACH__)
-	if (::fsync(fd) == -1)  // No fdatasync on Mac OS :)
-		throw common::StreamError("Error syncing file to disk, errno=" + common::to_string(errno));
 #else
-	if (::fdatasync(fd) == -1)
+	if (::fsync(fd) == -1)
 		throw common::StreamError("Error syncing file to disk, errno=" + common::to_string(errno));
 #endif
 }

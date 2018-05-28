@@ -14,10 +14,10 @@ using namespace platform;
 
 static void lmdb_check(int rc, const char *msg) {
 	if (rc != MDB_SUCCESS)
-		throw platform::lmdb::Error(msg + std::to_string(rc));
+		throw platform::lmdb::Error(msg + std::to_string(rc) + " " + std::string(::mdb_strerror(rc)));
 }
 
-platform::lmdb::Env::Env() { lmdb_check(::mdb_env_create(&handle), "mdb_env_create "); }
+platform::lmdb::Env::Env(bool read_only):m_read_only(read_only) { lmdb_check(::mdb_env_create(&handle), "mdb_env_create "); }
 
 platform::lmdb::Env::~Env() {
 	::mdb_env_close(handle);
@@ -25,7 +25,7 @@ platform::lmdb::Env::~Env() {
 }
 
 platform::lmdb::Txn::Txn(Env &db_env) {
-	lmdb_check(::mdb_txn_begin(db_env.handle, nullptr, 0, &handle), "mdb_txn_begin ");
+	lmdb_check(::mdb_txn_begin(db_env.handle, nullptr, db_env.m_read_only ? MDB_RDONLY : 0, &handle), "mdb_txn_begin ");
 }
 
 void platform::lmdb::Txn::commit() {
@@ -67,12 +67,12 @@ platform::lmdb::Cur::~Cur() {
 	handle = nullptr;
 }
 
-DBlmdb::DBlmdb(const std::string &full_path, uint64_t max_db_size) : full_path(full_path) {
+DBlmdb::DBlmdb(bool read_only, const std::string &full_path, uint64_t max_db_size) : full_path(full_path), db_env(read_only) {
 	//	std::cout << "lmdb libversion=" << mdb_version(nullptr, nullptr, nullptr) << std::endl;
 	lmdb_check(::mdb_env_set_mapsize(db_env.handle, max_db_size), "mdb_env_set_mapsize ");
 	// VALGRIND is limited to 32GB, modify line above to use (max_db_size > 28000000000 ? 28000000000 : max_db_size)
 	create_directories_if_necessary(full_path);
-	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(), MDB_NOMETASYNC, 0644), "mdb_env_open ");
+	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(), MDB_NOMETASYNC | (read_only ? MDB_RDONLY : 0), 0644), "mdb_env_open ");
 	// MDB_NOMETASYNC - We agree to trade chance of losing 1 last transaction for 2x performance boost
 	db_txn.reset(new lmdb::Txn(db_env));
 	db_dbi.reset(new lmdb::Dbi(*db_txn));
@@ -231,16 +231,22 @@ std::string DBlmdb::clean_key(const std::string &key) {
 	return result;
 }
 
-void DBlmdb::delete_db(const std::string &path) {
-	std::remove((path + "/data.mdb").c_str());
-	std::remove((path + "/lock.mdb").c_str());
-	std::remove(path.c_str());
+void DBlmdb::delete_db(const std::string &full_path) {
+	std::remove((full_path + "/data.mdb").c_str());
+	std::remove((full_path + "/lock.mdb").c_str());
+	std::remove(full_path.c_str());
+}
+
+void DBlmdb::backup_db(const std::string &full_path, const std::string &dst_path){
+	lmdb::Env db_env(true);
+	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(), MDB_RDONLY, 0600), "mdb_env_open ");
+	lmdb_check(::mdb_env_copy2(db_env.handle, dst_path.c_str(), MDB_CP_COMPACT), "mdb_env_copy2 ");
 }
 
 void DBlmdb::run_tests() {
 	delete_db("temp_db");
 	{
-		DBlmdb db("temp_db");
+		DBlmdb db(false, "temp_db");
 		db.put("history/ha", "ua", false);
 		db.put("history/hb", "ub", false);
 		db.put("history/hc", "uc", false);

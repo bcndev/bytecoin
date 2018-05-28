@@ -58,10 +58,10 @@ bool Node::on_idle() {
 	if (m_block_chain.get_tip_height() < m_block_chain.internal_import_known_height())
 		m_block_chain.internal_import();
 	else {
-		if (m_block_chain_reader1 && !m_block_chain_reader1->import_blocks(m_block_chain)) {
+		if (m_block_chain_reader1 && !m_block_chain_reader1->import_blocks(&m_block_chain)) {
 			m_block_chain_reader1.reset();
 		}
-		if (m_block_chain_reader2 && !m_block_chain_reader2->import_blocks(m_block_chain)) {
+		if (m_block_chain_reader2 && !m_block_chain_reader2->import_blocks(&m_block_chain)) {
 			m_block_chain_reader2.reset();
 		}
 	}
@@ -127,7 +127,7 @@ void Node::P2PClientBytecoin::on_msg_handshake(COMMAND_HANDSHAKE::response &&req
 void Node::P2PClientBytecoin::on_msg_notify_request_chain(NOTIFY_REQUEST_CHAIN::request &&req) {
 	NOTIFY_RESPONSE_CHAIN_ENTRY::request msg;
 	msg.m_block_ids = m_node->m_block_chain.get_sync_headers_chain(
-	    req.block_ids, msg.start_height, config.p2p_block_ids_sync_default_count);
+	    req.block_ids, &msg.start_height, config.p2p_block_ids_sync_default_count);
 	msg.total_height = m_node->m_block_chain.get_tip_height() + 1;
 
 	BinaryArray raw_msg =
@@ -144,7 +144,7 @@ void Node::P2PClientBytecoin::on_msg_notify_request_objects(NOTIFY_REQUEST_GET_O
 	msg.current_blockchain_height = m_node->m_block_chain.get_tip_height() + 1;
 	for (auto &&bh : req.blocks) {
 		RawBlock raw_block;
-		if (m_node->m_block_chain.read_block(bh, raw_block)) {
+		if (m_node->m_block_chain.read_block(bh, &raw_block)) {
 			msg.blocks.push_back(RawBlockLegacy{raw_block.block, raw_block.transactions});
 		} else
 			msg.missed_ids.push_back(bh);
@@ -202,7 +202,7 @@ void Node::P2PClientBytecoin::on_msg_notify_new_block(NOTIFY_NEW_BLOCK::request 
 	RawBlock raw_block{req.b.block, req.b.transactions};
 	PreparedBlock pb(std::move(raw_block), nullptr);
 	api::BlockHeader info;
-	auto action = m_node->m_block_chain.add_block(pb, info);
+	auto action = m_node->m_block_chain.add_block(pb, &info);
 	switch (action) {
 	case BroadcastAction::BAN:
 		disconnect("NOTIFY_NEW_BLOCK add_block BAN");
@@ -543,13 +543,13 @@ bool Node::on_wallet_sync3(http::Client *, http::RequestData &&, json_rpc::Reque
 	Height full_offset = m_block_chain.get_timestamp_lower_bound_block_index(first_block_timestamp);
 	Height start_block_index;
 	std::vector<crypto::Hash> supplement =
-	    m_block_chain.get_sync_headers_chain(req.sparse_chain, start_block_index, req.max_count);
+	    m_block_chain.get_sync_headers_chain(req.sparse_chain, &start_block_index, req.max_count);
 	if (full_offset >= start_block_index + supplement.size()) {
 		start_block_index = full_offset;
 		supplement.clear();
 		while (supplement.size() < req.max_count) {
 			Hash ha;
-			if (!m_block_chain.read_chain(start_block_index + static_cast<Height>(supplement.size()), ha))
+			if (!m_block_chain.read_chain(start_block_index + static_cast<Height>(supplement.size()), &ha))
 				break;
 			supplement.push_back(ha);
 		}
@@ -562,14 +562,14 @@ bool Node::on_wallet_sync3(http::Client *, http::RequestData &&, json_rpc::Reque
 	res.blocks.resize(supplement.size());
 	for (size_t i = 0; i != supplement.size(); ++i) {
 		auto bhash = supplement[i];
-		if (!m_block_chain.read_header(bhash, res.blocks[i].header))
+		if (!m_block_chain.read_header(bhash, &res.blocks[i].header))
 			throw std::logic_error("Block header must be there, but it is not there");
 		BlockChainState::BlockGlobalIndices global_indices;
 		// if (res.blocks[i].header.timestamp >= req.first_block_timestamp) //
 		// commented out becuase empty Block cannot be serialized
 		{
 			RawBlock rb;
-			if (!m_block_chain.read_block(bhash, rb))
+			if (!m_block_chain.read_block(bhash, &rb))
 				throw std::logic_error("Block must be there, but it is not there");
 			Block block;
 			if (!block.from_raw_block(rb))
@@ -579,7 +579,7 @@ bool Node::on_wallet_sync3(http::Client *, http::RequestData &&, json_rpc::Reque
 			res.blocks[i].raw_transactions.reserve(block.transactions.size());
 			for (auto &&tx : block.transactions)
 				res.blocks[i].raw_transactions.push_back(std::move(tx));
-			if (!m_block_chain.read_block_output_global_indices(bhash, res.blocks[i].global_indices))
+			if (!m_block_chain.read_block_output_global_indices(bhash, &res.blocks[i].global_indices))
 				throw std::logic_error(
 				    "Invariant dead - bid is in chain but "
 				    "blockchain has no block indices");
@@ -623,7 +623,7 @@ bool Node::on_get_raw_transaction3(http::Client *, http::RequestData &&, json_rp
 	Hash block_hash;
 	Height block_height   = 0;
 	size_t index_in_block = 0;
-	if (m_block_chain.read_transaction(req.hash, tx, block_height, block_hash, index_in_block)) {
+	if (m_block_chain.read_transaction(req.hash, &tx, &block_height, &block_hash, &index_in_block)) {
 		res.raw_transaction          = static_cast<TransactionPrefix>(tx);  // TODO - std::move?
 		res.transaction.hash         = req.hash;
 		res.transaction.block_hash   = block_hash;
@@ -679,7 +679,7 @@ bool Node::handle_check_send_proof3(http::Client *, http::RequestData &&, json_r
 	Height height = 0;
 	Hash block_hash;
 	size_t index_in_block = 0;
-	if (!m_block_chain.read_transaction(sp.transaction_hash, tx, height, block_hash, index_in_block)) {
+	if (!m_block_chain.read_transaction(sp.transaction_hash, &tx, &height, &block_hash, &index_in_block)) {
 		throw json_rpc::Error(-202, "Transaction is not in main chain");
 	}
 	PublicKey tx_public_key = get_transaction_public_key_from_extra(tx.extra);

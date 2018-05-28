@@ -70,20 +70,20 @@ public:
 
 	uint32_t block_granted_full_reward_zone_by_block_version(uint8_t block_major_version) const;
 	bool get_block_reward(uint8_t block_major_version, size_t effective_median_size, size_t current_block_size,
-	    Amount already_generated_coins, Amount fee, Amount &reward, SignedAmount &emission_change) const;
+	    Amount already_generated_coins, Amount fee, Amount *reward, SignedAmount *emission_change) const;
 	uint32_t max_block_cumulative_size(Height height) const;
 	uint32_t max_transaction_allowed_size(uint32_t effective_block_size_median) const;
 	bool construct_miner_tx(uint8_t block_major_version, Height height, size_t effective_median_size,
 	    Amount already_generated_coins, size_t current_block_size, Amount fee,
-	    const AccountPublicAddress &miner_address, Transaction &tx, const BinaryArray &extra_nonce = BinaryArray(),
+	    const AccountPublicAddress &miner_address, Transaction *tx, const BinaryArray &extra_nonce = BinaryArray(),
 	    size_t max_outs = 1) const;
 
 	std::string account_address_as_string(const AccountPublicAddress &account_public_address) const;
-	bool parse_account_address_string(const std::string &str, AccountPublicAddress &addr) const;
+	bool parse_account_address_string(const std::string &str, AccountPublicAddress *addr) const;
 
 	std::string format_amount(Amount amount) const { return format_amount(number_of_decimal_places, amount); }
 	std::string format_amount(SignedAmount amount) const { return format_amount(number_of_decimal_places, amount); }
-	bool parse_amount(const std::string &str, Amount &amount) const {
+	bool parse_amount(const std::string &str, Amount *amount) const {
 		return parse_amount(number_of_decimal_places, str, amount);
 	}
 
@@ -108,10 +108,10 @@ public:
 	static bool is_dust(Amount am);
 	static uint64_t get_penalized_amount(uint64_t amount, size_t median_size, size_t current_block_size);
 	static std::string get_account_address_as_str(uint64_t prefix, const AccountPublicAddress &adr);
-	static bool parse_account_address_string(uint64_t &prefix, AccountPublicAddress &adr, const std::string &str);
+	static bool parse_account_address_string(uint64_t *prefix, AccountPublicAddress *adr, const std::string &str);
 	static std::string format_amount(size_t number_of_decimal_places, Amount);
 	static std::string format_amount(size_t number_of_decimal_places, SignedAmount);
-	static bool parse_amount(size_t number_of_decimal_places, const std::string &, Amount &);
+	static bool parse_amount(size_t number_of_decimal_places, const std::string &, Amount *);
 };
 
 // we should probaly find better place for these global funs

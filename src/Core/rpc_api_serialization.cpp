@@ -32,7 +32,7 @@ void ser_members(bytecoin::SendProof &v, ISeria &s) {
 		addr = Currency::get_account_address_as_str(CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, v.address);
 	seria_kv("address", addr, s);
 	uint64_t prefix = 0;
-	if (s.is_input() && (!Currency::parse_account_address_string(prefix, v.address, addr) ||
+	if (s.is_input() && (!Currency::parse_account_address_string(&prefix, &v.address, addr) ||
 	                        prefix != CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX))
 		throw std::runtime_error("Wrong address format - " + addr);
 	std::string proof;
@@ -45,7 +45,7 @@ void ser_members(bytecoin::SendProof &v, ISeria &s) {
 	}
 	seria_kv("proof", proof, s);
 	if (s.is_input()) {
-		if (!common::base58::decode(proof, binary_proof) ||
+		if (!common::base58::decode(proof, &binary_proof) ||
 		    binary_proof.size() != sizeof(v.derivation.data) + sizeof(v.signature.c) + sizeof(v.signature.r))
 			throw std::runtime_error("Wrong proof format - " + proof);
 		memmove(v.derivation.data, binary_proof.data(), sizeof(v.derivation));

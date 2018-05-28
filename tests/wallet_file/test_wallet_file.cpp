@@ -63,7 +63,7 @@ static void test_body(const bytecoin::Currency &currency, const std::string &pat
 		throw std::runtime_error("view keys do not match for " + path);
 	for (auto &&a : addresses) {
 		bytecoin::AccountPublicAddress address;
-		if (!currency.parse_account_address_string(a, address))
+		if (!currency.parse_account_address_string(a, &address))
 			throw std::runtime_error("failed to parse address " + a);
 		if (address.view_public_key != wallet.get_view_public_key())
 			throw std::runtime_error("view_public_key test failed for " + path);

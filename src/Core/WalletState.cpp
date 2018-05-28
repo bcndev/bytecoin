@@ -260,7 +260,7 @@ WalletState::WalletState(Wallet &wallet, logging::ILogger &log, const Config &co
     , m_currency(currency)
     , m_log(log)
     , m_wallet(wallet)
-    , m_db(config.get_data_folder("wallet_cache") + "/" + wallet.get_cache_name(),
+    , m_db(false, config.get_data_folder("wallet_cache") + "/" + wallet.get_cache_name(),
           0x2000000000)  // 128 gb
     , log_redo_block(std::chrono::steady_clock::now())
     , m_memory_state(0, 0) {

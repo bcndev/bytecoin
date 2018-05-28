@@ -64,6 +64,7 @@ private:
 
 template<typename T>
 void from_json_value(T &v, const common::JsonValue &js) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	JsonInputValue s(js);
 	s(v);
 }

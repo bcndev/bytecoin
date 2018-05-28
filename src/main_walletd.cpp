@@ -21,7 +21,7 @@ static const char USAGE[] =
     R"(walletd )" bytecoin_VERSION_STRING R"(.
 
 Usage:
-  walletd [options] --wallet-file=<file> | --export-blocks=<directory>
+  walletd [options] --wallet-file=<file>
   walletd --help | -h
   walletd --version | -v
 
@@ -38,6 +38,7 @@ Options:
     R"(bytecoin].
   --bytecoind-remote-address=<ip:port> Connect to remote bytecoind and suppress running built-in bytecoind.
   --bytecoind-authorization=<usr:pass> HTTP authorization for RCP.
+  --backup-wallet=<folder>             Perform hot backup of wallet file and wallet cache into specified backup data folder, then exit.
 
 Options for built-in bytecoind (run when no --bytecoind-remote-address specified):
   --allow-local-ip                     Allow local ip add to peer list, mostly in debug purposes.
@@ -54,8 +55,9 @@ int main(int argc, const char *argv[]) try {
 	common::console::UnicodeConsoleSetup console_setup;
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	common::CommandLine cmd(argc, argv);
-	std::string wallet_file, password, new_password, export_view_only, import_keys_value;
-	const bool set_password  = cmd.get_bool("--set-password");
+	std::string wallet_file, password, new_password, export_view_only, import_keys_value, backup_wallet;
+//	const bool set_password_and_continue  = cmd.get_bool("--set-password-and-continue"); // Run normally after set password, used by GUI wallet
+	const bool set_password  = cmd.get_bool("--set-password");// || set_password_and_continue;
 	bool ask_password        = true;
 	const bool export_keys   = cmd.get_bool("--export-keys");
 	const bool create_wallet = cmd.get_bool("--create-wallet");
@@ -66,9 +68,21 @@ int main(int argc, const char *argv[]) try {
 		return api::WALLETD_WRONG_ARGS;
 	}
 	if (const char *pa = cmd.get("--wallet-file"))
-		wallet_file = pa;
-	if (const char *pa = cmd.get("--export-view-only"))
+        wallet_file = pa;
+	if (const char *pa = cmd.get("--export-view-only")) {
+		if( import_keys || create_wallet || export_keys){
+			std::cout << "When exporting view-only version of wallet you cannot import keys, export keys, create wallet." << std::endl;
+			return api::WALLETD_WRONG_ARGS;
+		}
 		export_view_only = pa;
+	}
+	if (const char *pa = cmd.get("--backup-wallet")) {
+		if( import_keys || create_wallet || export_keys){
+			std::cout << "When doing wallet backup you cannot import keys, export keys, create wallet." << std::endl;
+			return api::WALLETD_WRONG_ARGS;
+		}
+		backup_wallet = pa;
+	}
 	if (const char *pa = cmd.get("--wallet-password")) {
 		password     = pa;
 		ask_password = false;
@@ -130,7 +144,7 @@ int main(int argc, const char *argv[]) try {
 			return api::WALLETD_WRONG_ARGS;
 		}
 	}
-	const std::string coinFolder = config.get_data_folder();
+	const std::string coin_folder = config.get_data_folder();
 	//	if (wallet_file.empty() && !generate_wallet) // No args can be provided when debugging with MSVC
 	//		wallet_file = "C:\\Users\\user\\test.wallet";
 
@@ -139,8 +153,6 @@ int main(int argc, const char *argv[]) try {
 	try {
 		wallet = std::make_unique<Wallet>(
 		    wallet_file, create_wallet ? new_password : password, create_wallet, import_keys_value);
-		std::cout << "Using wallet cache " << config.get_data_folder("wallet_cache") << "/" << wallet->get_cache_name()
-		          << std::endl;
 	} catch (const common::StreamError &ex) {
 		std::cout << ex.what() << std::endl;
 		return api::WALLET_FILE_READ_ERROR;
@@ -149,15 +161,46 @@ int main(int argc, const char *argv[]) try {
 		return ex.return_code;
 	}
 	try {
-		if (set_password)
-			wallet->set_password(new_password);
+		if (!backup_wallet.empty()){
+			const std::string name = platform::get_filename_without_directory(wallet_file);
+			const std::string dst_cache = backup_wallet + "/wallet_cache/" + wallet->get_cache_name();
+			if( !platform::create_directory_if_necessary(backup_wallet + "/wallet_cache") ){
+				std::cout << "Could not create folder for backup " << (backup_wallet + "/wallet_cache") << std::endl;
+				return 1;
+			}
+			if( !platform::create_directory_if_necessary(dst_cache) ){
+				std::cout << "Could not create folder for backup " << dst_cache << std::endl;
+				return 1;
+			}
+			common::console::set_text_color(common::console::BrightRed);
+			std::cout << "There will be no progress printed for 1-20 minutes, depending on wallet size and computer speed." << std::endl;
+			common::console::set_text_color(common::console::Default);
+			std::cout << "Backing up wallet file to " << (backup_wallet + "/" + name) << std::endl;
+			wallet->export_wallet(backup_wallet + "/" + name, false); // TODO - use set_password
+			std::cout << "Backing up wallet cache to " << dst_cache << std::endl;
+			std::cout << "Starting wallet cache backup..." << std::endl;
+			platform::DB::backup_db(coin_folder + "/wallet_cache/" + wallet->get_cache_name(), dst_cache);
+			std::cout << "Finished wallet cache backup." << std::endl;
+			return 0;
+		}
 		if (!export_view_only.empty()) {
-			wallet->export_view_only(export_view_only);
+			if( wallet->is_view_only() ){
+				std::cout << "Cannot export as view-only, wallet file is already view-only" << std::endl;
+				return api::WALLETD_WRONG_ARGS;
+			}
+			wallet->export_wallet(export_view_only, true); // TODO - use set_password
 			return 0;
 		}
 		if (export_keys) {
 			std::cout << common::to_hex(wallet->export_keys()) << std::endl;
 			return 0;
+		}
+		if (set_password){
+			wallet->set_password(new_password);
+//			if( !set_password_and_continue ){
+//				std::cout << "New password set" << std::endl;
+//				return 0;
+//			}
 		}
 	} catch (const common::StreamError &ex) {
 		std::cout << ex.what() << std::endl;
@@ -169,12 +212,14 @@ int main(int argc, const char *argv[]) try {
 	std::unique_ptr<platform::ExclusiveLock> blockchain_lock;
 	try {
 		if (!config.bytecoind_remote_port)
-			blockchain_lock = std::make_unique<platform::ExclusiveLock>(coinFolder, "bytecoind.lock");
+			blockchain_lock = std::make_unique<platform::ExclusiveLock>(coin_folder, "bytecoind.lock");
 	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
 		std::cout << "Bytecoind already running - " << ex.what() << std::endl;
 		return api::BYTECOIND_ALREADY_RUNNING;
 	}
 	try {
+		std::cout << "Using wallet cache folder " << config.get_data_folder("wallet_cache") << "/" << wallet->get_cache_name()
+		          << std::endl;
 		walletcache_lock = std::make_unique<platform::ExclusiveLock>(
 		    config.get_data_folder("wallet_cache"), wallet->get_cache_name() + ".lock");
 	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
@@ -228,7 +273,7 @@ int main(int argc, const char *argv[]) try {
 					std::unique_ptr<BlockChainState> separate_block_chain;
 					std::unique_ptr<Node> separate_node;
 					try {
-						separate_block_chain = std::make_unique<BlockChainState>(logManagerNode, config, currency);
+						separate_block_chain = std::make_unique<BlockChainState>(logManagerNode, config, currency, false);
 						separate_node        = std::make_unique<Node>(logManagerNode, config, *separate_block_chain);
 						prm.set_value();
 					} catch (...) {
@@ -245,7 +290,7 @@ int main(int argc, const char *argv[]) try {
 				std::future<void> fut = prm.get_future();
 				fut.get();  // propagates thread exception from here
 			} else {
-				block_chain = std::make_unique<BlockChainState>(logManagerNode, config, currency);
+				block_chain = std::make_unique<BlockChainState>(logManagerNode, config, currency, false);
 				node        = std::make_unique<Node>(logManagerNode, config, *block_chain);
 			}
 		} catch (const boost::system::system_error &ex) {

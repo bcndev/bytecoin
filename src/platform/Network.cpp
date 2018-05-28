@@ -408,7 +408,7 @@ static void add_system_root_certs(ssl::context &ctx) {
 // static thread_local std::shared_ptr<ssl::context> shared_client_context;
 #endif
 
-thread_local EventLoop *EventLoop::current_loop = 0;
+thread_local EventLoop *EventLoop::current_loop = nullptr;
 
 EventLoop::EventLoop(boost::asio::io_service &io_service) : io_service(io_service) {
 	if (current_loop != 0)
@@ -417,7 +417,7 @@ EventLoop::EventLoop(boost::asio::io_service &io_service) : io_service(io_servic
 }
 
 EventLoop::~EventLoop() {
-	current_loop = 0;
+	current_loop = nullptr;
 	//#if platform_USE_SSL
 	//	shared_client_context.reset();
 	//#endif

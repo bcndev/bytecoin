@@ -20,6 +20,7 @@ public:
 
 template<typename T>
 void from_binary_key_value(T &v, const common::BinaryArray &buf) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	common::MemoryInputStream stream(buf.data(), buf.size());
 	KVBinaryInputStream s(stream);
 	s(v);
@@ -28,6 +29,7 @@ void from_binary_key_value(T &v, const common::BinaryArray &buf) {
 }
 template<typename T>
 void from_binary_key_value(T &v, const std::string &buf) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	common::MemoryInputStream stream(buf.data(), buf.size());
 	KVBinaryInputStream s(stream);
 	s(v);

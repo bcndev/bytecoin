@@ -38,4 +38,5 @@ bool create_directory_if_necessary(const std::string &path);    // Only last ele
 bool create_directories_if_necessary(const std::string &path);  // Recursively all elements
 bool atomic_replace_file(const std::string &replacement_name, const std::string &old_file_name);
 bool copy_file(const std::string &to_path, const std::string &from_path);
+std::string get_filename_without_directory(const std::string &path);
 }

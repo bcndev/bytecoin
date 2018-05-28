@@ -128,18 +128,18 @@ PreparedBlock LegacyBlockChainReader::get_prepared_block_by_index(Height i) {
 	}
 }
 
-bool LegacyBlockChainReader::import_blocks(BlockChainState &block_chain) {
+bool LegacyBlockChainReader::import_blocks(BlockChainState *block_chain) {
 	try {
 		auto idea_start = std::chrono::high_resolution_clock::now();
 		// size_t bs_count = std::min(block_chain.get_tip_height() + 1 + count, get_block_count());
-		while (block_chain.get_tip_height() + 1 < get_block_count()) {
-			BinaryArray rba = get_block_data_by_index(block_chain.get_tip_height() + 1);
+		while (block_chain->get_tip_height() + 1 < get_block_count()) {
+			BinaryArray rba = get_block_data_by_index(block_chain->get_tip_height() + 1);
 			PreparedBlock pb(std::move(rba), nullptr);
 			api::BlockHeader info;
-			if (block_chain.add_block(pb, info) != BroadcastAction::BROADCAST_ALL) {
-				std::cout << "block_chain.add_block !BROADCAST_ALL block=" << block_chain.get_tip_height() + 1
+			if (block_chain->add_block(pb, &info) != BroadcastAction::BROADCAST_ALL) {
+				std::cout << "block_chain.add_block !BROADCAST_ALL block=" << block_chain->get_tip_height() + 1
 				          << std::endl;
-				block_chain.db_commit();
+				block_chain->db_commit();
 				return false;
 			}
 			auto idea_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -154,10 +154,10 @@ bool LegacyBlockChainReader::import_blocks(BlockChainState &block_chain) {
 		std::cout << "Unknown exception while importing blockchain file" << std::endl;
 		return false;
 	}
-	return block_chain.get_tip_height() + 1 < get_block_count();  // Not finished
+	return block_chain->get_tip_height() + 1 < get_block_count();  // Not finished
 }
 
-bool LegacyBlockChainReader::import_blockchain2(const std::string &coin_folder, BlockChainState &block_chain) {
+bool LegacyBlockChainReader::import_blockchain2(const std::string &coin_folder, BlockChainState *block_chain) {
 	//	std::fstream ts_file("/Users/user/bytecoin/timestamps.txt",
 	// std::ios::out | std::ios::trunc);
 	//	ts_file << "Block timestamp\tBlock median_timestamp\tBlock
@@ -167,26 +167,26 @@ bool LegacyBlockChainReader::import_blockchain2(const std::string &coin_folder, 
 
 	LegacyBlockChainReader reader(coin_folder + "/blockindexes.bin", coin_folder + "/blocks.bin");
 	const size_t bs_count = reader.get_block_count();
-	if (block_chain.get_tip_height() > bs_count) {
+	if (block_chain->get_tip_height() > bs_count) {
 		std::cout << "Skipping block chain import - we have more blocks than "
 		             "blocks.bin tip_height="
-		          << block_chain.get_tip_height() << " bs_count=" << bs_count << std::endl;
+		          << block_chain->get_tip_height() << " bs_count=" << bs_count << std::endl;
 		return true;
 	}
 	std::cout << "Importing blocks count=" << bs_count << std::endl;
 	auto idea_start  = std::chrono::high_resolution_clock::now();
-	auto start_block = block_chain.get_tip_height();
+	auto start_block = block_chain->get_tip_height();
 	api::BlockHeader prev_info;
-	while (block_chain.get_tip_height() + 1 < bs_count) {
-		PreparedBlock pb = reader.get_prepared_block_by_index(block_chain.get_tip_height() + 1);
+	while (block_chain->get_tip_height() + 1 < bs_count) {
+		PreparedBlock pb = reader.get_prepared_block_by_index(block_chain->get_tip_height() + 1);
 		api::BlockHeader info;
-		if (block_chain.add_block(pb, info) != BroadcastAction::BROADCAST_ALL) {
-			std::cout << "block_chain.add_block !BROADCAST_ALL block=" << block_chain.get_tip_height() + 1 << std::endl;
-			block_chain.db_commit();
+		if (block_chain->add_block(pb, &info) != BroadcastAction::BROADCAST_ALL) {
+			std::cout << "block_chain.add_block !BROADCAST_ALL block=" << block_chain->get_tip_height() + 1 << std::endl;
+			block_chain->db_commit();
 			return false;
 		}
-		if (block_chain.get_tip_height() % 50000 == 0)
-			block_chain.db_commit();
+		if (block_chain->get_tip_height() % 50000 == 0)
+			block_chain->db_commit();
 		// ts_file << info.timestamp << "\t" << info.timestamp_median << "\t" <<
 		// info.timestamp_unlock << "\t"
 		//		        << int64_t(info.timestamp) -
@@ -196,13 +196,13 @@ bool LegacyBlockChainReader::import_blockchain2(const std::string &coin_folder, 
 		//		        << int64_t(info.timestamp) -
 		// int64_t(info.timestamp_median) << std::endl;
 		prev_info = info;
-		if (block_chain.get_tip_height() == 1370000)  // 1370000
+		if (block_chain->get_tip_height() == 1370000)  // 1370000
 			break;
 	}
-	block_chain.db_commit();
+	block_chain->db_commit();
 	auto idea_ms =
 	    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - idea_start);
-	std::cout << "Import blocks " << start_block << ":" << block_chain.get_tip_height()
+	std::cout << "Import blocks " << start_block << ":" << block_chain->get_tip_height()
 	          << " seconds=" << double(idea_ms.count()) / 1000 << std::endl;
 	return true;
 }
@@ -222,7 +222,7 @@ void LegacyBlockChainWriter::write_block(const bytecoin::RawBlock &raw_block) {
 	m_indexes_file.write(&si, sizeof si);
 }
 
-bool LegacyBlockChainWriter::export_blockchain2(const std::string &export_folder, BlockChainState &block_chain) {
+bool LegacyBlockChainWriter::export_blockchain2(const std::string &export_folder, const BlockChainState &block_chain) {
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	std::cout << "Start exporting blocks" << std::endl;
 	LegacyBlockChainWriter writer(
@@ -230,7 +230,7 @@ bool LegacyBlockChainWriter::export_blockchain2(const std::string &export_folder
 	for (Height ha = 0; ha != block_chain.get_tip_height() + 1; ++ha) {
 		Hash bid{};
 		RawBlock raw_block;
-		if (!block_chain.read_chain(ha, bid) || !block_chain.read_block(bid, raw_block))
+		if (!block_chain.read_chain(ha, &bid) || !block_chain.read_block(bid, &raw_block))
 			throw std::logic_error("block_chain.read_block failed");
 		writer.write_block(raw_block);
 		if (ha % 1000 == 0)

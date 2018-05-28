@@ -11,7 +11,7 @@
 
 static void parse_peer_and_add_to_container(const std::string &str, std::vector<bytecoin::NetworkAddress> &container) {
 	bytecoin::NetworkAddress na{};
-	if (!common::parse_ip_address_and_port(str, na.ip, na.port))
+	if (!common::parse_ip_address_and_port(str, &na.ip, &na.port))
 		throw std::runtime_error("Wrong address format " + str + ", should be ip:port");
 	container.push_back(na);
 }
@@ -57,13 +57,13 @@ Config::Config(common::CommandLine &cmd)
 		p2p_allow_local_ip = true;
 	}
 	if (const char *pa = cmd.get("--p2p-bind-address")) {
-		if (!common::parse_ip_address_and_port(pa, p2p_bind_ip, p2p_bind_port))
+		if (!common::parse_ip_address_and_port(pa, &p2p_bind_ip, &p2p_bind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
 	if (const char *pa = cmd.get("--p2p-external-port"))
 		p2p_external_port = boost::lexical_cast<uint16_t>(pa);
 	if (const char *pa = cmd.get("--walletd-bind-address")) {
-		if (!common::parse_ip_address_and_port(pa, walletd_bind_ip, walletd_bind_port))
+		if (!common::parse_ip_address_and_port(pa, &walletd_bind_ip, &walletd_bind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
 	if (const char *pa = cmd.get("--ssl-certificate-pem-file")) {
@@ -84,7 +84,7 @@ Config::Config(common::CommandLine &cmd)
 		bytecoind_authorization = common::base64::encode(BinaryArray(pa, pa + strlen(pa)));
 	}
 	if (const char *pa = cmd.get("--bytecoind-bind-address")) {
-		if (!common::parse_ip_address_and_port(pa, bytecoind_bind_ip, bytecoind_bind_port))
+		if (!common::parse_ip_address_and_port(pa, &bytecoind_bind_ip, &bytecoind_bind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
 	if (const char *pa = cmd.get("--bytecoind-remote-address")) {
@@ -106,7 +106,7 @@ Config::Config(common::CommandLine &cmd)
 			const std::string prefix2 = "http://";
 			if (addr.find(prefix2) == 0)
 				addr = addr.substr(prefix2.size());
-			if (!common::parse_ip_address_and_port(addr, bytecoind_remote_ip, bytecoind_remote_port))
+			if (!common::parse_ip_address_and_port(addr, &bytecoind_remote_ip, &bytecoind_remote_port))
 				throw std::runtime_error("Wrong address format " + addr + ", should be ip:port");
 		}
 	}
@@ -128,7 +128,7 @@ Config::Config(common::CommandLine &cmd)
 	if (seed_nodes.empty() && !is_testnet)
 		for (auto &&sn : bytecoin::SEED_NODES) {
 			NetworkAddress addr;
-			if (!common::parse_ip_address_and_port(sn, addr.ip, addr.port))
+			if (!common::parse_ip_address_and_port(sn, &addr.ip, &addr.port))
 				continue;
 			seed_nodes.push_back(addr);
 		}

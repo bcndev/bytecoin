@@ -23,7 +23,7 @@ public:
 
 	uint64_t seek(uint64_t pos, int whence);  // SEEK_SET, SEEK_CUR, SEEK_END
 	uint64_t tellp() const { return const_cast<FileStream *>(this)->seek(0, SEEK_CUR); }
-	void fdatasync();              // top reason for existence of this class
+	void fsync();              // top reason for existence of this class
 	void truncate(uint64_t size);  // also sets pointer to the new end of file
 
 #ifdef _WIN32
