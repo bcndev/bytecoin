@@ -5,6 +5,7 @@
 #include <boost/lexical_cast.hpp>
 #include <iostream>
 #include "PathTools.hpp"
+#include "common/string.hpp"
 
 using namespace platform;
 
@@ -12,12 +13,22 @@ using namespace platform;
 #pragma comment(lib, "ntdll.lib")  // dependency of lmdb, here to avoid linker arguments
 #endif
 
-static void lmdb_check(int rc, const char *msg) {
-	if (rc != MDB_SUCCESS)
-		throw platform::lmdb::Error(msg + std::to_string(rc) + " " + std::string(::mdb_strerror(rc)));
+void lmdb::Error::do_throw(const std::string &msg, int rc){
+	throw platform::lmdb::Error(msg + common::to_string(rc) + " " + std::string(::mdb_strerror(rc)));
 }
 
-platform::lmdb::Env::Env(bool read_only):m_read_only(read_only) { lmdb_check(::mdb_env_create(&handle), "mdb_env_create "); }
+static void lmdb_check(int rc, const char *msg) {  // we need very fast check on get/put/del
+	if (rc != MDB_SUCCESS)
+		lmdb::Error::do_throw(msg, rc);
+}
+static void lmdb_check(int rc, const std::string &msg) {
+	if (rc != MDB_SUCCESS)
+		lmdb::Error::do_throw(msg, rc);
+}
+
+platform::lmdb::Env::Env(bool read_only) : m_read_only(read_only) {
+	lmdb_check(::mdb_env_create(&handle), "mdb_env_create ");
+}
 
 platform::lmdb::Env::~Env() {
 	::mdb_env_close(handle);
@@ -46,7 +57,7 @@ platform::lmdb::Dbi::Dbi(Txn &db_txn) {
 bool platform::lmdb::Dbi::get(Txn &db_txn, MDB_val *const key, MDB_val *const data) {
 	const int rc = ::mdb_get(db_txn.handle, handle, key, data);
 	if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND)
-		throw Error("mdb_get " + std::to_string(rc));
+		lmdb::Error::do_throw("mdb_get ", rc);
 	return (rc == MDB_SUCCESS);
 }
 
@@ -59,7 +70,7 @@ platform::lmdb::Cur::Cur(Cur &&other) noexcept { std::swap(handle, other.handle)
 bool platform::lmdb::Cur::get(MDB_val *const key, MDB_val *const data, const MDB_cursor_op op) {
 	const int rc = ::mdb_cursor_get(handle, key, data, op);
 	if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND)
-		throw Error("mdb_cursor_get" + std::to_string(rc));
+		lmdb::Error::do_throw("mdb_cursor_get ", rc);
 	return (rc == MDB_SUCCESS);
 }
 platform::lmdb::Cur::~Cur() {
@@ -67,12 +78,14 @@ platform::lmdb::Cur::~Cur() {
 	handle = nullptr;
 }
 
-DBlmdb::DBlmdb(bool read_only, const std::string &full_path, uint64_t max_db_size) : full_path(full_path), db_env(read_only) {
+DBlmdb::DBlmdb(bool read_only, const std::string &full_path, uint64_t max_db_size)
+    : full_path(full_path), db_env(read_only) {
 	//	std::cout << "lmdb libversion=" << mdb_version(nullptr, nullptr, nullptr) << std::endl;
 	lmdb_check(::mdb_env_set_mapsize(db_env.handle, max_db_size), "mdb_env_set_mapsize ");
 	// VALGRIND is limited to 32GB, modify line above to use (max_db_size > 28000000000 ? 28000000000 : max_db_size)
-	create_directories_if_necessary(full_path);
-	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(), MDB_NOMETASYNC | (read_only ? MDB_RDONLY : 0), 0644), "mdb_env_open ");
+	create_folders_if_necessary(full_path);
+	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(), MDB_NOMETASYNC | (read_only ? MDB_RDONLY : 0), 0644),
+	    "Failed to open database " + full_path + " in mdb_env_open ");
 	// MDB_NOMETASYNC - We agree to trade chance of losing 1 last transaction for 2x performance boost
 	db_txn.reset(new lmdb::Txn(db_env));
 	db_dbi.reset(new lmdb::Dbi(*db_txn));
@@ -162,10 +175,10 @@ void DBlmdb::put(const std::string &key, const common::BinaryArray &value, bool 
 	const int rc =
 	    ::mdb_put(db_txn->handle, db_dbi->handle, lmdb::Val(key), temp_value, nooverwrite ? MDB_NOOVERWRITE : 0);
 	if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST)
-		throw lmdb::Error("DBlmdb::put failed " + std::string(key.data(), key.size()));
+		lmdb::Error::do_throw("DBlmdb::put failed " + std::string(key.data(), key.size()), rc);
 	if (nooverwrite && rc == MDB_KEYEXIST)
-		throw lmdb::Error(
-		    "DBlmdb::put failed or nooverwrite key already exists " + std::string(key.data(), key.size()));
+		lmdb::Error::do_throw(
+		    "DBlmdb::put failed or nooverwrite key already exists " + std::string(key.data(), key.size()), rc);
 }
 
 void DBlmdb::put(const std::string &key, const std::string &value, bool nooverwrite) {
@@ -173,10 +186,10 @@ void DBlmdb::put(const std::string &key, const std::string &value, bool nooverwr
 	const int rc =
 	    ::mdb_put(db_txn->handle, db_dbi->handle, lmdb::Val(key), temp_value, nooverwrite ? MDB_NOOVERWRITE : 0);
 	if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST)
-		throw lmdb::Error("DBlmdb::put failed " + std::string(key.data(), key.size()));
+		lmdb::Error::do_throw("DBlmdb::put failed " + std::string(key.data(), key.size()), rc);
 	if (nooverwrite && rc == MDB_KEYEXIST)
-		throw lmdb::Error(
-		    "DBlmdb::put failed or nooverwrite key already exists " + std::string(key.data(), key.size()));
+		lmdb::Error::do_throw(
+		    "DBlmdb::put failed or nooverwrite key already exists " + std::string(key.data(), key.size()), rc);
 }
 
 bool DBlmdb::get(const std::string &key, common::BinaryArray &value) const {
@@ -200,10 +213,10 @@ bool DBlmdb::get(const std::string &key, Value &value) const { return db_dbi->ge
 void DBlmdb::del(const std::string &key, bool mustexist) {
 	const int rc = ::mdb_del(db_txn->handle, db_dbi->handle, lmdb::Val(key), nullptr);
 	if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND)
-		throw lmdb::Error("DBlmdb::del failed " + std::string(key.data(), key.size()));
+		lmdb::Error::do_throw("DBlmdb::del failed " + std::string(key.data(), key.size()), rc);
 	if (mustexist &&
 	    rc == MDB_NOTFOUND)  // Soemtimes lmdb returns 0 for non existing keys, we have to get our own check upwards
-		throw lmdb::Error("DBlmdb::del key does not exist " + std::string(key.data(), key.size()));
+		lmdb::Error::do_throw("DBlmdb::del key does not exist " + std::string(key.data(), key.size()), rc);
 }
 
 std::string DBlmdb::to_ascending_key(uint32_t key) {
@@ -237,10 +250,12 @@ void DBlmdb::delete_db(const std::string &full_path) {
 	std::remove(full_path.c_str());
 }
 
-void DBlmdb::backup_db(const std::string &full_path, const std::string &dst_path){
+void DBlmdb::backup_db(const std::string &full_path, const std::string &dst_path) {
 	lmdb::Env db_env(true);
-	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(), MDB_RDONLY, 0600), "mdb_env_open ");
-	lmdb_check(::mdb_env_copy2(db_env.handle, dst_path.c_str(), MDB_CP_COMPACT), "mdb_env_copy2 ");
+	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(), MDB_RDONLY, 0600),
+	    "Failed to open database " + full_path + " for doing backup");
+	lmdb_check(::mdb_env_copy2(db_env.handle, dst_path.c_str(), MDB_CP_COMPACT),
+	    "Failed to backup database " + full_path + " into " + dst_path);
 }
 
 void DBlmdb::run_tests() {

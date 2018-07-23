@@ -298,6 +298,8 @@ void TCPSocket::write_callback(CFWriteStreamRef stream, CFStreamEventType event,
 #include <boost/bind.hpp>
 #include <iostream>
 
+using namespace std::placeholders;  // We enjoy standard bindings
+
 #if platform_USE_SSL
 #include <boost/asio/ssl.hpp>
 #include <common/string.hpp>
@@ -475,7 +477,7 @@ public:
 		pending_wait = true;
 		timer.expires_from_now(boost::posix_time::milliseconds(
 		    static_cast<int>(after_seconds * 1000)));  // int because we do not know exact type
-		timer.async_wait(boost::bind(&Impl::handle_timeout, owner->impl, boost::asio::placeholders::error));
+		timer.async_wait(std::bind(&Impl::handle_timeout, owner->impl, _1));
 	}
 };
 
@@ -587,13 +589,10 @@ public:
 		        boost::asio::buffer(incoming_buffer.write_ptr2(), incoming_buffer.write_count2())}};
 #if platform_USE_SSL
 		if (ssl_socket)
-			ssl_socket->async_read_some(
-			    bufs, boost::bind(&Impl::handle_read, owner->impl, boost::asio::placeholders::error,
-			              boost::asio::placeholders::bytes_transferred));
+			ssl_socket->async_read_some(bufs, std::bind(&Impl::handle_read, owner->impl, _1, _2));
 		else
 #endif
-			socket.async_read_some(bufs, boost::bind(&Impl::handle_read, owner->impl, boost::asio::placeholders::error,
-			                                 boost::asio::placeholders::bytes_transferred));
+			socket.async_read_some(bufs, std::bind(&Impl::handle_read, owner->impl, _1, _2));
 	}
 
 	void handle_read(const boost::system::error_code &e, std::size_t bytes_transferred) {
@@ -626,14 +625,10 @@ public:
 		        boost::asio::buffer(outgoing_buffer.read_ptr2(), outgoing_buffer.read_count2())}};
 #if platform_USE_SSL
 		if (ssl_socket)
-			ssl_socket->async_write_some(
-			    bufs, boost::bind(&Impl::handle_write, owner->impl, boost::asio::placeholders::error,
-			              boost::asio::placeholders::bytes_transferred));
+			ssl_socket->async_write_some(bufs, std::bind(&Impl::handle_write, owner->impl, _1, _2));
 		else
 #endif
-			socket.async_write_some(
-			    bufs, boost::bind(&Impl::handle_write, owner->impl, boost::asio::placeholders::error,
-			              boost::asio::placeholders::bytes_transferred));
+			socket.async_write_some(bufs, std::bind(&Impl::handle_write, owner->impl, _1, _2));
 	}
 
 	void handle_write(const boost::system::error_code &e, std::size_t bytes_transferred) {
@@ -651,7 +646,7 @@ public:
 	}
 #if platform_USE_SSL
 	void start_handshake(ssl::stream_base::handshake_type type) {
-		ssl_socket->async_handshake(type, boost::bind(&Impl::handle_handshake, this, boost::asio::placeholders::error));
+		ssl_socket->async_handshake(type, std::bind(&Impl::handle_handshake, this, _1));
 	}
 	void handle_handshake(const boost::system::error_code &e) {
 		pending_connect = false;
@@ -712,15 +707,14 @@ bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 			impl->ssl_socket  = std::make_unique<SSLSocket>(EventLoop::current()->io(), *impl->ssl_context);
 			if (!SSL_set_tlsext_host_name(impl->ssl_socket->native_handle(), ssl_addr.second.c_str()))
 				return false;
-			impl->ssl_socket->lowest_layer().async_connect(iter->endpoint(),
-			    boost::bind(&TCPSocket::Impl::handle_connect, impl, boost::asio::placeholders::error));
+			impl->ssl_socket->lowest_layer().async_connect(
+			    iter->endpoint(), std::bind(&TCPSocket::Impl::handle_connect, impl, _1));
 #else
 			return false;
 #endif
 		} else {
 			boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::address::from_string(ssl_addr.second), port);
-			impl->socket.async_connect(
-			    endpoint, boost::bind(&TCPSocket::Impl::handle_connect, impl, boost::asio::placeholders::error));
+			impl->socket.async_connect(endpoint, std::bind(&TCPSocket::Impl::handle_connect, impl, _1));
 		}
 	} catch (const std::exception &) {
 		return false;
@@ -792,12 +786,11 @@ public:
 		pending_accept = true;
 #if platform_USE_SSL
 		if (ssl)
-			acceptor.async_accept(ssl_socket_being_accepted->next_layer(),
-			    boost::bind(&Impl::handle_accept, owner->impl, boost::asio::placeholders::error));
+			acceptor.async_accept(
+			    ssl_socket_being_accepted->next_layer(), std::bind(&Impl::handle_accept, owner->impl, _1));
 		else
 #endif
-			acceptor.async_accept(socket_being_accepted,
-			    boost::bind(&Impl::handle_accept, owner->impl, boost::asio::placeholders::error));
+			acceptor.async_accept(socket_being_accepted, std::bind(&Impl::handle_accept, owner->impl, _1));
 	}
 	void handle_accept(const boost::system::error_code &e) {
 		pending_accept = false;
@@ -830,7 +823,7 @@ TCPAcceptor::TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_han
 	}
 #endif
 	boost::asio::ip::tcp::resolver resolver(EventLoop::current()->io());
-	boost::asio::ip::tcp::resolver::query query(addr, std::to_string(port));
+	boost::asio::ip::tcp::resolver::query query(addr, common::to_string(port));
 	boost::asio::ip::tcp::endpoint endpoint = *resolver.resolve(query);
 	impl->acceptor.open(endpoint.protocol());
 	impl->acceptor.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));

@@ -92,7 +92,7 @@ size_t bytecoin::get_maximum_tx_size(size_t input_count, size_t output_count, si
 	return header_size + outputs_size + input_size * input_count;
 }
 
-bool bytecoin::get_tx_fee(const Transaction &tx, uint64_t *fee) {
+bool bytecoin::get_tx_fee(const TransactionPrefix &tx, uint64_t *fee) {
 	uint64_t amount_in  = 0;
 	uint64_t amount_out = 0;
 
@@ -106,7 +106,7 @@ bool bytecoin::get_tx_fee(const Transaction &tx, uint64_t *fee) {
 		amount_out += o.amount;
 	}
 
-	if (!(amount_in >= amount_out)) {
+	if (amount_in < amount_out) {
 		return false;
 	}
 
@@ -114,7 +114,7 @@ bool bytecoin::get_tx_fee(const Transaction &tx, uint64_t *fee) {
 	return true;
 }
 
-uint64_t bytecoin::get_tx_fee(const Transaction &tx) {
+uint64_t bytecoin::get_tx_fee(const TransactionPrefix &tx) {
 	uint64_t r = 0;
 	if (!get_tx_fee(tx, &r))
 		return 0;

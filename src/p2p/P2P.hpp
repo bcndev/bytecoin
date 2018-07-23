@@ -33,6 +33,7 @@ public:
 	void send_shutdown();
 	void disconnect(const std::string &ban_reason);  // empty for no ban
 	bool test_connect(const NetworkAddress &addr);   // for single connects without p2p
+	bool is_connected() const;
 	virtual ~P2PClient() {}
 
 protected:

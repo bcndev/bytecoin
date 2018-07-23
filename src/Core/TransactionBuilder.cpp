@@ -10,7 +10,7 @@
 #include "common/string.hpp"
 #include "crypto/crypto.hpp"
 #include "crypto/random.h"
-#include "http/JsonRpc.h"
+#include "http/JsonRpc.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
 using namespace bytecoin;
@@ -95,9 +95,9 @@ size_t TransactionBuilder::add_input(const AccountKeys &sender_keys,
 
 	if (!generate_key_image_helper(sender_keys, real_output.transaction_public_key, real_output.index_in_transaction,
 	        desc.eph_keys, desc.input.key_image))
-		throw std::runtime_error("generating keyimage failed");
+		throw std::runtime_error("generating key_image failed");
 	if (desc.input.key_image != real_output.key_image)
-		throw std::runtime_error("generated keyimage does not match input");
+		throw std::runtime_error("generated key_image does not match input");
 
 	// fill outputs array and use relative offsets
 	for (const auto &out : desc.outputs) {
@@ -130,6 +130,8 @@ KeyPair TransactionBuilder::deterministic_keys_from_seed(const TransactionPrefix
 Transaction TransactionBuilder::sign(const Hash &tx_derivation_seed) {
 	std::shuffle(m_output_descs.begin(), m_output_descs.end(), crypto::random_engine<size_t>{});
 	std::shuffle(m_input_descs.begin(), m_input_descs.end(), crypto::random_engine<size_t>{});
+	std::stable_sort(m_output_descs.begin(), m_output_descs.end(), OutputDesc::less);
+	std::stable_sort(m_input_descs.begin(), m_input_descs.end(), InputDesc::less);
 
 	// Deterministic generation of tx private key.
 	m_transaction.inputs.resize(m_input_descs.size());
@@ -216,8 +218,8 @@ constexpr Amount fake_large = 1000000000000000000;  // optimize negative amounts
                                                     // number to them
 constexpr size_t OPTIMIZATIONS_PER_TX            = 50;
 constexpr size_t OPTIMIZATIONS_PER_TX_AGGRESSIVE = 200;
-constexpr size_t MEDIAN_PERCENT                  = 5;   // make tx up to 25% of block
-constexpr size_t MEDIAN_PERCENT_AGGRESSIVE       = 10;  // make tx up to 50% of block
+constexpr size_t MEDIAN_PERCENT                  = 10;  // make tx up to X% of block
+constexpr size_t MEDIAN_PERCENT_AGGRESSIVE       = 25;  // make tx up to X% of block
 constexpr size_t STACK_OPTIMIZATION_THRESHOLD    = 20;  // If any coin stack is larger, we will spend 10 coins.
 constexpr size_t TWO_THRESHOLD                   = 10;  // if any of 2 coin stacks is larger, we
                                                         // will use 2 coins to cover single digit
@@ -226,6 +228,8 @@ constexpr size_t TWO_THRESHOLD                   = 10;  // if any of 2 coin stac
 std::string UnspentSelector::select_optimal_outputs(Height block_height, Timestamp block_time, Height confirmed_height,
     size_t effective_median_size, size_t anonymity, Amount total_amount, size_t total_outputs, Amount fee_per_byte,
     std::string optimization_level, Amount *change) {
+	effective_median_size = (120 * effective_median_size) / 100;  // Mining code uses 125/100
+
 	HaveCoins have_coins;
 	size_t max_digits;
 	DustCoins dust_coins;
@@ -260,7 +264,7 @@ std::string UnspentSelector::select_optimal_outputs(Height block_height, Timesta
 			combine_optimized_unspents();
 			std::string final_coins;
 			for (auto uu : m_used_unspents)
-				final_coins += " " + std::to_string(uu.amount);
+				final_coins += " " + common::to_string(uu.amount);
 			std::cout << "Selected used_total=" << m_used_total << " for total_amount=" << total_amount
 			          << ", final coins" << final_coins << std::endl;
 			return std::string();

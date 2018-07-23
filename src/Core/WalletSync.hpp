@@ -7,7 +7,7 @@
 #include "Node.hpp"
 #include "WalletState.hpp"
 #include "http/Agent.hpp"
-#include "http/JsonRpc.h"
+#include "http/JsonRpc.hpp"
 
 namespace bytecoin {
 
@@ -29,7 +29,6 @@ protected:
 	http::Agent m_sync_agent;
 	std::unique_ptr<http::Request> m_sync_request;
 	void advance_sync();
-	int transient_transactions_counter = 0;  // This works as mutex for create_raw_transaction and sync_pool
 
 	http::Agent m_commands_agent;
 	std::unique_ptr<http::Request> m_command_request;
@@ -38,8 +37,13 @@ protected:
 
 	std::unique_ptr<platform::PreventSleep> prevent_sleep;
 	platform::Timer m_commit_timer;
+
+	Hash next_send_hash;
+	Hash sending_transaction_hash;
+
 	void db_commit();
 	void send_get_status();
+	bool send_send_transaction();  // nothing to send
 	void send_sync_pool();
 	void send_get_blocks();
 };

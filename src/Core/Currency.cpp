@@ -2,6 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Currency.hpp"
+#include <boost/algorithm/string/erase.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/lexical_cast.hpp>
 #include <cctype>
@@ -64,7 +65,8 @@ Currency::Currency(bool is_testnet)
     , number_of_decimal_places(parameters::CRYPTONOTE_DISPLAY_DECIMAL_POINT)
     , minimum_fee(parameters::MINIMUM_FEE)
     , default_dust_threshold(parameters::DEFAULT_DUST_THRESHOLD)
-    , difficulty_target(is_testnet ? 1 : parameters::DIFFICULTY_TARGET)
+    , difficulty_target(is_testnet ? 10 : parameters::DIFFICULTY_TARGET)
+    , minimum_difficulty_from_v2(parameters::MINIMUM_DIFFICULTY_FROM_V2)
     , difficulty_window(parameters::DIFFICULTY_WINDOW(difficulty_target))
     , difficulty_lag(parameters::DIFFICULTY_LAG)
     , difficulty_cut(parameters::DIFFICULTY_CUT)
@@ -104,37 +106,54 @@ Currency::Currency(bool is_testnet)
 	genesis_block_hash = get_block_hash(genesis_block_template);
 }
 
-size_t Currency::checkpoint_count() const { return is_testnet ? 1 : sizeof(CHECKPOINTS) / sizeof(*CHECKPOINTS); }
+size_t Currency::sw_checkpoint_count() const { return is_testnet ? 1 : sizeof(CHECKPOINTS) / sizeof(*CHECKPOINTS); }
 
-bool Currency::is_in_checkpoint_zone(Height index) const {
+bool Currency::is_in_sw_checkpoint_zone(Height index) const {
 	if (is_testnet)
 		return index == 0;
-	return index <= CHECKPOINTS[checkpoint_count() - 1].index;
+	return index <= CHECKPOINTS[sw_checkpoint_count() - 1].height;
 }
 
-bool Currency::check_block_checkpoint(Height index, const crypto::Hash &h, bool &is_checkpoint) const {
+bool Currency::check_sw_checkpoint(Height index, const crypto::Hash &h, bool &is_sw_checkpoint) const {
 	if (is_testnet || index == 0) {
-		is_checkpoint = (index == 0);
+		is_sw_checkpoint = (index == 0);
 		return index == 0 ? h == genesis_block_hash : true;
 	}
-	auto it = std::lower_bound(CHECKPOINTS, CHECKPOINTS + checkpoint_count(), index,
-	    [](const CheckpointData &da, uint32_t ma) { return da.index < ma; });
-	is_checkpoint = false;
-	if (it == CHECKPOINTS + checkpoint_count())
+	auto it = std::lower_bound(CHECKPOINTS, CHECKPOINTS + sw_checkpoint_count(), index,
+	    [](const CheckpointData &da, uint32_t ma) { return da.height < ma; });
+	is_sw_checkpoint = false;
+	if (it == CHECKPOINTS + sw_checkpoint_count())
 		return true;
-	if (it->index != index)
+	if (it->height != index)
 		return true;
-	is_checkpoint = true;
-	return common::pod_to_hex(h) == it->block_id;
+	is_sw_checkpoint = true;
+	return common::pod_to_hex(h) == it->hash;
 }
 
-std::pair<Height, crypto::Hash> Currency::last_checkpoint() const {
-	if (is_testnet || checkpoint_count() == 0)
+std::pair<Height, Hash> Currency::last_sw_checkpoint() const {
+	if (is_testnet || sw_checkpoint_count() == 0)
 		return std::make_pair(0, genesis_block_hash);
-	auto cp = CHECKPOINTS[checkpoint_count() - 1];
-	crypto::Hash ha{};
-	common::pod_from_hex(cp.block_id, ha);
-	return std::make_pair(cp.index, ha);
+	auto cp = CHECKPOINTS[sw_checkpoint_count() - 1];
+	Hash ha{};
+	common::pod_from_hex(cp.hash, ha);
+	return std::make_pair(cp.height, ha);
+}
+
+PublicKey Currency::get_checkpoint_public_key(uint32_t key_id) const {
+	PublicKey key{};
+	if (key_id < get_checkpoint_keys_count()) {
+		if (is_testnet)
+			common::pod_from_hex(CHECKPOINT_PUBLIC_KEYS_TESTNET[key_id], key);
+		else
+			common::pod_from_hex(CHECKPOINT_PUBLIC_KEYS[key_id], key);
+	}
+	return key;
+}
+
+size_t Currency::get_checkpoint_keys_count() const {
+	if(is_testnet)
+		return sizeof(CHECKPOINT_PUBLIC_KEYS_TESTNET) / sizeof(*CHECKPOINT_PUBLIC_KEYS_TESTNET);
+	return sizeof(CHECKPOINT_PUBLIC_KEYS) / sizeof(*CHECKPOINT_PUBLIC_KEYS);
 }
 
 uint8_t Currency::get_block_major_version_for_height(Height height) const {
@@ -143,6 +162,14 @@ uint8_t Currency::get_block_major_version_for_height(Height height) const {
 	if (height > upgrade_height_v2 && height <= upgrade_height_v3)
 		return 2;
 	return 3;  // info.height > currency.upgrade_height_v3
+}
+
+uint8_t Currency::get_block_minor_version_for_height(Height height) const {
+	if (height <= upgrade_height_v2)
+		return 0;
+	if (height > upgrade_height_v2 && height <= upgrade_height_v3)
+		return 0;
+	return 1;  // Signal of checkpoints support
 }
 
 uint32_t Currency::block_granted_full_reward_zone_by_block_version(uint8_t block_major_version) const {
@@ -168,6 +195,10 @@ bool Currency::get_block_reward(uint8_t block_major_version, size_t effective_me
 	*reward          = penalized_base_reward + penalized_fee;
 
 	return true;
+}
+
+Height Currency::largest_window() const {
+	return std::max(difficulty_blocks_count(), std::max(reward_blocks_window, timestamp_check_window));
 }
 
 uint32_t Currency::max_block_cumulative_size(Height height) const {
@@ -333,24 +364,44 @@ bool Currency::parse_account_address_string(const std::string &str, AccountPubli
 	return true;
 }
 
+static std::string ffw(bytecoin::Amount am, size_t digs) {
+	std::string result = common::to_string(am);
+	if (result.size() < digs)
+		result = std::string(digs - result.size(), '0') + result;
+	return result;
+}
+
 std::string Currency::format_amount(size_t number_of_decimal_places, Amount amount) {
-	std::string s = common::to_string(amount);
-	if (s.size() < number_of_decimal_places + 1)
-		s.insert(0, number_of_decimal_places + 1 - s.size(), '0');
-	s.insert(s.size() - number_of_decimal_places, ".");
-	return s;
+	bytecoin::Amount ia = amount / DECIMAL_PLACES.at(number_of_decimal_places);
+	bytecoin::Amount fa = amount - ia * DECIMAL_PLACES.at(number_of_decimal_places);
+	std::string result;
+	while (ia >= 1000) {
+		result = "'" + ffw(ia % 1000, 3) + result;
+		ia /= 1000;
+	}
+	result = std::to_string(ia) + result;
+	if (fa != 0) {  // cents
+		result += "." + ffw(fa / DECIMAL_PLACES.at(number_of_decimal_places - 2), 2);
+		fa %= DECIMAL_PLACES.at(number_of_decimal_places - 2);
+	}
+	if (fa != 0) {
+		result += "'" + ffw(fa / 1000, 3);
+		fa %= 1000;
+	}
+	if (fa != 0)
+		result += "'" + ffw(fa, 3);
+	return result;
 }
 
 std::string Currency::format_amount(size_t number_of_decimal_places, SignedAmount amount) {
 	std::string s = Currency::format_amount(number_of_decimal_places, static_cast<Amount>(std::abs(amount)));
-	if (amount < 0)
-		s.insert(0, "-");
-	return s;
+	return amount < 0 ? "-" + s : s;
 }
 
 bool Currency::parse_amount(size_t number_of_decimal_places, const std::string &str, Amount *amount) {
 	std::string str_amount = str;
 	boost::algorithm::trim(str_amount);
+	boost::algorithm::erase_all(str_amount, "'");
 
 	size_t point_index = str_amount.find_first_of('.');
 	size_t fraction_size;
@@ -385,7 +436,7 @@ bool Currency::parse_amount(size_t number_of_decimal_places, const std::string &
 }
 
 Difficulty Currency::next_difficulty(
-    std::vector<Timestamp> timestamps, std::vector<Difficulty> cumulative_difficulties) const {
+    std::vector<Timestamp> timestamps, std::vector<CumulativeDifficulty> cumulative_difficulties) const {
 	assert(difficulty_window >= 2);
 
 	if (timestamps.size() > difficulty_window) {
@@ -417,11 +468,12 @@ Difficulty Currency::next_difficulty(
 		time_span = 1;
 	}
 
-	Difficulty total_work = cumulative_difficulties[cut_end - 1] - cumulative_difficulties[cut_begin];
-	assert(total_work > 0);
+	invariant(cumulative_difficulties[cut_end - 1] > cumulative_difficulties[cut_begin], "Reversed difficulties");
+	CumulativeDifficulty total_work = cumulative_difficulties[cut_end - 1] -= cumulative_difficulties[cut_begin];
+	invariant(total_work.hi == 0, "Window difficulty difference too large");
 
 	uint64_t low, high;
-	low = mul128(total_work, difficulty_target, &high);
+	low = mul128(total_work.lo, difficulty_target, &high);
 	if (high != 0 || std::numeric_limits<uint64_t>::max() - low < (time_span - 1)) {
 		return 0;
 	}
@@ -444,9 +496,6 @@ bool Currency::check_proof_of_work_v2(const Hash &long_block_hash,
 	if (block.major_version < 2) {
 		return false;
 	}
-	if (!check_hash(long_block_hash, current_difficulty)) {
-		return false;
-	}
 	TransactionExtraMergeMiningTag mm_tag;
 	if (!get_merge_mining_tag_from_extra(block.parent_block.base_transaction.extra, mm_tag)) {
 		//    logger(ERROR) << "merge mining tag wasn't found in extra of the parent
@@ -462,6 +511,9 @@ bool Currency::check_proof_of_work_v2(const Hash &long_block_hash,
 	if (aux_blocks_merkle_root != mm_tag.merkle_root) {
 		//    logger(ERROR, BRIGHT_YELLOW) << "Aux block hash wasn't found in merkle
 		//    tree";
+		return false;
+	}
+	if (!check_hash(long_block_hash, current_difficulty)) {
 		return false;
 	}
 	return true;

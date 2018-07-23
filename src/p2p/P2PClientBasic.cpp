@@ -53,6 +53,8 @@ std::map<std::pair<uint32_t, bool>, P2PClientBasic::LevinHandlerFunction> P2PCli
         levin_method<NOTIFY_REQUEST_CHAIN::request>(&P2PClientBasic::on_msg_notify_request_chain)},
     {{NOTIFY_RESPONSE_CHAIN_ENTRY::ID, false},
         levin_method<NOTIFY_RESPONSE_CHAIN_ENTRY::request>(&P2PClientBasic::on_msg_notify_request_chain)},
+    {{NOTIFY_CHECKPOINT::ID, false},
+        levin_method<NOTIFY_CHECKPOINT::request>(&P2PClientBasic::on_msg_notify_checkpoint)},
     {{NOTIFY_REQUEST_GET_OBJECTS::ID, false},
         levin_method<NOTIFY_REQUEST_GET_OBJECTS::request>(&P2PClientBasic::on_msg_notify_request_objects)},
     {{NOTIFY_RESPONSE_GET_OBJECTS::ID, false},
@@ -241,9 +243,7 @@ void P2PClientBasic::on_request_ready() {
 				}
 				continue;
 			}
-			std::cout << "generic bytecoin::P2P cmd={" << cmd.command << "} " << cmd.is_response << " " << cmd.is_notify
-			          << " {"
-			          << "}" << std::endl;
+			std::cout << "generic bytecoin::P2P cmd=" << cmd.command << " " << cmd.is_response << " " << cmd.is_notify << std::endl;
 		} catch (const std::exception &ex) {
 			disconnect(std::string("299 Exception processing p2p message what=") + ex.what());
 			return;

@@ -16,7 +16,7 @@ JsonInputValue::JsonInputValue(const common::JsonValue &value) : value(value) {}
 
 JsonInputValue::JsonInputValue(common::JsonValue &&value) : value(std::move(value)) {}
 
-void JsonInputValue::object_key(common::StringView name) {
+void JsonInputValue::object_key(common::StringView name, bool optional) {
 	const JsonValue *parent = chain.back();
 	if (!parent) {
 		object_key_value = nullptr;  // All fields are optional

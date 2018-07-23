@@ -18,14 +18,15 @@ void generate_random_bytes(size_t n, void *result);  // thread-safe
 void random_scalar(EllipticCurveScalar &res);
 
 template<typename T>
-typename std::enable_if<std::is_standard_layout<T>::value, T>::type rand() {
-	typename std::remove_cv<T>::type res;
+T rand() {
+	static_assert(std::is_standard_layout<T>::value, "T must be Standard Layout");
+	T res;
 	generate_random_bytes(sizeof(T), &res);
 	return res;
 }
 
 template<typename T>
-class random_engine {
+class random_engine {  // adapter for std:: algorithms
 public:
 	typedef T result_type;
 	constexpr static T min() { return std::numeric_limits<T>::min(); }
@@ -120,8 +121,7 @@ bool generate_send_proof(const PublicKey &txkey_pub, const SecretKey &txkey_sec,
 bool check_send_proof(const PublicKey &txkey_pub, const PublicKey &receiver_view_key_pub,
     const KeyDerivation &derivation, const Hash &message_hash, const Signature &proof);
 
-// TODO - what those funs do and why they all have different signatures
 void hash_to_scalar(const void *data, size_t length, EllipticCurveScalar &res);
-void hash_to_point_for_tests(const Hash &h, EllipticCurvePoint &res);
+void hash_to_point_for_tests(const Hash &h, EllipticCurvePoint &res);  // Used only in tests
 void hash_to_ec(const PublicKey &key, EllipticCurvePoint &res);
 }

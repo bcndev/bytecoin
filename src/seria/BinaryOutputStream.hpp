@@ -16,7 +16,7 @@ public:
 	virtual bool is_input() const override { return false; }
 
 	virtual void begin_object() override {}
-	virtual void object_key(common::StringView) override {}
+	virtual void object_key(common::StringView, bool optional = false) override {}
 	virtual void end_object() override {}
 
 	virtual void begin_array(size_t &size, bool fixed_size = false) override;

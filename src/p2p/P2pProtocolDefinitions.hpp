@@ -20,7 +20,7 @@ struct network_config {
 	uint32_t send_peerlist_sz        = 0;
 };
 
-enum P2PProtocolVersion : uint8_t { V0 = 0, V1 = 1, CURRENT = V1 };
+enum P2PProtocolVersion : uint8_t { V0 = 0, V1 = 1, CURRENT = V1, EXPERIMENTAL = 3 };
 
 struct basic_node_data {
 	UUID network_id;
@@ -85,7 +85,7 @@ struct COMMAND_PING {
 
 #if bytecoin_ALLOW_DEBUG_COMMANDS
 // These commands are considered as insecure, and made in debug purposes for a limited lifetime.
-// Anyone who feel unsafe with this commands can disable the ALLOW_GET_STAT_COMMAND macro.
+// Anyone who feel unsafe with this commands can disable the bytecoin_ALLOW_DEBUG_COMMANDS macro in CryptoNote.hpp
 
 struct proof_of_trust {
 	PeerIdType peer_id = 0;

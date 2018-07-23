@@ -70,7 +70,7 @@ KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : m_ta
 	m_target.write(&hdr, sizeof(hdr));
 }
 
-void KVBinaryOutputStream::object_key(common::StringView name) { m_next_key = name; }
+void KVBinaryOutputStream::object_key(common::StringView name, bool optional) { m_next_key = name; }
 void KVBinaryOutputStream::next_map_key(std::string &name) { m_next_key = name; }
 
 void KVBinaryOutputStream::begin_object() {

@@ -21,7 +21,7 @@ public:
 
 	const static std::array<std::string, 6> LEVEL_NAMES;
 
-	virtual void operator()(
+	virtual void write(
 	    const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) = 0;
 	virtual ~ILogger() {}
 };

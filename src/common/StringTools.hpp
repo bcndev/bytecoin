@@ -47,13 +47,6 @@ std::string pod_to_hex(const T &s) {
 	return to_hex(&s, sizeof(s));
 }
 
-bool load_file(const std::string &filepath, std::string &buf);
-bool load_file(const std::string &filepath, BinaryArray &buf);
-bool save_file(const std::string &filepath, const void *buf, size_t size);
-inline bool save_file(const std::string &filepath, const std::string &buf) {
-	return save_file(filepath, buf.data(), buf.size());
-}
-
 inline bool split_string_helper(const std::string &str, size_t pos, const std::string &, std::string &head) {
 	head = str.substr(pos);
 	return true;

@@ -14,64 +14,60 @@
 #include "crypto/hash.hpp"
 #include "crypto/random.h"
 
-using namespace std;
+static void check(bool expr, size_t test) {
+	if (expr)
+		return;
+	std::cerr << "Wrong result on test " << test << std::endl;
+	throw std::runtime_error("test_crypto failed");
+}
 
 void test_crypto(const std::string &test_vectors_filename) {
-	fstream input;
-	string cmd;
+	std::fstream input;
+	std::string cmd;
 	size_t test = 0;
 	crypto::initialize_random_for_tests();
 	//  if (argc != 2) {
 	//    cerr << "invalid arguments" << endl;
 	//    return 1;
 	//  }
-	input.open(test_vectors_filename, ios_base::in);
+	input.open(test_vectors_filename, std::ios_base::in);
 	for (;;) {
 		++test;
-		input.exceptions(ios_base::badbit);
+		input.exceptions(std::ios_base::badbit);
 		if (!(input >> cmd)) {
 			break;
 		}
-		input.exceptions(ios_base::badbit | ios_base::failbit | ios_base::eofbit);
+		input.exceptions(std::ios_base::badbit | std::ios_base::failbit | std::ios_base::eofbit);
 		if (cmd == "check_scalar") {
 			crypto::EllipticCurveScalar scalar;
 			bool expected = false, actual;
 			get(input, scalar, expected);
 			actual = sc_isvalid_vartime(&scalar);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "random_scalar") {
 			crypto::EllipticCurveScalar expected, actual;
 			get(input, expected);
 			crypto::random_scalar(actual);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "hash_to_scalar") {
-			vector<char> data;
+			std::vector<char> data;
 			crypto::EllipticCurveScalar expected, actual;
 			get(input, data, expected);
 			crypto::hash_to_scalar(data.data(), data.size(), actual);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "generate_keys") {
 			crypto::PublicKey expected1, actual1;
 			crypto::SecretKey expected2, actual2;
 			get(input, expected1, expected2);
 			random_keypair(actual1, actual2);
-			if (expected1 != actual1 || expected2 != actual2) {
-				goto error;
-			}
+			check(expected1 == actual1, test);
+			check(expected2 == actual2, test);
 		} else if (cmd == "check_key") {
 			crypto::PublicKey key;
 			bool expected = false, actual;
 			get(input, key, expected);
 			actual = key_isvalid(key);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "secret_key_to_public_key") {
 			crypto::SecretKey sec;
 			bool expected1 = false, actual1;
@@ -81,9 +77,7 @@ void test_crypto(const std::string &test_vectors_filename) {
 				get(input, expected2);
 			}
 			actual1 = secret_key_to_public_key(sec, actual2);
-			if (expected1 != actual1 || (expected1 && expected2 != actual2)) {
-				goto error;
-			}
+			check(!(expected1 != actual1 || (expected1 && expected2 != actual2)), test);
 		} else if (cmd == "generate_key_derivation") {
 			crypto::PublicKey key1;
 			crypto::SecretKey key2;
@@ -94,9 +88,7 @@ void test_crypto(const std::string &test_vectors_filename) {
 				get(input, expected2);
 			}
 			actual1 = generate_key_derivation(key1, key2, actual2);
-			if (expected1 != actual1 || (expected1 && expected2 != actual2)) {
-				goto error;
-			}
+			check(!(expected1 != actual1 || (expected1 && expected2 != actual2)), test);
 		} else if (cmd == "derive_public_key") {
 			crypto::KeyDerivation derivation;
 			size_t output_index;
@@ -108,9 +100,7 @@ void test_crypto(const std::string &test_vectors_filename) {
 				get(input, expected2);
 			}
 			actual1 = derive_public_key(derivation, output_index, base, actual2);
-			if (expected1 != actual1 || (expected1 && expected2 != actual2)) {
-				goto error;
-			}
+			check(!(expected1 != actual1 || (expected1 && expected2 != actual2)), test);
 		} else if (cmd == "derive_secret_key") {
 			crypto::KeyDerivation derivation;
 			size_t output_index;
@@ -118,9 +108,7 @@ void test_crypto(const std::string &test_vectors_filename) {
 			crypto::SecretKey expected, actual;
 			get(input, derivation, output_index, base, expected);
 			derive_secret_key(derivation, output_index, base, actual);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "underive_public_key") {
 			crypto::KeyDerivation derivation;
 			size_t output_index;
@@ -132,9 +120,7 @@ void test_crypto(const std::string &test_vectors_filename) {
 				get(input, expected2);
 			}
 			actual1 = underive_public_key(derivation, output_index, derived_key, actual2);
-			if (expected1 != actual1 || (expected1 && expected2 != actual2)) {
-				goto error;
-			}
+			check(!(expected1 != actual1 || (expected1 && expected2 != actual2)), test);
 		} else if (cmd == "generate_signature") {
 			crypto::Hash prefix_hash;
 			crypto::PublicKey pub;
@@ -142,9 +128,7 @@ void test_crypto(const std::string &test_vectors_filename) {
 			crypto::Signature expected, actual;
 			get(input, prefix_hash, pub, sec, expected);
 			generate_signature(prefix_hash, pub, sec, actual);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "check_signature") {
 			crypto::Hash prefix_hash;
 			crypto::PublicKey pub;
@@ -152,43 +136,35 @@ void test_crypto(const std::string &test_vectors_filename) {
 			bool expected = false, actual;
 			get(input, prefix_hash, pub, sig, expected);
 			actual = check_signature(prefix_hash, pub, sig);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "hash_to_point") {
 			crypto::Hash h;
 			crypto::EllipticCurvePoint expected, actual;
 			get(input, h, expected);
 			hash_to_point_for_tests(h, actual);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "hash_to_ec") {
 			crypto::PublicKey key;
 			crypto::EllipticCurvePoint expected, actual;
 			get(input, key, expected);
 			hash_to_ec(key, actual);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "generate_key_image") {
 			crypto::PublicKey pub;
 			crypto::SecretKey sec;
 			crypto::KeyImage expected, actual;
 			get(input, pub, sec, expected);
 			generate_key_image(pub, sec, actual);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "generate_ring_signature") {
 			crypto::Hash prefix_hash;
 			crypto::KeyImage image;
-			vector<crypto::PublicKey> vpubs;
-			vector<const crypto::PublicKey *> pubs;
+			std::vector<crypto::PublicKey> vpubs;
+			std::vector<const crypto::PublicKey *> pubs;
 			size_t pubs_count;
 			crypto::SecretKey sec;
 			size_t sec_index;
-			vector<crypto::Signature> expected, actual;
+			std::vector<crypto::Signature> expected, actual;
 			size_t i;
 			get(input, prefix_hash, image, pubs_count);
 			vpubs.resize(pubs_count);
@@ -202,16 +178,14 @@ void test_crypto(const std::string &test_vectors_filename) {
 			getvar(input, pubs_count * sizeof(crypto::Signature), expected.data());
 			actual.resize(pubs_count);
 			generate_ring_signature(prefix_hash, image, pubs.data(), pubs_count, sec, sec_index, actual.data());
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);
 		} else if (cmd == "check_ring_signature") {
 			crypto::Hash prefix_hash;
 			crypto::KeyImage image;
-			vector<crypto::PublicKey> vpubs;
-			vector<const crypto::PublicKey *> pubs;
+			std::vector<crypto::PublicKey> vpubs;
+			std::vector<const crypto::PublicKey *> pubs;
 			size_t pubs_count;
-			vector<crypto::Signature> sigs;
+			std::vector<crypto::Signature> sigs;
 			bool expected = false, actual;
 			size_t i;
 			get(input, prefix_hash, image, pubs_count);
@@ -225,15 +199,9 @@ void test_crypto(const std::string &test_vectors_filename) {
 			getvar(input, pubs_count * sizeof(crypto::Signature), sigs.data());
 			get(input, expected);
 			actual = check_ring_signature(prefix_hash, image, pubs.data(), pubs_count, sigs.data(), true);
-			if (expected != actual) {
-				goto error;
-			}
+			check(expected == actual, test);  // TODO - check 2.*
 		} else {
-			throw ios_base::failure("Unknown function: " + cmd);
+			throw std::ios_base::failure("Unknown function: " + cmd);
 		}
-		continue;
-	error:
-		cerr << "Wrong result on test " << test << endl;
-		throw std::runtime_error("test_crypto failed");
 	}
 }

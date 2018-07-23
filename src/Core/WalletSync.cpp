@@ -59,12 +59,18 @@ void WalletSync::send_get_status() {
 			    advance_sync();
 			    return;
 		    }
-		    api::bytecoind::GetStatus::Response resp;
-		    json_rpc::parse_response(response.body, resp);
-		    m_last_node_status = resp;
-		    m_sync_error       = std::string();
-		    m_state_changed_handler();
-		    advance_sync();
+			if (response.r.status == 401) {
+				m_sync_error = "AUTHORIZATION_FAILED";
+				m_status_timer.once(STATUS_ERROR_PERIOD);
+				m_log(logging::INFO) << "Wrong daemon password - please check --bytecoind-authorization" << std::endl;
+			}else{
+				api::bytecoind::GetStatus::Response resp;
+				json_rpc::parse_response(response.body, resp);
+				m_last_node_status = resp;
+				m_sync_error = std::string();
+				m_state_changed_handler();
+				advance_sync();
+			}
 		},
 	    [&](std::string err) {
 		    m_sync_error = "CONNECTION_FAILED";
@@ -75,27 +81,33 @@ void WalletSync::send_get_status() {
 
 void WalletSync::advance_sync() {
 	const Timestamp now = static_cast<Timestamp>(time(nullptr));
-	if (!prevent_sleep && m_wallet_state.get_tip().timestamp < now - 86400)
+	if (!prevent_sleep && m_wallet_state.get_tip().timestamp < now - 86400) {
+		m_log(logging::INFO) << "Preventing computer sleep to sync wallet" << std::endl;
 		prevent_sleep = std::make_unique<platform::PreventSleep>("Synchronizing wallet");
+	}
 	if (prevent_sleep &&
-	    m_wallet_state.get_tip().timestamp > now - m_wallet_state.get_currency().block_future_time_limit * 2)
+	    m_wallet_state.get_tip().timestamp > now - m_wallet_state.get_currency().block_future_time_limit * 2) {
+		m_log(logging::INFO) << "Allowing computer sleep after sync wallet" << std::endl;
 		prevent_sleep = nullptr;
+	}
 	if (m_sync_request)
 		return;
-	if (m_last_node_status.top_block_hash == m_wallet_state.get_tip_bid() &&
-	    m_last_node_status.transaction_pool_version == m_wallet_state.get_tx_pool_version()) {
-		m_status_timer.once(STATUS_POLL_PERIOD);
-		return;
-	}
 	if (m_last_node_status.top_block_hash != m_wallet_state.get_tip_bid()) {
+		next_send_hash = Hash{};  // We start sending again after new block
 		send_get_blocks();
 		return;
 	}
-	if (transient_transactions_counter == 0)
-		send_sync_pool();
+	if (send_send_transaction())
+		return;
+	if (m_last_node_status.transaction_pool_version == m_wallet_state.get_tx_pool_version()) {
+		m_status_timer.once(STATUS_POLL_PERIOD);
+		return;
+	}
+	send_sync_pool();
 }
 
 void WalletSync::send_sync_pool() {
+	m_log(logging::TRACE) << "Sending SyncMemPool request" << std::endl;
 	api::bytecoind::SyncMemPool::Request msg;
 	msg.known_hashes = m_wallet_state.get_tx_pool_hashes();
 	http::RequestData req_header;
@@ -105,7 +117,15 @@ void WalletSync::send_sync_pool() {
 	m_sync_request = std::make_unique<http::Request>(m_sync_agent, std::move(req_header),
 	    [&](http::ResponseData &&response) {
 		    m_sync_request.reset();
-		    if (response.r.status == 200) {
+			if (response.r.status == 401) {
+				m_sync_error = "AUTHORIZATION_FAILED";
+				m_status_timer.once(STATUS_ERROR_PERIOD);
+				m_log(logging::INFO) << "Wrong daemon password - please check --bytecoind-authorization" << std::endl;
+			}else if (response.r.status == 410) {
+				m_sync_error = "WRONG_DAEMON_VERSION";
+				m_status_timer.once(STATUS_ERROR_PERIOD);
+				m_log(logging::INFO) << "Wrong daemon version - please upgrade bytecoind" << std::endl;
+			}else if (response.r.status == 200) {
 			    m_sync_error = "WRONG_BLOCKCHAIN";
 			    api::bytecoind::SyncMemPool::Response resp;
 			    seria::from_binary(resp, response.body);
@@ -130,6 +150,7 @@ void WalletSync::send_sync_pool() {
 }
 
 void WalletSync::send_get_blocks() {
+	m_log(logging::TRACE) << "Sending SyncBlocks request" << std::endl;
 	api::bytecoind::SyncBlocks::Request msg;
 	msg.sparse_chain          = m_wallet_state.get_sparse_chain();
 	msg.first_block_timestamp = m_wallet_state.get_wallet().get_oldest_timestamp();
@@ -140,7 +161,15 @@ void WalletSync::send_get_blocks() {
 	m_sync_request = std::make_unique<http::Request>(m_sync_agent, std::move(req_header),
 	    [&](http::ResponseData &&response) {
 		    m_sync_request.reset();
-		    if (response.r.status == 200) {
+			if (response.r.status == 401) {
+				m_sync_error = "AUTHORIZATION_FAILED";
+				m_status_timer.once(STATUS_ERROR_PERIOD);
+				m_log(logging::INFO) << "Wrong daemon password - please check --bytecoind-authorization" << std::endl;
+			}else if (response.r.status == 410) {
+				m_sync_error = "WRONG_DAEMON_VERSION";
+				m_status_timer.once(STATUS_ERROR_PERIOD);
+				m_log(logging::INFO) << "Wrong daemon version - please upgrade bytecoind" << std::endl;
+			} else if (response.r.status == 200) {
 			    m_sync_error = "WRONG_BLOCKCHAIN";
 			    api::bytecoind::SyncBlocks::Response resp;
 			    seria::from_binary(resp, response.body);
@@ -162,4 +191,53 @@ void WalletSync::send_get_blocks() {
 		    m_state_changed_handler();
 		});
 	//	m_log(logging::INFO) << "WalletNode::send_get_blocks" << std::endl;
+}
+
+bool WalletSync::send_send_transaction() {
+	api::bytecoind::SendTransaction::Request msg;
+	msg.binary_transaction = m_wallet_state.get_next_from_sending_queue(&next_send_hash);
+	if (msg.binary_transaction.empty())
+		return false;
+	sending_transaction_hash = next_send_hash;
+	m_log(logging::INFO) << "Sending transaction from payment queue " << sending_transaction_hash << std::endl;
+	http::RequestData new_request =
+	    json_rpc::create_request(api::bytecoind::url(), api::bytecoind::SendTransaction::method(), msg);
+	new_request.r.basic_authorization = m_config.bytecoind_authorization;
+	m_sync_request                    = std::make_unique<http::Request>(m_sync_agent, std::move(new_request),
+	    [&](http::ResponseData &&response) {
+		    m_sync_request.reset();
+			if (response.r.status == 401) {
+				m_sync_error = "AUTHORIZATION_FAILED";
+				m_status_timer.once(STATUS_ERROR_PERIOD);
+				m_log(logging::INFO) << "Wrong daemon password - please check --bytecoind-authorization" << std::endl;
+			}else if (response.r.status == 200) {
+			    m_sync_error = "WRONG_BLOCKCHAIN";
+			    json_rpc::Response json_resp(response.body);
+			    api::bytecoind::SendTransaction::Response resp;
+			    api::bytecoind::SendTransaction::Error err_resp;
+			    if (json_resp.get_error(err_resp)) {
+				    m_log(logging::INFO) << "Json Error sending transaction from payment queue conflict height="
+				                         << err_resp.conflict_height << " code=" << err_resp.code
+				                         << " msg=" << err_resp.message << std::endl;
+				    m_wallet_state.process_payment_queue_send_error(sending_transaction_hash, err_resp);
+			    } else {
+				    json_resp.get_result(resp);
+				    m_log(logging::INFO) << "Success sending transaction from payment queue with result "
+				                         << resp.send_result << std::endl;
+			    }
+			    advance_sync();
+		    } else {
+			    m_log(logging::INFO) << "Error sending transaction from payment queue " << response.body << std::endl;
+			    m_sync_error = response.body;
+			    m_status_timer.once(STATUS_ERROR_PERIOD);
+		    }
+		    m_state_changed_handler();
+		},
+	    [&](std::string err) {
+		    m_log(logging::INFO) << "Error sending transaction from payment queue " << err << std::endl;
+		    m_status_timer.once(STATUS_ERROR_PERIOD);
+		    m_state_changed_handler();
+		});
+	//	m_log(logging::INFO) << "WalletNode::send_get_blocks" << std::endl;
+	return true;
 }

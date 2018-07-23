@@ -78,8 +78,8 @@ void test_hash(const char *test_fun_name, const std::string &test_vectors_filena
 		if (expected != actual) {
 			cerr << "Hash mismatch on test " << test << endl;
 			//      	cerr << "Input: " << common::pod_to_hex(data) << endl;
-			cerr << "Expected hash: " << common::pod_to_hex(expected) << endl;
-			cerr << "Actual hash: " << common::pod_to_hex(actual) << endl;
+			cerr << "Expected hash: " << expected << endl;
+			cerr << "Actual hash: " << actual << endl;
 			;
 			throw std::runtime_error("test_hash failed");
 		}

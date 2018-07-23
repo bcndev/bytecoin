@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "common/BinaryArray.hpp"
+#include "common/Int128.hpp"
 #include "common/StringView.hpp"
 #include "common/string.hpp"
 
@@ -28,9 +29,9 @@ public:
 
 	virtual bool is_input() const = 0;
 
-	virtual void begin_object()                      = 0;
-	virtual void object_key(common::StringView name) = 0;  // throw if key not found
-	virtual void end_object()                        = 0;
+	virtual void begin_object() = 0;
+	virtual void object_key(common::StringView name, bool optional = false) = 0;  // throw if key not found
+	virtual void end_object() = 0;
 
 	virtual void begin_map(size_t &size)         = 0;
 	virtual void next_map_key(std::string &name) = 0;  // iterates through map when input serializer
@@ -103,8 +104,8 @@ inline void ser(std::string &value, ISeria &s) { return s.seria_v(value); }
 inline void ser(common::BinaryArray &value, ISeria &s) { return s.seria_v(value); }
 
 template<typename T>
-void seria_kv(common::StringView name, T &value, ISeria &s) {
-	s.object_key(name);
+void seria_kv(common::StringView name, T &value, ISeria &s, bool optional = false) {
+	s.object_key(name, optional);
 	s(value);
 }
 

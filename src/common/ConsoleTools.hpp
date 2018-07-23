@@ -36,10 +36,14 @@ bool is_console_tty();
 class UnicodeConsoleSetup : public std::stringbuf {
 	std::streambuf *old_buf = nullptr;
 
+protected:
+	int sync() override;
+
 public:
 	UnicodeConsoleSetup();
 	~UnicodeConsoleSetup();
-	int sync() override;
+
+	bool getline(std::string &line, bool hide_input = false);
 };
 }
 }

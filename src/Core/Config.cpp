@@ -24,7 +24,7 @@ const static UUID BYTECOIN_NETWORK{{0x11, 0x10, 0x01, 0x11, 0x11, 0x00, 0x01, 0x
 
 Config::Config(common::CommandLine &cmd)
     : is_testnet(cmd.get_bool("--testnet"))
-    , mempool_tx_live_time(parameters::CRYPTONOTE_MEMPOOL_TX_LIVETIME)
+    //    , mempool_tx_live_time(parameters::CRYPTONOTE_MEMPOOL_TX_LIVETIME)
     , blocks_file_name(parameters::CRYPTONOTE_BLOCKS_FILENAME)
     , block_indexes_file_name(parameters::CRYPTONOTE_BLOCKINDEXES_FILENAME)
     , crypto_note_name(CRYPTONOTE_NAME)
@@ -47,7 +47,7 @@ Config::Config(common::CommandLine &cmd)
     , p2p_block_ids_sync_default_count(BLOCKS_IDS_SYNCHRONIZING_DEFAULT_COUNT)
     , p2p_blocks_sync_default_count(BLOCKS_SYNCHRONIZING_DEFAULT_COUNT)
     , rpc_get_blocks_fast_max_count(COMMAND_RPC_GET_BLOCKS_FAST_MAX_COUNT) {
-	common::pod_from_hex(P2P_STAT_TRUSTED_PUB_KEY, trusted_public_key);
+	common::pod_from_hex(P2P_STAT_TRUSTED_PUBLIC_KEY, trusted_public_key);
 
 	if (is_testnet) {
 		network_id.data[0] += 1;
@@ -142,53 +142,19 @@ Config::Config(common::CommandLine &cmd)
 		data_folder += "_testnet";
 	if (const char *pa = cmd.get("--data-folder")) {
 		data_folder = pa;
-		if (!platform::directory_exists(data_folder))
+		if (!platform::folder_exists(data_folder))
 			throw std::runtime_error("Data folder must exist " + data_folder);
 	} else {
-		if (!platform::create_directories_if_necessary(data_folder))  // Create only in default place
+		if (!platform::create_folders_if_necessary(data_folder))  // Create only in default place
 			throw std::runtime_error("Failed to create data folder " + data_folder);
 	}
-	/*	std::string file_str;
-	    if (common::load_file(coin_directory + "/" + "data_folder_path.txt", file_str)) {
-	        if (file_str.find(std::string("\xEF\xBB\xBF")) == 0)  // BOM is written by Notepad on Windows
-	            file_str = file_str.substr(3);
-	        std::vector<std::string> strs;
-	        boost::algorithm::split(strs, file_str, boost::algorithm::is_any_of("\r\n"));
-	        for (auto &&str : strs) {
-	            boost::algorithm::trim(str);
-	            boost::algorithm::trim_right_if(str, boost::algorithm::is_any_of("\\/"));
-	            if (str.empty() || str.find(std::string("#")) == 0)  // Comments
-	                continue;
-	            std::cout << "Found coin folder via data_folder_path.txt, path=" << str << std::endl;
-	            coin_directory = str;
-	            break;
-	        }
-	    } else {
-	#ifdef _WIN32
-	        const char content[] =
-	            "\xEF\xBB\xBF# Edit this file to switch data folder\r\n"
-	            "# Uncomment line below and point it to desired blockchain location. Only full path is supported\r\n"
-	            "# You should manually move content of old data folder to new location after completely stopping "
-	            "bytecoin\r\n\r\n"
-	            "# D:\\BlockChains\\bytecoin\r\n";
-	#else
-	        const char content[] =
-	            "# Edit this file to switch data folder\n"
-	            "# Uncomment line below and point it to desired blockchain location. Note, ~ is unsupported, use full "
-	            "path\n"
-	            "# You should manually move content of old data folder to new location after completely stopping "
-	            "bytecoin\n\n"
-	            "# /some/far/away/folder\n";
-	#endif
-	        common::save_file(data_folder + "/" + "data_folder_path.txt", content);
-	    }*/
 }
 
 std::string Config::get_data_folder(const std::string &subdir) const {
 	std::string folder = data_folder;
 	// This code is called just several times at startup, so no caching
 	folder += "/" + subdir;
-	if (!platform::create_directory_if_necessary(folder))
+	if (!platform::create_folder_if_necessary(folder))
 		throw std::runtime_error("Failed to create coin folder " + folder);
 	return folder;
 }

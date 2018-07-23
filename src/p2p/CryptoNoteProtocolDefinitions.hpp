@@ -75,6 +75,10 @@ struct NOTIFY_REQUEST_TX_POOL {
 		std::vector<crypto::Hash> txs;
 	};
 };
+struct NOTIFY_CHECKPOINT {
+	enum { ID = BC_COMMANDS_POOL_BASE + 10 };
+	typedef SignedCheckPoint request;
+};
 }
 
 namespace seria {

@@ -100,4 +100,19 @@ void BinaryArrayImpl::resize(size_t si, value_type va) {
 	memset(other.m_data + m_size, va, si - m_size);
 	swap(other);
 }
+
+const unsigned char *slow_memmem(const unsigned char *buf, size_t buflen, const unsigned char *pat, size_t patlen) {
+	if (patlen == 0)
+		return nullptr;
+	while (buflen) {
+		auto char_ptr = (const unsigned char *)memchr(buf, pat[0], buflen);
+		if (char_ptr - buf + patlen > buflen)
+			return nullptr;
+		if (memcmp(char_ptr, pat, patlen) == 0)
+			return char_ptr;
+		buflen = buflen - (char_ptr - buf);
+		buf    = char_ptr + 1;
+	}
+	return nullptr;
+}
 }

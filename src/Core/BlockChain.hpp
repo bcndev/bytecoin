@@ -3,10 +3,12 @@
 
 #pragma once
 
+#include <bitset>
 #include <deque>
 #include <unordered_map>
 #include "CryptoNote.hpp"
 #include "Currency.hpp"
+#include "logging/LoggerMessage.hpp"
 #include "platform/DB.hpp"
 #include "platform/ExclusiveLock.hpp"
 #include "rpc_api.hpp"
@@ -42,7 +44,7 @@ class BlockChain {
 public:
 	typedef platform::DB DB;
 
-	explicit BlockChain(const Hash &genesis_bid, const std::string &coin_folder, bool read_only);
+	explicit BlockChain(logging::ILogger &, const Currency &, const std::string &coin_folder, bool read_only);
 	virtual ~BlockChain() {}
 
 	const std::string &get_coin_folder() const { return m_coin_folder; }
@@ -51,16 +53,22 @@ public:
 	Hash get_tip_bid() const { return m_tip_bid; }
 	Height get_tip_height() const { return m_tip_height; }
 	const api::BlockHeader &get_tip() const;
+	template<typename T>
+	void get_tips(Height, Height, T &) const;
+	template<typename T>
+	void get_txs(const std::vector<Hash> &, T &) const;
 
 	std::vector<api::BlockHeader> get_tip_segment(
 	    const api::BlockHeader &prev_info, Height window, bool add_genesis) const;
 
 	bool read_chain(Height height, Hash *bid) const;
+	bool in_chain(Height height, Hash bid) const;
 	bool read_block(const Hash &bid, RawBlock *rb) const;
+	bool read_block(const Hash &bid, BinaryArray *block_data, RawBlock *rb) const;
 	bool has_block(const Hash &bid) const;
-	bool read_header(const Hash &bid, api::BlockHeader *info) const;
-	bool read_transaction(
-	    const Hash &tid, Transaction *tx, Height *block_height, Hash *block_hash, size_t *index_in_block) const;
+	bool read_header(const Hash &bid, api::BlockHeader *info, Height hint = 0) const;
+	bool read_transaction(const Hash &tid, Transaction *tx, Height *block_height, Hash *block_hash,
+	    size_t *index_in_block, uint32_t *binary_size) const;
 
 	// Modify blockchain state. bytecoin header does not contain enough info for consensus calcs, so we cannot have
 	// header chain without block chain
@@ -84,17 +92,25 @@ public:
 	void db_commit();
 
 	bool internal_import();  // import some existing blocks from inside DB
-	Height internal_import_known_height() const { return m_internal_import_known_height; }
+	Height internal_import_known_height() const { return static_cast<Height>(m_internal_import_chain.size()); }
 
+	std::vector<SignedCheckPoint> get_latest_checkpoints() const;
+	std::vector<SignedCheckPoint> get_stable_checkpoints() const;
+	bool add_checkpoint(const SignedCheckPoint &checkpoint);
 protected:
-	Difficulty get_tip_cumulative_difficulty() const { return m_tip_cumulative_difficulty; }
-	bool read_next_internal_block(Hash *bid) const;
+	CumulativeDifficulty get_tip_cumulative_difficulty() const { return m_tip_cumulative_difficulty; }
+
+	std::vector<Hash> m_internal_import_chain;
+	void start_internal_import();
+
 	virtual std::string check_standalone_consensus(
 	    const PreparedBlock &pb, api::BlockHeader *info, const api::BlockHeader &prev_info, bool check_pow) const = 0;
-	virtual bool redo_block(const Hash &bhash, const Block &block, const api::BlockHeader &info)  = 0;
-	virtual void undo_block(const Hash &bhash, const Block &block, Height height)                 = 0;
-	bool redo_block(const Hash &bhash, const RawBlock &raw_block, const Block &block, const api::BlockHeader &info,
-	    const Hash &base_transaction_hash);
+	virtual bool redo_block(const Hash &bhash, const Block &block, const api::BlockHeader &info) = 0;
+	virtual void undo_block(const Hash &bhash, const Block &block, Height height)                = 0;
+	bool redo_block(const Hash &bhash, const BinaryArray &block_data, const RawBlock &raw_block, const Block &block,
+	    const api::BlockHeader &info, const Hash &base_transaction_hash);
+	void debug_check_transaction_invariants(const RawBlock &raw_block, const Block &block, const api::BlockHeader &info,
+	    const Hash &base_transaction_hash) const;
 	void undo_block(const Hash &bhash, const RawBlock &raw_block, const Block &block, Height height);
 	virtual void tip_changed() {}  // Quick hack to allow BlockChainState to update next block params
 	virtual void on_reorganization(
@@ -104,26 +120,28 @@ protected:
 
 	const Hash m_genesis_bid;
 	const std::string m_coin_folder;
-	Hash get_common_block(
-	    const Hash &bid1, const Hash &bid2, std::vector<Hash> *chain1, std::vector<Hash> *chain2) const; // both can be null
+	Hash get_common_block(const Hash &bid1, const Hash &bid2, std::vector<Hash> *chain1,
+	    std::vector<Hash> *chain2) const;  // both can be null
 
 	DB m_db;
-
-	Hash read_chain(Height height) const;
-	api::BlockHeader read_header(const Hash &bid) const;
+	logging::LoggerRef m_log;
+	const Currency &m_currency;
 
 	static const std::string version_current;
 
 private:
 	Hash m_tip_bid;
-	Difficulty m_tip_cumulative_difficulty = 0;
-	Height m_tip_height                    = -1;
-	Height m_internal_import_known_height  = 0;
+	CumulativeDifficulty m_tip_cumulative_difficulty{};
+	Height m_tip_height = -1;
 	void read_tip();
-	void push_chain(Hash bid, Difficulty cumulative_difficulty);
-	void pop_chain();
+	void push_chain(const api::BlockHeader &header);
+	void pop_chain(const Hash &new_tip_bid);
+	Hash read_chain(Height height) const;
+
 	mutable std::unordered_map<Hash, api::BlockHeader> header_cache;
+	std::deque<api::BlockHeader> m_header_tip_window;
 	// We cache recent headers for quick calculation in block windows
+	api::BlockHeader read_header(const Hash &bid, Height hint = 0) const;
 
 	void store_block(const Hash &bid, const BinaryArray &block_data);
 
@@ -133,12 +151,33 @@ private:
 	bool reorganize_blocks(
 	    const Hash &switch_to_chain, const PreparedBlock &recent_pb, const api::BlockHeader &recent_info);
 
-	void check_children_counter(Difficulty cd, const Hash &bid, int value);
-	void modify_children_counter(Difficulty cd, const Hash &bid, int delta);
-	bool get_oldest_tip(Difficulty *cd, Hash *bid) const;
-	bool prune_branch(Difficulty cd, Hash bid);
+	void check_children_counter(CumulativeDifficulty cd, const Hash &bid, int value);
+	void modify_children_counter(CumulativeDifficulty cd, const Hash &bid, int delta);
+	bool get_oldest_tip(CumulativeDifficulty *cd, Hash *bid) const;
+	bool prune_branch(CumulativeDifficulty cd, Hash bid);
+	void for_each_tip(std::function<bool(CumulativeDifficulty cd, Hash bid)> fun) const;
+
 	bool fix_consensus(Hash bid, const api::BlockHeader &was_info);
 	void check_consensus_fast(Hash bid);
+
+	typedef std::array<Height, 7> CheckPointDifficulty;  // size must be == m_currency.get_checkpoint_keys_count()
+	static int compare(
+	    const CheckPointDifficulty &a, CumulativeDifficulty ca, const CheckPointDifficulty &b, CumulativeDifficulty cb);
+	struct Blod {
+		Hash hash;
+		Height height = 0;
+		Blod *parent  = nullptr;
+		std::vector<Blod *> children;
+		std::bitset<64> checkpoint_key_ids;
+		CheckPointDifficulty checkpoint_difficulty;  // (key_count-1)->max_height
+	};
+	std::map<Hash, Blod> blods;
+	void update_key_count_max_heights();
+	bool add_blod(const api::BlockHeader &header);
+	CheckPointDifficulty get_checkpoint_difficulty(Hash hash) const;
+
+protected:
+	void build_blods();
 };
 
 }  // namespace bytecoin

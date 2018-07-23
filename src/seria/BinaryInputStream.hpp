@@ -17,7 +17,7 @@ public:
 	virtual bool is_input() const override { return true; }
 
 	virtual void begin_object() override {}
-	virtual void object_key(common::StringView) override {}
+	virtual void object_key(common::StringView, bool optional = false) override {}
 	virtual void end_object() override {}
 
 	virtual void begin_map(size_t &size) override;

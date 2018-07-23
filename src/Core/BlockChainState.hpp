@@ -3,15 +3,12 @@
 
 #pragma once
 
-#include <condition_variable>
-#include <mutex>
 #include <set>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include "BlockChain.hpp"
+#include "Multicore.hpp"
 #include "crypto/hash.hpp"
-#include "logging/LoggerMessage.hpp"
 
 namespace bytecoin {
 
@@ -19,54 +16,29 @@ class Config;
 
 class IBlockChainState {
 public:
+	struct UnlockTimePublickKeyHeightMarked {
+		UnlockMoment unlock_time = 0;
+		PublicKey public_key;
+		Height height = 0;
+		bool spent    = false;
+	};
 	virtual ~IBlockChainState() {}
 	virtual void store_keyimage(const KeyImage &, Height) = 0;
-	virtual void delete_keyimage(const KeyImage &)     = 0;
-	virtual bool read_keyimage(const KeyImage &) const = 0;
+	virtual void delete_keyimage(const KeyImage &) = 0;
+	virtual bool read_keyimage(const KeyImage &, Height *) const = 0;
 
-	virtual uint32_t push_amount_output(
-	    Amount, UnlockMoment, Height block_height, Timestamp block_unlock_timestamp, const PublicKey &) = 0;
+	virtual uint32_t push_amount_output(Amount, UnlockMoment, Height, const PublicKey &) = 0;
 	virtual void pop_amount_output(Amount, UnlockMoment, const PublicKey &) = 0;
 	virtual uint32_t next_global_index_for_amount(Amount) const = 0;
-	virtual bool read_amount_output(Amount, uint32_t global_index, UnlockMoment *, PublicKey *) const = 0;
-};
-
-struct RingSignatureArg {
-	Hash tx_prefix_hash;
-	KeyImage key_image;
-	std::vector<PublicKey> output_keys;
-	std::vector<Signature> signatures;
-};
-
-class RingCheckerMulticore {
-	std::vector<std::thread> threads;
-	mutable std::mutex mu;
-	mutable std::condition_variable have_work;
-	mutable std::condition_variable result_ready;
-	bool quit = false;
-
-	size_t total_counter = 0;
-	size_t ready_counter = 0;
-	std::vector<std::string> errors;
-
-	std::deque<RingSignatureArg> args;
-	int work_counter = 0;
-	void thread_run();
-
-public:
-	RingCheckerMulticore();
-	~RingCheckerMulticore();
-	void cancel_work();
-	std::string start_work_get_error(IBlockChainState *state, const Currency &currency, const Block &block,
-	    Height unlock_height, Timestamp unlock_timestamp);  // can fail immediately
-	bool signatures_valid() const;
+	virtual bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightMarked *) const = 0;
+	virtual void spend_output(Amount, uint32_t global_index) = 0;
 };
 
 class BlockChainState : public BlockChain, private IBlockChainState {
 public:
 	BlockChainState(logging::ILogger &, const Config &, const Currency &, bool read_only);
 
-	const Currency &get_currency() const { return m_currency; };
+	const Currency &get_currency() const { return m_currency; }
 	uint32_t get_next_effective_median_size() const;
 
 	std::vector<api::Output> get_outputs_by_amount(Amount, size_t anonymity, Height, Timestamp) const;
@@ -75,33 +47,35 @@ public:
 
 	Amount minimum_pool_fee_per_byte(Hash *minimal_tid) const;
 	AddTransactionResult add_transaction(
-	    const Hash &tid, const Transaction &, const BinaryArray &binary_tx, Timestamp now);
+	    const Hash &tid, const Transaction &, const BinaryArray &binary_tx, Timestamp now, Height *conflict_height);
+	bool get_largest_referenced_height(const TransactionPrefix &tx, Height *block_height) const;
 
 	uint32_t get_tx_pool_version() const { return m_tx_pool_version; }
 	struct PoolTransaction {
 		Transaction tx;
 		BinaryArray binary_tx;
 		Amount fee;
+		Timestamp timestamp;
 
-		PoolTransaction(const Transaction &tx, const BinaryArray &binary_tx, Amount fee);
+		PoolTransaction(const Transaction &tx, const BinaryArray &binary_tx, Amount fee, Timestamp timestamp);
 		Amount fee_per_byte() const { return fee / binary_tx.size(); }
 	};
-	typedef std::map<Hash, Transaction> TransMap;
 	typedef std::map<Hash, PoolTransaction> PoolTransMap;
 	const PoolTransMap &get_memory_state_transactions() const { return m_memory_state_tx; }
 
 	bool create_mining_block_template(
 	    BlockTemplate *, const AccountPublicAddress &, const BinaryArray &extra_nonce, Difficulty *, Height *) const;
+	bool create_mining_block_template2(
+	    BlockTemplate *, const AccountPublicAddress &, const BinaryArray &extra_nonce, Difficulty *, Hash) const;
 	BroadcastAction add_mined_block(const BinaryArray &raw_block_template, RawBlock *, api::BlockHeader *);
-	Timestamp read_first_seen_timestamp(const Hash &tid) const;  // 0 if does not exist
 
 	static api::BlockHeader fill_genesis(Hash genesis_bid, const BlockTemplate &);
 
 	void test_print_outputs();
 
 protected:
-	virtual std::string check_standalone_consensus(
-	    const PreparedBlock &pb, api::BlockHeader *info, const api::BlockHeader &prev_info, bool check_pow) const override;
+	virtual std::string check_standalone_consensus(const PreparedBlock &pb, api::BlockHeader *info,
+	    const api::BlockHeader &prev_info, bool check_pow) const override;
 	virtual bool redo_block(const Hash &bhash, const Block &, const api::BlockHeader &) override;
 	virtual void undo_block(const Hash &bhash, const Block &, Height) override;
 
@@ -109,7 +83,7 @@ private:
 	class DeltaState : public IBlockChainState {
 		std::map<KeyImage, Height> m_keyimages;  // sorted to speed up bulk saving to DB
 		std::map<Amount, std::vector<std::pair<uint64_t, PublicKey>>> m_global_amounts;
-
+		std::vector<std::pair<Amount, uint32_t>> m_spent_outputs;
 		Height m_block_height;  // Every delta state corresponds to some height
 		Timestamp m_unlock_timestamp;
 		const IBlockChainState *m_parent_state;  // const parent to prevent accidental parent modification
@@ -122,44 +96,40 @@ private:
 		void clear(Height new_block_height);               // We use it for memory_state
 		const std::map<KeyImage, Height> &get_keyimages() const { return m_keyimages; }
 
-		virtual void store_keyimage(const KeyImage &, Height) override;
-		virtual void delete_keyimage(const KeyImage &) override;
-		virtual bool read_keyimage(const KeyImage &) const override;
+		void store_keyimage(const KeyImage &, Height) override;
+		void delete_keyimage(const KeyImage &) override;
+		bool read_keyimage(const KeyImage &, Height *) const override;
 
-		virtual uint32_t push_amount_output(
-		    Amount, UnlockMoment, Height block_height, Timestamp block_unlock_timestamp, const PublicKey &) override;
-		virtual void pop_amount_output(Amount, UnlockMoment, const PublicKey &) override;
-		virtual uint32_t next_global_index_for_amount(Amount) const override;
-		virtual bool read_amount_output(Amount, uint32_t global_index, UnlockMoment *, PublicKey *) const override;
+		uint32_t push_amount_output(Amount, UnlockMoment, Height, const PublicKey &) override;
+		void pop_amount_output(Amount, UnlockMoment, const PublicKey &) override;
+		uint32_t next_global_index_for_amount(Amount) const override;
+		bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightMarked *) const override;
+		void spend_output(Amount, uint32_t global_index) override;
 	};
 
-	virtual void store_keyimage(const KeyImage &, Height) override;
-	virtual void delete_keyimage(const KeyImage &) override;
-	virtual bool read_keyimage(const KeyImage &) const override;
+	void store_keyimage(const KeyImage &, Height) override;
+	void delete_keyimage(const KeyImage &) override;
+	bool read_keyimage(const KeyImage &, Height *) const override;
 
-	virtual uint32_t push_amount_output(
-	    Amount, UnlockMoment, Height block_height, Timestamp block_unlock_timestamp, const PublicKey &) override;
-	virtual void pop_amount_output(Amount, UnlockMoment, const PublicKey &) override;
-	virtual uint32_t next_global_index_for_amount(Amount) const override;
-	virtual bool read_amount_output(Amount, uint32_t global_index, UnlockMoment *, PublicKey *) const override;
+	uint32_t push_amount_output(Amount, UnlockMoment, Height, const PublicKey &) override;
+	void pop_amount_output(Amount, UnlockMoment, const PublicKey &) override;
+	uint32_t next_global_index_for_amount(Amount) const override;
+	bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightMarked *) const override;
+	void spend_output(Amount, uint32_t global_index) override;
+	void spend_output(Amount, uint32_t global_index, bool spent);
 
-	std::string redo_transaction_get_error(
-	    bool generating, const Transaction &, DeltaState *, BlockGlobalIndices *, bool check_sigs) const;
+	std::string redo_transaction_get_error(bool generating, const Transaction &, DeltaState *, BlockGlobalIndices *,
+	    Height *conflict_height, bool check_sigs) const;
 	bool redo_block(const Block &, const api::BlockHeader &, DeltaState *, BlockGlobalIndices *) const;
 
 	void undo_transaction(IBlockChainState *delta_state, Height, const Transaction &);
 
-	//	const Config &m_config;
-	const Currency &m_currency;
-	logging::LoggerRef m_log;
 	mutable crypto::CryptoNightContext m_hash_crypto_context;
 	mutable std::unordered_map<Amount, uint32_t>
 	    m_next_gi_for_amount;  // Read from db on first use, write on modification
 
-	void update_first_seen_timestamp(const Hash &tid, Timestamp now);  // 0 to delete
-
 	AddTransactionResult add_transaction(const Hash &tid, const Transaction &tx, const BinaryArray &binary_tx,
-	    Height unlock_height, Timestamp unlock_timestamp, bool check_sigs);
+	    Height unlock_height, Timestamp unlock_timestamp, Height *conflict_height, bool check_sigs);
 	void remove_from_pool(Hash tid);
 
 	uint32_t m_tx_pool_version = 2;  // Incremented every time pool changes, reset to 2 on redo block. 2 is selected
@@ -174,13 +144,12 @@ private:
 	void clear_mining_transactions() const;
 
 	Timestamp m_next_median_timestamp = 0;
-	Timestamp m_next_unlock_timestamp = 0;
 	uint32_t m_next_median_size       = 0;
 	virtual void tip_changed() override;  // Updates values above
 	virtual void on_reorganization(
 	    const std::map<Hash, std::pair<Transaction, BinaryArray>> &undone_transactions, bool undone_blocks) override;
-	void calculate_consensus_values(const api::BlockHeader &prev_info, uint32_t *next_median_size,
-	    Timestamp *next_median_timestamp, Timestamp *next_unlock_timestamp) const;
+	void calculate_consensus_values(
+	    const api::BlockHeader &prev_info, uint32_t *next_median_size, Timestamp *next_median_timestamp) const;
 
 	RingCheckerMulticore ring_checker;
 	std::chrono::steady_clock::time_point log_redo_block_timestamp;

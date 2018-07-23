@@ -13,10 +13,10 @@ using common::JsonValue;
 
 LoggerManager::LoggerManager() {}
 
-void LoggerManager::operator()(
+void LoggerManager::write(
     const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) {
 	std::unique_lock<std::mutex> lock(reconfigure_lock);
-	LoggerGroup::operator()(category, level, time, body);
+	LoggerGroup::write(category, level, time, body);
 }
 
 void LoggerManager::configure_default(const std::string &log_folder, const std::string &log_prefix) {
@@ -39,7 +39,7 @@ void LoggerManager::configure_default(const std::string &log_folder, const std::
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());
 	}
-	(*this)(
+	write(
 	    "START", TRACE, boost::posix_time::microsec_clock::local_time(), "----------------------------------------\n");
 }
 

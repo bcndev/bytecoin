@@ -22,11 +22,13 @@ class TransactionBuilder {
 		size_t real_output_index = 0;
 		KeyPair eph_keys;
 		KeyInput input;
+		static bool less(const InputDesc &a, const InputDesc &b) { return a.input.amount < b.input.amount; }
 	};
 	std::vector<InputDesc> m_input_descs;
 	struct OutputDesc {
 		Amount amount;
 		AccountPublicAddress addr;
+		static bool less(const OutputDesc &a, const OutputDesc &b) { return a.amount < b.amount; }
 	};
 	std::vector<OutputDesc> m_output_descs;
 	TransactionExtra m_extra;

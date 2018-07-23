@@ -4,10 +4,10 @@
 #pragma once
 
 #include <cassert>
-#include <seria/KVBinaryInputStream.hpp>
-#include <seria/KVBinaryOutputStream.hpp>
 #include "CryptoNote.hpp"
 #include "common/MemoryStreams.hpp"
+#include "seria/KVBinaryInputStream.hpp"
+#include "seria/KVBinaryOutputStream.hpp"
 
 namespace bytecoin {
 

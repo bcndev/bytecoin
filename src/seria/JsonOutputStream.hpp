@@ -16,7 +16,7 @@ public:
 	virtual bool is_input() const override { return false; }
 
 	virtual void begin_object() override;
-	virtual void object_key(common::StringView name) override;
+	virtual void object_key(common::StringView name, bool optional = false) override;
 	virtual void end_object() override;
 
 	virtual void begin_map(size_t &) override { begin_object(); }
@@ -43,10 +43,11 @@ public:
 private:
 	bool expecting_root = true;
 	common::StringView next_key;
+	bool next_optional = false;
 	common::JsonValue root;
 	std::vector<common::JsonValue *> chain;
 
-	common::JsonValue *insert_or_push(const common::JsonValue &value, bool optional) {
+	common::JsonValue *insert_or_push(const common::JsonValue &value, bool skip_if_optional) {
 		if (chain.empty()) {
 			if (!expecting_root)
 				throw std::logic_error("JsonOutputStream::begin_object unexpected root");
@@ -61,7 +62,7 @@ private:
 		if (js->is_object()) {
 			common::StringView key = next_key;
 			next_key               = common::StringView("");
-			if (optional)
+			if (skip_if_optional && next_optional)
 				return nullptr;
 			return &js->insert((std::string)key, value);
 		}

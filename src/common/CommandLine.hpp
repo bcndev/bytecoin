@@ -28,7 +28,6 @@ class CommandLine {  // Lean command line parsing. Best! :)
 	};
 	Option *find_option(const SView &key);
 	std::vector<Option> options;
-	const std::vector<const char *> empty_array;  // we return & from get_array
 	std::vector<const char *> positional;
 	bool positional_used = false;
 

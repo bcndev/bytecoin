@@ -17,31 +17,49 @@
 
 using namespace platform;
 
+FileStream::FileStream() {
+#ifdef _WIN32
+	handle = INVALID_HANDLE_VALUE;
+#endif
+}
+
 FileStream::FileStream(const std::string &filename, OpenMode mode) {
 #ifdef _WIN32
+	handle = INVALID_HANDLE_VALUE;
+#endif
+	if (!try_open(filename, mode))
+		throw common::StreamError("File failed to open " + filename);
+}
+
+FileStream::~FileStream() {
+#ifdef _WIN32
+	CloseHandle(handle);
+	handle = INVALID_HANDLE_VALUE;
+#else
+	close(fd);
+	fd = -1;
+#endif
+}
+
+bool FileStream::try_open(const std::string &filename, OpenMode mode) {
+#ifdef _WIN32
+	CloseHandle(handle);
+	handle = INVALID_HANDLE_VALUE;
+
 	auto wfilename = utf8_to_utf16(filename);
 	handle         = CreateFileW(wfilename.c_str(), GENERIC_READ | (mode == READ_EXISTING ? 0 : GENERIC_WRITE),
 	    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
 	    (mode == TRUNCATE_READ_WRITE) ? CREATE_ALWAYS : (mode == READ_WRITE_EXISTING) ? OPEN_EXISTING : OPEN_EXISTING,
 	    FILE_ATTRIBUTE_NORMAL, nullptr);
 	DWORD err = GetLastError();
-	if (handle == INVALID_HANDLE_VALUE)
-		throw common::StreamError("File failed to open " + filename);
-#else
-	int m1 = (mode == TRUNCATE_READ_WRITE) ? (O_CREAT | O_TRUNC) : (mode == READ_WRITE_EXISTING) ? 0 : 0;
-	fd     = open(filename.c_str(), m1 | (mode == READ_EXISTING ? O_RDONLY : O_RDWR), 0600);
-	if (fd == -1)
-		throw common::StreamError("File failed to open " + filename);
-#endif
-}
-
-FileStream::~FileStream() {
-#ifdef _WIN32
-	CloseHandle(handle);
-	handle = nullptr;
+	return handle != INVALID_HANDLE_VALUE;
 #else
 	close(fd);
-	fd        = -1;
+	fd = -1;
+
+	int m1 = (mode == TRUNCATE_READ_WRITE) ? (O_CREAT | O_TRUNC) : (mode == READ_WRITE_EXISTING) ? 0 : 0;
+	fd     = open(filename.c_str(), m1 | (mode == READ_EXISTING ? O_RDONLY : O_RDWR), 0600);
+	return fd != -1;
 #endif
 }
 
@@ -52,7 +70,7 @@ uint64_t FileStream::seek(uint64_t pos, int whence) {
 	static_assert(SEEK_END == FILE_END && SEEK_CUR == FILE_CURRENT && SEEK_SET == FILE_BEGIN,
 	    "Whene definition between Windows and POSIX do not match");
 	if (!SetFilePointerEx(handle, lpos, &rpos, whence))
-		throw common::StreamError("Error seeking file in seek, GetLastError=" + std::to_string(GetLastError()));
+		throw common::StreamError("Error seeking file in seek, GetLastError=" + common::to_string(GetLastError()));
 	return rpos.QuadPart;
 #else
 	off_t res = lseek(fd, pos, whence);
@@ -67,7 +85,7 @@ size_t FileStream::write_some(const void *data, size_t size) {
 #ifdef _WIN32
 	DWORD si = 0;
 	if (!WriteFile(handle, data, static_cast<DWORD>(size), &si, nullptr))
-		throw common::StreamError("Error writing file, GetLastError()=" + std::to_string(GetLastError()));
+		throw common::StreamError("Error writing file, GetLastError()=" + common::to_string(GetLastError()));
 	return si;
 #else
 	size_t si = ::write(fd, data, size);
@@ -81,7 +99,7 @@ size_t FileStream::read_some(void *data, size_t size) {
 #ifdef _WIN32
 	DWORD si = 0;
 	if (!ReadFile(handle, data, static_cast<DWORD>(size), &si, nullptr))
-		throw common::StreamError("Error reading file, GetLastError()=" + std::to_string(GetLastError()));
+		throw common::StreamError("Error reading file, GetLastError()=" + common::to_string(GetLastError()));
 	return si;
 #else
 	size_t si = ::read(fd, data, size);

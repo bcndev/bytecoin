@@ -81,7 +81,7 @@ file(GLOB SRC_SERIALIZATION src/Serialization/*.cpp src/Serialization/*.hpp)
 file(GLOB SRC_SERIA src/seria/*.cpp src/seria/*.hpp)
 file(GLOB SRC_LOGGING src/logging/*.cpp src/logging/*.hpp)
 file(GLOB SRC_P2P src/p2p/*.cpp src/p2p/*.hpp)
-file(GLOB SRC_CORE src/Core/*.cpp src/Core/*.hpp src/Core/*.h)
+file(GLOB SRC_CORE src/Core/*.cpp src/Core/*.hpp)
 file(GLOB SRC_HTTP src/http/*.cpp src/http/*.hpp)
 file(GLOB SRC_PLATFORM
     src/platform/ExclusiveLock.cpp src/platform/ExclusiveLock.hpp
@@ -140,10 +140,12 @@ else()
     add_executable(walletd src/main_walletd.cpp)
     add_executable(bytecoind src/main_bytecoind.cpp)
 endif()
-add_executable(tests src/main_tests.cpp tests/io.hpp
+add_executable(tests src/main_tests.cpp tests/io.hpp tests/Random.hpp
+        tests/blockchain/test_blockchain.cpp tests/blockchain/test_blockchain.hpp
         tests/crypto/test_crypto.cpp tests/crypto/test_crypto.hpp
         tests/hash/test_hash.cpp tests/hash/test_hash.hpp
         tests/json/test_json.cpp tests/json/test_json.hpp
+        tests/wallet_state/test_wallet_state.cpp tests/wallet_state/test_wallet_state.hpp
         tests/wallet_file/test_wallet_file.cpp tests/wallet_file/test_wallet_file.hpp)
 set(Boost_USE_STATIC_LIBS ON)
 add_definitions(-DBOOST_BIND_NO_PLACEHOLDERS=1 -DBOOST_CONFIG_SUPPRESS_OUTDATED_MESSAGE=1) # boost::_1 conflicts with std::_1

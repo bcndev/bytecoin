@@ -115,11 +115,13 @@ bool P2PClient::test_connect(const NetworkAddress &addr) {
 	return true;
 }
 
+bool P2PClient::is_connected() const { return sock.is_open(); }
+
 void P2PClient::advance_state(bool called_from_runloop) {
 	write();
-	if (responses.size() >
-	    1)       // TODO - keep track of total number of bytes to send, read new data when that number is low enough
+	if (responses.size() > 1)
 		return;  // keep outward queue busy with (one) response
+	// TODO - keep track of total number of bytes to send, read new data when that number is low enough
 	read(called_from_runloop);
 }
 
@@ -230,8 +232,8 @@ void P2P::connect_all_nodelay() {
 		}
 		NetworkAddress best_address;
 		if (!peers.get_peer_to_connect(best_address, connected, get_local_time())) {
-			log(logging::INFO) << "No peers to connect to, will try again after " << RECONNECT_TIMEOUT << " seconds"
-			                   << std::endl;
+			log(logging::TRACE) << "No peers to connect to, will try again after " << RECONNECT_TIMEOUT << " seconds"
+			                    << std::endl;
 			reconnect_timer.once(RECONNECT_TIMEOUT);
 			return;
 		}

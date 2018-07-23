@@ -9,6 +9,8 @@
 
 using namespace common;
 
+static const std::vector<const char *> empty_array;  // we return & from get_array
+
 // We use ordering optimized for speed, as any ordering is good for us
 int CommandLine::SView::compare(const SView &other) const {
 	if (size != other.size)
@@ -17,6 +19,8 @@ int CommandLine::SView::compare(const SView &other) const {
 }
 
 CommandLine::CommandLine(int argc, const char *const argv[]) {
+	if (argc < 1)
+		return;
 	bool positional_only = false;
 	std::vector<Option> flat_options;  // first gather all options
 	flat_options.reserve(argc - 1);
