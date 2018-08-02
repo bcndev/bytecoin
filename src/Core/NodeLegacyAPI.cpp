@@ -37,27 +37,29 @@ bool Node::process_json_rpc_request(http::Client *who, http::RequestData &&reque
 		auto it = m_jsonrpc_handlers.find(json_req.get_method());
 		if (it == m_jsonrpc_handlers.end()) {
 			m_log(logging::INFO) << "jsonrpc request method not found - " << json_req.get_method() << std::endl;
-			throw json_rpc::Error(json_rpc::METHOD_NOT_FOUND);
+			throw json_rpc::Error(json_rpc::METHOD_NOT_FOUND, "Method not found " + json_req.get_method());
 		}
 		//		m_log(logging::INFO) << "jsonrpc request method=" <<
 		// json_req.get_method() << std::endl;
 
 		if (!it->second(this, who, std::move(request), std::move(json_req), json_resp))
 			return false;
-
+	} catch (const api::bytecoind::SendTransaction::Error &err) {
+		json_resp.set_error(err);
+	} catch (const api::bytecoind::GetArchive::Error &err) {
+		json_resp.set_error(err);
 	} catch (const json_rpc::Error &err) {
 		json_resp.set_error(err);
 	} catch (const std::exception &e) {
 		json_resp.set_error(json_rpc::Error(json_rpc::INTERNAL_ERROR, e.what()));
 	}
-
 	response.set_body(json_resp.get_body());
 	response.r.status = 200;
 	return true;
 }
 
 namespace {
-// Seeking blob in blob
+// Seeking blob in blob. TODO - check that it works the same as common::slow_memmem
 size_t slow_memmem(void *start_buff, size_t buflen, void *pat, size_t patlen) {
 	void *buf = start_buff;
 	void *end = (char *)buf + buflen - patlen;
@@ -78,11 +80,10 @@ bool Node::on_getblocktemplate(http::Client *who, http::RequestData &&raw_reques
 	sta.top_block_hash           = req.top_block_hash;
 	sta.transaction_pool_version = req.transaction_pool_version;
 	m_log(logging::INFO) << "Node received getblocktemplate REQ transaction_pool_version="
-	                     << req.transaction_pool_version << " top_block_hash=" << common::pod_to_hex(req.top_block_hash)
-	                     << std::endl;
+	                     << req.transaction_pool_version << " top_block_hash=" << req.top_block_hash << std::endl;
 	m_log(logging::INFO) << "Node received getblocktemplate CUR transaction_pool_version="
-	                     << m_block_chain.get_tx_pool_version()
-	                     << " top_block_hash=" << common::pod_to_hex(m_block_chain.get_tip_bid()) << std::endl;
+	                     << m_block_chain.get_tx_pool_version() << " top_block_hash=" << m_block_chain.get_tip_bid()
+	                     << std::endl;
 	if (sta.top_block_hash == m_block_chain.get_tip_bid() &&
 	    sta.transaction_pool_version == m_block_chain.get_tx_pool_version()) {
 		//		m_log(logging::INFO) << "on_getblocktemplate will long poll,
@@ -179,6 +180,7 @@ bool Node::on_submitblock(http::Client *, http::RequestData &&, json_rpc::Reques
 	msg.current_blockchain_height = m_block_chain.get_tip_height() + 1;  // TODO check
 	BinaryArray raw_msg = LevinProtocol::send_message(NOTIFY_NEW_BLOCK::ID, LevinProtocol::encode(msg), false);
 	m_p2p.broadcast(nullptr, raw_msg);
+
 	advance_long_poll();
 	res.status = CORE_RPC_STATUS_OK;
 	return true;
@@ -216,7 +218,7 @@ bool Node::on_get_block_header_by_hash(http::Client *, http::RequestData &&, jso
 		    "Internal error: can't get block by hash. Hash = " + common::pod_to_hex(request.hash) + '.'};
 	Hash hash_at_height;
 	response.block_header.orphan_status =
-	    m_block_chain.read_chain(response.block_header.height, &hash_at_height) && hash_at_height == request.hash;
+	    !m_block_chain.read_chain(response.block_header.height, &hash_at_height) || hash_at_height != request.hash;
 	response.block_header.depth =
 	    api::HeightOrDepth(m_block_chain.get_tip_height()) - api::HeightOrDepth(response.block_header.height);
 	response.status = CORE_RPC_STATUS_OK;

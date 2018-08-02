@@ -12,10 +12,8 @@ namespace bytecoin {
 
 class WalletSerializerV1 {
 public:
-	WalletSerializerV1(
-	    crypto::PublicKey &view_public_key, crypto::SecretKey &view_secret_key,
-	    std::vector<WalletRecord> &wallets_container
-	    );
+	WalletSerializerV1(crypto::PublicKey &view_public_key, crypto::SecretKey &view_secret_key,
+	    std::vector<WalletRecord> &wallets_container);
 
 	void load(const crypto::chacha8_key &key, common::IInputStream &source);
 
@@ -38,7 +36,7 @@ private:
 	void load_public_key(common::IInputStream &source, CryptoContext &);
 	void load_secret_key(common::IInputStream &source, CryptoContext &);
 	void check_keys();
-//	void load_flags(bool &details, bool &cache, common::IInputStream &source, CryptoContext &);
+	//	void load_flags(bool &details, bool &cache, common::IInputStream &source, CryptoContext &);
 	void load_wallets(common::IInputStream &source, CryptoContext &);
 
 	void load_wallet_v1_keys(seria::ISeria &s);

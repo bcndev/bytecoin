@@ -4,9 +4,9 @@
 #include "Agent.hpp"
 #include <assert.h>
 #include <algorithm>
-#include <chrono>
 #include <iostream>
 #include <sstream>
+#include "common/Invariant.hpp"
 
 using namespace http;
 
@@ -77,11 +77,9 @@ void Agent::Connection::write() {
 }
 
 void Agent::Connection::write(RequestData &&response) {
-	if (!waiting_write_response)
-		throw std::logic_error("Client unexpected write");
+	invariant(waiting_write_response, "Client unexpected write");
 	waiting_write_response = false;
-	if (!response.r.http_version_major)
-		throw std::logic_error("Someone forgot to set version, method, status or url");
+	invariant(response.r.http_version_major, "Someone forgot to set version, method, status or url");
 	this->keep_alive = response.r.keep_alive;
 	std::string str  = response.r.to_string();
 	responses.emplace_back();
@@ -134,8 +132,7 @@ Agent::Agent(const std::string &address, uint16_t port)
 Agent::~Agent() { assert(!sent_request); }
 
 void Agent::set_request(Request *req) {
-	if (sent_request)
-		throw std::logic_error("Agent is busy with previous request");
+	invariant(!sent_request, "Agent is busy with previous request");
 	sent_request  = req;
 	request_start = std::chrono::steady_clock::now();
 	if (!client.is_open() && !client.connect(address, port)) {
@@ -163,7 +160,7 @@ void Agent::on_client_response() {
 			Request::E_handler e_handler = std::move(was_sent_request->e_handler);
 			try {
 				r_handler(std::move(response));
-			} catch (std::exception &ex) {
+			} catch (const std::exception &ex) {
 				std::cout << "    Parsing received submit leads to throw/catch what=" << ex.what() << std::endl;
 				e_handler(ex.what());
 			} catch (...) {

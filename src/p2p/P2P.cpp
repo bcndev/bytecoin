@@ -7,7 +7,9 @@
 #include <iostream>
 #include <map>
 #include "Core/Config.hpp"
+#include "common/Invariant.hpp"
 #include "crypto/crypto.hpp"
+#include "platform/Time.hpp"
 
 const float RECONNECT_TIMEOUT           = 10;    // when we tried all addresses, make a small delay
 const float NO_INTERNET_RECONNECT_DELAY = 0.5f;  // when network is unreachable, do not try too often
@@ -52,8 +54,7 @@ void P2PClient::read(bool called_from_runloop) {
 		receiving_body_stream = common::VectorStream();
 	}
 	while (true) {
-		if (receiving_body_stream.size() > request_body_length)
-			throw std::logic_error("P2PClient::read request_body.size() > request_body_length");
+		invariant(receiving_body_stream.size() <= request_body_length, "");
 		size_t max_count = request_body_length - receiving_body_stream.size();
 		buffer.copy_to(receiving_body_stream, max_count);
 		if (receiving_body_stream.size() == request_body_length) {
@@ -115,11 +116,13 @@ bool P2PClient::test_connect(const NetworkAddress &addr) {
 	return true;
 }
 
+bool P2PClient::is_connected() const { return sock.is_open(); }
+
 void P2PClient::advance_state(bool called_from_runloop) {
 	write();
-	if (responses.size() >
-	    1)       // TODO - keep track of total number of bytes to send, read new data when that number is low enough
+	if (responses.size() > 1)
 		return;  // keep outward queue busy with (one) response
+	// TODO - keep track of total number of bytes to send, read new data when that number is low enough
 	read(called_from_runloop);
 }
 
@@ -180,7 +183,7 @@ void P2P::accept_all() {
 			return;
 		NetworkAddress address;
 		common::parse_ip_address(addr, &address.ip);
-		address.port                   = config.p2p_bind_port;
+		address.port                   = 0;  // Will set to self-reported port on handshake, was config.p2p_bind_port;
 		next_client[incoming]->address = address;
 		if (peers.is_peer_banned(address, get_local_time())) {
 			log(logging::INFO) << "Accepted from banned address " << addr << " disconnecting immediately" << std::endl;
@@ -228,10 +231,15 @@ void P2P::connect_all_nodelay() {
 		for (auto &&cit : clients[incoming]) {
 			connected.insert(cit.first->address);
 		}
+		NetworkAddress self_connected;
+		common::parse_ip_address("127.0.0.1", &self_connected.ip);
+		self_connected.port = config.p2p_bind_port;
+		connected.insert(self_connected);
+
 		NetworkAddress best_address;
 		if (!peers.get_peer_to_connect(best_address, connected, get_local_time())) {
-			log(logging::INFO) << "No peers to connect to, will try again after " << RECONNECT_TIMEOUT << " seconds"
-			                   << std::endl;
+			log(logging::TRACE) << "No peers to connect to, will try again after " << RECONNECT_TIMEOUT << " seconds"
+			                    << std::endl;
 			reconnect_timer.once(RECONNECT_TIMEOUT);
 			return;
 		}
@@ -275,7 +283,7 @@ P2P::P2P(logging::ILogger &log, const Config &config, PeerDB &peers, client_fact
 // We do not have p2p time yet
 uint32_t P2P::get_p2p_time() const { return get_local_time(); }
 
-uint32_t P2P::get_local_time() const { return uint32_t(std::chrono::seconds(std::time(NULL)).count()); }
+uint32_t P2P::get_local_time() const { return platform::now_unix_timestamp(); }
 
 std::vector<NetworkAddress> P2P::good_clients(bool incoming) const {
 	std::vector<NetworkAddress> result;

@@ -10,6 +10,19 @@ Contents
 * Building on Windows
 * Building on other platforms
 
+
+## Docker image
+
+[![](https://images.microbadger.com/badges/image/homdx/bytecoin.svg)](https://microbadger.com/images/homdx/bytecoin "Get your own image badge on microbadger.com")
+
+[![](https://images.microbadger.com/badges/version/homdx/bytecoin.svg)](https://microbadger.com/images/homdx/bytecoin "Get your own version badge on microbadger.com")
+
+- docker pull homdx/bytecoin
+
+### You can check the result and build logs
+https://hub.docker.com/r/homdx/bytecoin/
+
+
 ## Building on Linux 64-bit
 
 All commands below are adapted for Ubuntu, other distributions may need an other command set.
@@ -255,3 +268,4 @@ Currently it is impossible to run Bytecoin on any Big-Endian platform, due to lo
 ## Building with parameters
 
 If you want to use tools like `clang-tidy`, run `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..` instead of `cmake ..`
+

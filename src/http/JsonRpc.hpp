@@ -16,11 +16,11 @@
 namespace bytecoin {
 namespace json_rpc {
 
-const int PARSE_ERROR     = -32700;
-const int INVALID_REQUEST = -32600;
+const int PARSE_ERROR      = -32700;
+const int INVALID_REQUEST  = -32600;
 const int METHOD_NOT_FOUND = -32601;
-const int INVALID_PARAMS  = -32602;
-const int INTERNAL_ERROR  = -32603;
+const int INVALID_PARAMS   = -32602;
+const int INTERNAL_ERROR   = -32603;
 
 class Error : public std::exception {
 public:
@@ -62,21 +62,26 @@ class Request {
 		method = ps_req("method").get_string();
 		if (ps_req.contains("id"))
 			id = ps_req("id");
-		if (ps_req.contains("params"))
-			params = ps_req("params");
+		if (ps_req.contains("params")) {
+			auto p = ps_req("params");
+			if (!p.is_object() && !p.is_array())  // Json RPC spec 4.2
+				return false;
+			params = p;
+		}
 		return true;
 	}
 
 public:
-	Request() : params(common::JsonValue::NIL) {}
-	explicit Request(const std::string &request_body) : params(common::JsonValue::NIL) { parse_request(request_body); }
+	Request() {}
+	explicit Request(const std::string &request_body) { parse_request(request_body); }
 	template<typename T>
 	void set_params(const T &v) {
 		params = seria::to_json_value(v);
 	}
 	template<typename T>
 	void load_params(T &v) const {
-		seria::from_json_value(v, params);
+		if (params)
+			seria::from_json_value(v, params.get());
 	}
 
 	void set_method(const std::string &m) { method = m; }
@@ -89,14 +94,15 @@ public:
 		common::JsonValue ps_req(common::JsonValue::OBJECT);
 		ps_req.set("jsonrpc", std::string("2.0"));
 		ps_req.set("method", method);
-		ps_req.set("params", params);
+		if (params)
+			ps_req.set("params", params.get());
 		if (id)
 			ps_req.set("id", id.get());
 		return ps_req.to_string();
 	}
 
 private:
-	common::JsonValue params;
+	OptionalJsonValue params;
 	OptionalJsonValue id;
 	std::string method;
 };
@@ -120,14 +126,20 @@ class Response {
 	}
 
 public:
-	Response() : result(common::JsonValue::NIL) {}
-	explicit Response(const std::string &response_body) : result(common::JsonValue::NIL) { parse(response_body); }
+	Response() {}
+	explicit Response(const std::string &response_body) { parse(response_body); }
 	void set_id(const OptionalJsonValue &sid) { id = sid; }
 	const OptionalJsonValue &get_id() const { return id; }
 
-	void set_error(const Error &err) { error = seria::to_json_value(err); }
+	template<typename T>
+	void set_error(const T &err) {
+		static_assert(std::is_base_of<Error, T>::value, "T must be an Error descendant");
+		error = seria::to_json_value(err);
+	}
 
-	bool get_error(Error &err) const {
+	template<typename T>
+	bool get_error(T &err) const {
+		static_assert(std::is_base_of<Error, T>::value, "T must be an Error descendant");
 		if (!error)
 			return false;
 		seria::from_json_value(err, error.get());

@@ -7,6 +7,7 @@
 #include <cassert>
 #include <iostream>
 #include <stdexcept>
+#include "common/Invariant.hpp"
 #include "common/Streams.hpp"
 
 using namespace common;
@@ -70,13 +71,12 @@ KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : m_ta
 	m_target.write(&hdr, sizeof(hdr));
 }
 
-void KVBinaryOutputStream::object_key(common::StringView name) { m_next_key = name; }
+void KVBinaryOutputStream::object_key(common::StringView name, bool optional) { m_next_key = name; }
 void KVBinaryOutputStream::next_map_key(std::string &name) { m_next_key = name; }
 
 void KVBinaryOutputStream::begin_object() {
 	if (m_stack.empty()) {
-		if (!m_expecting_root)
-			throw std::logic_error("KVBinaryOutputStream::write_element_prefix expecting only object");
+		invariant(m_expecting_root, "expecting only object");
 		m_expecting_root = false;
 	} else
 		write_element_prefix(BIN_KV_SERIALIZE_TYPE_OBJECT);
@@ -136,9 +136,7 @@ void KVBinaryOutputStream::end_array() {
 }
 
 void KVBinaryOutputStream::write_element_prefix(uint8_t type) {
-	if (m_stack.empty()) {
-		throw std::logic_error("KVBinaryOutputStream::begin_object unexpected root");
-	}
+	invariant(!m_stack.empty(), "unexpected root");
 
 	Level &level = m_stack.back();
 	auto &s      = stream();

@@ -8,6 +8,7 @@
 #include "CryptoNote.hpp"
 #include "Currency.hpp"
 #include "crypto/chacha8.h"
+#include "logging/LoggerMessage.hpp"
 #include "platform/Files.hpp"
 
 namespace bytecoin {
@@ -31,6 +32,7 @@ inline bool operator!=(const WalletRecord &lhs, const WalletRecord &rhs) { retur
 // We do not allow deleting first spend key. It is used in seed calculations
 // All file formats are opened as is, and saved to V2 when changing something
 class Wallet {
+	logging::LoggerRef m_log;
 	std::unique_ptr<platform::FileStream> file;
 	std::string m_path;
 	std::string m_password;
@@ -55,7 +57,6 @@ class Wallet {
 
 	void save(const std::string &export_path, bool view_only);
 	void save_and_check();
-	std::pair<WalletRecord, bool> generate_new_address(const SecretKey &sk, Timestamp ct);
 
 public:
 	class Exception : public std::runtime_error {
@@ -63,10 +64,10 @@ public:
 		const int return_code;
 		explicit Exception(int rc, const std::string &what) : std::runtime_error(what), return_code(rc) {}
 	};
-	Wallet(const std::string &path, const std::string &password, bool create = false,
+	Wallet(logging::ILogger &log, const std::string &path, const std::string &password, bool create = false,
 	    const std::string &import_keys = std::string());
-	std::vector<WalletRecord> generate_new_addresses(
-	    const std::vector<SecretKey> &sks, Timestamp ct);  // set secret_key to SecretKey{} to generate
+	std::vector<WalletRecord> generate_new_addresses(const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now,
+	    bool *rescan_from_ct);  // set secret_key to SecretKey{} to generate
 	void set_password(const std::string &password);
 	void export_wallet(const std::string &export_path, bool view_only);
 	bool is_view_only() const { return first_record.spend_secret_key == SecretKey{}; }
@@ -87,6 +88,7 @@ public:
 	const HistoryKey &get_history_key() const { return m_history_key; }
 	const Hash &get_history_filename_seed() const { return m_history_filename_seed; }
 	std::string get_history_folder() const { return m_path + ".history"; }
+	std::string get_payment_queue_folder() const { return m_path + ".payments"; }
 
 	Timestamp get_oldest_timestamp() const { return m_oldest_timestamp; }
 	void on_first_output_found(Timestamp ts);  // called by WalletState, updates creation timestamp for imported wallet

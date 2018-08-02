@@ -10,7 +10,7 @@
 #include <thread>
 #include "BlockChainFileFormat.hpp"
 #include "BlockChainState.hpp"
-#include "http/JsonRpc.h"
+#include "http/JsonRpc.hpp"
 #include "http/Server.hpp"
 #include "p2p/P2P.hpp"
 #include "p2p/P2PClientBasic.hpp"
@@ -50,11 +50,15 @@ public:
 	// json_rpc_node
 	bool on_get_status3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::GetStatus::Request &&, api::bytecoind::GetStatus::Response &);
+	bool on_get_statistics(http::Client *, http::RequestData &&, json_rpc::Request &&,
+	    api::bytecoind::GetStatistics::Request &&, api::bytecoind::GetStatistics::Response &);
+	bool on_get_archive(http::Client *, http::RequestData &&, json_rpc::Request &&,
+	    api::bytecoind::GetArchive::Request &&, api::bytecoind::GetArchive::Response &);
 	bool on_get_random_outputs3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::GetRandomOutputs::Request &&, api::bytecoind::GetRandomOutputs::Response &);
 	bool handle_send_transaction3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::SendTransaction::Request &&, api::bytecoind::SendTransaction::Response &);
-	bool handle_check_send_proof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
+	bool handle_check_sendproof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::CheckSendProof::Request &&, api::bytecoind::CheckSendProof::Response &);
 	bool on_getblocktemplate(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::GetBlockTemplate::Request &&r, api::bytecoind::GetBlockTemplate::Response &);
@@ -98,6 +102,7 @@ protected:
 	logging::LoggerRef m_log;
 	PeerDB m_peer_db;
 	P2P m_p2p;
+	const Timestamp m_start_time;
 	platform::Timer m_commit_timer;
 	std::unique_ptr<platform::PreventSleep> prevent_sleep;
 	void db_commit() {
@@ -111,6 +116,7 @@ protected:
 
 	class P2PClientBytecoin : public P2PClientBasic {
 		Node *const m_node;
+		void after_handshake();
 
 	protected:
 		virtual void on_disconnect(const std::string &ban_reason) override;
@@ -131,6 +137,7 @@ protected:
 		virtual void on_msg_timed_sync(COMMAND_TIMED_SYNC::response &&) override;
 		virtual void on_msg_notify_new_block(NOTIFY_NEW_BLOCK::request &&) override;
 		virtual void on_msg_notify_new_transactions(NOTIFY_NEW_TRANSACTIONS::request &&) override;
+		virtual void on_msg_notify_checkpoint(NOTIFY_CHECKPOINT::request &&) override;
 #if bytecoin_ALLOW_DEBUG_COMMANDS
 		virtual void on_msg_network_state(COMMAND_REQUEST_NETWORK_STATE::request &&) override;
 		virtual void on_msg_stat_info(COMMAND_REQUEST_STAT_INFO::request &&) override;
@@ -152,12 +159,14 @@ protected:
 		size_t total_downloading_blocks = 0;
 		std::list<P2PClientBytecoin *> m_who_downloaded_block;
 		P2PClientBytecoin *m_chain_client = nullptr;
+		bool m_chain_request_sent         = false;
 		platform::Timer m_chain_timer;  // If m_chain_client does not respond for long, disconnect it
 
 		struct DownloadCell {
 			Hash bid;
 			Height expected_height = 0;
-			NetworkAddress bid_source;  // for banning culprit in case of a problem
+			NetworkAddress bid_source;    // for banning culprit in case of a problem
+			NetworkAddress block_source;  // for banning culprit in case of a problem
 			P2PClientBytecoin *downloading_client = nullptr;
 			std::chrono::steady_clock::time_point request_time;
 			RawBlock rb;
@@ -186,6 +195,8 @@ protected:
 		void add_work(std::tuple<Hash, bool, RawBlock> &&wo);
 		void thread_run();
 
+		void start_download(DownloadCell &dc, P2PClientBytecoin *who);
+		void stop_download(DownloadCell &dc, bool success);
 		void on_chain_timer();
 		void on_download_timer();
 		void advance_chain();
@@ -194,7 +205,7 @@ protected:
 		DownloaderV11(Node *node, BlockChainState &block_chain);
 		~DownloaderV11();
 
-		void advance_download(Hash last_downloaded_block);
+		void advance_download();
 		bool on_idle();
 
 		uint32_t get_known_block_count(uint32_t my) const;
@@ -203,38 +214,8 @@ protected:
 		const std::map<P2PClientBytecoin *, size_t> &get_good_clients() const { return m_good_clients; }
 		void on_msg_notify_request_chain(P2PClientBytecoin *, const NOTIFY_RESPONSE_CHAIN_ENTRY::request &);
 		void on_msg_notify_request_objects(P2PClientBytecoin *, const NOTIFY_RESPONSE_GET_OBJECTS::request &);
-		void on_msg_timed_sync(const CORE_SYNC_DATA &payload_data);
 	};
-	/*	class DownloaderV1 {  // sync&download from legacy v1 clients
-	        Node *const m_node;
-	        BlockChainState &m_block_chain;
 
-	        size_t m_ask_blocks_count;
-	        std::map<P2PClientBytecoin *, size_t> m_good_clients;
-	        P2PClientBytecoin *m_sync_client = nullptr;
-	        platform::Timer m_sync_timer;  // If sync_client does not respond for long, disconnect it
-	        bool m_sync_sent = false;
-
-	        std::deque<Hash> m_wanted_blocks;  // If it is not empty, we are downloading first part
-	        Height m_wanted_start_height = 0;
-
-	        void reset_sync_client();
-	        void on_sync_timer();
-
-	    public:
-	        DownloaderV1(Node *node, BlockChainState &block_chain);
-
-	        void advance_download(Hash last_downloaded_block);
-	        bool on_idle() { return false; }
-
-	        uint32_t get_known_block_count(uint32_t my) const;
-	        void on_connect(P2PClientBytecoin *);
-	        void on_disconnect(P2PClientBytecoin *);
-	        const std::map<P2PClientBytecoin *, size_t> &get_good_clients() const { return m_good_clients; }
-	        void on_msg_notify_request_chain(P2PClientBytecoin *, const NOTIFY_RESPONSE_CHAIN_ENTRY::request &);
-	        void on_msg_notify_request_objects(P2PClientBytecoin *, const NOTIFY_RESPONSE_GET_OBJECTS::request &);
-	        void on_msg_timed_sync(const CORE_SYNC_DATA &payload_data);
-	    };*/
 	DownloaderV11 m_downloader;
 
 	bool on_api_http_request(http::Client *, http::RequestData &&, http::ResponseData &);
@@ -243,7 +224,7 @@ protected:
 	void sync_transactions(P2PClientBytecoin *);
 
 	static const std::unordered_map<std::string, HTTPHandlerFunction> m_http_handlers;
-	static const std::unordered_map<std::string, JSONRPCHandlerFunction> m_jsonrpc_handlers;
+	static std::unordered_map<std::string, JSONRPCHandlerFunction> m_jsonrpc_handlers;
 };
 
 }  // namespace bytecoin

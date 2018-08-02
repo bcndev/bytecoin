@@ -9,6 +9,8 @@
 
 using namespace common;
 
+static const std::vector<const char *> empty_array;  // we return & from get_array
+
 // We use ordering optimized for speed, as any ordering is good for us
 int CommandLine::SView::compare(const SView &other) const {
 	if (size != other.size)
@@ -17,6 +19,8 @@ int CommandLine::SView::compare(const SView &other) const {
 }
 
 CommandLine::CommandLine(int argc, const char *const argv[]) {
+	if (argc < 1)
+		return;
 	bool positional_only = false;
 	std::vector<Option> flat_options;  // first gather all options
 	flat_options.reserve(argc - 1);
@@ -59,13 +63,13 @@ const char *CommandLine::get(const char *key, const char *deprecation_text) {
 	if (!op)
 		return nullptr;
 	op->used = true;
-	if (op->values.size() != 1)
+	if (op->values.size() != 1 && !op->wrong_type_message)
 		op->wrong_type_message = "should not be specified more than once";
-	if (!op->values.front())
-		op->wrong_type_message = "is not flag and should have value";
+	if (!op->values.front() && !op->wrong_type_message)
+		op->wrong_type_message = "is not flag and should have value (use --<option>=<value>)";
 	if (deprecation_text)
 		printf("Command line option %s is deprecated. %s\n", key, deprecation_text);
-	return op->values.front() ? op->values.front() : "";
+	return op->values.front() ? op->values.front() : nullptr;
 }
 
 bool CommandLine::get_bool(const char *key, const char *deprecation_text) {
@@ -73,13 +77,13 @@ bool CommandLine::get_bool(const char *key, const char *deprecation_text) {
 	if (!op)
 		return false;
 	op->used = true;
-	if (op->values.size() != 1)
+	if (op->values.size() != 1 && !op->wrong_type_message)
 		op->wrong_type_message = "should not be specified more than once";
-	if (op->values.front())
-		op->wrong_type_message = "is flag and should not have value";
+	if (op->values.front() && !op->wrong_type_message)
+		op->wrong_type_message = "is flag and should not have value (use --<option>, not --<option>=<value>)";
 	if (deprecation_text)
 		printf("Command line option %s is deprecated. %s\n", key, deprecation_text);
-	return true;
+	return !op->values.front();  // if value set, bool flag is not specified
 }
 
 const std::type_info &CommandLine::get_type(const char *key) {
@@ -98,11 +102,13 @@ const std::vector<const char *> &CommandLine::get_array(const char *key, const c
 	if (!op)
 		return empty_array;
 	op->used = true;
-	for (auto &&value : op->values)
-		if (!value) {
-			op->wrong_type_message = "is not flag and should have value";
-			value                  = "";  // After recording wrong type, we fix it so clients will not crash
-		}
+	for (auto vit = op->values.begin(); vit != op->values.end();)
+		if (!*vit) {
+			if (!op->wrong_type_message)
+				op->wrong_type_message = "is not flag and should have value (use --<option>=<value>)";
+			vit = op->values.erase(vit);  // After recording wrong type, we fix it so clients will not crash
+		} else
+			++vit;
 	if (deprecation_text)
 		printf("Command line option %s is deprecated. %s\n", key, deprecation_text);
 	return op->values;
@@ -130,7 +136,7 @@ bool CommandLine::should_quit(const char *help_text, const char *version_text) {
 	}
 	if (!positional_used)
 		for (auto &&po : positional) {
-			printf("Positional args are not allowed %s (typo?)\n", po);
+			printf("Positional args are not allowed - you specified '%s' (typo?)\n", po);
 			quit = true;
 		}
 	for (auto &&op : options) {

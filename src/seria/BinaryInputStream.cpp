@@ -7,6 +7,7 @@
 #include <boost/lexical_cast.hpp>
 #include <cassert>
 #include <stdexcept>
+#include "common/Invariant.hpp"
 #include "common/Streams.hpp"
 
 using namespace common;
@@ -63,5 +64,5 @@ void BinaryInputStream::binary(void *value, size_t size) { stream.read(value, si
 
 void BinaryInputStream::seria_v(double &value) {
 	assert(false);  // the method is not supported for this type of serialization
-	throw std::logic_error("double serialization is not supported in BinaryInputStreamSeria");
+	invariant(false, "double serialization is not supported in BinaryInputStreamSeria");
 }

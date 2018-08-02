@@ -1,6 +1,32 @@
 ## Release Notes
 
+### v3.2.0
+
+- *Warning:* This version uses different format of `bytecoind` database and `walletd` caches, they will be upgraded to the new format on a first start of daemons. Prepare for downtime of up to 2 hours depending on your wallet size and computer performance.
+- __API change:__ Renamed methods `create_send_proof` and `check_send_proof` to `create_sendproof` and `check_sendproof` respectively (along with input parameter `send_proof` that became `sendproof`).
+- Fixed minor bugs found in the beta release.
+
+### v3.2.0-beta-20180723
+
+- *Warning:* This version uses different format of `bytecoind` database and `walletd` caches, they will be upgraded to the new format on a first start of daemons. Prepare for downtime of up to 2 hours depending on your wallet size and computer performance.
+- Reworked the wallet cache storage to use 3x less space and run 2x faster.
+- Intoduced the 'payment queue' which stores and resends all sent transactions until they are successfully confirmed. This fixes issues with sent transactions lost due to chain reorganizations under high loads.
+- Changed the logic of the `send_transaction` method: It never returns an error, its result is always `broadcast` because all transactions are first stored in the payment queue and later sent for sure.
+- Improved the downloader to reduce sync times.
+- Made the `params` argument optional in all JSON RPC calls according to the spec.
+- Improved error handling in the `create_transaction` and `send_transaction` methods (distinct error codes for common errors).
+- Fixed issue when requests to `walletd` with address is not in the wallet (it now fails with an appopriate error).
+- Changed the mechanism of the memory pool size adjustment to give miners more freedom in selecting transactions for including in blocks.
+- The `walletd` command line parameter `--backup-wallet` is renamed to `--backup-wallet-data` and now it makes a hot backup of the wallet cache, wallet history, and payment queue in bulk (backward compatibility is maintained).
+- Extended the number of bits of the cumulative difficulty parameter (it is now 128 bits).
+- Made entering passwords in terminals/consoles invisible on all major platforms.
+- Allowed entered passwords to contain Unicode characters on Windows (not recommended though).
+- Changed the logic of the `create_addresses` method when called with at least one existing spend key and without setting `creation_timestamp` (or setting it to `0`). `walletd` will perform rescan of the whole blockchain in this case.
+- Added a better error message when `walletd` fails to be authenticated at `bytecoind`.
+- Started versioning binary API methods for better detection of changes.
+
 ### v3.1.1
+
 - Added `--backup-blockchain` `--backup-wallet` command-line flags to `bytecoind` and `walletd` resp. to hot-copy blockchain and wallet data (wallet file and wallet cache).
 - Fixed behavior of the `walletd`'s methods such as `get_balance`, which until now returned zero balance for addresses not belonging to the opened wallet file.
 

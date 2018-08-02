@@ -3,6 +3,7 @@
 
 #include "BinaryArray.hpp"
 #include <stdexcept>
+#include "Invariant.hpp"
 
 namespace common {
 
@@ -10,8 +11,7 @@ namespace common {
 
 BinaryArrayImpl::iterator BinaryArrayImpl::insert(iterator pos, const value_type *be, const value_type *en) {
 	size_t left = pos - m_data;
-	if (left > m_size)
-		throw std::logic_error("insert after the end");
+	invariant(left <= m_size, "insert after the end");
 	size_t right = m_size - left;
 	size_t add   = en - be;
 	if (m_size + add <= m_reserved) {
@@ -30,8 +30,7 @@ BinaryArrayImpl::iterator BinaryArrayImpl::insert(iterator pos, const value_type
 }
 BinaryArrayImpl::iterator BinaryArrayImpl::insert(iterator pos, size_t add, value_type va) {
 	size_t left = pos - m_data;
-	if (left > m_size)
-		throw std::logic_error("insert after the end");
+	invariant(left <= m_size, "insert after the end");
 	size_t right = m_size - left;
 	if (m_size + add <= m_reserved) {
 		good_memmove(m_data + left + add, m_data + left, right);
@@ -99,5 +98,20 @@ void BinaryArrayImpl::resize(size_t si, value_type va) {
 	good_memmove(other.m_data, m_data, m_size);
 	memset(other.m_data + m_size, va, si - m_size);
 	swap(other);
+}
+
+const unsigned char *slow_memmem(const unsigned char *buf, size_t buflen, const unsigned char *pat, size_t patlen) {
+	if (patlen == 0)
+		return nullptr;
+	while (buflen) {
+		auto char_ptr = (const unsigned char *)memchr(buf, pat[0], buflen);
+		if (char_ptr - buf + patlen > buflen)
+			return nullptr;
+		if (memcmp(char_ptr, pat, patlen) == 0)
+			return char_ptr;
+		buflen = buflen - (char_ptr - buf);
+		buf    = char_ptr + 1;
+	}
+	return nullptr;
 }
 }

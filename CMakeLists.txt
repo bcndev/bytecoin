@@ -39,12 +39,14 @@ if(USE_SQLITE)
     # Requires dl on Linux, we add it unconditionally for simplicity.
     message(STATUS "Database selected: SQLite 3. Make sure it is put into ../sqlite/")
     include_directories(../sqlite)
-    set(SRC_DB ../sqlite/sqlite3.c src/platform/DBsqlite3.cpp src/platform/DBsqlite3.hpp)
+    set(SRC_WARNINGS_DB ../sqlite/sqlite3.c)
+    set(SRC_DB src/platform/DBsqlite3.cpp src/platform/DBsqlite3.hpp)
     add_definitions(-Dplatform_USE_SQLITE=1)
 else()
     message(STATUS "Database selected: LMDB. Make sure it is put into ../lmdb/")
     include_directories(../lmdb/libraries/liblmdb)
-    set(SRC_DB ../lmdb/libraries/liblmdb/mdb.c ../lmdb/libraries/liblmdb/midl.c src/platform/DBlmdb.cpp src/platform/DBlmdb.hpp)
+    set(SRC_WARNINGS_DB ../lmdb/libraries/liblmdb/mdb.c ../lmdb/libraries/liblmdb/midl.c)
+    set(SRC_DB src/platform/DBlmdb.cpp src/platform/DBlmdb.hpp)
 endif()
 if(USE_SSL)
     message(STATUS "SSL usage: ON. Make sure openssl headers are in " ${OPENSSL_ROOT} "/include and static libs are in " ${OPENSSL_ROOT} "/")
@@ -81,11 +83,12 @@ file(GLOB SRC_SERIALIZATION src/Serialization/*.cpp src/Serialization/*.hpp)
 file(GLOB SRC_SERIA src/seria/*.cpp src/seria/*.hpp)
 file(GLOB SRC_LOGGING src/logging/*.cpp src/logging/*.hpp)
 file(GLOB SRC_P2P src/p2p/*.cpp src/p2p/*.hpp)
-file(GLOB SRC_CORE src/Core/*.cpp src/Core/*.hpp src/Core/*.h)
+file(GLOB SRC_CORE src/Core/*.cpp src/Core/*.hpp)
 file(GLOB SRC_HTTP src/http/*.cpp src/http/*.hpp)
 file(GLOB SRC_PLATFORM
     src/platform/ExclusiveLock.cpp src/platform/ExclusiveLock.hpp
     src/platform/Files.cpp src/platform/Files.hpp
+    src/platform/Time.cpp src/platform/Time.hpp
     src/platform/Network.cpp src/platform/Network.hpp
     src/platform/PathTools.cpp src/platform/PathTools.hpp
     src/platform/PreventSleep.cpp src/platform/PreventSleep.hpp
@@ -93,13 +96,15 @@ file(GLOB SRC_PLATFORM
 )
 if(WIN32)
     set_property(SOURCE ${SRC_CRYPTO} PROPERTY COMPILE_FLAGS -Ot)
-    set_property(SOURCE ${SRC_DB} PROPERTY COMPILE_FLAGS "-Ot -w")
+    set_property(SOURCE ${SRC_DB} PROPERTY COMPILE_FLAGS -Ot)
+    set_property(SOURCE ${SRC_WARNINGS_DB} PROPERTY COMPILE_FLAGS "-Ot -w")
     set_property(SOURCE ${SRC_COMMON} PROPERTY COMPILE_FLAGS -Ot)
     set_property(SOURCE ${SRC_SERIALIZATION} PROPERTY COMPILE_FLAGS -Ot)
     set_property(SOURCE ${SRC_SERIA} PROPERTY COMPILE_FLAGS -Ot)
 else()
     set_property(SOURCE ${SRC_CRYPTO} PROPERTY COMPILE_FLAGS -O3)
-    set_property(SOURCE ${SRC_DB} PROPERTY COMPILE_FLAGS "-O3 -w")
+    set_property(SOURCE ${SRC_DB} PROPERTY COMPILE_FLAGS -O3)
+    set_property(SOURCE ${SRC_WARNINGS_DB} PROPERTY COMPILE_FLAGS "-O3 -w")
     set_property(SOURCE ${SRC_COMMON} PROPERTY COMPILE_FLAGS -O3)
     set_property(SOURCE ${SRC_SERIALIZATION} PROPERTY COMPILE_FLAGS -O3)
     set_property(SOURCE ${SRC_SERIA} PROPERTY COMPILE_FLAGS -O3)
@@ -107,6 +112,7 @@ endif()
 include_directories(src)
 set(SOURCE_FILES
     ${SRC_DB}
+    ${SRC_WARNINGS_DB}
     ${SRC_COMMON}
     ${SRC_HTTP}
     ${SRC_CORE}
@@ -140,10 +146,12 @@ else()
     add_executable(walletd src/main_walletd.cpp)
     add_executable(bytecoind src/main_bytecoind.cpp)
 endif()
-add_executable(tests src/main_tests.cpp tests/io.hpp
+add_executable(tests src/main_tests.cpp tests/io.hpp tests/Random.hpp
+        tests/blockchain/test_blockchain.cpp tests/blockchain/test_blockchain.hpp
         tests/crypto/test_crypto.cpp tests/crypto/test_crypto.hpp
         tests/hash/test_hash.cpp tests/hash/test_hash.hpp
         tests/json/test_json.cpp tests/json/test_json.hpp
+        tests/wallet_state/test_wallet_state.cpp tests/wallet_state/test_wallet_state.hpp
         tests/wallet_file/test_wallet_file.cpp tests/wallet_file/test_wallet_file.hpp)
 set(Boost_USE_STATIC_LIBS ON)
 add_definitions(-DBOOST_BIND_NO_PLACEHOLDERS=1 -DBOOST_CONFIG_SUPPRESS_OUTDATED_MESSAGE=1) # boost::_1 conflicts with std::_1

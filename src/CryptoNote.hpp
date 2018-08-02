@@ -7,10 +7,19 @@
 #include <functional>
 #include <vector>
 #include "common/BinaryArray.hpp"
+#include "common/Invariant.hpp"  // Promote using it systemwide
 #include "crypto/types.hpp"
 
 // We define here, as CryptoNoteConfig.h is never included anywhere anymore
 #define bytecoin_ALLOW_DEBUG_COMMANDS 1
+
+// Remove once we upgrade to version 4
+#define UPGRADE_TO_VERSION_4 1
+// We add height to keyimage and outputs indexes to bytecoind
+// We use more efficient tid->transaction index
+// We make CD and Balances 128-bit
+// We add binary size to api::Transactions
+// We remove unlock_timestamp from api::BlockHeader
 
 namespace bytecoin {
 
@@ -75,7 +84,7 @@ struct ParentBlock {
 	uint8_t major_version = 0;
 	uint8_t minor_version = 0;
 	Hash previous_block_hash;
-	uint16_t transaction_count = 0;
+	uint16_t transaction_count = 0;  // TODO - check overflow everywhere it is assigned
 	std::vector<Hash> base_transaction_branch;
 	BaseTransaction base_transaction;
 	std::vector<Hash> blockchain_branch;
@@ -132,6 +141,17 @@ public:
 	bool to_raw_block(RawBlock &) const;
 };
 
+struct CheckPoint {
+	Height height = 0;
+	Hash hash;
+	uint32_t key_id  = 0;
+	uint64_t counter = 0;
+	Hash get_message_hash() const;
+};
+struct SignedCheckPoint : public CheckPoint {
+	Signature signature;
+};
+
 // Predicates for using in maps, sets, etc
 inline bool operator==(const AccountPublicAddress &a, const AccountPublicAddress &b) {
 	return std::tie(a.view_public_key, a.spend_public_key) == std::tie(b.view_public_key, b.spend_public_key);
@@ -174,4 +194,7 @@ void ser_members(bytecoin::ParentBlock &v, ISeria &s);
 
 void ser_members(bytecoin::RawBlock &v, ISeria &s);
 void ser_members(bytecoin::Block &v, ISeria &s);
+
+void ser_members(bytecoin::CheckPoint &v, ISeria &s);
+void ser_members(bytecoin::SignedCheckPoint &v, ISeria &s);
 }

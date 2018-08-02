@@ -31,7 +31,7 @@ LoggerMessage::LoggerMessage(LoggerMessage &&other)
 }
 
 int LoggerMessage::sync() {
-	logger(category, log_level, timestamp, str());
+	logger.write(category, log_level, timestamp, str());
 	str(std::string());
 	return 0;
 }

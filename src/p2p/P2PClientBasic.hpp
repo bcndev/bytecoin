@@ -30,6 +30,7 @@ private:
 	static std::map<std::pair<uint32_t, bool>, LevinHandlerFunction> after_handshake_handlers;
 
 	void send_timed_sync();
+
 	void msg_handshake(COMMAND_HANDSHAKE::request &&req);
 	void msg_handshake(COMMAND_HANDSHAKE::response &&req);
 	void msg_ping(COMMAND_PING::request &&req);
@@ -66,8 +67,11 @@ protected:
 	virtual void on_msg_notify_request_chain(NOTIFY_RESPONSE_CHAIN_ENTRY::request &&) {}
 	virtual void on_msg_notify_request_objects(NOTIFY_REQUEST_GET_OBJECTS::request &&) {}
 	virtual void on_msg_notify_request_objects(NOTIFY_RESPONSE_GET_OBJECTS::request &&) {}
+	virtual void on_msg_notify_checkpoint(NOTIFY_CHECKPOINT::request &&) {}
 	virtual CORE_SYNC_DATA get_sync_data() const = 0;
 	virtual std::vector<PeerlistEntry> get_peers_to_share() const { return std::vector<PeerlistEntry>(); }
+
+	void set_last_received_sync_data(CORE_SYNC_DATA cd) { last_received_sync_data = cd; }
 
 public:
 	explicit P2PClientBasic(const Config &config, uint64_t unique_number, bool incoming, D_handler d_handler);

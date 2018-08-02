@@ -1,10 +1,10 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
-#include "WalletSerializationV1.h"
-#include <crypto/crypto.hpp>
+#include "WalletSerializationV1.hpp"
 #include "CryptoNoteTools.hpp"
 #include "common/MemoryStreams.hpp"
+#include "crypto/crypto.hpp"
 #include "seria/BinaryInputStream.hpp"
 
 using namespace common;

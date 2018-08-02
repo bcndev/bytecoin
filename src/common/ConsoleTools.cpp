@@ -9,12 +9,15 @@
 
 #ifdef _WIN32
 #include <io.h>
+#include "platform/Files.hpp"
 #include "platform/Windows.hpp"
 #else
+#include <termios.h>
 #include <unistd.h>
 #include <boost/concept_check.hpp>
 #include <cstring>
 #include <iostream>
+
 #endif
 
 namespace common {
@@ -71,7 +74,10 @@ void set_text_color(Color color) {
 
 UnicodeConsoleSetup::UnicodeConsoleSetup() {
 #ifdef _WIN32
-	SetConsoleOutputCP(CP_UTF8);
+	if (IsValidCodePage(CP_UTF8)) {
+		SetConsoleOutputCP(CP_UTF8);
+		SetConsoleCP(CP_UTF8);
+	}
 	old_buf = std::cout.rdbuf(this);
 #else
 	boost::ignore_unused_variable_warning(old_buf);
@@ -88,6 +94,65 @@ int UnicodeConsoleSetup::sync() {
 	fflush(stdout);
 	str(std::string());
 	return 0;
+}
+bool UnicodeConsoleSetup::getline(std::string &line, bool hide_input) {
+//	std::string test;
+//	std::cout << "Enter test visible: " << std::flush;
+//	if (!console_setup.getline(test)) {
+//		return 0;
+//	}
+//	std::cout << "You entered {" << test << "} Enter test invisible: " << std::flush;
+//	if (!console_setup.getline(test, true)) {
+//		return 0;
+//	}
+//	std::cout << "You entered {" << test << "}" << std::flush;
+//	return 1;
+#ifdef _WIN32
+	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+	DWORD mode    = 0;
+	if (hide_input) {
+		GetConsoleMode(hStdin, &mode);
+		SetConsoleMode(hStdin, mode & (~ENABLE_ECHO_INPUT));
+	}
+	wchar_t wstr[4096];  // TODO - read in chunks?
+	unsigned long read = 0;
+	bool result        = ReadConsoleW(hStdin, wstr, sizeof(wstr) / sizeof(*wstr), &read, NULL) != 0;
+	if (result) {
+		line = platform::FileStream::utf16_to_utf8(std::wstring(wstr, read));
+		if (!line.empty() && line.back() == '\n')
+			line.pop_back();
+		if (!line.empty() && line.back() == '\r')
+			line.pop_back();
+	} else {
+		char buf = 0;
+		line.clear();
+		while (ReadFile(hStdin, &buf, 1, &read, nullptr)) {
+			line.push_back(buf);
+			if (buf == '\n') {
+				result = true;
+				break;
+			}
+		}
+		if (!line.empty() && line.back() == '\n')
+			line.pop_back();
+		if (!line.empty() && line.back() == '\r')
+			line.pop_back();
+	}
+	if (hide_input)
+		SetConsoleMode(hStdin, mode);
+#else
+	termios oldt{};
+	if (hide_input) {
+		tcgetattr(STDIN_FILENO, &oldt);
+		termios newt = oldt;
+		newt.c_lflag &= ~ECHO;
+		tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+	}
+	bool result = !!std::getline(std::cin, line);
+	if (hide_input)
+		tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+#endif
+	return result;
 }
 }
 }

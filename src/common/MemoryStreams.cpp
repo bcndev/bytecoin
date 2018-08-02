@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cstring>
 #include <stdexcept>
+#include "Invariant.hpp"
 
 using namespace common;
 
@@ -13,8 +14,7 @@ MemoryInputStream::MemoryInputStream(const void *buffer, size_t buffer_size)
     : buffer(static_cast<const char *>(buffer)), buffer_size(buffer_size), in_position(0) {}
 
 size_t MemoryInputStream::read_some(void *data, size_t size) {
-	if (in_position > buffer_size)
-		throw std::logic_error("MemoryInputStream::read_some jump over the end of buffer");
+	invariant(in_position <= buffer_size, "jump over the end of buffer");
 	size = std::min(size, buffer_size - in_position);
 
 	if (size > 0)
@@ -24,8 +24,7 @@ size_t MemoryInputStream::read_some(void *data, size_t size) {
 }
 
 size_t StringInputStream::read_some(void *data, size_t size) {
-	if (in_position > in->size())
-		throw std::logic_error("StringInputStream::read_some jump over the end of buffer");
+	invariant(in_position <= in->size(), "jump over the end of buffer");
 	size = std::min(size, in->size() - in_position);
 
 	memcpy(data, in->data() + in_position, size);
@@ -50,8 +49,7 @@ size_t StringInputStream::copy_to(IOutputStream &out, size_t max_count) {
 }
 
 size_t VectorInputStream::read_some(void *data, size_t size) {
-	if (in_position > in->size())
-		throw std::logic_error("VectorInputStream::read_some jump over the end of buffer");
+	invariant(in_position <= in->size(), "jump over the end of buffer");
 	size = std::min(size, in->size() - in_position);
 
 	memcpy(data, in->data() + in_position, size);
@@ -101,14 +99,12 @@ size_t CircularBuffer::write_some(const void *data, size_t size) {
 
 void CircularBuffer::did_write(size_t count) {
 	write_pos += count;
-	if (write_pos > read_pos + impl.size())
-		throw std::logic_error("Writing past end of Buffer");
+	invariant(write_pos <= read_pos + impl.size(), "Writing past end of Buffer");
 }
 
 void CircularBuffer::did_read(size_t count) {
 	read_pos += count;
-	if (read_pos > write_pos)
-		throw std::logic_error("Reading past end of Buffer");
+	invariant(read_pos <= write_pos, "Reading past end of Buffer");
 	if (read_pos >= impl.size()) {
 		read_pos -= impl.size();
 		write_pos -= impl.size();

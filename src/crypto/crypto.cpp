@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include <memory>
 #include <mutex>
 
@@ -412,6 +413,14 @@ bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const 
 	}
 	ge_dsm_precomp(image_pre, &image_unp);
 	if (check_key_image && ge_check_subgroup_precomp_vartime(image_pre) != 0) {
+		// Example of key_images that fail subgroup check
+		// c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa
+		// c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a
+		// 0000000000000000000000000000000000000000000000000000000000000080
+		// 0000000000000000000000000000000000000000000000000000000000000000
+		// 26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05
+		// 26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85
+		// ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f
 		return false;
 	}
 	sc_0(&sum);
@@ -450,7 +459,7 @@ struct sp_comm {
 #pragma pack(pop)
 static_assert(sizeof(sp_comm) == 192, "Layout of sp_comm structure is wrong");
 
-bool generate_send_proof(const PublicKey &txkey_pub, const SecretKey &txkey_sec, const PublicKey &receiver_view_key_pub,
+bool generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_sec, const PublicKey &receiver_view_key_pub,
     const KeyDerivation &derivation, const Hash &message_hash, Signature &proof) {
 	ge_p1p1 tmp1;
 	ge_p2 tmp2;
@@ -476,7 +485,7 @@ bool generate_send_proof(const PublicKey &txkey_pub, const SecretKey &txkey_sec,
 	return true;
 }
 
-bool check_send_proof(const PublicKey &txkey_pub, const PublicKey &receiver_view_key_pub,
+bool check_sendproof(const PublicKey &txkey_pub, const PublicKey &receiver_view_key_pub,
     const KeyDerivation &derivation, const Hash &message_hash, const Signature &proof) {
 	ge_p1p1 tmp1;
 	ge_p2 tmp2;
@@ -515,4 +524,21 @@ bool check_send_proof(const PublicKey &txkey_pub, const PublicKey &receiver_view
 	sc_sub(&h, &h, &proof.c);
 	return sc_iszero(&h);
 }
+
+static std::string to_hex(const void *data, size_t size) {
+	std::string text(size * 2, ' ');
+	for (size_t i = 0; i < size; ++i) {
+		text[i * 2]     = "0123456789abcdef"[static_cast<const uint8_t *>(data)[i] >> 4];
+		text[i * 2 + 1] = "0123456789abcdef"[static_cast<const uint8_t *>(data)[i] & 15];
+	}
+	return text;
+}
+
+std::ostream &operator<<(std::ostream &out, const EllipticCurvePoint &v) {
+	return out << to_hex(v.data, sizeof(v.data));
+}
+std::ostream &operator<<(std::ostream &out, const EllipticCurveScalar &v) {
+	return out << to_hex(v.data, sizeof(v.data));
+}
+std::ostream &operator<<(std::ostream &out, const Hash &v) { return out << to_hex(v.data, sizeof(v.data)); }
 }

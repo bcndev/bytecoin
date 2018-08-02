@@ -9,6 +9,7 @@
 #include "TransactionExtra.hpp"
 #include "common/JsonValue.hpp"
 #include "platform/PathTools.hpp"
+#include "platform/Time.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 #include "seria/KVBinaryInputStream.hpp"
@@ -24,6 +25,7 @@ Node::Node(logging::ILogger &log, const Config &config, BlockChainState &block_c
     , m_log(log, "Node")
     , m_peer_db(config)
     , m_p2p(log, config, m_peer_db, std::bind(&Node::client_factory, this, _1, _2))
+    , m_start_time(m_p2p.get_local_time())
     , m_commit_timer(std::bind(&Node::db_commit, this))
     , m_downloader(this, block_chain) {
 	const std::string old_path = platform::get_default_data_directory(config.crypto_note_name);
@@ -66,7 +68,7 @@ bool Node::on_idle() {
 		}
 	}
 	advance_long_poll();
-	m_downloader.advance_download(Hash{});
+	m_downloader.advance_download();
 	return true;
 }
 
@@ -95,8 +97,8 @@ Node::P2PClientBytecoin::get_sync_data() const {
 }
 
 std::vector<PeerlistEntry> Node::P2PClientBytecoin::get_peers_to_share() const {
-	auto result =
-	    m_node->m_peer_db.get_peerlist_to_p2p(m_node->m_p2p.get_local_time(), config.p2p_default_peers_in_handshake);
+	auto result = m_node->m_peer_db.get_peerlist_to_p2p(
+	    get_address(), m_node->m_p2p.get_local_time(), config.p2p_default_peers_in_handshake);
 	return result;
 }
 
@@ -107,21 +109,26 @@ void Node::P2PClientBytecoin::on_first_message_after_handshake() {
 	    get_last_received_unique_number(), get_address(), m_node->m_p2p.get_local_time());
 }
 
-void Node::P2PClientBytecoin::on_msg_handshake(COMMAND_HANDSHAKE::request &&req) {
-	NetworkAddress addr;
-	addr.ip   = get_address().ip;
-	addr.port = req.node_data.my_port;
-	m_node->m_peer_db.add_incoming_peer(addr, req.node_data.peer_id, m_node->m_p2p.get_local_time());
+void Node::P2PClientBytecoin::after_handshake() {
 	m_node->m_p2p.peers_updated();
 	m_node->m_downloader.on_connect(this);
 	m_node->advance_long_poll();
+
+	auto signed_checkpoints = m_node->m_block_chain.get_latest_checkpoints();
+	for (const auto & sck : signed_checkpoints) {
+		BinaryArray raw_msg = LevinProtocol::send_message(NOTIFY_CHECKPOINT::ID, LevinProtocol::encode(sck), false);
+		send(std::move(raw_msg));
+	}
+}
+
+void Node::P2PClientBytecoin::on_msg_handshake(COMMAND_HANDSHAKE::request &&req) {
+	m_node->m_peer_db.add_incoming_peer(get_address(), req.node_data.peer_id, m_node->m_p2p.get_local_time());
+	after_handshake();
 }
 
 void Node::P2PClientBytecoin::on_msg_handshake(COMMAND_HANDSHAKE::response &&req) {
 	m_node->m_peer_db.merge_peerlist_from_p2p(req.local_peerlist, m_node->m_p2p.get_local_time());
-	m_node->m_p2p.peers_updated();
-	m_node->m_downloader.on_connect(this);
-	m_node->advance_long_poll();
+	after_handshake();
 }
 
 void Node::P2PClientBytecoin::on_msg_notify_request_chain(NOTIFY_REQUEST_CHAIN::request &&req) {
@@ -192,17 +199,18 @@ void Node::P2PClientBytecoin::on_msg_notify_request_tx_pool(NOTIFY_REQUEST_TX_PO
 }
 
 void Node::P2PClientBytecoin::on_msg_timed_sync(COMMAND_TIMED_SYNC::request &&req) {
-	m_node->m_downloader.on_msg_timed_sync(req.payload_data);
+	m_node->m_downloader.advance_download();
 }
 void Node::P2PClientBytecoin::on_msg_timed_sync(COMMAND_TIMED_SYNC::response &&req) {
-	m_node->m_downloader.on_msg_timed_sync(req.payload_data);
+	m_node->m_downloader.advance_download();
 }
 
 void Node::P2PClientBytecoin::on_msg_notify_new_block(NOTIFY_NEW_BLOCK::request &&req) {
 	RawBlock raw_block{req.b.block, req.b.transactions};
 	PreparedBlock pb(std::move(raw_block), nullptr);
 	api::BlockHeader info;
-	auto action = m_node->m_block_chain.add_block(pb, &info);
+	auto action = m_node->m_block_chain.add_block(
+	    pb, &info, common::ip_address_and_port_to_string(get_address().ip, get_address().port));
 	switch (action) {
 	case BroadcastAction::BAN:
 		disconnect("NOTIFY_NEW_BLOCK add_block BAN");
@@ -211,12 +219,16 @@ void Node::P2PClientBytecoin::on_msg_notify_new_block(NOTIFY_NEW_BLOCK::request 
 		req.hop += 1;
 		BinaryArray raw_msg = LevinProtocol::send_message(NOTIFY_NEW_BLOCK::ID, LevinProtocol::encode(req), false);
 		m_node->m_p2p.broadcast(this, raw_msg);
+
 		m_node->advance_long_poll();
-		return;
+		break;
 	}
 	case BroadcastAction::NOTHING:
 		break;
 	}
+	set_last_received_sync_data(CORE_SYNC_DATA{req.current_blockchain_height - 1, pb.bid});
+	// -1 is in legacy protocol
+	m_node->m_downloader.advance_download();
 }
 
 void Node::P2PClientBytecoin::on_msg_notify_new_transactions(NOTIFY_NEW_TRANSACTIONS::request &&req) {
@@ -233,9 +245,11 @@ void Node::P2PClientBytecoin::on_msg_notify_new_transactions(NOTIFY_NEW_TRANSACT
 			disconnect("NOTIFY_NEW_TRANSACTIONS add_transaction BAN from_binary failed " + std::string(ex.what()));
 			return;
 		}
-		const Hash tid = get_transaction_hash(tx);
-		any_tid        = tid;
-		auto action    = m_node->m_block_chain.add_transaction(tid, tx, raw_tx, m_node->m_p2p.get_local_time());
+		const Hash tid         = get_transaction_hash(tx);
+		any_tid                = tid;
+		Height conflict_height = 0;
+		auto action            = m_node->m_block_chain.add_transaction(tid, tx, raw_tx, m_node->m_p2p.get_local_time(),
+		    &conflict_height, common::ip_address_and_port_to_string(get_address().ip, get_address().port));
 		switch (action) {
 		case AddTransactionResult::BAN:
 			disconnect("NOTIFY_NEW_TRANSACTIONS add_transaction BAN");
@@ -258,6 +272,16 @@ void Node::P2PClientBytecoin::on_msg_notify_new_transactions(NOTIFY_NEW_TRANSACT
 		return;
 	BinaryArray raw_msg = LevinProtocol::send_message(NOTIFY_NEW_TRANSACTIONS::ID, LevinProtocol::encode(msg), false);
 	m_node->m_p2p.broadcast(this, raw_msg);
+	m_node->advance_long_poll();
+}
+void Node::P2PClientBytecoin::on_msg_notify_checkpoint(NOTIFY_CHECKPOINT::request &&req) {
+	if (!m_node->m_block_chain.add_checkpoint(
+	        req, common::ip_address_and_port_to_string(get_address().ip, get_address().port)))
+		return;
+	m_node->m_log(logging::INFO) << "NOTIFY_CHECKPOINT::request height=" << req.height << " hash=" << req.hash
+	                             << std::endl;
+	BinaryArray raw_msg = LevinProtocol::send_message(NOTIFY_CHECKPOINT::ID, LevinProtocol::encode(req), false);
+	m_node->m_p2p.broadcast(nullptr, raw_msg);  // nullptr, not this - so a sender sees "reflection" of message
 	m_node->advance_long_poll();
 }
 
@@ -299,7 +323,7 @@ void Node::P2PClientBytecoin::on_msg_stat_info(COMMAND_REQUEST_STAT_INFO::reques
 #endif
 
 bool Node::check_trust(const proof_of_trust &tr) {
-	uint64_t local_time  = time(nullptr);
+	uint64_t local_time  = platform::now_unix_timestamp();
 	uint64_t time_delata = local_time > tr.time ? local_time - tr.time : tr.time - local_time;
 
 	if (time_delata > 24 * 60 * 60)
@@ -372,7 +396,7 @@ void Node::advance_long_poll() {
 }
 
 static const std::string beautiful_index_start =
-    R"(<html><body><table valign="middle"><tr><td width="30px">
+    R"(<html><head><meta http-equiv='refresh' content='30'/></head><body><table valign="middle"><tr><td width="30px">
 <svg xmlns="http://www.w3.org/2000/svg" width="30px" viewBox="0 0 215.99 215.99">
 <circle fill="#f04086" cx="107.99" cy="107.99" r="107.99"></circle>
 <path fill="#fff" d="M158.2 113.09q-6.37-7.05-18.36-8.75v-.17c7-1.13 12.5-4 16.24-8.59a25.09 25.09 0 0 0 5.82-16.23c0-9.86-3.18-16.56-9.75-21.83s-16.44-7-29.81-7h-50.5v47h-29v18H122c6.23 0 10.91.44 14 2.93s4.67 5.71 4.67 10.47-1.56 8.82-4.67 11.37-7.79 4.23-14 4.23H94.84v-14h-23v32H124c13.26 0 23.4-3.46 30.43-8.84s10.33-13.33 10.33-23.08a25.72 25.72 0 0 0-6.56-17.51zm-39.1-15.62H94.84v-29h24.26c12.47 0 18.7 4.87 18.7 14.5s-6.23 14.5-18.7 14.5z"></path>
@@ -388,8 +412,8 @@ bool Node::on_api_http_request(http::Client *who, http::RequestData &&request, h
 		response.r.status = 200;
 		auto stat         = create_status_response3();
 		response.set_body(beautiful_index_start + app_version() + " &bull; sync status " +
-		                  std::to_string(stat.top_block_height) + "/" + std::to_string(stat.top_known_block_height) +
-		                  beautiful_index_finish);
+		                  common::to_string(stat.top_block_height) + "/" +
+		                  common::to_string(stat.top_known_block_height) + beautiful_index_finish);
 		return true;
 	}
 	if (request.r.uri == "/robots.txt") {
@@ -400,7 +424,11 @@ bool Node::on_api_http_request(http::Client *who, http::RequestData &&request, h
 	}
 	auto it = m_http_handlers.find(request.r.uri);
 	if (it == m_http_handlers.end()) {
-		response.r.status = 404;
+		auto leg = api::bytecoind::legacy_bin_methods();
+		if (std::find(leg.begin(), leg.end(), request.r.uri) != leg.end())
+			response.r.status = 410;
+		else
+			response.r.status = 404;
 		return true;
 	}
 	if (!m_config.bytecoind_authorization.empty() &&
@@ -452,7 +480,7 @@ const std::unordered_map<std::string, Node::HTTPHandlerFunction> Node::m_http_ha
     {"/json_rpc", std::bind(&Node::process_json_rpc_request, std::placeholders::_1, std::placeholders::_2,
                       std::placeholders::_3, std::placeholders::_4)}};
 
-const std::unordered_map<std::string, Node::JSONRPCHandlerFunction> Node::m_jsonrpc_handlers = {
+std::unordered_map<std::string, Node::JSONRPCHandlerFunction> Node::m_jsonrpc_handlers = {
     {api::bytecoind::GetLastBlockHeaderLegacy::method(), json_rpc::make_member_method(&Node::on_get_last_block_header)},
     {api::bytecoind::GetBlockHeaderByHashLegacy::method(),
         json_rpc::make_member_method(&Node::on_get_block_header_by_hash)},
@@ -467,8 +495,10 @@ const std::unordered_map<std::string, Node::JSONRPCHandlerFunction> Node::m_json
     {api::bytecoind::GetRandomOutputs::method(), json_rpc::make_member_method(&Node::on_get_random_outputs3)},
     {api::bytecoind::GetStatus::method(), json_rpc::make_member_method(&Node::on_get_status3)},
     {api::bytecoind::GetStatus::method2(), json_rpc::make_member_method(&Node::on_get_status3)},
+    {api::bytecoind::GetStatistics::method(), json_rpc::make_member_method(&Node::on_get_statistics)},
+    {api::bytecoind::GetArchive::method(), json_rpc::make_member_method(&Node::on_get_archive)},
     {api::bytecoind::SendTransaction::method(), json_rpc::make_member_method(&Node::handle_send_transaction3)},
-    {api::bytecoind::CheckSendProof::method(), json_rpc::make_member_method(&Node::handle_check_send_proof3)},
+    {api::bytecoind::CheckSendProof::method(), json_rpc::make_member_method(&Node::handle_check_sendproof3)},
     {api::bytecoind::SyncBlocks::method(), json_rpc::make_member_method(&Node::on_wallet_sync3)},
     {api::bytecoind::GetRawTransaction::method(), json_rpc::make_member_method(&Node::on_get_raw_transaction3)},
     {api::bytecoind::SyncMemPool::method(), json_rpc::make_member_method(&Node::on_sync_mempool3)}};
@@ -480,7 +510,7 @@ bool Node::on_get_random_outputs3(http::Client *, http::RequestData &&, json_rpc
 		    0, static_cast<api::HeightOrDepth>(m_block_chain.get_tip_height()) + 1 + request.confirmed_height_or_depth);
 	api::BlockHeader tip_header = m_block_chain.get_tip();
 	for (uint64_t amount : request.amounts) {
-		auto random_outputs = m_block_chain.get_outputs_by_amount(
+		auto random_outputs = m_block_chain.get_random_outputs(
 		    amount, request.outs_count, request.confirmed_height_or_depth, tip_header.timestamp);
 		auto &outs = response.outputs[amount];
 		outs.insert(outs.end(), random_outputs.begin(), random_outputs.end());
@@ -490,20 +520,23 @@ bool Node::on_get_random_outputs3(http::Client *, http::RequestData &&, json_rpc
 
 api::bytecoind::GetStatus::Response Node::create_status_response3() const {
 	api::bytecoind::GetStatus::Response res;
-	res.top_block_height = m_block_chain.get_tip_height();
+	res.top_block_height       = m_block_chain.get_tip_height();
+	res.top_known_block_height = m_downloader.get_known_block_count(res.top_block_height);
+	res.top_known_block_height =
+	    std::max<Height>(res.top_known_block_height, m_block_chain.internal_import_known_height());
 	if (m_block_chain_reader1)
-		res.top_block_height = std::max<Height>(res.top_block_height, m_block_chain_reader1->get_block_count());
+		res.top_known_block_height =
+		    std::max<Height>(res.top_known_block_height, m_block_chain_reader1->get_block_count());
 	if (m_block_chain_reader2)
-		res.top_block_height     = std::max<Height>(res.top_block_height, m_block_chain_reader2->get_block_count());
-	res.top_block_height         = std::max<Height>(res.top_block_height, m_block_chain.internal_import_known_height());
-	res.top_known_block_height   = m_downloader.get_known_block_count(res.top_block_height);
-	res.incoming_peer_count      = static_cast<uint32_t>(m_p2p.good_clients(true).size());
-	res.outgoing_peer_count      = static_cast<uint32_t>(m_p2p.good_clients(false).size());
-	api::BlockHeader tip         = m_block_chain.get_tip();
-	res.top_block_hash           = m_block_chain.get_tip_bid();
-	res.top_block_timestamp      = tip.timestamp;
-	res.top_block_difficulty     = tip.difficulty;
-	res.recommended_fee_per_byte = m_block_chain.get_currency().coin() / 1000000;  // TODO - calculate
+		res.top_known_block_height =
+		    std::max<Height>(res.top_known_block_height, m_block_chain_reader2->get_block_count());
+	res.incoming_peer_count              = static_cast<uint32_t>(m_p2p.good_clients(true).size());
+	res.outgoing_peer_count              = static_cast<uint32_t>(m_p2p.good_clients(false).size());
+	api::BlockHeader tip                 = m_block_chain.get_tip();
+	res.top_block_hash                   = m_block_chain.get_tip_bid();
+	res.top_block_timestamp              = tip.timestamp;
+	res.top_block_difficulty             = tip.difficulty;
+	res.recommended_fee_per_byte         = m_block_chain.get_currency().coin() / 1000000;  // TODO - calculate
 	res.next_block_effective_median_size = m_block_chain.get_next_effective_median_size();
 	res.transaction_pool_version         = m_block_chain.get_tx_pool_version();
 	return res;
@@ -527,6 +560,21 @@ bool Node::on_get_status3(http::Client *who, http::RequestData &&raw_request, js
 	return true;
 }
 
+bool Node::on_get_statistics(http::Client *, http::RequestData &&, json_rpc::Request &&,
+    api::bytecoind::GetStatistics::Request &&, api::bytecoind::GetStatistics::Response &res) {
+	res.peer_id     = m_p2p.get_unique_number();
+	res.platform    = platform::get_platform_name();
+	res.version     = bytecoin::app_version();
+	res.start_time  = m_start_time;
+	res.checkpoints = m_block_chain.get_latest_checkpoints();
+	return true;
+}
+
+bool Node::on_get_archive(http::Client *, http::RequestData &&, json_rpc::Request &&,
+    api::bytecoind::GetArchive::Request &&req, api::bytecoind::GetArchive::Response &resp) {
+	m_block_chain.read_archive(std::move(req), resp);
+	return true;
+}
 bool Node::on_wallet_sync3(http::Client *, http::RequestData &&, json_rpc::Request &&json_req,
     api::bytecoind::SyncBlocks::Request &&req, api::bytecoind::SyncBlocks::Response &res) {
 	if (req.sparse_chain.empty())
@@ -536,7 +584,7 @@ bool Node::on_wallet_sync3(http::Client *, http::RequestData &&, json_rpc::Reque
 		    "Wrong currency - different genesis block. Must be " + common::pod_to_hex(m_block_chain.get_genesis_bid()));
 	if (req.max_count > api::bytecoind::SyncBlocks::Request::MAX_COUNT)
 		throw std::runtime_error(
-		    "Too big max_count - must be < " + std::to_string(api::bytecoind::SyncBlocks::Request::MAX_COUNT));
+		    "Too big max_count - must be < " + common::to_string(api::bytecoind::SyncBlocks::Request::MAX_COUNT));
 	auto first_block_timestamp = req.first_block_timestamp < m_block_chain.get_currency().block_future_time_limit
 	                                 ? 0
 	                                 : req.first_block_timestamp - m_block_chain.get_currency().block_future_time_limit;
@@ -562,27 +610,27 @@ bool Node::on_wallet_sync3(http::Client *, http::RequestData &&, json_rpc::Reque
 	res.blocks.resize(supplement.size());
 	for (size_t i = 0; i != supplement.size(); ++i) {
 		auto bhash = supplement[i];
-		if (!m_block_chain.read_header(bhash, &res.blocks[i].header))
-			throw std::logic_error("Block header must be there, but it is not there");
+		invariant(
+		    m_block_chain.read_header(bhash, &res.blocks[i].header), "Block header must be there, but it is not there");
 		BlockChainState::BlockGlobalIndices global_indices;
 		// if (res.blocks[i].header.timestamp >= req.first_block_timestamp) //
 		// commented out becuase empty Block cannot be serialized
 		{
 			RawBlock rb;
-			if (!m_block_chain.read_block(bhash, &rb))
-				throw std::logic_error("Block must be there, but it is not there");
+			invariant(m_block_chain.read_block(bhash, &rb), "Block must be there, but it is not there");
 			Block block;
-			if (!block.from_raw_block(rb))
-				throw std::logic_error("RawBlock failed to convert into block");
+			invariant(block.from_raw_block(rb), "RawBlock failed to convert into block");
 			res.blocks[i].base_transaction_hash = get_transaction_hash(block.header.base_transaction);
 			res.blocks[i].raw_header            = std::move(block.header);
 			res.blocks[i].raw_transactions.reserve(block.transactions.size());
-			for (auto &&tx : block.transactions)
-				res.blocks[i].raw_transactions.push_back(std::move(tx));
-			if (!m_block_chain.read_block_output_global_indices(bhash, &res.blocks[i].global_indices))
-				throw std::logic_error(
-				    "Invariant dead - bid is in chain but "
-				    "blockchain has no block indices");
+			res.blocks[i].transaction_binary_sizes.reserve(block.transactions.size());
+			for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
+				res.blocks[i].raw_transactions.push_back(std::move(block.transactions.at(tx_index)));
+				res.blocks[i].transaction_binary_sizes.push_back(
+				    static_cast<uint32_t>(rb.transactions.at(tx_index).size()));
+			}
+			invariant(m_block_chain.read_block_output_global_indices(bhash, &res.blocks[i].global_indices),
+			    "Invariant dead - bid is in chain but blockchain has no block indices");
 		}
 	}
 	res.status = create_status_response3();
@@ -600,9 +648,10 @@ bool Node::on_sync_mempool3(http::Client *, http::RequestData &&, json_rpc::Requ
 			//			res.added_binary_transactions.push_back(seria::to_binary(tx.second));
 			res.added_raw_transactions.push_back(tx.second.tx);
 			res.added_transactions.push_back(api::Transaction{});
-			res.added_transactions.back().hash      = tx.first;
-			res.added_transactions.back().timestamp = m_block_chain.read_first_seen_timestamp(tx.first);
-			res.added_transactions.back().fee       = tx.second.fee;
+			res.added_transactions.back().hash        = tx.first;
+			res.added_transactions.back().timestamp   = tx.second.timestamp;
+			res.added_transactions.back().fee         = tx.second.fee;
+			res.added_transactions.back().binary_size = static_cast<uint32_t>(tx.second.binary_tx.size());
 		}
 	res.status = create_status_response3();
 	return true;
@@ -614,21 +663,20 @@ bool Node::on_get_raw_transaction3(http::Client *, http::RequestData &&, json_rp
 	auto tit         = pool.find(req.hash);
 	if (tit != pool.end()) {
 		res.raw_transaction          = static_cast<TransactionPrefix>(tit->second.tx);
+		res.transaction.fee          = tit->second.fee;
 		res.transaction.hash         = req.hash;
 		res.transaction.block_height = m_block_chain.get_tip_height() + 1;
-		res.transaction.timestamp    = m_block_chain.read_first_seen_timestamp(req.hash);
+		res.transaction.timestamp    = tit->second.timestamp;
+		res.transaction.binary_size  = static_cast<uint32_t>(tit->second.binary_tx.size());
 		return true;
 	}
 	Transaction tx;
-	Hash block_hash;
-	Height block_height   = 0;
 	size_t index_in_block = 0;
-	if (m_block_chain.read_transaction(req.hash, &tx, &block_height, &block_hash, &index_in_block)) {
-		res.raw_transaction          = static_cast<TransactionPrefix>(tx);  // TODO - std::move?
-		res.transaction.hash         = req.hash;
-		res.transaction.block_hash   = block_hash;
-		res.transaction.block_height = block_height;
-		// TODO - add more parameters
+	if (m_block_chain.read_transaction(req.hash, &tx, &res.transaction.block_height, &res.transaction.block_hash,
+	        &index_in_block, &res.transaction.binary_size)) {
+		res.raw_transaction  = static_cast<TransactionPrefix>(tx);  // TODO - std::move?
+		res.transaction.hash = req.hash;
+		res.transaction.fee  = get_tx_fee(res.raw_transaction);  // 0 for coinbase
 		return true;
 	}
 	return true;
@@ -636,57 +684,83 @@ bool Node::on_get_raw_transaction3(http::Client *, http::RequestData &&, json_rp
 
 bool Node::handle_send_transaction3(http::Client *, http::RequestData &&, json_rpc::Request &&,
     api::bytecoind::SendTransaction::Request &&request, api::bytecoind::SendTransaction::Response &response) {
+	response.send_result = "broadcast";
+
 	NOTIFY_NEW_TRANSACTIONS::request msg;
+	Height conflict_height =
+	    m_block_chain.get_currency().max_block_height;  // So will not be accidentally viewed as confirmed
 	Transaction tx;
-	seria::from_binary(tx, request.binary_transaction);
+	try {
+		seria::from_binary(tx, request.binary_transaction);
+	} catch (const std::exception &ex) {
+		api::bytecoind::SendTransaction::Error err;
+		err.code            = api::bytecoind::SendTransaction::INVALID_TRANSACTION_BINARY_FORMAT;
+		err.message         = ex.what();
+		err.conflict_height = conflict_height;
+		throw err;
+	}
 	const Hash tid = get_transaction_hash(tx);
-	auto action    = m_block_chain.add_transaction(tid, tx, request.binary_transaction, m_p2p.get_local_time());
+	auto action    = m_block_chain.add_transaction(
+	    tid, tx, request.binary_transaction, m_p2p.get_local_time(), &conflict_height, "0.0.0.0:0");
 	switch (action) {
 	case AddTransactionResult::BAN:
-		throw json_rpc::Error(-101, "Binary transaction format is wrong");
+		throw json_rpc::Error(
+		    api::bytecoind::SendTransaction::INVALID_TRANSACTION_BINARY_FORMAT, "Binary transaction format is wrong");
 	case AddTransactionResult::BROADCAST_ALL: {
 		msg.txs.push_back(request.binary_transaction);
 		BinaryArray raw_msg =
 		    LevinProtocol::send_message(NOTIFY_NEW_TRANSACTIONS::ID, LevinProtocol::encode(msg), false);
 		m_p2p.broadcast(nullptr, raw_msg);
-		response.send_result = "broadcast";  // Success
 		advance_long_poll();
 		break;
 	}
 	case AddTransactionResult::ALREADY_IN_POOL:
-		response.send_result = "broadcast";  // Was broadcasted already
 		break;
 	case AddTransactionResult::INCREASE_FEE:
-		response.send_result = "increasefee";
 		break;
-	case AddTransactionResult::FAILED_TO_REDO:
-		throw json_rpc::Error(-102, "Transaction references outputs changed during reorganization or signature wrong");
-	case AddTransactionResult::OUTPUT_ALREADY_SPENT:
-		throw json_rpc::Error(-103, "One of referenced outputs is already spent");
+	case AddTransactionResult::FAILED_TO_REDO: {
+		api::bytecoind::SendTransaction::Error err;
+		err.code            = api::bytecoind::SendTransaction::WRONG_OUTPUT_REFERENCE;
+		err.message         = "Transaction references outputs changed during reorganization or signature wrong";
+		err.conflict_height = conflict_height;
+		throw err;
+	}
+	case AddTransactionResult::OUTPUT_ALREADY_SPENT: {
+		api::bytecoind::SendTransaction::Error err;
+		err.code            = api::bytecoind::SendTransaction::OUTPUT_ALREADY_SPENT;
+		err.message         = "One of referenced outputs is already spent";
+		err.conflict_height = conflict_height;
+		throw err;
+	}
 	}
 	return true;
 }
 
-bool Node::handle_check_send_proof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool Node::handle_check_sendproof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
     api::bytecoind::CheckSendProof::Request &&request, api::bytecoind::CheckSendProof::Response &response) {
 	Transaction tx;
 	SendProof sp;
 	try {
-		seria::from_json_value(sp, common::JsonValue::from_string(request.send_proof));
+		seria::from_json_value(sp, common::JsonValue::from_string(request.sendproof));
 	} catch (const std::exception &ex) {
-		throw json_rpc::Error(-201, "Failed to parse proof object ex.what=" + std::string(ex.what()));
+		throw api::bytecoind::CheckSendProof::Error(api::bytecoind::CheckSendProof::FAILED_TO_PARSE,
+		    "Failed to parse proof object ex.what=" + std::string(ex.what()));
 	}
 	Height height = 0;
 	Hash block_hash;
 	size_t index_in_block = 0;
-	if (!m_block_chain.read_transaction(sp.transaction_hash, &tx, &height, &block_hash, &index_in_block)) {
-		throw json_rpc::Error(-202, "Transaction is not in main chain");
+	uint32_t binary_size  = 0;
+	if (!m_block_chain.read_transaction(
+	        sp.transaction_hash, &tx, &height, &block_hash, &index_in_block, &binary_size)) {
+		throw api::bytecoind::CheckSendProof::Error(
+		    api::bytecoind::CheckSendProof::NOT_IN_MAIN_CHAIN, "Transaction is not in main chain");
 	}
 	PublicKey tx_public_key = get_transaction_public_key_from_extra(tx.extra);
 	Hash message_hash       = crypto::cn_fast_hash(sp.message.data(), sp.message.size());
-	if (!crypto::check_send_proof(
+	if (!crypto::check_sendproof(
 	        tx_public_key, sp.address.view_public_key, sp.derivation, message_hash, sp.signature)) {
-		throw json_rpc::Error(-203, "Proof object does not match transaction or was tampered with");
+		throw api::bytecoind::CheckSendProof::Error(api::bytecoind::CheckSendProof::WRONG_SIGNATURE,
+		    "Proof object does not match transaction or was tampered with");
 	}
 	Amount total_amount = 0;
 	size_t key_index    = 0;
@@ -704,8 +778,10 @@ bool Node::handle_check_send_proof3(http::Client *, http::RequestData &&, json_r
 		++out_index;
 	}
 	if (total_amount == 0)
-		throw json_rpc::Error(-204, "No outputs found in transaction for the address being proofed");
+		throw api::bytecoind::CheckSendProof::Error(api::bytecoind::CheckSendProof::ADDRESS_NOT_IN_TRANSACTION,
+		    "No outputs found in transaction for the address being proofed");
 	if (total_amount != sp.amount)
-		throw json_rpc::Error(-205, "Wrong amount in outputs, actual amount is " + std::to_string(total_amount));
+		throw api::bytecoind::CheckSendProof::Error(api::bytecoind::CheckSendProof::WRONG_AMOUNT,
+		    "Wrong amount in outputs, actual amount is " + common::to_string(total_amount));
 	return true;
 }

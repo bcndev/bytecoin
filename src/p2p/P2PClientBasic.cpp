@@ -4,6 +4,7 @@
 #include "P2PClientBasic.hpp"
 #include <iostream>
 #include "Core/Config.hpp"
+#include "platform/Time.hpp"
 
 const float HANDSHAKE_TIMEOUT  = 30;
 const float MESSAGE_TIMEOUT    = 60 * 6;
@@ -53,6 +54,8 @@ std::map<std::pair<uint32_t, bool>, P2PClientBasic::LevinHandlerFunction> P2PCli
         levin_method<NOTIFY_REQUEST_CHAIN::request>(&P2PClientBasic::on_msg_notify_request_chain)},
     {{NOTIFY_RESPONSE_CHAIN_ENTRY::ID, false},
         levin_method<NOTIFY_RESPONSE_CHAIN_ENTRY::request>(&P2PClientBasic::on_msg_notify_request_chain)},
+    {{NOTIFY_CHECKPOINT::ID, false},
+        levin_method<NOTIFY_CHECKPOINT::request>(&P2PClientBasic::on_msg_notify_checkpoint)},
     {{NOTIFY_REQUEST_GET_OBJECTS::ID, false},
         levin_method<NOTIFY_REQUEST_GET_OBJECTS::request>(&P2PClientBasic::on_msg_notify_request_objects)},
     {{NOTIFY_RESPONSE_GET_OBJECTS::ID, false},
@@ -82,7 +85,7 @@ void P2PClientBasic::send(BinaryArray &&body) {
 	P2PClient::send(std::move(body));
 }
 
-Timestamp P2PClientBasic::get_local_time() const { return static_cast<Timestamp>(time(nullptr)); }
+Timestamp P2PClientBasic::get_local_time() const { return platform::now_unix_timestamp(); }
 
 basic_node_data P2PClientBasic::get_node_data() const {
 	basic_node_data node_data;
@@ -139,9 +142,11 @@ void P2PClientBasic::msg_handshake(COMMAND_HANDSHAKE::request &&req) {
 	version                     = req.node_data.version;
 	last_received_sync_data     = req.payload_data;
 	last_received_unique_number = req.node_data.peer_id;
+	update_my_port(req.node_data.my_port);  // We set port to unknown on accept
+
 	std::cout << "P2p COMMAND_HANDSHAKE request version=" << int(req.node_data.version)
 	          << " unique_number=" << req.node_data.peer_id << " current_height=" << req.payload_data.current_height
-	          << std::endl;
+	          << " from " << get_address() << std::endl;
 	on_msg_handshake(std::move(req));
 	timed_sync_timer.once(TIMED_SYNC_TIMEOUT);
 }
@@ -164,7 +169,7 @@ void P2PClientBasic::msg_handshake(COMMAND_HANDSHAKE::response &&req) {
 	last_received_sync_data     = req.payload_data;
 	std::cout << "P2p COMMAND_HANDSHAKE response version=" << int(req.node_data.version)
 	          << " unique_number=" << req.node_data.peer_id << " current_height=" << req.payload_data.current_height
-	          << " local_peerlist.size=" << req.local_peerlist.size() << std::endl;
+	          << " local_peerlist.size=" << req.local_peerlist.size() << " from " << get_address() << std::endl;
 	on_msg_handshake(std::move(req));
 	timed_sync_timer.once(TIMED_SYNC_TIMEOUT);
 }
@@ -241,9 +246,8 @@ void P2PClientBasic::on_request_ready() {
 				}
 				continue;
 			}
-			std::cout << "generic bytecoin::P2P cmd={" << cmd.command << "} " << cmd.is_response << " " << cmd.is_notify
-			          << " {"
-			          << "}" << std::endl;
+			std::cout << "generic bytecoin::P2P cmd=" << cmd.command << " " << cmd.is_response << " " << cmd.is_notify
+			          << std::endl;
 		} catch (const std::exception &ex) {
 			disconnect(std::string("299 Exception processing p2p message what=") + ex.what());
 			return;

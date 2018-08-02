@@ -4,6 +4,7 @@
 #pragma once
 
 #include <string.h>
+#include <cstddef>
 #include <initializer_list>
 #include <utility>
 
@@ -78,6 +79,15 @@ public:
 		return m_size == other.m_size && memcmp(m_data, other.m_data, m_size) == 0;
 	}
 	bool operator!=(const BinaryArrayImpl &other) const { return !(*this == other); }
+	ptrdiff_t compare(const BinaryArrayImpl &other) const {
+		int diff = memcmp(m_data, other.m_data, m_size < other.m_size ? m_size : other.m_size);  // We avoid std::min
+		return diff != 0 ? static_cast<ptrdiff_t>(diff)
+		                 : static_cast<ptrdiff_t>(m_size) - static_cast<ptrdiff_t>(other.m_size);
+	}
+	bool operator<(const BinaryArrayImpl &other) const { return compare(other) < 0; }
+	bool operator<=(const BinaryArrayImpl &other) const { return compare(other) <= 0; }
+	bool operator>(const BinaryArrayImpl &other) const { return compare(other) > 0; }
+	bool operator>=(const BinaryArrayImpl &other) const { return compare(other) >= 0; }
 
 private:
 	value_type *m_data = nullptr;
@@ -104,4 +114,6 @@ inline BinaryArray::iterator append(BinaryArray &ba, It be, It en) {
 inline BinaryArray::iterator append(BinaryArray &ba, size_t add, BinaryArray::value_type va) {
 	return ba.insert(ba.end(), add, va);
 }
+
+const unsigned char *slow_memmem(const unsigned char *buf, size_t buflen, const unsigned char *pat, size_t patlen);
 }

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <iosfwd>
 #include <string>
 #include <vector>
 #include "c_types.h"
@@ -50,6 +51,10 @@ struct KeyPair {  // Never used as a pod
 	PublicKey public_key;
 	SecretKey secret_key;
 };
+
+std::ostream &operator<<(std::ostream &out, const EllipticCurvePoint &v);
+std::ostream &operator<<(std::ostream &out, const EllipticCurveScalar &v);
+std::ostream &operator<<(std::ostream &out, const Hash &v);
 }
 
 CRYPTO_MAKE_HASHABLE(crypto, Hash)

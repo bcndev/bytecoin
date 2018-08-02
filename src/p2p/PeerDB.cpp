@@ -32,7 +32,7 @@ static const std::string WHITE_LIST("whitelist/");
 const Timestamp BAN_PERIOD                = 600;
 const Timestamp RECONNECT_PERIOD          = 300;
 const Timestamp PRIORITY_RECONNECT_PERIOD = 30;
-static const float DB_COMMIT_PERIOD       = 180;  // 3 minutes sounds good compromise
+static const float DB_COMMIT_PERIOD       = 60;  // 1 minute sounds good compromise
 
 PeerDB::PeerDB(const Config &config)
     : config(config)
@@ -145,12 +145,18 @@ void PeerDB::unban(const std::string &prefix, Timestamp now, peers_indexed &list
 		list.insert(unb);
 }
 
-std::vector<PeerlistEntry> PeerDB::get_peerlist_to_p2p(Timestamp now, size_t depth) {
+std::vector<PeerlistEntry> PeerDB::get_peerlist_to_p2p(const NetworkAddress &for_addr, Timestamp now, size_t depth) {
 	std::vector<PeerlistEntry> bs_head;
 	unban(now);
-	auto &by_time_index = whitelist.get<by_ban_until>();
-	auto fin            = by_time_index.lower_bound(boost::make_tuple(Timestamp(1), Timestamp(0), 0));
+	auto &by_time_index     = whitelist.get<by_ban_until>();
+	auto fin                = by_time_index.lower_bound(boost::make_tuple(Timestamp(1), Timestamp(0), 0));
+	int for_addr_network_id = common::get_private_network_prefix(for_addr.ip);
+	//	std::cout << "for_addr_network_id" << common::ip_address_to_string(for_addr.ip) << std::endl;
 	for (auto it = by_time_index.begin(); it != fin; ++it) {
+		//		std::cout << "network_id" << common::ip_address_to_string(it->adr.ip) << std::endl;
+		int network_id = common::get_private_network_prefix(it->adr.ip);
+		if (for_addr_network_id != network_id && network_id != 0)
+			continue;
 		bs_head.push_back(static_cast<PeerlistEntry>(*it));
 		bs_head.back().last_seen = 0;
 		if (bs_head.size() >= depth)
@@ -174,8 +180,10 @@ void PeerDB::add_incoming_peer(const NetworkAddress &addr, PeerIdType peer_id, T
 }
 
 void PeerDB::add_incoming_peer_impl(const NetworkAddress &addr, PeerIdType peer_id, Timestamp now) {
-	if (!is_ip_allowed(addr.ip))
+	if (addr.port == 0)  // client does not want to be in peer lists
 		return;
+	//	if (!is_ip_allowed(addr.ip))
+	//		return;
 	auto &by_addr_index = whitelist.get<by_addr>();
 	auto git            = by_addr_index.find(addr);
 	if (git != by_addr_index.end())  // Already in whitelist
@@ -197,13 +205,13 @@ void PeerDB::set_peer_just_seen(PeerIdType peer_id,
     const NetworkAddress &addr,
     Timestamp now,
     bool reset_next_connection_attempt) {
-	auto &exclusive_by_addr_index = exclusivelist.get<by_addr>();
-	auto git                      = exclusive_by_addr_index.find(addr);
-	if (git != exclusive_by_addr_index.end()) {
-		return;
-	}
+	//	auto &exclusive_by_addr_index = exclusivelist.get<by_addr>();
+	//	auto git                      = exclusive_by_addr_index.find(addr);
+	//	if (git != exclusive_by_addr_index.end()) {
+	//		return;
+	//	}
 	auto &gray_by_addr_index = graylist.get<by_addr>();
-	git                      = gray_by_addr_index.find(addr);
+	auto git                 = gray_by_addr_index.find(addr);
 	if (git != gray_by_addr_index.end()) {
 		gray_by_addr_index.erase(git);
 		del_db(GRAY_LIST, addr);
@@ -318,6 +326,13 @@ bool PeerDB::get_peer_to_connect(NetworkAddress &best_address,
 			not_connected_seeds.push_back(cc);
 		else
 			connected_seeds.push_back(cc);
+	std::vector<NetworkAddress> connected_priorities;
+	std::vector<NetworkAddress> not_connected_priorities;
+	for (auto &&cc : config.priority_nodes)
+		if (connected.count(cc) == 0)
+			not_connected_priorities.push_back(cc);
+		else
+			connected_priorities.push_back(cc);
 	const bool enough_connected_seeds = connected_seeds.size() >= 2;
 	auto &white_by_time_index         = whitelist.get<by_next_connection_attempt>();
 	auto white_sta                    = white_by_time_index.begin();
@@ -368,49 +383,49 @@ bool PeerDB::is_seed(const NetworkAddress &addr) const {
 	return std::binary_search(config.seed_nodes.begin(), config.seed_nodes.end(), addr);
 }
 
-bool PeerDB::is_ip_allowed(uint32_t ip) const {
-	// TODO - allow exclusive ips
+/*bool PeerDB::is_ip_allowed(uint32_t ip) const {
+    // TODO - allow exclusive ips
 
-	// never allow loopback ip
-	if (common::is_ip_address_loopback(ip))
-		return false;
-	if (!config.p2p_allow_local_ip && common::is_ip_address_private(ip))
-		return false;
-	return true;
-}
+    // never allow loopback ip
+    if (common::is_ip_address_loopback(ip))
+        return false;
+    if (!config.p2p_allow_local_ip && common::is_ip_address_private(ip))
+        return false;
+    return true;
+}*/
 
 void PeerDB::test() {
-	std::vector<PeerlistEntry> list;
-	for (int i = 11; i != 22; ++i) {
-		PeerlistEntry e{};
-		e.adr.ip   = i;
-		e.adr.port = i;
-		list.push_back(e);
-	}
-	merge_peerlist_from_p2p(list, 100);
-	list = get_peerlist_to_p2p(100, 3);
-	NetworkAddress ad1;
-	NetworkAddress ad2;
-	NetworkAddress ad3;
-	NetworkAddress ad4;
-	std::set<NetworkAddress> connected;
-	get_peer_to_connect(ad1, connected, 101);
-	get_peer_to_connect(ad2, connected, 101);
-	get_peer_to_connect(ad3, connected, 101);
-	get_peer_to_connect(ad4, connected, 101);
+	/*	std::vector<PeerlistEntry> list;
+	    for (int i = 11; i != 22; ++i) {
+	        PeerlistEntry e{};
+	        e.adr.ip   = i;
+	        e.adr.port = i;
+	        list.push_back(e);
+	    }
+	    merge_peerlist_from_p2p(list, 100);
+	    list = get_peerlist_to_p2p(100, 3);
+	    NetworkAddress ad1;
+	    NetworkAddress ad2;
+	    NetworkAddress ad3;
+	    NetworkAddress ad4;
+	    std::set<NetworkAddress> connected;
+	    get_peer_to_connect(ad1, connected, 101);
+	    get_peer_to_connect(ad2, connected, 101);
+	    get_peer_to_connect(ad3, connected, 101);
+	    get_peer_to_connect(ad4, connected, 101);
 
-	set_peer_just_seen(0, ad1, 102);
-	set_peer_just_seen(0, ad2, 103);
-	set_peer_just_seen(0, ad3, 104);
-	set_peer_banned(ad3, "reason", 105);
-	set_peer_banned(ad4, "reason", 106);
+	    set_peer_just_seen(0, ad1, 102);
+	    set_peer_just_seen(0, ad2, 103);
+	    set_peer_just_seen(0, ad3, 104);
+	    set_peer_banned(ad3, "reason", 105);
+	    set_peer_banned(ad4, "reason", 106);
 
-	list = get_peerlist_to_p2p(200, 3);
+	    list = get_peerlist_to_p2p(200, 3);
 
-	get_peer_to_connect(ad1, connected, 501);
-	get_peer_to_connect(ad2, connected, 501);
-	get_peer_to_connect(ad3, connected, 501);
+	    get_peer_to_connect(ad1, connected, 501);
+	    get_peer_to_connect(ad2, connected, 501);
+	    get_peer_to_connect(ad3, connected, 501);
 
-	list = get_peerlist_to_p2p(900, 3);
-	db_commit();
+	    list = get_peerlist_to_p2p(900, 3);
+	    db_commit();*/
 }

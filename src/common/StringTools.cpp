@@ -2,8 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "StringTools.hpp"
-#include <boost/lexical_cast.hpp>
-#include "platform/Files.hpp"
+#include <stdexcept>
 
 namespace common {
 
@@ -184,41 +183,5 @@ std::string extract(const std::string &text, char delimiter, size_t &offset) {
 		offset = text.size();
 		return text.substr(offset);
 	}
-}
-
-bool load_file(const std::string &filepath, std::string &buf) {
-	try {
-		platform::FileStream fs(filepath, platform::FileStream::READ_EXISTING);
-		size_t file_size = boost::lexical_cast<size_t>(fs.seek(0, SEEK_END));
-		fs.seek(0, SEEK_SET);
-		buf.resize(file_size);
-		fs.read(&buf[0], buf.size());
-	} catch (const std::exception &) {
-		return false;
-	}
-	return true;
-}
-
-bool load_file(const std::string &filepath, BinaryArray &buf) {
-	try {
-		platform::FileStream fs(filepath, platform::FileStream::READ_EXISTING);
-		size_t file_size = boost::lexical_cast<size_t>(fs.seek(0, SEEK_END));
-		fs.seek(0, SEEK_SET);
-		buf.resize(file_size);
-		fs.read(buf.data(), buf.size());
-	} catch (const std::exception &) {
-		return false;
-	}
-	return true;
-}
-
-bool save_file(const std::string &filepath, const void *buf, size_t size) {
-	try {
-		platform::FileStream fs(filepath, platform::FileStream::TRUNCATE_READ_WRITE);
-		fs.write(buf, size);
-	} catch (const std::exception &) {
-		return false;
-	}
-	return true;
 }
 }

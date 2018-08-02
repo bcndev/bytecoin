@@ -10,7 +10,7 @@ namespace logging {
 
 class CommonLogger : public ILogger {
 public:
-	virtual void operator()(
+	virtual void write(
 	    const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) override;
 	virtual void enable_category(const std::string &category);
 	virtual void disable_category(const std::string &category);

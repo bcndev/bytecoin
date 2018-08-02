@@ -20,11 +20,13 @@ Hash get_object_hash(const T &object, size_t *size = nullptr) {
 
 Hash get_base_transaction_hash(const BaseTransaction &tx);
 
+void fix_merge_mining_tag(BlockTemplate &block);  // If solo mining, we must still have valid merge mining tag
+
 void decompose_amount(Amount amount, Amount dust_threshold, std::vector<Amount> *decomposed_amounts);
 size_t get_maximum_tx_size(size_t input_count, size_t output_count, size_t mixin_count);
 
-bool get_tx_fee(const Transaction &tx, uint64_t *fee);
-uint64_t get_tx_fee(const Transaction &tx);
+bool get_tx_fee(const TransactionPrefix &tx, uint64_t *fee);
+uint64_t get_tx_fee(const TransactionPrefix &tx);
 
 struct ParentBlockSerializer {
 	ParentBlockSerializer(

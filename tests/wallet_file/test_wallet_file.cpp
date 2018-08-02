@@ -3,6 +3,7 @@
 
 #include "Core/Wallet.hpp"
 #include "crypto/crypto.hpp"
+#include "logging/ConsoleLogger.hpp"
 #include "platform/PathTools.hpp"
 
 #include "test_wallet_file.hpp"
@@ -53,14 +54,18 @@ using namespace std;
 
 // test06v.wallet - view-only version of test06.wallet
 
+const std::string tmp_name("../tests/scratchpad/test_wallet_file.tmp");
+
 static void test_body(const bytecoin::Currency &currency, const std::string &path, const std::string &password,
-    const std::vector<std::string> &addresses, bool view_only) {
-	bytecoin::Wallet wallet("test_wallet_file.tmp", password);
+    const std::vector<std::string> &addresses, bool view_only, bool test_create_addresses) {
+	logging::ConsoleLogger logger;
+	bytecoin::Wallet wallet(logger, tmp_name, password);
 	if (wallet.is_view_only() != view_only)
 		throw std::runtime_error("view_only test failed for " + path);
 	auto records = wallet.get_records();
 	if (!crypto::keys_match(wallet.get_view_secret_key(), wallet.get_view_public_key()))
 		throw std::runtime_error("view keys do not match for " + path);
+	bytecoin::WalletRecord first_record;
 	for (auto &&a : addresses) {
 		bytecoin::AccountPublicAddress address;
 		if (!currency.parse_account_address_string(a, &address))
@@ -70,6 +75,8 @@ static void test_body(const bytecoin::Currency &currency, const std::string &pat
 		auto rit = records.find(address.spend_public_key);
 		if (rit == records.end())
 			throw std::runtime_error("spend_public_key not found for " + path);
+		if (first_record.spend_public_key == crypto::PublicKey{})
+			first_record = rit->second;
 		if (view_only && rit->second.spend_secret_key != crypto::SecretKey{})
 			throw std::runtime_error("non empty secret spend key for " + path);
 		if (!view_only && !crypto::keys_match(rit->second.spend_secret_key, rit->second.spend_public_key))
@@ -80,19 +87,46 @@ static void test_body(const bytecoin::Currency &currency, const std::string &pat
 	}
 	if (!records.empty())
 		throw std::runtime_error("excess wallet records for " + path);
+	if (!test_create_addresses)
+		return;
+	const auto initial_oldest_timestamp = wallet.get_oldest_timestamp();
+	bool rescan_from_ct                 = false;
+	try {
+		wallet.generate_new_addresses({first_record.spend_secret_key}, first_record.creation_timestamp + 1,
+		    first_record.creation_timestamp + 1, &rescan_from_ct);
+	} catch (const bytecoin::Wallet::Exception &) {
+		if (!view_only)
+			throw;
+		return;
+	}
+	if (view_only)
+		throw std::runtime_error("View-only wallet created addresses " + path);
+	std::cout << "Oldest timestamp is " << wallet.get_oldest_timestamp() << std::endl;
+	if (rescan_from_ct || initial_oldest_timestamp != wallet.get_oldest_timestamp())
+		throw std::runtime_error("Increasing timestamp of exising address should not lead to rescan " + path);
+	wallet.generate_new_addresses({crypto::SecretKey{}}, 0, 1600000000, &rescan_from_ct);
+	std::cout << "Oldest timestamp is " << wallet.get_oldest_timestamp() << std::endl;
+	if (rescan_from_ct || initial_oldest_timestamp != wallet.get_oldest_timestamp())
+		throw std::runtime_error("Adding new secret key should not lead to rescan " + path);
+	wallet.generate_new_addresses({first_record.spend_secret_key}, first_record.creation_timestamp - 1,
+	    first_record.creation_timestamp + 1, &rescan_from_ct);
+	std::cout << "Oldest timestamp is " << wallet.get_oldest_timestamp() << std::endl;
+	if (!rescan_from_ct || initial_oldest_timestamp == wallet.get_oldest_timestamp())
+		throw std::runtime_error("Reducing timestamp of exising address should lead to rescan " + path);
 }
 
 static void test_single_file(const bytecoin::Currency &currency, const std::string &path, const std::string &password,
     const std::vector<std::string> &addresses, bool view_only) {
-	platform::copy_file("test_wallet_file.tmp", path);
-	test_body(currency, "test_wallet_file.tmp", password, addresses, view_only);
+	platform::copy_file(path, tmp_name);
+	test_body(currency, tmp_name, password, addresses, view_only, false);
 	{
-		platform::FileStream fs("test_wallet_file.tmp", platform::FileStream::READ_EXISTING);
+		platform::FileStream fs(tmp_name, platform::FileStream::READ_EXISTING);
 		auto si = fs.seek(0, SEEK_END);
 		if (si != bytecoin::Wallet::wallet_file_size(addresses.size()))
 			throw std::runtime_error("truncated/overwritten wallet size wrong " + path);
 	}
-	test_body(currency, "test_wallet_file.tmp", password, addresses, view_only);
+	test_body(currency, tmp_name, password, addresses, view_only, true);
+	platform::remove_file(tmp_name);
 }
 
 void test_wallet_file(const std::string &path_prefix) {

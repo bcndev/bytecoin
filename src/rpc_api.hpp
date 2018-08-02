@@ -8,8 +8,11 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "Core/Difficulty.hpp"
 #include "CryptoNote.hpp"
+#include "common/Int128.hpp"
 #include "crypto/types.hpp"
+#include "http/JsonRpc.hpp"
 
 // Common data structures used in all api calls.
 // Basic data types are serialized to Json as follows
@@ -30,7 +33,7 @@ struct EmptyStruct {};  // Used as a typedef for empty requests, which we have a
 
 typedef int32_t HeightOrDepth;  // If >= 0 - interpret as Height, if < 0 interpret as Depth, e.g. -1 means
                                 // top_block_height, -4 means 3 blocks back from top_block_height
-constexpr HeightOrDepth DEFAULT_CONFIRMATIONS = 5;
+constexpr HeightOrDepth DEFAULT_CONFIRMATIONS = 6;
 
 struct Output {
 	Amount amount = 0;
@@ -79,6 +82,8 @@ struct Transaction {
 	Hash block_hash;          // For mempool transactions block_hash is all zeroes (or absent from Json)
 	Timestamp timestamp = 0;  // Timestamp of block if transaction is in block. For mempool transactions this is the
 	                          // time node first seen this transaction.
+	                          // Fields below are serialized only after V4 upgrade
+	uint32_t binary_size = 0;
 };
 
 struct BlockHeader {
@@ -89,8 +94,9 @@ struct BlockHeader {
 	uint32_t nonce = 0;
 	Height height  = 0;
 	Hash hash;
-	Amount reward                           = 0;
-	Difficulty cumulative_difficulty        = 0;
+	Amount reward = 0;
+	// Low part is serialized as "cumulative_difficulty", Hi part will be serialized as cumulative_difficulty_hi
+	CumulativeDifficulty cumulative_difficulty{};
 	Difficulty difficulty                   = 0;
 	Amount base_reward                      = 0;
 	uint32_t block_size                     = 0;  // Only sum of all transactions including coinbase.
@@ -98,13 +104,10 @@ struct BlockHeader {
 	Amount already_generated_coins          = 0;
 	uint64_t already_generated_transactions = 0;
 	uint32_t size_median                    = 0;
-	uint32_t effective_size_median =
-	    0;  // max(100000, size_median) for block version 3, allows sudden peaks in network load.
+	uint32_t effective_size_median          = 0;
+	// max(100000, size_median) for block version 3, allows sudden peaks in network load.
 	Timestamp timestamp_median = 0;
-	Timestamp timestamp_unlock = 0;  // Can be used for guaranteed output unlocking, as 1. block.timestamp_unlock <
-	                                 // block.timestamp and 2. nextBlock.timestamp_unlock >=
-	                                 // currentBlock.timestamp_unlock
-	Amount total_fee_amount = 0;
+	Amount total_fee_amount    = 0;
 
 	double penalty() const {
 		return base_reward == 0 ? 0 : double(base_reward - reward) / base_reward;
@@ -113,17 +116,30 @@ struct BlockHeader {
 
 struct Block {
 	api::BlockHeader header;
-	std::vector<api::Transaction>
-	    transactions;  // If got from walletd, will contain only transactions with transfers we can view.
+	std::vector<api::Transaction> transactions;
+	// If got from walletd, will contain only transactions with transfers we can view.
 };
 
+// In view-only wallets sum of incoming outputs can be arbitrary large
+// Low part is serialized as "spendable", Hi part (if not 0) will be serialized as "spendable_hi"
 struct Balance {
-	Amount spendable             = 0;
-	Amount spendable_dust        = 0;
-	Amount locked_or_unconfirmed = 0;
-	Amount total() const {
+	common::Uint128 spendable              = 0;
+	common::Uint128 spendable_dust         = 0;
+	common::Uint128 locked_or_unconfirmed  = 0;
+	uint64_t spendable_outputs             = 0;
+	uint64_t spendable_dust_outputs        = 0;
+	uint64_t locked_or_unconfirmed_outputs = 0;
+	common::Uint128 total() const {
 		return spendable + spendable_dust + locked_or_unconfirmed;
 	}  // This fun serves as a documentation.
+	uint64_t total_outputs() const {
+		return spendable_outputs + spendable_dust_outputs + locked_or_unconfirmed_outputs;
+	}
+	bool operator==(const Balance &other) const {
+		return std::tie(spendable, spendable_dust, locked_or_unconfirmed) ==
+		       std::tie(other.spendable, other.spendable_dust, other.locked_or_unconfirmed);
+	}
+	bool operator!=(const Balance &other) const { return !(*this == other); }
 };
 }
 }
@@ -143,8 +159,8 @@ enum return_code {
 	WALLET_FILE_DECRYPT_ERROR   = 207,
 	WALLET_FILE_WRITE_ERROR     = 208,
 	WALLET_FILE_EXISTS          = 209,  // Daemon never overwrites file during --generate-wallet.
-	WALLET_WITH_THE_SAME_VIEWKEY_IN_USE =
-	    210,  // Another walletd instance is using the same wallet file or another wallet file with the same view key.
+	WALLET_WITH_SAME_KEYS_IN_USE =
+	    210,  // Another walletd instance is using the same or another wallet file with the same keys.
 	WALLETD_WRONG_ARGS             = 211,
 	WALLETD_EXPORTKEYS_MORETHANONE = 212  // We can export keys only if wallet file contains exactly 1 spend keypair
 };
@@ -178,11 +194,12 @@ struct GetStatus {
 	};
 	struct Response : public Request {  // Response and Request have fields in common.
 		// Last block analyzed and synched by wallet or node.
-		Height top_block_height              = 0;
-		Height top_known_block_height        = 0;  // Max of heights reported by p2p peers.
-		Difficulty top_block_difficulty      = 0;
-		Amount recommended_fee_per_byte      = 0;
-		Timestamp top_block_timestamp        = 0;
+		Height top_block_height                              = 0;
+		Height top_known_block_height                        = 0;  // Max of heights reported by p2p peers.
+		Difficulty top_block_difficulty                      = 0;
+		CumulativeDifficulty top_block_cumulative_difficulty = 0;
+		Amount recommended_fee_per_byte                      = 0;
+		Timestamp top_block_timestamp                        = 0;
 		Timestamp top_block_timestamp_median = 0;  // This timestamp will be used in unlock calulations after hardfork.
 		uint32_t next_block_effective_median_size =
 		    0;  // If your tx size is larger, chance it will not be included in block for a long time (or never).
@@ -234,6 +251,7 @@ struct GetBalance {
 	struct Request {
 		std::string address;  // empty for all addresses
 		HeightOrDepth height_or_depth = -DEFAULT_CONFIRMATIONS - 1;
+		// height_or_depth is limited to arbitrary selected depth of 128 blocks before top block
 	};
 	typedef api::Balance Response;
 };
@@ -245,6 +263,7 @@ struct GetUnspents {
 	struct Request {
 		std::string address;  // empty for all addresses
 		HeightOrDepth height_or_depth = -DEFAULT_CONFIRMATIONS - 1;
+		// height_or_depth is limited to arbitrary selected depth of 128 blocks before top block
 	};
 	struct Response {
 		std::vector<api::Output> spendable;              // Confirmed, unlocked. Dust is also returned here
@@ -284,19 +303,18 @@ struct CreateTransaction {
 		                               // payment_id) and transfers. All positive transfers (amount > 0) will be added
 		                               // as outputs. For all negative transfers (amount < 0), spendable for requested
 		                               // sum and address will be selected and added as inputs
-		std::vector<std::string>
-		    spend_addresses;  // If this is not empty, will spend (and optimize) outputs for this addresses to get
-		                      // neccessary funds. Otherwise will spend any output in the wallet
+		std::vector<std::string> spend_addresses;
+		// If this is not empty, will spend (and optimize) outputs for this addresses to get
+		// neccessary funds. Otherwise will spend any output in the wallet
 		bool any_spend_address = false;  // if you set spend_address to empty, you should set any_spend_address to true.
 		                                 // This is protection against client bug when spend_address is forgotten or
 		                                 // accidentally set to null, etc
 		std::string change_address;      // Change will be returned to change_address.
-		HeightOrDepth confirmed_height_or_depth =
-		    -DEFAULT_CONFIRMATIONS - 1;  // Mix-ins will be selected from the [0..confirmed_height] window.
-		                                 // Reorganizations larger than confirmations may change mix-in global indices,
-		                                 // making transaction invalid.
-		SignedAmount fee_per_byte = 0;   // Fee of created transaction will be close to the size of tx * fee_per_byte.
-		                                 // You can check it in response.transaction.fee before sending, if you wish
+		HeightOrDepth confirmed_height_or_depth = -DEFAULT_CONFIRMATIONS - 1;
+		// Mix-ins will be selected from the [0..confirmed_height] window.
+		// Reorganizations larger than confirmations may change mix-in global indices, making transaction invalid.
+		SignedAmount fee_per_byte = 0;  // Fee of created transaction will be close to the size of tx * fee_per_byte.
+		                                // You can check it in response.transaction.fee before sending, if you wish
 		std::string optimization;  // Wallet outputs optimization (fusion). Leave empty to use normal optimization, good
 		                           // for wallets with balanced sends to receives count. You can save on a few percent
 		                           // of fee (on average) by specifying "minimal" for wallet receiving far less
@@ -308,18 +326,24 @@ struct CreateTransaction {
 		bool save_history = true;  // If true, wallet will save encrypted transaction data (~100 bytes per used address)
 		                           // in <wallet_file>.history/. With this data it is possible to generate
 		                           // public-checkable proofs of sending funds to specific addresses.
-		std::vector<Hash>
-		    prevent_conflict_with_transactions;  // Experimental API for guaranteed payouts under any circumstances
+		std::vector<Hash> prevent_conflict_with_transactions;
+		// Experimental API for guaranteed payouts under any circumstances
 	};
 	struct Response {
 		BinaryArray binary_transaction;  // Empty if error
-		api::Transaction
-		    transaction;  // block_hash will be empty, block_height set to current pool height (may change later)
+		api::Transaction transaction;
+		// block_hash will be empty, block_height set to current pool height (may change later)
 		bool save_history_error = false;          // When wallet on read-only media. Most clients should ignore this
 		std::vector<Hash> transactions_required;  // Works together with prevent_conflict_with_transactions
 		// If not empty, you should resend those transactions before trying create_transaction again to prevent
 		// conflicts
 	};
+	enum {
+		NOT_ENOUGH_FUNDS                  = -301,
+		TRANSACTION_DOES_NOT_FIT_IN_BLOCK = -302,  // Sender will have to split funds into several transactions
+		NOT_ENOUGH_ANONYMITY              = -303
+	};
+	typedef json_rpc::Error Error;
 };
 
 struct SendTransaction {
@@ -330,13 +354,23 @@ struct SendTransaction {
 	};
 
 	struct Response {
-		std::string send_result;  // "broadcast" if added to pool. "increasefee" if not added to pool because it is full
-		                          // and transaction fee is not enough to replace other transaction.
+		std::string send_result;  // DEPRECATED, always contains "broadcast"
+		// when this method returns, transactions is already added to payment queue and queue fsynced to disk.
+	};
+	enum {
+		INVALID_TRANSACTION_BINARY_FORMAT = -101,  // transaction failed to parse
+		WRONG_OUTPUT_REFERENCE = -102,  // wrong signature or referenced outputs changed during reorg. Bad output
+		// height is reported in conflict_height. If output index > max current index, conflict_height will// be set to
+		// currency.max_block_number
+		OUTPUT_ALREADY_SPENT = -103
+	};  // conflight height reported in error
+	struct Error : public json_rpc::Error {
+		Height conflict_height = 0;
 	};
 };
 
 struct CreateSendProof {
-	static std::string method() { return "create_send_proof"; }
+	static std::string method() { return "create_sendproof"; }
 
 	struct Request {
 		Hash transaction_hash;
@@ -346,7 +380,7 @@ struct CreateSendProof {
 	};
 
 	struct Response {
-		std::vector<std::string> send_proofs;
+		std::vector<std::string> sendproofs;
 	};
 };
 
@@ -371,12 +405,13 @@ namespace api {
 namespace bytecoind {
 
 inline std::string url() { return "/json_rpc"; }
+inline std::vector<std::string> legacy_bin_methods() { return {"/sync_mem_pool.bin", "/sync_blocks.bin"}; }
+// When we advance method versions, we add legacy version here to get "upgrade bytecoind" message in walletd"
 
 struct GetStatus {
 	static std::string method() { return "get_node_status"; }  // getNodeStatus works directly or through wallet tunnel
-	static std::string method2() {
-		return "get_status";
-	}  // getStatus gets either status of node (if called on node) or wallet (if called on wallet)
+	static std::string method2() { return "get_status"; }
+	// getStatus gets either status of node (if called on node) or wallet (if called on wallet)
 
 	typedef walletd::GetStatus::Request Request;
 	typedef walletd::GetStatus::Response Response;
@@ -385,7 +420,8 @@ struct GetStatus {
 // Signature of this method will stabilize to the end of beta
 struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoind
 	static std::string method() { return "sync_blocks"; }
-	static std::string bin_method() { return "/sync_blocks.bin"; }
+	static std::string bin_method() { return "/sync_blocks_v1.bin"; }
+	// we increment method version when binary format changes
 
 	struct Request {
 		static constexpr uint32_t MAX_COUNT = 1000;
@@ -395,12 +431,13 @@ struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoin
 	};
 	struct SyncBlock {  // Signatures are checked by bytecoind so usually they are of no interest
 		api::BlockHeader header;
-		bytecoin::BlockTemplate raw_header;
+		BlockTemplate raw_header;
 		// the only method returning actual BlockHeader from blockchain, not api::BlockHeader
-		std::vector<bytecoin::TransactionPrefix> raw_transactions;
+		std::vector<TransactionPrefix> raw_transactions;
 		// the only method returning actual Transaction from blockchain, not api::Transaction
 		Hash base_transaction_hash;                         // BlockTemplate does not contain it
 		std::vector<std::vector<uint32_t>> global_indices;  // for each transaction
+		std::vector<uint32_t> transaction_binary_sizes;     // for each transaction
 	};
 	struct Response {
 		std::vector<SyncBlock> blocks;
@@ -416,24 +453,25 @@ struct GetRawTransaction {
 	};
 	struct Response {
 		api::Transaction transaction;
-		// only hash, block_height and block_hash returned in transaction
+		// only hash, block_height, block_hash, binary_size, fee returned in transaction
 		// empty transaction with no hash returned if not in blockchain/mempool
-		bytecoin::TransactionPrefix raw_transaction;
+		TransactionPrefix raw_transaction;
 	};
 };
 
 // Signature of this method will stabilize to the end of beta
 struct SyncMemPool {  // Used by walletd sync process
 	static std::string method() { return "sync_mem_pool"; }
-	static std::string bin_method() { return "/sync_mem_pool.bin"; }
+	static std::string bin_method() { return "/sync_mem_pool_v1.bin"; }
+	// we increment method version when binary format changes
 	struct Request {
 		std::vector<Hash> known_hashes;  // Should be sent sorted
 	};
 	struct Response {
-		std::vector<Hash> removed_hashes;                                 // Hashes no more in pool
-		std::vector<bytecoin::TransactionPrefix> added_raw_transactions;  // New raw transactions in pool
+		std::vector<Hash> removed_hashes;                       // Hashes no more in pool
+		std::vector<TransactionPrefix> added_raw_transactions;  // New raw transactions in pool
 		std::vector<api::Transaction> added_transactions;
-		// binary version of this method returns only hash, timestamp and fee here
+		// binary version of this method returns only hash, timestamp, binary_size, and fee here
 		GetStatus::Response status;  // We save roundtrip during sync by also sending status here
 	};
 };
@@ -442,27 +480,88 @@ struct GetRandomOutputs {
 	static std::string method() { return "get_random_outputs"; }
 	struct Request {
 		std::vector<Amount> amounts;  // Repeating the same amount will give you multiples of outs_count in result
-		uint32_t outs_count = 0;
-		HeightOrDepth confirmed_height_or_depth =
-		    -DEFAULT_CONFIRMATIONS - 1;  // Mix-ins will be selected from the [0..confirmed_height] window.
-		                                 // Reorganizations larger than confirmations may change mix-in global indices,
-		                                 // making transaction invalid
+		uint32_t outs_count                     = 0;
+		HeightOrDepth confirmed_height_or_depth = -DEFAULT_CONFIRMATIONS - 1;
+		// Mix-ins will be selected from the [0..confirmed_height] window.
+		// Reorganizations larger than confirmations may change mix-in global indices,
+		// making transaction invalid
 	};
 	struct Response {
-		std::map<Amount, std::vector<api::Output>>
-		    outputs;  // can have less outputs than asked for some amounts, if blockchain lacks enough
+		std::map<Amount, std::vector<api::Output>> outputs;
+		// can have less outputs than asked for some amounts, if blockchain lacks enough
 	};
 };
 
 typedef walletd::SendTransaction SendTransaction;
 
 struct CheckSendProof {
-	static std::string method() { return "check_send_proof"; }
+	static std::string method() { return "check_sendproof"; }
 
 	struct Request {
-		std::string send_proof;
+		std::string sendproof;
 	};
 	typedef EmptyStruct Response;  // All errors are reported as json rpc errors
+	enum {
+		FAILED_TO_PARSE            = -201,
+		NOT_IN_MAIN_CHAIN          = -202,
+		WRONG_SIGNATURE            = -203,
+		ADDRESS_NOT_IN_TRANSACTION = -204,
+		WRONG_AMOUNT               = -205
+	};
+	typedef json_rpc::Error Error;
+};
+
+struct GetStatistics {
+	static std::string method() { return "get_statistics"; }
+
+	typedef EmptyStruct Request;
+	struct Response {
+		std::string version;
+		std::string platform;
+		uint64_t peer_id     = 0;  // For p2p
+		Timestamp start_time = 0;  // Unix timestamp UTC
+		std::vector<SignedCheckPoint> checkpoints;
+	};
+};
+
+// This method is highly experimental
+struct GetArchive {
+	static std::string method() { return "get_archive"; }
+	struct Request {
+		std::string archive_id;
+		uint64_t from_record                = 0;
+		uint64_t max_count                  = 100;
+		static constexpr uint64_t MAX_COUNT = 10000;
+	};
+	struct ArchiveRecord {
+		Timestamp timestamp     = 0;
+		uint32_t timestamp_usec = 0;
+		std::string type;  // b(lock), t(ransaction), c(heckpoint)
+		Hash hash;
+		std::string source_address;
+	};
+	struct ArchiveBlock {  // Signatures are checked by bytecoind so usually they are of no interest
+		BlockTemplate raw_header;
+		// the only method returning actual BlockHeader from blockchain, not api::BlockHeader
+		std::vector<TransactionPrefix> raw_transactions;
+		// the only method returning actual Transaction from blockchain, not api::Transaction
+		Hash base_transaction_hash;                      // BlockTemplate does not contain it
+		std::vector<uint32_t> transaction_binary_sizes;  // for each transaction
+	};
+	struct Response {
+		std::vector<ArchiveRecord> records;
+		uint64_t from_record = 0;
+
+		std::map<std::string, ArchiveBlock> blocks;
+		std::map<std::string, TransactionPrefix> transactions;
+		std::map<std::string, SignedCheckPoint> checkpoints;
+	};
+	enum {
+		WRONG_ARCHIVE_ID = -501  // If archive id changed, new id is returned in Error
+	};
+	struct Error : public json_rpc::Error {
+		std::string archive_id;
+	};
 };
 
 // Methods below are used by miners
@@ -586,8 +685,14 @@ void ser_members(bytecoin::api::bytecoind::GetRandomOutputs::Request &v, ISeria 
 void ser_members(bytecoin::api::bytecoind::GetRandomOutputs::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::SendTransaction::Request &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::SendTransaction::Response &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::SendTransaction::Error &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::CheckSendProof::Request &v, ISeria &s);
-// void ser_members(bytecoin::api::bytecoind::CheckSendProof::Response &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetStatistics::Response &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetArchive::ArchiveRecord &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetArchive::ArchiveBlock &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetArchive::Error &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetArchive::Request &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetArchive::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetBlockTemplate::Request &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetBlockTemplate::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetCurrencyId::Response &v, ISeria &s);

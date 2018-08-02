@@ -20,7 +20,7 @@ struct network_config {
 	uint32_t send_peerlist_sz        = 0;
 };
 
-enum P2PProtocolVersion : uint8_t { V0 = 0, V1 = 1, CURRENT = V1 };
+enum P2PProtocolVersion : uint8_t { V0 = 0, V1 = 1, CURRENT = V1, EXPERIMENTAL = 3 };
 
 struct basic_node_data {
 	UUID network_id;
@@ -85,7 +85,7 @@ struct COMMAND_PING {
 
 #if bytecoin_ALLOW_DEBUG_COMMANDS
 // These commands are considered as insecure, and made in debug purposes for a limited lifetime.
-// Anyone who feel unsafe with this commands can disable the ALLOW_GET_STAT_COMMAND macro.
+// Anyone who feel unsafe with this commands can disable the bytecoin_ALLOW_DEBUG_COMMANDS macro in CryptoNote.hpp
 
 struct proof_of_trust {
 	PeerIdType peer_id = 0;
@@ -95,7 +95,7 @@ struct proof_of_trust {
 	crypto::Hash get_hash() const;
 };
 
-struct CoreStatistics {  // TODO - convert to json blob
+struct CoreStatistics {
 	uint64_t tx_pool_size       = 0;
 	uint64_t blockchain_height  = 0;
 	uint64_t mining_speed       = 0;
@@ -135,9 +135,7 @@ struct COMMAND_REQUEST_NETWORK_STATE {
 	};
 };
 
-struct COMMAND_REQUEST_PEER_ID  // TODO - remove this message in next hard fork, peer_id is sent on handshake and in
-                                // lots of other messages
-{
+struct COMMAND_REQUEST_PEER_ID {
 	enum { ID = P2P_COMMANDS_POOL_BASE + 6 };
 
 	struct request {};

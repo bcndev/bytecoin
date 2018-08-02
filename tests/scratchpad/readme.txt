@@ -1,0 +1,1 @@
+Tests are run in this folder, not in some "tmp", so that artefacts can be easily located for investigation when tests fail

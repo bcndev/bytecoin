@@ -33,10 +33,12 @@ public:
 	void send_shutdown();
 	void disconnect(const std::string &ban_reason);  // empty for no ban
 	bool test_connect(const NetworkAddress &addr);   // for single connects without p2p
+	bool is_connected() const;
 	virtual ~P2PClient() {}
 
 protected:
-	virtual void on_connect() = 0;
+	void update_my_port(uint16_t port) { address.port = port; }
+	virtual void on_connect()                         = 0;
 	virtual size_t on_request_header(const BinaryArray &header, std::string &ban_reason) const = 0;
 	virtual void on_request_ready()                           = 0;
 	virtual void on_disconnect(const std::string &ban_reason) = 0;

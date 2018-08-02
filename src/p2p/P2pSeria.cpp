@@ -5,6 +5,7 @@
 #include "P2pProtocolDefinitions.hpp"
 #include "P2pProtocolTypes.hpp"
 #include "crypto/hash.hpp"
+#include "seria/BinaryOutputStream.hpp"
 
 crypto::Hash bytecoin::proof_of_trust::get_hash() const {
 	std::string s;

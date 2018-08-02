@@ -18,10 +18,11 @@ public:
 	explicit Config(common::CommandLine &cmd);
 
 	bool is_testnet;
+	bool is_archive;
 	Timestamp locked_tx_allowed_delta_seconds;
 	Height locked_tx_allowed_delta_blocks;
 
-	Timestamp mempool_tx_live_time;
+	//	Timestamp mempool_tx_live_time;
 	//  Timestamp mempool_tx_from_alt_block_live_time;
 	//  size_t number_of_periods_to_forget_tx_deleted_from_pool;
 

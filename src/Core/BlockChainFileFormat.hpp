@@ -45,7 +45,8 @@ public:
 
 	bool import_blocks(BlockChainState *block_chain);  // return false when no more blocks remain
 
-	static bool import_blockchain2(const std::string &coin_folder, BlockChainState *block_chain);
+	static bool import_blockchain2(const std::string &coin_folder, BlockChainState *block_chain,
+	    Height max_height = std::numeric_limits<Height>::max());
 };
 
 class LegacyBlockChainWriter {
