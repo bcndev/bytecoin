@@ -73,7 +73,7 @@ public:
 	bool check_sw_checkpoint(Height index, const crypto::Hash &h, bool &is_sw_checkpoint) const;
 	std::pair<Height, crypto::Hash> last_sw_checkpoint() const;
 	PublicKey get_checkpoint_public_key(uint32_t key_id) const;
-	size_t get_checkpoint_keys_count() const;
+	uint32_t get_checkpoint_keys_count() const;
 
 	uint32_t block_granted_full_reward_zone_by_block_version(uint8_t block_major_version) const;
 	bool get_block_reward(uint8_t block_major_version, size_t effective_median_size, size_t current_block_size,
@@ -95,7 +95,9 @@ public:
 	}
 
 	Difficulty next_difficulty(
-	    std::vector<Timestamp> timestamps, std::vector<CumulativeDifficulty> cumulative_difficulties) const;
+	    std::vector<Timestamp> *timestamps, std::vector<CumulativeDifficulty> *cumulative_difficulties) const;
+	Difficulty next_effective_difficulty(uint8_t block_major_version, std::vector<Timestamp> timestamps,
+	    std::vector<CumulativeDifficulty> cumulative_difficulties) const;
 
 	bool check_proof_of_work_v1(
 	    const Hash &long_block_hash, const BlockTemplate &block, Difficulty current_difficulty) const;

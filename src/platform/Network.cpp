@@ -2,7 +2,9 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Network.hpp"
+#include "Time.hpp"
 #include "common/MemoryStreams.hpp"
+#include "common/string.hpp"
 
 #ifdef _WIN32
 #pragma comment(lib, "ws2_32.lib")   // Windows SDK sockets
@@ -37,7 +39,7 @@ void Timer::cancel() { impl.stop(); }
 
 void Timer::once(float after_seconds) {
 	cancel();
-	impl.start(static_cast<int>(after_seconds * 1000));
+	impl.start(static_cast<int>(after_seconds * 1000.0f / get_time_multiplier_for_tests()));
 }
 
 TCPSocket::TCPSocket(RW_handler rw_handler, D_handler d_handler) : rw_handler(rw_handler), d_handler(d_handler) {}
@@ -151,7 +153,7 @@ void Timer::cancel() {
 void Timer::once(float after_seconds) {
 	cancel();
 	CFRunLoopTimerContext TimerContext = {0, this, nullptr, nullptr, nullptr};
-	CFAbsoluteTime FireTime            = CFAbsoluteTimeGetCurrent() + after_seconds;
+	CFAbsoluteTime FireTime            = CFAbsoluteTimeGetCurrent() + after_seconds / get_time_multiplier_for_tests();
 	impl = CFRunLoopTimerCreate(kCFAllocatorDefault, FireTime, 0, 0, 0, &Timer::static_once, &TimerContext);
 	CFRunLoopAddTimer(CFRunLoopGetCurrent(), impl, kCFRunLoopDefaultMode);
 }
@@ -302,7 +304,6 @@ using namespace std::placeholders;  // We enjoy standard bindings
 
 #if platform_USE_SSL
 #include <boost/asio/ssl.hpp>
-#include <common/string.hpp>
 
 namespace ssl = boost::asio::ssl;
 typedef ssl::stream<boost::asio::ip::tcp::socket> SSLSocket;
@@ -490,7 +491,7 @@ void Timer::once(float after_seconds) {
 	cancel();
 	if (!impl)
 		impl = std::make_shared<Impl>(this);
-	impl->start_timer(after_seconds);
+	impl->start_timer(after_seconds / get_time_multiplier_for_tests());
 }
 
 class TCPSocket::Impl {

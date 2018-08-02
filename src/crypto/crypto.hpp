@@ -115,10 +115,10 @@ inline bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image,
 	return check_ring_signature(prefix_hash, image, pubs.data(), pubs.size(), sigs, check_key_image, key_corrupted);
 }
 
-bool generate_send_proof(const PublicKey &txkey_pub, const SecretKey &txkey_sec, const PublicKey &receiver_view_key_pub,
+bool generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_sec, const PublicKey &receiver_view_key_pub,
     const KeyDerivation &derivation, const Hash &message_hash, Signature &proof);
 // Transaction key and the derivation supplied with the proof can be invalid, this just means that the proof is invalid.
-bool check_send_proof(const PublicKey &txkey_pub, const PublicKey &receiver_view_key_pub,
+bool check_sendproof(const PublicKey &txkey_pub, const PublicKey &receiver_view_key_pub,
     const KeyDerivation &derivation, const Hash &message_hash, const Signature &proof);
 
 void hash_to_scalar(const void *data, size_t length, EllipticCurveScalar &res);

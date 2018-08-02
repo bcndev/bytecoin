@@ -10,6 +10,7 @@
 #include "http/JsonRpc.hpp"
 #include "platform/Files.hpp"
 #include "platform/PathTools.hpp"
+#include "platform/Time.hpp"
 
 using namespace bytecoin;
 
@@ -112,7 +113,8 @@ void Wallet::load_container_storage() {
 	if (file_size > should_be_file_size) {  // We truncate legacy wallet cache
 		try {
 			file->truncate(should_be_file_size);
-			std::cout << "Truncated wallet cache legacy wallet file to size=" << should_be_file_size << std::endl;
+			m_log(logging::WARNING) << "Truncated wallet cache legacy wallet file to size=" << should_be_file_size
+			                        << std::endl;
 		} catch (const std::exception &) {  // probably read only, ignore
 		}
 	}
@@ -132,8 +134,9 @@ void Wallet::load_legacy_wallet_file() {
 	}
 }
 
-Wallet::Wallet(const std::string &path, const std::string &password, bool create, const std::string &import_keys)
-    : m_path(path), m_password(password) {
+Wallet::Wallet(logging::ILogger &log, const std::string &path, const std::string &password, bool create,
+    const std::string &import_keys)
+    : m_log(log, "Wallet"), m_path(path), m_password(password) {
 	crypto::CryptoNightContext cn_ctx;
 	m_wallet_key = generate_chacha8_key(cn_ctx, password);
 	if (create) {
@@ -147,7 +150,7 @@ Wallet::Wallet(const std::string &path, const std::string &password, bool create
 			    "Will not overwrite existing wallet - delete it first or specify another file " + path);
 
 		if (import_keys.empty()) {
-			m_oldest_timestamp = static_cast<Timestamp>(std::time(nullptr));
+			m_oldest_timestamp = platform::now_unix_timestamp();
 			crypto::random_keypair(m_view_public_key, m_view_secret_key);
 			first_record.creation_timestamp = m_oldest_timestamp;
 			crypto::random_keypair(first_record.spend_public_key, first_record.spend_secret_key);
@@ -194,7 +197,7 @@ Wallet::Wallet(const std::string &path, const std::string &password, bool create
 		file.reset();  // Indicates legacy format
 		try {
 			save_and_check();  // We try to overwrite legacy format with new format
-			std::cout << "Overwritten legacy wallet file with new data format" << std::endl;
+			m_log(logging::WARNING) << "Overwritten legacy wallet file with new data format" << std::endl;
 		} catch (const std::exception &) {  // probably read only, ignore
 		}
 	} else {
@@ -274,7 +277,7 @@ void Wallet::save_and_check() {
 
 	save(tmp_path, false);
 
-	Wallet other(tmp_path, m_password);
+	Wallet other(m_log.get_logger(), tmp_path, m_password);
 	if (*this != other)
 		throw Exception(api::WALLET_FILE_WRITE_ERROR, "Error writing wallet file - records do not match");
 	file.reset();
@@ -329,7 +332,7 @@ std::vector<WalletRecord> Wallet::generate_new_addresses(
 	if (is_view_only())
 		throw Exception(101, "Generate new addresses impossible for view-only wallet");
 	if (!file.get()) {  // Legacy format, now overwrite
-		std::cout << "Creation of new addresses forces overwrite of legacy format wallet" << std::endl;
+		m_log(logging::WARNING) << "Creation of new addresses forces overwrite of legacy format wallet" << std::endl;
 		save_and_check();
 	}
 	*rescan_from_ct   = false;
@@ -376,8 +379,8 @@ std::vector<WalletRecord> Wallet::generate_new_addresses(
 	file->write(&item_count, sizeof(item_count));
 	file->fsync();
 	if (*rescan_from_ct) {  // We never write to the middle of the file
-		std::cout << "Updating creation timestamp of existing addresses to " << ct
-		          << " in a wallet file (might take minutes for large wallets)..." << std::endl;
+		m_log(logging::WARNING) << "Updating creation timestamp of existing addresses to " << ct
+		                        << " in a wallet file (might take minutes for large wallets)..." << std::endl;
 		save_and_check();
 	}
 	return result;
@@ -392,8 +395,8 @@ void Wallet::on_first_output_found(Timestamp ts) {
 	for (auto &&rec : m_wallet_records)
 		if (rec.second.creation_timestamp < ts)
 			rec.second.creation_timestamp = ts;
-	std::cout << "Updating creation timestamp to " << ts
-	          << " in a wallet file (might take minutes for large wallets)..." << std::endl;
+	m_log(logging::WARNING) << "Updating creation timestamp to " << ts
+	                        << " in a wallet file (might take minutes for large wallets)..." << std::endl;
 	save_and_check();
 }
 

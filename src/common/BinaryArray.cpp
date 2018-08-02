@@ -3,6 +3,7 @@
 
 #include "BinaryArray.hpp"
 #include <stdexcept>
+#include "Invariant.hpp"
 
 namespace common {
 
@@ -10,8 +11,7 @@ namespace common {
 
 BinaryArrayImpl::iterator BinaryArrayImpl::insert(iterator pos, const value_type *be, const value_type *en) {
 	size_t left = pos - m_data;
-	if (left > m_size)
-		throw std::logic_error("insert after the end");
+	invariant(left <= m_size, "insert after the end");
 	size_t right = m_size - left;
 	size_t add   = en - be;
 	if (m_size + add <= m_reserved) {
@@ -30,8 +30,7 @@ BinaryArrayImpl::iterator BinaryArrayImpl::insert(iterator pos, const value_type
 }
 BinaryArrayImpl::iterator BinaryArrayImpl::insert(iterator pos, size_t add, value_type va) {
 	size_t left = pos - m_data;
-	if (left > m_size)
-		throw std::logic_error("insert after the end");
+	invariant(left <= m_size, "insert after the end");
 	size_t right = m_size - left;
 	if (m_size + add <= m_reserved) {
 		good_memmove(m_data + left + add, m_data + left, right);

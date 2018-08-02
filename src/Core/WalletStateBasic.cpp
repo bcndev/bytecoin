@@ -102,8 +102,8 @@ WalletStateBasic::WalletStateBasic(
 		size_t erased      = 0;
 		for (DB::Cursor cur = m_db.rbegin(std::string()); !cur.end(); cur.erase()) {
 			if (erased % 1000000 == 0)
-				std::cout << "Processing " << erased / 1000000 << "/" << (total_items + 999999) / 1000000
-				          << " million DB records" << std::endl;
+				m_log(logging::INFO) << "Processing " << erased / 1000000 << "/" << (total_items + 999999) / 1000000
+				                     << " million DB records" << std::endl;
 			erased += 1;
 		}
 		m_db.put("$version", version_current, true);
@@ -473,6 +473,13 @@ std::vector<api::Block> WalletStateBasic::api_get_transfers(
 		if (current_block.transactions.empty()) {
 			read_chain(height, current_block.header);
 		}
+		if (!address.empty()) {
+			for (auto tit = tx.transfers.begin(); tit != tx.transfers.end();)
+				if (tit->address == address)
+					++tit;
+				else
+					tit = tx.transfers.erase(tit);
+		}
 		current_block.transactions.push_back(std::move(tx));
 		total_transactions_found += 1;
 	}
@@ -614,7 +621,6 @@ void WalletStateBasic::read_unlock_index(std::map<std::pair<Amount, uint32_t>, a
 		// amount can be different to output.amount, if added from te same ki group
 		// original amount is in unlocked index key, use it as a key because it is unambigous
 		invariant(output.global_index == global_index, "Index corrupted");
-		//			throw std::logic_error("Invariant dead read_unlock_index index corrupted");
 		if (address.empty() || output.address == address)
 			invariant(add->insert(std::make_pair(std::make_pair(amount, output.global_index), output)).second,
 			    "Invariant dead read_unlock_index adding output twice");

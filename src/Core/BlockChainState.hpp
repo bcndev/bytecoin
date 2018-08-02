@@ -16,7 +16,7 @@ class Config;
 
 class IBlockChainState {
 public:
-	struct UnlockTimePublickKeyHeightMarked {
+	struct UnlockTimePublickKeyHeightSpent {
 		UnlockMoment unlock_time = 0;
 		PublicKey public_key;
 		Height height = 0;
@@ -30,7 +30,7 @@ public:
 	virtual uint32_t push_amount_output(Amount, UnlockMoment, Height, const PublicKey &) = 0;
 	virtual void pop_amount_output(Amount, UnlockMoment, const PublicKey &) = 0;
 	virtual uint32_t next_global_index_for_amount(Amount) const = 0;
-	virtual bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightMarked *) const = 0;
+	virtual bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightSpent *) const = 0;
 	virtual void spend_output(Amount, uint32_t global_index) = 0;
 };
 
@@ -41,13 +41,13 @@ public:
 	const Currency &get_currency() const { return m_currency; }
 	uint32_t get_next_effective_median_size() const;
 
-	std::vector<api::Output> get_outputs_by_amount(Amount, size_t anonymity, Height, Timestamp) const;
+	std::vector<api::Output> get_random_outputs(Amount, size_t outs_count, Height, Timestamp) const;
 	typedef std::vector<std::vector<uint32_t>> BlockGlobalIndices;
 	bool read_block_output_global_indices(const Hash &bid, BlockGlobalIndices *) const;
 
 	Amount minimum_pool_fee_per_byte(Hash *minimal_tid) const;
-	AddTransactionResult add_transaction(
-	    const Hash &tid, const Transaction &, const BinaryArray &binary_tx, Timestamp now, Height *conflict_height);
+	AddTransactionResult add_transaction(const Hash &tid, const Transaction &, const BinaryArray &binary_tx,
+	    Timestamp now, Height *conflict_height, const std::string &source_address);
 	bool get_largest_referenced_height(const TransactionPrefix &tx, Height *block_height) const;
 
 	uint32_t get_tx_pool_version() const { return m_tx_pool_version; }
@@ -103,7 +103,7 @@ private:
 		uint32_t push_amount_output(Amount, UnlockMoment, Height, const PublicKey &) override;
 		void pop_amount_output(Amount, UnlockMoment, const PublicKey &) override;
 		uint32_t next_global_index_for_amount(Amount) const override;
-		bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightMarked *) const override;
+		bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightSpent *) const override;
 		void spend_output(Amount, uint32_t global_index) override;
 	};
 
@@ -114,7 +114,7 @@ private:
 	uint32_t push_amount_output(Amount, UnlockMoment, Height, const PublicKey &) override;
 	void pop_amount_output(Amount, UnlockMoment, const PublicKey &) override;
 	uint32_t next_global_index_for_amount(Amount) const override;
-	bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightMarked *) const override;
+	bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightSpent *) const override;
 	void spend_output(Amount, uint32_t global_index) override;
 	void spend_output(Amount, uint32_t global_index, bool spent);
 
@@ -129,7 +129,8 @@ private:
 	    m_next_gi_for_amount;  // Read from db on first use, write on modification
 
 	AddTransactionResult add_transaction(const Hash &tid, const Transaction &tx, const BinaryArray &binary_tx,
-	    Height unlock_height, Timestamp unlock_timestamp, Height *conflict_height, bool check_sigs);
+	    Height unlock_height, Timestamp unlock_timestamp, Height *conflict_height, bool check_sigs,
+	    const std::string &source_address);
 	void remove_from_pool(Hash tid);
 
 	uint32_t m_tx_pool_version = 2;  // Incremented every time pool changes, reset to 2 on redo block. 2 is selected

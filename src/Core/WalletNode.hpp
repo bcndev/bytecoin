@@ -34,7 +34,7 @@ public:
 	    api::walletd::GetTransfers::Request &&, api::walletd::GetTransfers::Response &);
 	bool handle_create_transaction3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::walletd::CreateTransaction::Request &&, api::walletd::CreateTransaction::Response &);
-	bool handle_create_send_proof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
+	bool handle_create_sendproof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::walletd::CreateSendProof::Request &&, api::walletd::CreateSendProof::Response &);
 	bool handle_send_transaction3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::SendTransaction::Request &&,

@@ -41,7 +41,7 @@ class DBsqlite {
 public:
 	explicit DBsqlite(
 	    bool read_only, const std::string &full_path, uint64_t max_db_size = 0);  // no max size in sqlite3
-	const std::string & get_path()const { return full_path; }
+	const std::string &get_path() const { return full_path; }
 
 	void commit_db_txn();
 	size_t test_get_approximate_size() const;

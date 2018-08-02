@@ -3,6 +3,7 @@
 
 #include "Core/Wallet.hpp"
 #include "crypto/crypto.hpp"
+#include "logging/ConsoleLogger.hpp"
 #include "platform/PathTools.hpp"
 
 #include "test_wallet_file.hpp"
@@ -57,7 +58,8 @@ const std::string tmp_name("../tests/scratchpad/test_wallet_file.tmp");
 
 static void test_body(const bytecoin::Currency &currency, const std::string &path, const std::string &password,
     const std::vector<std::string> &addresses, bool view_only, bool test_create_addresses) {
-	bytecoin::Wallet wallet(tmp_name, password);
+	logging::ConsoleLogger logger;
+	bytecoin::Wallet wallet(logger, tmp_name, password);
 	if (wallet.is_view_only() != view_only)
 		throw std::runtime_error("view_only test failed for " + path);
 	auto records = wallet.get_records();
@@ -92,7 +94,7 @@ static void test_body(const bytecoin::Currency &currency, const std::string &pat
 	try {
 		wallet.generate_new_addresses({first_record.spend_secret_key}, first_record.creation_timestamp + 1,
 		    first_record.creation_timestamp + 1, &rescan_from_ct);
-	} catch (const bytecoin::Wallet::Exception &ex) {
+	} catch (const bytecoin::Wallet::Exception &) {
 		if (!view_only)
 			throw;
 		return;

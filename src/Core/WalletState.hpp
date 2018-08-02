@@ -37,7 +37,7 @@ class WalletState : public WalletStateBasic {
 		const std::map<Hash, std::pair<TransactionPrefix, api::Transaction>> &get_transactions() const {
 			return m_transactions;
 		}
-//		bool is_spent(const api::Output &) const;
+		//		bool is_spent(const api::Output &) const;
 
 		void undo_transaction(const Hash &tid);  // For mem pool
 

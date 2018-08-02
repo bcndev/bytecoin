@@ -96,6 +96,17 @@ int UnicodeConsoleSetup::sync() {
 	return 0;
 }
 bool UnicodeConsoleSetup::getline(std::string &line, bool hide_input) {
+//	std::string test;
+//	std::cout << "Enter test visible: " << std::flush;
+//	if (!console_setup.getline(test)) {
+//		return 0;
+//	}
+//	std::cout << "You entered {" << test << "} Enter test invisible: " << std::flush;
+//	if (!console_setup.getline(test, true)) {
+//		return 0;
+//	}
+//	std::cout << "You entered {" << test << "}" << std::flush;
+//	return 1;
 #ifdef _WIN32
 	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
 	DWORD mode    = 0;

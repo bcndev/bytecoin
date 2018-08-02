@@ -9,6 +9,7 @@
 #include "TransactionExtra.hpp"
 #include "common/JsonValue.hpp"
 #include "platform/PathTools.hpp"
+#include "platform/Time.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 #include "seria/KVBinaryInputStream.hpp"
@@ -96,8 +97,8 @@ Node::P2PClientBytecoin::get_sync_data() const {
 }
 
 std::vector<PeerlistEntry> Node::P2PClientBytecoin::get_peers_to_share() const {
-	auto result =
-	    m_node->m_peer_db.get_peerlist_to_p2p(m_node->m_p2p.get_local_time(), config.p2p_default_peers_in_handshake);
+	auto result = m_node->m_peer_db.get_peerlist_to_p2p(
+	    get_address(), m_node->m_p2p.get_local_time(), config.p2p_default_peers_in_handshake);
 	return result;
 }
 
@@ -114,17 +115,14 @@ void Node::P2PClientBytecoin::after_handshake() {
 	m_node->advance_long_poll();
 
 	auto signed_checkpoints = m_node->m_block_chain.get_latest_checkpoints();
-	for (auto sck : signed_checkpoints) {
+	for (const auto & sck : signed_checkpoints) {
 		BinaryArray raw_msg = LevinProtocol::send_message(NOTIFY_CHECKPOINT::ID, LevinProtocol::encode(sck), false);
 		send(std::move(raw_msg));
 	}
 }
 
 void Node::P2PClientBytecoin::on_msg_handshake(COMMAND_HANDSHAKE::request &&req) {
-	NetworkAddress addr;
-	addr.ip   = get_address().ip;
-	addr.port = req.node_data.my_port;
-	m_node->m_peer_db.add_incoming_peer(addr, req.node_data.peer_id, m_node->m_p2p.get_local_time());
+	m_node->m_peer_db.add_incoming_peer(get_address(), req.node_data.peer_id, m_node->m_p2p.get_local_time());
 	after_handshake();
 }
 
@@ -211,7 +209,8 @@ void Node::P2PClientBytecoin::on_msg_notify_new_block(NOTIFY_NEW_BLOCK::request 
 	RawBlock raw_block{req.b.block, req.b.transactions};
 	PreparedBlock pb(std::move(raw_block), nullptr);
 	api::BlockHeader info;
-	auto action = m_node->m_block_chain.add_block(pb, &info);
+	auto action = m_node->m_block_chain.add_block(
+	    pb, &info, common::ip_address_and_port_to_string(get_address().ip, get_address().port));
 	switch (action) {
 	case BroadcastAction::BAN:
 		disconnect("NOTIFY_NEW_BLOCK add_block BAN");
@@ -249,8 +248,8 @@ void Node::P2PClientBytecoin::on_msg_notify_new_transactions(NOTIFY_NEW_TRANSACT
 		const Hash tid         = get_transaction_hash(tx);
 		any_tid                = tid;
 		Height conflict_height = 0;
-		auto action =
-		    m_node->m_block_chain.add_transaction(tid, tx, raw_tx, m_node->m_p2p.get_local_time(), &conflict_height);
+		auto action            = m_node->m_block_chain.add_transaction(tid, tx, raw_tx, m_node->m_p2p.get_local_time(),
+		    &conflict_height, common::ip_address_and_port_to_string(get_address().ip, get_address().port));
 		switch (action) {
 		case AddTransactionResult::BAN:
 			disconnect("NOTIFY_NEW_TRANSACTIONS add_transaction BAN");
@@ -276,7 +275,8 @@ void Node::P2PClientBytecoin::on_msg_notify_new_transactions(NOTIFY_NEW_TRANSACT
 	m_node->advance_long_poll();
 }
 void Node::P2PClientBytecoin::on_msg_notify_checkpoint(NOTIFY_CHECKPOINT::request &&req) {
-	if (!m_node->m_block_chain.add_checkpoint(req))
+	if (!m_node->m_block_chain.add_checkpoint(
+	        req, common::ip_address_and_port_to_string(get_address().ip, get_address().port)))
 		return;
 	m_node->m_log(logging::INFO) << "NOTIFY_CHECKPOINT::request height=" << req.height << " hash=" << req.hash
 	                             << std::endl;
@@ -323,7 +323,7 @@ void Node::P2PClientBytecoin::on_msg_stat_info(COMMAND_REQUEST_STAT_INFO::reques
 #endif
 
 bool Node::check_trust(const proof_of_trust &tr) {
-	uint64_t local_time  = time(nullptr);
+	uint64_t local_time  = platform::now_unix_timestamp();
 	uint64_t time_delata = local_time > tr.time ? local_time - tr.time : tr.time - local_time;
 
 	if (time_delata > 24 * 60 * 60)
@@ -424,7 +424,8 @@ bool Node::on_api_http_request(http::Client *who, http::RequestData &&request, h
 	}
 	auto it = m_http_handlers.find(request.r.uri);
 	if (it == m_http_handlers.end()) {
-		if(request.r.uri == "/sync_blocks.bin" || request.r.uri == "/sync_mem_pool.bin")
+		auto leg = api::bytecoind::legacy_bin_methods();
+		if (std::find(leg.begin(), leg.end(), request.r.uri) != leg.end())
 			response.r.status = 410;
 		else
 			response.r.status = 404;
@@ -495,8 +496,9 @@ std::unordered_map<std::string, Node::JSONRPCHandlerFunction> Node::m_jsonrpc_ha
     {api::bytecoind::GetStatus::method(), json_rpc::make_member_method(&Node::on_get_status3)},
     {api::bytecoind::GetStatus::method2(), json_rpc::make_member_method(&Node::on_get_status3)},
     {api::bytecoind::GetStatistics::method(), json_rpc::make_member_method(&Node::on_get_statistics)},
+    {api::bytecoind::GetArchive::method(), json_rpc::make_member_method(&Node::on_get_archive)},
     {api::bytecoind::SendTransaction::method(), json_rpc::make_member_method(&Node::handle_send_transaction3)},
-    {api::bytecoind::CheckSendProof::method(), json_rpc::make_member_method(&Node::handle_check_send_proof3)},
+    {api::bytecoind::CheckSendProof::method(), json_rpc::make_member_method(&Node::handle_check_sendproof3)},
     {api::bytecoind::SyncBlocks::method(), json_rpc::make_member_method(&Node::on_wallet_sync3)},
     {api::bytecoind::GetRawTransaction::method(), json_rpc::make_member_method(&Node::on_get_raw_transaction3)},
     {api::bytecoind::SyncMemPool::method(), json_rpc::make_member_method(&Node::on_sync_mempool3)}};
@@ -508,7 +510,7 @@ bool Node::on_get_random_outputs3(http::Client *, http::RequestData &&, json_rpc
 		    0, static_cast<api::HeightOrDepth>(m_block_chain.get_tip_height()) + 1 + request.confirmed_height_or_depth);
 	api::BlockHeader tip_header = m_block_chain.get_tip();
 	for (uint64_t amount : request.amounts) {
-		auto random_outputs = m_block_chain.get_outputs_by_amount(
+		auto random_outputs = m_block_chain.get_random_outputs(
 		    amount, request.outs_count, request.confirmed_height_or_depth, tip_header.timestamp);
 		auto &outs = response.outputs[amount];
 		outs.insert(outs.end(), random_outputs.begin(), random_outputs.end());
@@ -568,6 +570,11 @@ bool Node::on_get_statistics(http::Client *, http::RequestData &&, json_rpc::Req
 	return true;
 }
 
+bool Node::on_get_archive(http::Client *, http::RequestData &&, json_rpc::Request &&,
+    api::bytecoind::GetArchive::Request &&req, api::bytecoind::GetArchive::Response &resp) {
+	m_block_chain.read_archive(std::move(req), resp);
+	return true;
+}
 bool Node::on_wallet_sync3(http::Client *, http::RequestData &&, json_rpc::Request &&json_req,
     api::bytecoind::SyncBlocks::Request &&req, api::bytecoind::SyncBlocks::Response &res) {
 	if (req.sparse_chain.empty())
@@ -603,18 +610,16 @@ bool Node::on_wallet_sync3(http::Client *, http::RequestData &&, json_rpc::Reque
 	res.blocks.resize(supplement.size());
 	for (size_t i = 0; i != supplement.size(); ++i) {
 		auto bhash = supplement[i];
-		if (!m_block_chain.read_header(bhash, &res.blocks[i].header))
-			throw std::logic_error("Block header must be there, but it is not there");
+		invariant(
+		    m_block_chain.read_header(bhash, &res.blocks[i].header), "Block header must be there, but it is not there");
 		BlockChainState::BlockGlobalIndices global_indices;
 		// if (res.blocks[i].header.timestamp >= req.first_block_timestamp) //
 		// commented out becuase empty Block cannot be serialized
 		{
 			RawBlock rb;
-			if (!m_block_chain.read_block(bhash, &rb))
-				throw std::logic_error("Block must be there, but it is not there");
+			invariant(m_block_chain.read_block(bhash, &rb), "Block must be there, but it is not there");
 			Block block;
-			if (!block.from_raw_block(rb))
-				throw std::logic_error("RawBlock failed to convert into block");
+			invariant(block.from_raw_block(rb), "RawBlock failed to convert into block");
 			res.blocks[i].base_transaction_hash = get_transaction_hash(block.header.base_transaction);
 			res.blocks[i].raw_header            = std::move(block.header);
 			res.blocks[i].raw_transactions.reserve(block.transactions.size());
@@ -624,10 +629,8 @@ bool Node::on_wallet_sync3(http::Client *, http::RequestData &&, json_rpc::Reque
 				res.blocks[i].transaction_binary_sizes.push_back(
 				    static_cast<uint32_t>(rb.transactions.at(tx_index).size()));
 			}
-			if (!m_block_chain.read_block_output_global_indices(bhash, &res.blocks[i].global_indices))
-				throw std::logic_error(
-				    "Invariant dead - bid is in chain but "
-				    "blockchain has no block indices");
+			invariant(m_block_chain.read_block_output_global_indices(bhash, &res.blocks[i].global_indices),
+			    "Invariant dead - bid is in chain but blockchain has no block indices");
 		}
 	}
 	res.status = create_status_response3();
@@ -697,8 +700,8 @@ bool Node::handle_send_transaction3(http::Client *, http::RequestData &&, json_r
 		throw err;
 	}
 	const Hash tid = get_transaction_hash(tx);
-	auto action =
-	    m_block_chain.add_transaction(tid, tx, request.binary_transaction, m_p2p.get_local_time(), &conflict_height);
+	auto action    = m_block_chain.add_transaction(
+	    tid, tx, request.binary_transaction, m_p2p.get_local_time(), &conflict_height, "0.0.0.0:0");
 	switch (action) {
 	case AddTransactionResult::BAN:
 		throw json_rpc::Error(
@@ -733,14 +736,15 @@ bool Node::handle_send_transaction3(http::Client *, http::RequestData &&, json_r
 	return true;
 }
 
-bool Node::handle_check_send_proof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool Node::handle_check_sendproof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
     api::bytecoind::CheckSendProof::Request &&request, api::bytecoind::CheckSendProof::Response &response) {
 	Transaction tx;
 	SendProof sp;
 	try {
-		seria::from_json_value(sp, common::JsonValue::from_string(request.send_proof));
+		seria::from_json_value(sp, common::JsonValue::from_string(request.sendproof));
 	} catch (const std::exception &ex) {
-		throw json_rpc::Error(-201, "Failed to parse proof object ex.what=" + std::string(ex.what()));
+		throw api::bytecoind::CheckSendProof::Error(api::bytecoind::CheckSendProof::FAILED_TO_PARSE,
+		    "Failed to parse proof object ex.what=" + std::string(ex.what()));
 	}
 	Height height = 0;
 	Hash block_hash;
@@ -748,13 +752,15 @@ bool Node::handle_check_send_proof3(http::Client *, http::RequestData &&, json_r
 	uint32_t binary_size  = 0;
 	if (!m_block_chain.read_transaction(
 	        sp.transaction_hash, &tx, &height, &block_hash, &index_in_block, &binary_size)) {
-		throw json_rpc::Error(-202, "Transaction is not in main chain");
+		throw api::bytecoind::CheckSendProof::Error(
+		    api::bytecoind::CheckSendProof::NOT_IN_MAIN_CHAIN, "Transaction is not in main chain");
 	}
 	PublicKey tx_public_key = get_transaction_public_key_from_extra(tx.extra);
 	Hash message_hash       = crypto::cn_fast_hash(sp.message.data(), sp.message.size());
-	if (!crypto::check_send_proof(
+	if (!crypto::check_sendproof(
 	        tx_public_key, sp.address.view_public_key, sp.derivation, message_hash, sp.signature)) {
-		throw json_rpc::Error(-203, "Proof object does not match transaction or was tampered with");
+		throw api::bytecoind::CheckSendProof::Error(api::bytecoind::CheckSendProof::WRONG_SIGNATURE,
+		    "Proof object does not match transaction or was tampered with");
 	}
 	Amount total_amount = 0;
 	size_t key_index    = 0;
@@ -772,8 +778,10 @@ bool Node::handle_check_send_proof3(http::Client *, http::RequestData &&, json_r
 		++out_index;
 	}
 	if (total_amount == 0)
-		throw json_rpc::Error(-204, "No outputs found in transaction for the address being proofed");
+		throw api::bytecoind::CheckSendProof::Error(api::bytecoind::CheckSendProof::ADDRESS_NOT_IN_TRANSACTION,
+		    "No outputs found in transaction for the address being proofed");
 	if (total_amount != sp.amount)
-		throw json_rpc::Error(-205, "Wrong amount in outputs, actual amount is " + common::to_string(total_amount));
+		throw api::bytecoind::CheckSendProof::Error(api::bytecoind::CheckSendProof::WRONG_AMOUNT,
+		    "Wrong amount in outputs, actual amount is " + common::to_string(total_amount));
 	return true;
 }

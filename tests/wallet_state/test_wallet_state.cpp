@@ -184,7 +184,7 @@ public:
 			    (address.empty() || la.second.address == address))
 				result.push_back(la.second);
 		}
-		for (auto la : locked_outputs)
+		for (const auto & la : locked_outputs)
 			if (!is_memory_spent(la) && (address.empty() || la.address == address))
 				result.push_back(la);
 		return result;
@@ -344,7 +344,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 			std::cout << "Total coins remains before final spend"
 			          << (ba.locked_or_unconfirmed_outputs + ba.spendable_outputs + ba.spendable_dust_outputs)
 			          << " spent " << wm.all_keyimages.size() << std::endl;
-			for (auto ki : output_keyimages) {
+			for (const auto & ki : output_keyimages) {
 				//				if (used_keyimages.insert(ki).second) {  // We never get same ki from blockchain
 				api::Output spending_output;
 				if (ws.try_adding_incoming_keyimage(ki, &spending_output)) {
@@ -369,7 +369,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 				continue;
 			//			if(ha == 19 && wi == 1)
 			//				std::cout << "Aha";
-			for (auto addr : addresses) {
+			for (const auto & addr : addresses) {
 				auto ba1 = wm.get_balance(addr, ha + wi - 20);
 				auto ba2 = ws.get_balance(addr, ha + wi - 20);
 				if (ba1 != ba2 || ha == TEST_HEIGHT - 1) {
@@ -393,7 +393,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 				invariant(ba1 == ba2, "");
 			}
 		}
-		for (auto addr : addresses) {
+		for (const auto & addr : addresses) {
 			std::map<std::string, SignedAmount> transfer_balances1;
 			std::map<std::string, SignedAmount> transfer_balances2;
 			Height from_height = ha == 0 ? ha : ha - 1;

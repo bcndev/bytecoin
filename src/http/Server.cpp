@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include "common/Invariant.hpp"
 
 // to test
 // httperf --port 8090 --num-calls 100000 --uri /index.html
@@ -65,11 +66,9 @@ void Client::write() {
 }
 
 void Client::write(ResponseData &&response) {
-	if (!waiting_write_response)
-		throw std::logic_error("Client unexpected write");
+	invariant(waiting_write_response, "Client unexpected write");
 	waiting_write_response = false;
-	if (!response.r.http_version_major)
-		throw std::logic_error("Someone forgot to set version, method, status or url");
+	invariant(response.r.http_version_major, "Someone forgot to set version, method, status or url");
 	this->keep_alive = response.r.keep_alive;
 	std::string str  = response.r.to_string();
 	responses.emplace_back();

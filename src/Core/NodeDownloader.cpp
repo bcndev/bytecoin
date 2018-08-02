@@ -21,8 +21,9 @@ Node::DownloaderV11::DownloaderV11(Node *node, BlockChainState &block_chain)
 	if (multicore) {
 		auto th_count = std::max<size_t>(2, std::thread::hardware_concurrency() / 2);
 		// we use more energy but have the same speed when using hyperthreading
-		std::cout << "Starting multicore POW checker using " << th_count << "/" << std::thread::hardware_concurrency()
-		          << " cpus" << std::endl;
+		//		std::cout << "Starting multicore POW checker using " << th_count << "/" <<
+		// std::thread::hardware_concurrency()
+		//		          << " cpus" << std::endl;
 		for (size_t i = 0; i != th_count; ++i)
 			threads.emplace_back(&DownloaderV11::thread_run, this);
 		main_loop = platform::EventLoop::current();
@@ -97,8 +98,7 @@ void Node::DownloaderV11::on_disconnect(P2PClientBytecoin *who) {
 	if (who->is_incoming())
 		return;
 	m_node->m_log(logging::TRACE) << "DownloaderV11::on_disconnect " << who->get_address() << std::endl;
-	if (total_downloading_blocks < m_good_clients[who])
-		throw std::logic_error("total_downloading_blocks mismatch in disconnect");
+	invariant(total_downloading_blocks >= m_good_clients[who], "total_downloading_blocks mismatch in disconnect");
 	total_downloading_blocks -= m_good_clients[who];
 	m_good_clients.erase(who);
 	for (auto lit = m_who_downloaded_block.begin(); lit != m_who_downloaded_block.end();)
@@ -194,6 +194,7 @@ void Node::DownloaderV11::advance_chain() {
 void Node::DownloaderV11::start_download(DownloadCell &dc, P2PClientBytecoin *who) {
 	auto idea_now         = std::chrono::steady_clock::now();
 	dc.downloading_client = who;
+	dc.block_source       = who->get_address();
 	dc.request_time       = idea_now;
 	m_good_clients[dc.downloading_client] += 1;
 	total_downloading_blocks += 1;
@@ -216,8 +217,8 @@ void Node::DownloaderV11::stop_download(DownloadCell &dc, bool success) {
 	if (dc.status != DownloadCell::DOWNLOADING || !dc.downloading_client)
 		return;
 	auto git = m_good_clients.find(dc.downloading_client);
-	if (git == m_good_clients.end() || git->second == 0 || total_downloading_blocks == 0)
-		throw std::logic_error("DownloadCell reference to good client not found");
+	invariant(git != m_good_clients.end() && git->second != 0 && total_downloading_blocks != 0,
+	    "DownloadCell reference to good client not found");
 	git->second -= 1;
 	total_downloading_blocks -= 1;
 	if (success) {
@@ -316,7 +317,8 @@ bool Node::DownloaderV11::on_idle() {
 		DownloadCell dc = std::move(m_download_chain.front());
 		m_download_chain.pop_front();
 		api::BlockHeader info;
-		auto action = m_block_chain.add_block(dc.pb, &info);
+		auto action = m_block_chain.add_block(
+		    dc.pb, &info, common::ip_address_and_port_to_string(dc.block_source.ip, dc.block_source.port));
 		if (action == BroadcastAction::BAN) {
 			m_node->m_log(logging::INFO) << "Downloader DownloadCell BAN height=" << dc.expected_height
 			                             << " wb=" << dc.bid << std::endl;
@@ -325,7 +327,7 @@ bool Node::DownloaderV11::on_idle() {
 		}
 		//		if (action == BroadcastAction::NOTHING)
 		//			std::cout << "BroadcastAction::NOTHING height=" << info.height << " cd=" <<
-		//info.cumulative_difficulty.lo
+		// info.cumulative_difficulty.lo
 		//			          << std::endl;
 		if (action == BroadcastAction::BROADCAST_ALL) {
 			//			std::cout << "BroadcastAction::BROADCAST_ALL height=" << info.height

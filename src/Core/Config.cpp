@@ -8,6 +8,7 @@
 #include "CryptoNoteConfig.hpp"
 #include "common/Base64.hpp"
 #include "platform/PathTools.hpp"
+#include "platform/Time.hpp"
 
 static void parse_peer_and_add_to_container(const std::string &str, std::vector<bytecoin::NetworkAddress> &container) {
 	bytecoin::NetworkAddress na{};
@@ -24,6 +25,7 @@ const static UUID BYTECOIN_NETWORK{{0x11, 0x10, 0x01, 0x11, 0x11, 0x00, 0x01, 0x
 
 Config::Config(common::CommandLine &cmd)
     : is_testnet(cmd.get_bool("--testnet"))
+    , is_archive(cmd.get_bool("--archive"))
     //    , mempool_tx_live_time(parameters::CRYPTONOTE_MEMPOOL_TX_LIVETIME)
     , blocks_file_name(parameters::CRYPTONOTE_BLOCKS_FILENAME)
     , block_indexes_file_name(parameters::CRYPTONOTE_BLOCKINDEXES_FILENAME)
@@ -55,6 +57,8 @@ Config::Config(common::CommandLine &cmd)
 		p2p_external_port += 1000;
 		bytecoind_bind_port += 1000;
 		p2p_allow_local_ip = true;
+		if (const char *pa = cmd.get("--time-multiplier"))
+			platform::set_time_multiplier_for_tests(boost::lexical_cast<int>(pa));
 	}
 	if (const char *pa = cmd.get("--p2p-bind-address")) {
 		if (!common::parse_ip_address_and_port(pa, &p2p_bind_ip, &p2p_bind_port))
@@ -110,7 +114,7 @@ Config::Config(common::CommandLine &cmd)
 				throw std::runtime_error("Wrong address format " + addr + ", should be ip:port");
 		}
 	}
-	if (cmd.get_bool("--allow-local-ip"))
+	if (cmd.get_bool("--allow-local-ip", "Local IPs are automatically allowed for peers from the same private network"))
 		p2p_allow_local_ip = true;
 	for (auto &&pa : cmd.get_array("--seed-node-address"))
 		parse_peer_and_add_to_container(pa, seed_nodes);

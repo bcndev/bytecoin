@@ -6,14 +6,19 @@
 #include <bitset>
 #include <deque>
 #include <unordered_map>
+#include "Archive.hpp"
 #include "CryptoNote.hpp"
-#include "Currency.hpp"
 #include "logging/LoggerMessage.hpp"
 #include "platform/DB.hpp"
 #include "platform/ExclusiveLock.hpp"
 #include "rpc_api.hpp"
 
+namespace crypto {
+class CryptoNightContext;
+}
 namespace bytecoin {
+class Config;
+class Currency;
 
 enum class BroadcastAction { BROADCAST_ALL, NOTHING, BAN };
 enum class AddTransactionResult {
@@ -37,17 +42,16 @@ struct PreparedBlock {
 
 	explicit PreparedBlock(BinaryArray &&ba, crypto::CryptoNightContext *context);
 	explicit PreparedBlock(RawBlock &&rba, crypto::CryptoNightContext *context);  // we get raw blocks from p2p
-	PreparedBlock() {}
+	PreparedBlock() = default;
 };
 
 class BlockChain {
 public:
 	typedef platform::DB DB;
 
-	explicit BlockChain(logging::ILogger &, const Currency &, const std::string &coin_folder, bool read_only);
-	virtual ~BlockChain() {}
+	explicit BlockChain(logging::ILogger &, const Config &config, const Currency &, bool read_only);
+	virtual ~BlockChain() = default;
 
-	const std::string &get_coin_folder() const { return m_coin_folder; }
 	const Hash &get_genesis_bid() const { return m_genesis_bid; }
 	// Read blockchain state
 	Hash get_tip_bid() const { return m_tip_bid; }
@@ -72,7 +76,7 @@ public:
 
 	// Modify blockchain state. bytecoin header does not contain enough info for consensus calcs, so we cannot have
 	// header chain without block chain
-	BroadcastAction add_block(const PreparedBlock &pb, api::BlockHeader *info);
+	BroadcastAction add_block(const PreparedBlock &pb, api::BlockHeader *info, const std::string &source_address);
 
 	// Facilitate sync and download
 	std::vector<Hash> get_sparse_chain() const;
@@ -86,7 +90,6 @@ public:
 	void test_undo_everything(Height new_tip_height);
 	void test_print_structure(Height n_confirmations) const;
 
-	void test_consensus(Height start_height);
 	void test_prune_oldest();
 
 	void db_commit();
@@ -96,7 +99,13 @@ public:
 
 	std::vector<SignedCheckPoint> get_latest_checkpoints() const;
 	std::vector<SignedCheckPoint> get_stable_checkpoints() const;
-	bool add_checkpoint(const SignedCheckPoint &checkpoint);
+	bool add_checkpoint(const SignedCheckPoint &checkpoint, const std::string &source_address);
+
+	void read_archive(api::bytecoind::GetArchive::Request &&req, api::bytecoind::GetArchive::Response &resp) {
+		m_archive.read_archive(std::move(req), resp);
+	}
+
+	typedef std::array<Height, 7> CheckPointDifficulty;  // size must be == m_currency.get_checkpoint_keys_count()
 protected:
 	CumulativeDifficulty get_tip_cumulative_difficulty() const { return m_tip_cumulative_difficulty; }
 
@@ -115,8 +124,6 @@ protected:
 	virtual void tip_changed() {}  // Quick hack to allow BlockChainState to update next block params
 	virtual void on_reorganization(
 	    const std::map<Hash, std::pair<Transaction, BinaryArray>> &undone_transactions, bool undone_blocks) = 0;
-	void fix_difficulty_consensus();
-	void check_consensus_fast();
 
 	const Hash m_genesis_bid;
 	const std::string m_coin_folder;
@@ -124,7 +131,9 @@ protected:
 	    std::vector<Hash> *chain2) const;  // both can be null
 
 	DB m_db;
+	Archive m_archive;
 	logging::LoggerRef m_log;
+	const Config &m_config;
 	const Currency &m_currency;
 
 	static const std::string version_current;
@@ -157,10 +166,6 @@ private:
 	bool prune_branch(CumulativeDifficulty cd, Hash bid);
 	void for_each_tip(std::function<bool(CumulativeDifficulty cd, Hash bid)> fun) const;
 
-	bool fix_consensus(Hash bid, const api::BlockHeader &was_info);
-	void check_consensus_fast(Hash bid);
-
-	typedef std::array<Height, 7> CheckPointDifficulty;  // size must be == m_currency.get_checkpoint_keys_count()
 	static int compare(
 	    const CheckPointDifficulty &a, CumulativeDifficulty ca, const CheckPointDifficulty &b, CumulativeDifficulty cb);
 	struct Blod {

@@ -30,6 +30,9 @@ Options:
 int main(int argc, const char *argv[]) {
 	common::CommandLine cmd(argc, argv);
 
+	std::cout << "Testing Block Chain" << std::endl;
+	test_blockchain(cmd);
+
 	std::cout << "Testing Wallet State" << std::endl;
 	test_wallet_state(cmd);
 
@@ -41,9 +44,6 @@ int main(int argc, const char *argv[]) {
 
 	std::cout << "Testing Json" << std::endl;
 	test_json("../tests/json");
-
-	std::cout << "Testing Block Chain" << std::endl;
-	test_blockchain2(cmd);
 
 	std::cout << "Testing Crypto" << std::endl;
 	test_crypto("../tests/crypto/tests.txt");

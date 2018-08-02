@@ -37,7 +37,8 @@ public:
 	virtual ~P2PClient() {}
 
 protected:
-	virtual void on_connect() = 0;
+	void update_my_port(uint16_t port) { address.port = port; }
+	virtual void on_connect()                         = 0;
 	virtual size_t on_request_header(const BinaryArray &header, std::string &ban_reason) const = 0;
 	virtual void on_request_ready()                           = 0;
 	virtual void on_disconnect(const std::string &ban_reason) = 0;

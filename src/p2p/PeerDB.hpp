@@ -63,7 +63,7 @@ public:
 
 	void merge_peerlist_from_p2p(const std::vector<PeerlistEntry> &outer_bs, Timestamp now);
 	void add_incoming_peer(const NetworkAddress &addr, PeerIdType peer_id, Timestamp now);
-	std::vector<PeerlistEntry> get_peerlist_to_p2p(Timestamp now, size_t depth);
+	std::vector<PeerlistEntry> get_peerlist_to_p2p(const NetworkAddress &for_addr, Timestamp now, size_t depth);
 
 	void set_peer_just_seen(
 	    PeerIdType peer_id, const NetworkAddress &addr, Timestamp now, bool reset_next_connection_attempt = true);
@@ -74,7 +74,7 @@ public:
 	bool is_peer_banned(NetworkAddress address, Timestamp now) const;
 
 	bool get_peer_to_connect(NetworkAddress &best_address, const std::set<NetworkAddress> &connected, Timestamp now);
-	bool is_ip_allowed(uint32_t ip) const;
+	//	bool is_ip_allowed(uint32_t ip) const;
 	bool is_priority(const NetworkAddress &addr) const;
 	bool is_seed(const NetworkAddress &addr) const;
 	size_t get_gray_size() const;

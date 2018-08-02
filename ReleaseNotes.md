@@ -1,5 +1,11 @@
 ## Release Notes
 
+### v3.2.0
+
+- *Warning:* This version uses different format of `bytecoind` database and `walletd` caches, they will be upgraded to the new format on a first start of daemons. Prepare for downtime of up to 2 hours depending on your wallet size and computer performance.
+- __API change:__ Renamed methods `create_send_proof` and `check_send_proof` to `create_sendproof` and `check_sendproof` respectively (along with input parameter `send_proof` that became `sendproof`).
+- Fixed minor bugs found in the beta release.
+
 ### v3.2.0-beta-20180723
 
 - *Warning:* This version uses different format of `bytecoind` database and `walletd` caches, they will be upgraded to the new format on a first start of daemons. Prepare for downtime of up to 2 hours depending on your wallet size and computer performance.

@@ -2,7 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "BlockChainFileFormat.hpp"
-#include <crypto/crypto-ops.h>
+//#include "crypto/crypto-ops.h"
 #include "BlockChainState.hpp"
 #include "platform/PathTools.hpp"
 #include "seria/BinaryInputStream.hpp"
@@ -137,7 +137,7 @@ bool LegacyBlockChainReader::import_blocks(BlockChainState *block_chain) {
 			BinaryArray rba = get_block_data_by_index(block_chain->get_tip_height() + 1);
 			PreparedBlock pb(std::move(rba), nullptr);
 			api::BlockHeader info;
-			if (block_chain->add_block(pb, &info) != BroadcastAction::BROADCAST_ALL) {
+			if (block_chain->add_block(pb, &info, std::string()) != BroadcastAction::BROADCAST_ALL) {
 				std::cout << "block_chain.add_block !BROADCAST_ALL block=" << block_chain->get_tip_height() + 1
 				          << std::endl;
 				block_chain->db_commit();
@@ -183,7 +183,7 @@ bool LegacyBlockChainReader::import_blockchain2(const std::string &coin_folder,
 	while (block_chain->get_tip_height() < import_height) {
 		PreparedBlock pb = reader.get_prepared_block_by_index(block_chain->get_tip_height() + 1);
 		api::BlockHeader info;
-		if (block_chain->add_block(pb, &info) != BroadcastAction::BROADCAST_ALL) {
+		if (block_chain->add_block(pb, &info, std::string()) != BroadcastAction::BROADCAST_ALL) {
 			std::cout << "block_chain.add_block !BROADCAST_ALL block=" << block_chain->get_tip_height() + 1
 			          << std::endl;
 			block_chain->db_commit();
@@ -236,13 +236,13 @@ bool LegacyBlockChainWriter::export_blockchain2(const std::string &export_folder
 		BinaryArray block_data;
 		RawBlock raw_block;
 		if (!block_chain.read_chain(ha, &bid) || !block_chain.read_block(bid, &block_data, &raw_block))
-			throw std::logic_error("block_chain.read_block failed");
+			throw std::runtime_error("block_chain.read_block failed");
 		writer.write_block(raw_block);
 		if (ha % 10000 == 0)
 			std::cout << "Exporting block " << ha << "/" << block_chain.get_tip_height() << std::endl;
 		//		Block block;
 		//		if (!block.from_raw_block(raw_block))
-		//			throw std::logic_error("from_raw_block failed");
+		//			throw std::runtime_error("from_raw_block failed");
 		//		for (auto &&tr : block.transactions) {
 		//			for (auto &&input : tr.inputs)
 		//				if (input.type() == typeid(KeyInput)) {

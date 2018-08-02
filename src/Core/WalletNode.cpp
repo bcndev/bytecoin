@@ -5,6 +5,7 @@
 #include "Config.hpp"
 #include "CryptoNoteTools.hpp"
 #include "TransactionBuilder.hpp"
+#include "platform/Time.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 #include "seria/KVBinaryInputStream.hpp"
@@ -22,7 +23,7 @@ const WalletNode::HandlersMap WalletNode::m_jsonrpc3_handlers = {
     {api::walletd::GetTransfers::method(), json_rpc::make_member_method(&WalletNode::handle_get_transfers3)},
     {api::walletd::CreateTransaction::method(), json_rpc::make_member_method(&WalletNode::handle_create_transaction3)},
     {api::walletd::SendTransaction::method(), json_rpc::make_member_method(&WalletNode::handle_send_transaction3)},
-    {api::walletd::CreateSendProof::method(), json_rpc::make_member_method(&WalletNode::handle_create_send_proof3)},
+    {api::walletd::CreateSendProof::method(), json_rpc::make_member_method(&WalletNode::handle_create_sendproof3)},
     {api::walletd::GetTransaction::method(), json_rpc::make_member_method(&WalletNode::handle_get_transaction3)}};
 
 WalletNode::WalletNode(Node *inproc_node, logging::ILogger &log, const Config &config, WalletState &wallet_state)
@@ -44,7 +45,7 @@ bool WalletNode::on_api_http_request(http::Client *who, http::RequestData &&requ
 	}
 	if (m_inproc_node)
 		return m_inproc_node->process_json_rpc_request(who, std::move(request), response);
-	m_log(logging::INFO) << "http_request node tunneling url=" << request.r.uri << std::endl;
+	m_log(logging::INFO) << "http_request node tunneling url=" << request.r.uri << " start of body=" << request.body.substr(0, 200) << std::endl;
 	http::RequestData original_request;
 	original_request.r            = request.r;
 	request.r.http_version_major  = 1;
@@ -195,7 +196,7 @@ bool WalletNode::handle_create_address_list3(http::Client *, http::RequestData &
 	if (m_wallet_state.get_wallet().is_view_only())
 		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "wallet is view-only, impossible to create addresses");
 	auto records = m_wallet_state.generate_new_addresses(
-	    request.secret_spend_keys, request.creation_timestamp, static_cast<Timestamp>(std::time(nullptr)));
+	    request.secret_spend_keys, request.creation_timestamp, platform::now_unix_timestamp());
 	response.addresses.reserve(records.size());
 	response.secret_spend_keys.reserve(records.size());
 	for (auto &&rec : records) {
@@ -219,18 +220,20 @@ void WalletNode::check_address_in_wallet_or_throw(const std::string &addr) const
 		    json_rpc::INVALID_PARAMS, "Cannot get balance for address not in a wallet, address " + addr);
 }
 
-static bool fix_height_or_depth(api::HeightOrDepth &ha, Height tip_height, Height max_depth) {
+static void fix_height_or_depth(api::HeightOrDepth &ha, Height tip_height, Height max_depth) {
 	if (ha < 0)
 		ha = std::max(0, static_cast<api::HeightOrDepth>(tip_height) + 1 + ha);
-	return ha + max_depth >= tip_height;
+	if(ha + max_depth < tip_height)
+		throw json_rpc::Error(
+				json_rpc::INVALID_PARAMS, "height_or_depth cannot be deeper than 128 blocks before top blocks");
+	if(ha > static_cast<api::HeightOrDepth>(tip_height))
+		ha = static_cast<api::HeightOrDepth>(tip_height);
 }
 
 bool WalletNode::handle_get_balance3(http::Client *, http::RequestData &&, json_rpc::Request &&,
     api::walletd::GetBalance::Request &&request, api::walletd::GetBalance::Response &response) {
 	check_address_in_wallet_or_throw(request.address);
-	if (!fix_height_or_depth(request.height_or_depth, m_wallet_state.get_tip_height(), 128))
-		throw json_rpc::Error(
-		    json_rpc::INVALID_PARAMS, "height_or_depth cannot be deeper than 128 blocks before top blocks");
+	fix_height_or_depth(request.height_or_depth, m_wallet_state.get_tip_height(), 128);
 	response = m_wallet_state.get_balance(request.address, request.height_or_depth);
 	return true;
 }
@@ -238,9 +241,7 @@ bool WalletNode::handle_get_balance3(http::Client *, http::RequestData &&, json_
 bool WalletNode::handle_get_unspent3(http::Client *, http::RequestData &&, json_rpc::Request &&,
     api::walletd::GetUnspents::Request &&request, api::walletd::GetUnspents::Response &response) {
 	check_address_in_wallet_or_throw(request.address);
-	if (!fix_height_or_depth(request.height_or_depth, m_wallet_state.get_tip_height(), 128))
-		throw json_rpc::Error(
-		    json_rpc::INVALID_PARAMS, "height_or_depth cannot be deeper than 128 blocks before top blocks");
+	fix_height_or_depth(request.height_or_depth, m_wallet_state.get_tip_height(), 128);
 	Amount total_amount = 0;
 	m_wallet_state.api_add_unspent(&response.spendable, &total_amount, request.address, request.height_or_depth);
 	response.locked_or_unconfirmed =
@@ -285,6 +286,7 @@ bool WalletNode::handle_get_transfers3(http::Client *, http::RequestData &&, jso
 bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData &&raw_request,
     json_rpc::Request &&raw_js_request, api::walletd::CreateTransaction::Request &&request,
     api::walletd::CreateTransaction::Response &response) {
+    m_log(logging::TRACE) << "create_transaction request tip_height=" << m_wallet_state.get_tip_height() << " body=" << raw_request.body << std::endl;
 	for (auto &&tid : request.prevent_conflict_with_transactions) {
 		if (m_wallet_state.api_has_transaction(tid, true))
 			continue;
@@ -296,7 +298,10 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Next block median size unknown, need to sync to bytecoind");
 	if (request.confirmed_height_or_depth < 0)
 		request.confirmed_height_or_depth = std::max(0,
-		    static_cast<api::HeightOrDepth>(m_wallet_state.get_tip_height()) + 1 - request.confirmed_height_or_depth);
+		    static_cast<api::HeightOrDepth>(m_wallet_state.get_tip_height()) + 1 + request.confirmed_height_or_depth);
+	if (request.confirmed_height_or_depth > static_cast<api::HeightOrDepth>(m_wallet_state.get_tip_height()))
+		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
+							  "'confirmed_height_or_depth' cannot be larger than top block height");
 	if (request.fee_per_byte == 0)
 		request.fee_per_byte = m_last_node_status.recommended_fee_per_byte;
 	if (request.fee_per_byte == 0)
@@ -349,7 +354,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		sum_positive_transfers += tr.amount;
 	}
 	size_t total_outputs = 0;
-	for (auto aa : combined_outputs) {
+	for (const auto & aa : combined_outputs) {
 		std::vector<uint64_t> decomposed_amounts;
 		decompose_amount(aa.second, m_wallet_state.get_currency().default_dust_threshold, &decomposed_amounts);
 		total_outputs += decomposed_amounts.size();
@@ -370,7 +375,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 	else
 		m_wallet_state.api_add_unspent(
 		    &unspents, &total_unspents, std::string(), request.confirmed_height_or_depth, sum_positive_transfers * 2);
-	UnspentSelector selector(m_wallet_state.get_currency(), std::move(unspents));
+	UnspentSelector selector(m_log.get_logger(), m_wallet_state.get_currency(), std::move(unspents));
 	// First we select just outputs with sum = 2x requires sum
 	if (!selector
 	         .select_optimal_outputs(m_wallet_state.get_tip_height(), m_wallet_state.get_tip().timestamp,
@@ -408,7 +413,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 		combined_outputs[change_addr] += change;
 		history.insert(change_addr);
 	}
-	for (auto aa : combined_outputs) {
+	for (const auto & aa : combined_outputs) {
 		std::vector<uint64_t> decomposed_amounts;
 		decompose_amount(aa.second, m_wallet_state.get_currency().default_dust_threshold, &decomposed_amounts);
 		for (auto &&da : decomposed_amounts)
@@ -448,10 +453,11 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 	http::RequestData new_request =
 	    json_rpc::create_request(api::bytecoind::url(), api::bytecoind::GetRandomOutputs::method(), ra_request);
 	new_request.r.basic_authorization = m_config.bytecoind_authorization;
+	m_log(logging::TRACE) << "sending get_random_outputs, body=" << new_request.body << std::endl;
 	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id(), std::move(new_request),
 	    [=](const WaitingClient &wc, http::ResponseData &&random_response) mutable {
-		    m_log(logging::INFO) << "got response to get_random_outputs, status=" << random_response.r.status
-		                         << " body starts with " << random_response.body.substr(0, 100) << std::endl;
+		    m_log(logging::TRACE) << "got response to get_random_outputs, status=" << random_response.r.status
+		                         << " body " << random_response.body << std::endl;
 		    if (random_response.r.status != 200) {
 			    throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "got error as response on get_random_outputs");
 		    }
@@ -488,7 +494,7 @@ bool WalletNode::handle_create_transaction3(http::Client *who, http::RequestData
 	return false;
 }
 
-bool WalletNode::handle_create_send_proof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool WalletNode::handle_create_sendproof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
     api::walletd::CreateSendProof::Request &&request, api::walletd::CreateSendProof::Response &response) {
 	std::set<AccountPublicAddress> addresses;
 	if (request.addresses.empty()) {
@@ -511,7 +517,7 @@ bool WalletNode::handle_create_send_proof3(http::Client *, http::RequestData &&,
 		sp.message          = request.message;
 		sp.address          = address;
 		if (m_wallet_state.api_create_proof(sp))
-			response.send_proofs.push_back(seria::to_json_value(sp).to_string());
+			response.sendproofs.push_back(seria::to_json_value(sp).to_string());
 	}
 	return true;
 }
@@ -529,30 +535,16 @@ bool WalletNode::handle_send_transaction3(http::Client *who, http::RequestData &
 	http::RequestData new_request;
 	new_request.set_body(std::move(raw_request.body));  // We save on copying body here
 	new_request.r.set_firstline("POST", api::bytecoind::url(), 1, 1);
-	//	transient_transactions_counter += 1;
 	new_request.r.basic_authorization = m_config.bytecoind_authorization;
 	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id(), std::move(new_request),
 	    [=](const WaitingClient &wc2, http::ResponseData &&send_response) mutable {
-		    //		    transient_transactions_counter -= 1;
-		    try {  // Manual try to prevent double decrement of transient_transactions_counter
-			    advance_sync();
-			    http::ResponseData resp(send_response);
-			    resp.r.http_version_major = wc2.original_request.r.http_version_major;
-			    resp.r.http_version_minor = wc2.original_request.r.http_version_minor;
-			    resp.r.keep_alive         = wc2.original_request.r.keep_alive;
-			    wc2.original_who->write(std::move(resp));
-		    } catch (const std::exception &ex) {
-			    http::ResponseData resp = json_rpc::create_error_response(wc2.original_request,
-			        json_rpc::Error(json_rpc::INTERNAL_ERROR, ex.what()), wc2.original_jsonrpc_id);
-			    wc2.original_who->write(std::move(resp));
-		    } catch (...) {
-			    http::ResponseData resp = json_rpc::create_error_response(wc2.original_request,
-			        json_rpc::Error(json_rpc::INTERNAL_ERROR, "catch..."), wc2.original_jsonrpc_id);
-			    wc2.original_who->write(std::move(resp));
-		    }
+		    http::ResponseData resp(std::move(send_response));
+		    resp.r.http_version_major = wc2.original_request.r.http_version_major;
+		    resp.r.http_version_minor = wc2.original_request.r.http_version_minor;
+		    resp.r.keep_alive         = wc2.original_request.r.keep_alive;
+		    wc2.original_who->write(std::move(resp));
 		},
 	    [=](const WaitingClient &wc2, std::string err) {
-		    //		    transient_transactions_counter -= 1;
 		    http::ResponseData resp = json_rpc::create_error_response(
 		        wc2.original_request, json_rpc::Error(json_rpc::INTERNAL_ERROR, err), wc2.original_jsonrpc_id);
 		    wc2.original_who->write(std::move(resp));
@@ -578,10 +570,11 @@ void WalletNode::process_waiting_command_response(http::ResponseData &&resp) {
 		try {
 			fun(cli, std::move(resp));
 		} catch (std::exception &ex) {
-			std::cout << "    Parsing received waiting command leads to throw/catch what=" << ex.what() << std::endl;
+			m_log(logging::WARNING) << "    Parsing received waiting command leads to throw/catch what=" << ex.what()
+			                        << std::endl;
 			err_fun(cli, ex.what());
 		} catch (...) {
-			std::cout << "    Parsing received waiting command leads to throw/catch" << std::endl;
+			m_log(logging::WARNING) << "    Parsing received waiting command leads to throw/catch" << std::endl;
 			err_fun(cli, "catch ...");
 		}
 	}

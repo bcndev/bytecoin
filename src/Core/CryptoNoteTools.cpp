@@ -2,6 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "CryptoNoteTools.hpp"
+#include "Currency.hpp"
 #include "TransactionExtra.hpp"
 #include "seria/ISeria.hpp"
 
@@ -18,6 +19,17 @@ Hash bytecoin::get_base_transaction_hash(const BaseTransaction &tx) {
 	    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
 	*reinterpret_cast<Hash *>(data.data()) = get_object_hash(static_cast<const TransactionPrefix &>(tx));
 	return crypto::cn_fast_hash(data.data(), data.size());
+}
+
+void bytecoin::fix_merge_mining_tag(BlockTemplate &block) {
+	if (block.major_version >= 2) {
+		bytecoin::TransactionExtraMergeMiningTag mmTag;
+		mmTag.depth = 0;
+		block.parent_block.base_transaction.extra.clear();
+		mmTag.merkle_root = get_auxiliary_block_header_hash(block);
+		if (!bytecoin::append_merge_mining_tag_to_extra(block.parent_block.base_transaction.extra, mmTag))
+			throw std::runtime_error("bytecoin::append_merge_mining_tag_to_extra failed");
+	}
 }
 
 // 62387455827 -> 455827 + 7000000 + 80000000 + 300000000 + 2000000000 +

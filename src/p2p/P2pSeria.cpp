@@ -1,11 +1,11 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
-#include <seria/BinaryOutputStream.hpp>
 #include "CryptoNoteProtocolDefinitions.hpp"
 #include "P2pProtocolDefinitions.hpp"
 #include "P2pProtocolTypes.hpp"
 #include "crypto/hash.hpp"
+#include "seria/BinaryOutputStream.hpp"
 
 crypto::Hash bytecoin::proof_of_trust::get_hash() const {
 	std::string s;

@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <stdexcept>
+#include "common/Invariant.hpp"
 #include "common/Streams.hpp"
 
 using namespace common;
@@ -52,5 +53,5 @@ void BinaryOutputStream::binary(void *value, size_t size) { stream.write(static_
 
 void BinaryOutputStream::seria_v(double &value) {
 	assert(false);  // the method is not supported for this type of serialization
-	throw std::logic_error("double serialization is not supported in BinaryOutputStreamSeria");
+	invariant(false, "double serialization is not supported in BinaryOutputStreamSeria");
 }

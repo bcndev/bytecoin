@@ -22,13 +22,13 @@ class TransactionBuilder {
 		size_t real_output_index = 0;
 		KeyPair eph_keys;
 		KeyInput input;
-		static bool less(const InputDesc &a, const InputDesc &b) { return a.input.amount < b.input.amount; }
+		static bool less_amount(const InputDesc &a, const InputDesc &b) { return a.input.amount < b.input.amount; }
 	};
 	std::vector<InputDesc> m_input_descs;
 	struct OutputDesc {
 		Amount amount;
 		AccountPublicAddress addr;
-		static bool less(const OutputDesc &a, const OutputDesc &b) { return a.amount < b.amount; }
+		static bool less_amount(const OutputDesc &a, const OutputDesc &b) { return a.amount < b.amount; }
 	};
 	std::vector<OutputDesc> m_output_descs;
 	TransactionExtra m_extra;
@@ -63,6 +63,7 @@ public:
 };
 
 class UnspentSelector {
+	logging::LoggerRef m_log;
 	const Currency &m_currency;
 	typedef std::vector<api::Output> Unspents;
 	typedef std::map<size_t, std::map<size_t, std::vector<api::Output>>> HaveCoins;
@@ -83,7 +84,7 @@ class UnspentSelector {
 	    size_t anonymity, size_t optimization_count);
 
 public:
-	explicit UnspentSelector(const Currency &currency, Unspents &&unspents);
+	explicit UnspentSelector(logging::ILogger &logger, const Currency &currency, Unspents &&unspents);
 	void reset(Unspents &&unspents);
 	void add_mixed_inputs(const SecretKey &view_secret_key,
 	    const std::unordered_map<PublicKey, WalletRecord> &wallet_records, TransactionBuilder *builder,

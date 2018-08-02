@@ -18,6 +18,7 @@ public:
 	explicit Config(common::CommandLine &cmd);
 
 	bool is_testnet;
+	bool is_archive;
 	Timestamp locked_tx_allowed_delta_seconds;
 	Height locked_tx_allowed_delta_blocks;
 

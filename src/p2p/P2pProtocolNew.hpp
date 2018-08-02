@@ -22,9 +22,9 @@ enum P2PProtocolVersion : uint8_t { V0 = 0, V1 = 1, EXPERIMENTAL = 2 };
 
 #pragma pack(push, 1)
 struct Header {
+	enum : uint64_t { MAGIC = 0x02E85C0A89412FC1 };  // New bender's nightmare
 	enum {
-		MAGIC           = 0x02E85C0A89412FC1,  // New bender's nightmare
-		MAX_PACKET_SIZE = 100000000            // Remove after per-command limits implemented
+		MAX_PACKET_SIZE = 100000000  // Remove after per-command limits implemented
 	};
 	uint64_t magic     = 0;
 	uint32_t body_size = 0;

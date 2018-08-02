@@ -383,14 +383,16 @@ bool atomic_replace_file(const std::string &from_path, const std::string &to_pat
 	return ok;
 }
 bool copy_file(const std::string &from_path, const std::string &to_path) {
-	{  // TODO - optimize
-		platform::FileStream from(from_path, platform::FileStream::READ_EXISTING);
-		platform::FileStream to(to_path, platform::FileStream::TRUNCATE_READ_WRITE);
-		auto si = from.seek(0, SEEK_END);
-		from.seek(0, SEEK_SET);
-		common::BinaryArray data(si);
+	platform::FileStream from(from_path, platform::FileStream::READ_EXISTING);
+	platform::FileStream to(to_path, platform::FileStream::TRUNCATE_READ_WRITE);
+	auto si = from.seek(0, SEEK_END);
+	from.seek(0, SEEK_SET);
+	while (si > 0) {
+		const uint64_t CHUNK = 10 * 1024 * 1024;
+		common::BinaryArray data(static_cast<size_t>(std::min(si, CHUNK)));
 		from.read(data.data(), data.size());
 		to.write(data.data(), data.size());
+		si -= data.size();
 	}
 	return true;
 }

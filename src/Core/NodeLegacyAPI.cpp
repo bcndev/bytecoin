@@ -46,6 +46,8 @@ bool Node::process_json_rpc_request(http::Client *who, http::RequestData &&reque
 			return false;
 	} catch (const api::bytecoind::SendTransaction::Error &err) {
 		json_resp.set_error(err);
+	} catch (const api::bytecoind::GetArchive::Error &err) {
+		json_resp.set_error(err);
 	} catch (const json_rpc::Error &err) {
 		json_resp.set_error(err);
 	} catch (const std::exception &e) {

@@ -24,7 +24,6 @@ Usage:
   bytecoind --version | -v
 
 Options:
-  --allow-local-ip                       Allow local IPs to be added to peer list (mostly for debug purposes).
   --p2p-bind-address=<ip:port>           IP and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>             External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
   --bytecoind-bind-address=<ip:port>     IP and port for bytecoind RPC API [default: 127.0.0.1:8081].
@@ -33,6 +32,7 @@ Options:
   --exclusive-node-address=<ip:port>     Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.
   --export-blocks=<folder-path>          Perform hot export of blockchain into specified folder as blocks.bin and blockindexes.bin, then exit. This overwrites existing files.
   --backup-blockchain=<folder-path>      Perform hot backup of blockchain into specified backup data folder, then exit.
+  --archive                              Work as an archive node [default: off].
   --data-folder=<folder-path>            Folder for blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
     R"(bytecoin].
   --bytecoind-authorization=<usr:pass>   HTTP basic authentication credentials for RPC API.)"
@@ -54,7 +54,7 @@ int main(int argc, const char *argv[]) try {
 	if (const char *pa = cmd.get("--export-blocks"))
 		export_blocks = pa;
 	std::string backup_blockchain;
-	if (const char *pa = cmd.get("--backup-blockchain"))  // TODO - document
+	if (const char *pa = cmd.get("--backup-blockchain"))
 		backup_blockchain = pa;
 	bytecoin::Config config(cmd);
 	bytecoin::Currency currency(config.is_testnet);
@@ -63,9 +63,6 @@ int main(int argc, const char *argv[]) try {
 	if (const char *pa = cmd.get("--print-structure"))
 		print_structure      = std::stoi(pa);
 	const bool print_outputs = cmd.get_bool("--print-outputs");
-	Height test_consensus    = Height(-1);
-	if (const char *pa = cmd.get("--test-consensus"))
-		test_consensus = std::stoi(pa);
 	if (cmd.should_quit(USAGE, bytecoin::app_version()))
 		return 0;
 
@@ -90,7 +87,7 @@ int main(int argc, const char *argv[]) try {
 		std::cout << "Finished blockchain backup." << std::endl;
 		return 0;
 	}
-	if (!export_blocks.empty() || test_consensus != Height(-1) || print_structure != Height(-1) || print_outputs) {
+	if (!export_blocks.empty() || print_structure != Height(-1) || print_outputs) {
 		logging::ConsoleLogger log_console;
 		BlockChainState block_chain_read_only(log_console, config, currency, true);
 
@@ -99,8 +96,6 @@ int main(int argc, const char *argv[]) try {
 				return 1;
 			return 0;
 		}
-		if (test_consensus != Height(-1))
-			block_chain_read_only.test_consensus(test_consensus);
 		if (print_structure != Height(-1))
 			block_chain_read_only.test_print_structure(print_structure);
 		if (print_outputs)

@@ -3,6 +3,7 @@
 
 #include "Multicore.hpp"
 #include "BlockChainState.hpp"
+#include "Currency.hpp"
 #include "TransactionExtra.hpp"
 #include "crypto/crypto.hpp"
 
@@ -103,7 +104,7 @@ std::string RingCheckerMulticore::start_work_get_error(IBlockChainState *state, 
 				}
 				arg.output_keys.resize(global_indexes.size());
 				for (size_t i = 0; i != global_indexes.size(); ++i) {
-					IBlockChainState::UnlockTimePublickKeyHeightMarked unp;
+					IBlockChainState::UnlockTimePublickKeyHeightSpent unp;
 					if (!state->read_amount_output(in.amount, global_indexes[i], &unp))
 						return "INPUT_INVALID_GLOBAL_INDEX";
 					if (!currency.is_transaction_spend_time_unlocked(unp.unlock_time, unlock_height, unlock_timestamp))

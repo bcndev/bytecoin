@@ -4,6 +4,7 @@
 #include "P2PClientNew.hpp"
 #include <iostream>
 #include "Core/Config.hpp"
+#include "platform/Time.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
@@ -119,7 +120,7 @@ void P2PClientNew::send(BinaryArray &&body) {
 	P2PClient::send(std::move(body));
 }
 
-Timestamp P2PClientNew::get_local_time() const { return static_cast<Timestamp>(time(nullptr)); }
+Timestamp P2PClientNew::get_local_time() const { return platform::now_unix_timestamp(); }
 
 np::PeerDesc P2PClientNew::get_peer_desc() const {
 	np::PeerDesc result;

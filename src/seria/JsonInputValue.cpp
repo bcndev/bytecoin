@@ -7,6 +7,7 @@
 #include <cstring>
 #include <stdexcept>
 
+#include "common/Invariant.hpp"
 #include "common/StringTools.hpp"
 
 using common::JsonValue;
@@ -58,8 +59,7 @@ void JsonInputValue::begin_object() {
 }
 
 void JsonInputValue::end_object() {
-	if (chain.empty() || itrs.empty())
-		throw std::logic_error("JsonInputValue unexpected end_object.");
+	invariant(!chain.empty() && !itrs.empty(), "unexpected end_object.");
 	chain.pop_back();
 	itrs.pop_back();
 }
@@ -74,8 +74,7 @@ void JsonInputValue::begin_array(size_t &size, bool fixed_size) {
 }
 
 void JsonInputValue::end_array() {
-	if (chain.empty() || idxs.empty())
-		throw std::logic_error("JsonInputValue unexpected end_array.");
+	invariant(!chain.empty() && !idxs.empty(), "unexpected end_array.");
 	chain.pop_back();
 	idxs.pop_back();
 }

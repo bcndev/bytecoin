@@ -340,7 +340,8 @@ struct CreateTransaction {
 	};
 	enum {
 		NOT_ENOUGH_FUNDS                  = -301,
-		TRANSACTION_DOES_NOT_FIT_IN_BLOCK = -302  // Sender will have to split funds into several transactions
+		TRANSACTION_DOES_NOT_FIT_IN_BLOCK = -302,  // Sender will have to split funds into several transactions
+		NOT_ENOUGH_ANONYMITY              = -303
 	};
 	typedef json_rpc::Error Error;
 };
@@ -369,7 +370,7 @@ struct SendTransaction {
 };
 
 struct CreateSendProof {
-	static std::string method() { return "create_send_proof"; }
+	static std::string method() { return "create_sendproof"; }
 
 	struct Request {
 		Hash transaction_hash;
@@ -379,7 +380,7 @@ struct CreateSendProof {
 	};
 
 	struct Response {
-		std::vector<std::string> send_proofs;
+		std::vector<std::string> sendproofs;
 	};
 };
 
@@ -404,12 +405,13 @@ namespace api {
 namespace bytecoind {
 
 inline std::string url() { return "/json_rpc"; }
+inline std::vector<std::string> legacy_bin_methods() { return {"/sync_mem_pool.bin", "/sync_blocks.bin"}; }
+// When we advance method versions, we add legacy version here to get "upgrade bytecoind" message in walletd"
 
 struct GetStatus {
 	static std::string method() { return "get_node_status"; }  // getNodeStatus works directly or through wallet tunnel
-	static std::string method2() {
-		return "get_status";
-	}  // getStatus gets either status of node (if called on node) or wallet (if called on wallet)
+	static std::string method2() { return "get_status"; }
+	// getStatus gets either status of node (if called on node) or wallet (if called on wallet)
 
 	typedef walletd::GetStatus::Request Request;
 	typedef walletd::GetStatus::Response Response;
@@ -418,7 +420,8 @@ struct GetStatus {
 // Signature of this method will stabilize to the end of beta
 struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoind
 	static std::string method() { return "sync_blocks"; }
-	static std::string bin_method() { return "/sync_blocks_v1.bin"; } // we increment versoin when binary format changes
+	static std::string bin_method() { return "/sync_blocks_v1.bin"; }
+	// we increment method version when binary format changes
 
 	struct Request {
 		static constexpr uint32_t MAX_COUNT = 1000;
@@ -428,9 +431,9 @@ struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoin
 	};
 	struct SyncBlock {  // Signatures are checked by bytecoind so usually they are of no interest
 		api::BlockHeader header;
-		bytecoin::BlockTemplate raw_header;
+		BlockTemplate raw_header;
 		// the only method returning actual BlockHeader from blockchain, not api::BlockHeader
-		std::vector<bytecoin::TransactionPrefix> raw_transactions;
+		std::vector<TransactionPrefix> raw_transactions;
 		// the only method returning actual Transaction from blockchain, not api::Transaction
 		Hash base_transaction_hash;                         // BlockTemplate does not contain it
 		std::vector<std::vector<uint32_t>> global_indices;  // for each transaction
@@ -452,7 +455,7 @@ struct GetRawTransaction {
 		api::Transaction transaction;
 		// only hash, block_height, block_hash, binary_size, fee returned in transaction
 		// empty transaction with no hash returned if not in blockchain/mempool
-		bytecoin::TransactionPrefix raw_transaction;
+		TransactionPrefix raw_transaction;
 	};
 };
 
@@ -460,12 +463,13 @@ struct GetRawTransaction {
 struct SyncMemPool {  // Used by walletd sync process
 	static std::string method() { return "sync_mem_pool"; }
 	static std::string bin_method() { return "/sync_mem_pool_v1.bin"; }
+	// we increment method version when binary format changes
 	struct Request {
 		std::vector<Hash> known_hashes;  // Should be sent sorted
 	};
 	struct Response {
-		std::vector<Hash> removed_hashes;                                 // Hashes no more in pool
-		std::vector<bytecoin::TransactionPrefix> added_raw_transactions;  // New raw transactions in pool
+		std::vector<Hash> removed_hashes;                       // Hashes no more in pool
+		std::vector<TransactionPrefix> added_raw_transactions;  // New raw transactions in pool
 		std::vector<api::Transaction> added_transactions;
 		// binary version of this method returns only hash, timestamp, binary_size, and fee here
 		GetStatus::Response status;  // We save roundtrip during sync by also sending status here
@@ -491,12 +495,20 @@ struct GetRandomOutputs {
 typedef walletd::SendTransaction SendTransaction;
 
 struct CheckSendProof {
-	static std::string method() { return "check_send_proof"; }
+	static std::string method() { return "check_sendproof"; }
 
 	struct Request {
-		std::string send_proof;
+		std::string sendproof;
 	};
 	typedef EmptyStruct Response;  // All errors are reported as json rpc errors
+	enum {
+		FAILED_TO_PARSE            = -201,
+		NOT_IN_MAIN_CHAIN          = -202,
+		WRONG_SIGNATURE            = -203,
+		ADDRESS_NOT_IN_TRANSACTION = -204,
+		WRONG_AMOUNT               = -205
+	};
+	typedef json_rpc::Error Error;
 };
 
 struct GetStatistics {
@@ -509,6 +521,46 @@ struct GetStatistics {
 		uint64_t peer_id     = 0;  // For p2p
 		Timestamp start_time = 0;  // Unix timestamp UTC
 		std::vector<SignedCheckPoint> checkpoints;
+	};
+};
+
+// This method is highly experimental
+struct GetArchive {
+	static std::string method() { return "get_archive"; }
+	struct Request {
+		std::string archive_id;
+		uint64_t from_record                = 0;
+		uint64_t max_count                  = 100;
+		static constexpr uint64_t MAX_COUNT = 10000;
+	};
+	struct ArchiveRecord {
+		Timestamp timestamp     = 0;
+		uint32_t timestamp_usec = 0;
+		std::string type;  // b(lock), t(ransaction), c(heckpoint)
+		Hash hash;
+		std::string source_address;
+	};
+	struct ArchiveBlock {  // Signatures are checked by bytecoind so usually they are of no interest
+		BlockTemplate raw_header;
+		// the only method returning actual BlockHeader from blockchain, not api::BlockHeader
+		std::vector<TransactionPrefix> raw_transactions;
+		// the only method returning actual Transaction from blockchain, not api::Transaction
+		Hash base_transaction_hash;                      // BlockTemplate does not contain it
+		std::vector<uint32_t> transaction_binary_sizes;  // for each transaction
+	};
+	struct Response {
+		std::vector<ArchiveRecord> records;
+		uint64_t from_record = 0;
+
+		std::map<std::string, ArchiveBlock> blocks;
+		std::map<std::string, TransactionPrefix> transactions;
+		std::map<std::string, SignedCheckPoint> checkpoints;
+	};
+	enum {
+		WRONG_ARCHIVE_ID = -501  // If archive id changed, new id is returned in Error
+	};
+	struct Error : public json_rpc::Error {
+		std::string archive_id;
 	};
 };
 
@@ -636,6 +688,11 @@ void ser_members(bytecoin::api::bytecoind::SendTransaction::Response &v, ISeria 
 void ser_members(bytecoin::api::bytecoind::SendTransaction::Error &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::CheckSendProof::Request &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetStatistics::Response &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetArchive::ArchiveRecord &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetArchive::ArchiveBlock &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetArchive::Error &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetArchive::Request &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetArchive::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetBlockTemplate::Request &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetBlockTemplate::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetCurrencyId::Response &v, ISeria &s);

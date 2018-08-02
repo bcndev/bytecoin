@@ -95,7 +95,7 @@ struct proof_of_trust {
 	crypto::Hash get_hash() const;
 };
 
-struct CoreStatistics {  // TODO - convert to json blob
+struct CoreStatistics {
 	uint64_t tx_pool_size       = 0;
 	uint64_t blockchain_height  = 0;
 	uint64_t mining_speed       = 0;
@@ -135,9 +135,7 @@ struct COMMAND_REQUEST_NETWORK_STATE {
 	};
 };
 
-struct COMMAND_REQUEST_PEER_ID  // TODO - remove this message in next hard fork, peer_id is sent on handshake and in
-                                // lots of other messages
-{
+struct COMMAND_REQUEST_PEER_ID {
 	enum { ID = P2P_COMMANDS_POOL_BASE + 6 };
 
 	struct request {};

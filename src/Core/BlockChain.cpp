@@ -4,9 +4,10 @@
 #include "BlockChain.hpp"
 
 #include <boost/lexical_cast.hpp>
-#include <chrono>
 #include <iostream>
+#include "Config.hpp"
 #include "CryptoNoteTools.hpp"
+#include "Currency.hpp"
 #include "DifficultyCheck.hpp"
 #include "TransactionExtra.hpp"
 #include "common/StringTools.hpp"
@@ -23,13 +24,13 @@ const std::string BlockChain::version_current = "5";
 // We increment when making incompatible changes to indices.
 
 // We use suffixes so all keys related to the same block are close to each other in DB
-static const std::string BLOCK_PREFIX           = "b";
-static const std::string BLOCK_SUFFIX           = "b";
-static const std::string HEADER_PREFIX          = "b";
-static const std::string HEADER_SUFFIX          = "h";
-static const std::string TRANSATION_PREFIX      = "t";
-static const std::string TIP_CHAIN_PREFIX       = "c";
-static const std::string TIMESTAMP_BLOCK_PREFIX = "T";
+static const std::string BLOCK_PREFIX             = "b";
+static const std::string BLOCK_SUFFIX             = "b";
+static const std::string HEADER_PREFIX            = "b";
+static const std::string HEADER_SUFFIX            = "h";
+static const std::string TRANSATION_PREFIX        = "t";
+static const std::string TIP_CHAIN_PREFIX         = "c";
+static const std::string TIMESTAMP_BLOCK_PREFIX   = "T";
 static const std::string CHECKPOINT_PREFIX_STABLE = "CS";
 static const std::string CHECKPOINT_PREFIX_LATEST = "CL";
 
@@ -99,24 +100,24 @@ PreparedBlock::PreparedBlock(RawBlock &&rba, crypto::CryptoNightContext *context
 		long_block_hash = bytecoin::get_block_long_hash(block.header, *context);
 }
 
-BlockChain::BlockChain(logging::ILogger &log, const Currency &currency, const std::string &coin_folder, bool read_only)
+BlockChain::BlockChain(logging::ILogger &log, const Config &config, const Currency &currency, bool read_only)
     : m_genesis_bid(currency.genesis_block_hash)
-    , m_coin_folder(coin_folder)
-    , m_db(read_only, coin_folder + "/blockchain")
+    , m_db(read_only, config.get_data_folder() + "/blockchain")
+    , m_archive(read_only || !config.is_archive, config.get_data_folder() + "/archive")
     , m_log(log, "BlockChainState")
+    , m_config(config)
     , m_currency(currency) {
 	invariant(CheckPointDifficulty{}.size() == currency.get_checkpoint_keys_count(), "");
 	std::string version;
 	if (!m_db.get("$version", version)) {
 		DB::Cursor cur = m_db.begin(std::string());
 		if (!cur.end())
-			throw std::runtime_error(
-			    "Blockchain database format unknown version, please delete " + coin_folder + "/blockchain");
+			throw std::runtime_error("Blockchain database format unknown version, please delete " + m_db.get_path());
 		version = version_current;
 		m_db.put("$version", version, false);
 	}
-	if(version != version_current )
-		return; // BlockChainState will upgrade DB, we must not continue or risk crashing
+	if (version != version_current)
+		return;  // BlockChainState will upgrade DB, we must not continue or risk crashing
 	Hash stored_genesis_bid;
 	if (read_chain(0, &stored_genesis_bid)) {
 		if (stored_genesis_bid != m_genesis_bid)
@@ -129,24 +130,28 @@ BlockChain::BlockChain(logging::ILogger &log, const Currency &currency, const st
 }
 
 void BlockChain::db_commit() {
-	std::cout << "BlockChain::db_commit started... tip_height=" << m_tip_height
-	          << " header_cache.size=" << header_cache.size() << std::endl;
+	m_log(logging::INFO) << "BlockChain::db_commit started... tip_height=" << m_tip_height
+	                     << " header_cache.size=" << header_cache.size() << std::endl;
 	m_db.commit_db_txn();
 	header_cache.clear();  // Most simple cache policy ever
-	std::cout << "BlockChain::db_commit finished..." << std::endl;
+	m_archive.db_commit();
+	m_log(logging::INFO) << "BlockChain::db_commit finished..." << std::endl;
 }
 
-BroadcastAction BlockChain::add_block(const PreparedBlock &pb, api::BlockHeader *info) {
+BroadcastAction BlockChain::add_block(
+    const PreparedBlock &pb, api::BlockHeader *info, const std::string &source_address) {
 	*info            = api::BlockHeader();
 	bool have_header = read_header(pb.bid, info);
 	bool have_block  = has_block(pb.bid);
-	if (have_block && have_header)
+	if (have_block && have_header) {
+		if (info->height > m_currency.last_sw_checkpoint().first)
+			m_archive.add(Archive::BLOCK, pb.block_data, pb.bid, source_address);
 		return BroadcastAction::NOTHING;
+	}
 	api::BlockHeader prev_info;
 	prev_info.height = -1;
 	if (pb.bid != m_genesis_bid && !read_header(pb.block.header.previous_block_hash, &prev_info))
 		return BroadcastAction::NOTHING;  // Not interested in orphan headers
-	//	std::cout << "pb.ph=" << common::pod_to_hex(pb.block.header.parent_block.previous_block_hash) << std::endl;
 	info->major_version       = pb.block.header.major_version;
 	info->minor_version       = pb.block.header.minor_version;
 	info->timestamp           = pb.block.header.timestamp;
@@ -161,20 +166,26 @@ BroadcastAction BlockChain::add_block(const PreparedBlock &pb, api::BlockHeader 
 	    common::pod_from_hex(difficulty_check[0].hash, first_difficulty_check_hash), "DifficultyCheck table corrupted");
 	if (info->hash == first_difficulty_check_hash &&
 	    info->cumulative_difficulty != difficulty_check[0].cumulative_difficulty) {
-		std::cout << "Reached first difficulty checkpoint with wrong cumulative_difficulty "
-		          << info->cumulative_difficulty << ", should be " << difficulty_check[0].cumulative_difficulty << ", "
-		          << delete_blockchain_message << m_coin_folder << "/blockchain" << std::endl;
+		m_log(logging::ERROR) << "Reached first difficulty checkpoint with wrong cumulative_difficulty "
+		                      << info->cumulative_difficulty << ", should be "
+		                      << difficulty_check[0].cumulative_difficulty << ", " << delete_blockchain_message
+		                      << m_db.get_path() << std::endl;
 		std::exit(api::BYTECOIND_DATABASE_ERROR);
 	}
 	if (!check_error.empty())
 		return BroadcastAction::BAN;  // TODO - return check_error
-	if (!add_blod(*info))             // Has parent that does not pass through last SW checkpoint
+	if (!add_blod(*info)) {           // Has parent that does not pass through last SW checkpoint
+		if (info->height > m_currency.last_sw_checkpoint().first)
+			m_archive.add(Archive::BLOCK, pb.block_data, pb.bid, source_address);
 		return BroadcastAction::NOTHING;
+	}
 	try {
-		if (!have_block)
+		if (!have_block) {
 			store_block(pb.bid, pb.block_data);  // Do not commit between here and
-		                                         // reorganize_blocks or invariant
-		                                         // might be dead
+			// reorganize_blocks or invariant might be dead
+			if (info->height > m_currency.last_sw_checkpoint().first)
+				m_archive.add(Archive::BLOCK, pb.block_data, pb.bid, source_address);
+		}
 		store_header(pb.bid, *info);
 		if (pb.bid == m_genesis_bid) {
 			invariant(redo_block(pb.bid, pb.block_data, pb.raw_block, pb.block, *info, pb.base_transaction_hash),
@@ -200,8 +211,8 @@ BroadcastAction BlockChain::add_block(const PreparedBlock &pb, api::BlockHeader 
 		}
 		build_blods();  // In case we just passed the last checkpoint, otherwise it is nop
 	} catch (const std::exception &ex) {
-		std::cout << "Exception while reorganizing blockchain, probably out of disk space ex.what=" << ex.what() << ", "
-		          << delete_blockchain_message << m_db.get_path() << std::endl;
+		m_log(logging::ERROR) << "Exception while reorganizing blockchain, probably out of disk space ex.what="
+		                      << ex.what() << ", " << delete_blockchain_message << m_db.get_path() << std::endl;
 		std::exit(api::BYTECOIND_DATABASE_ERROR);
 	}
 	if (get_tip_height() % COMMIT_EVERY_N_BLOCKS == COMMIT_EVERY_N_BLOCKS - 1)  // no commit on genesis
@@ -562,7 +573,8 @@ void BlockChain::store_header(const Hash &bid, const api::BlockHeader &header) {
 }
 
 bool BlockChain::read_header(const Hash &bid, api::BlockHeader *header, Height hint) const {
-	if (hint <= get_tip_height() && hint >= get_tip_height() - m_header_tip_window.size() + 1) {
+	if (get_tip_height() != Height(-1) && hint <= get_tip_height() &&
+	    hint >= get_tip_height() - m_header_tip_window.size() + 1) {
 		const auto &candidate = m_header_tip_window.at(m_header_tip_window.size() - 1 - (get_tip_height() - hint));
 		if (candidate.hash == bid) {
 			*header = candidate;  // fastest lookup is in tip window
@@ -575,7 +587,7 @@ bool BlockChain::read_header(const Hash &bid, api::BlockHeader *header, Height h
 		return true;
 	}
 	if (header_cache.size() > m_currency.largest_window() * 10) {
-		std::cout << "BlockChain header cache reached max size and cleared" << std::endl;
+		m_log(logging::INFO) << "BlockChain header cache reached max size and cleared" << std::endl;
 		header_cache.clear();  // very simple policy
 	}
 	BinaryArray rb;
@@ -838,190 +850,12 @@ void BlockChain::test_print_structure(Height n_confirmations) const {
 	          << total_possible_ds_transactions << " total amount=" << total_possible_ds_amount << std::endl;
 }
 
-bool BlockChain::fix_consensus(Hash bid, const api::BlockHeader &was_info) {
-	RawBlock rb;
-	Block block;
-	invariant(
-	    read_block(bid, &rb), "Block for fix consensus not found - please delete " + m_coin_folder + "/blockchain");
-	PreparedBlock pb(std::move(rb), nullptr);
-
-	api::BlockHeader info;
-	api::BlockHeader prev_info;
-	prev_info.height = -1;
-	if (pb.bid != m_genesis_bid)
-		prev_info            = read_header(pb.block.header.previous_block_hash);
-	info.major_version       = pb.block.header.major_version;
-	info.minor_version       = pb.block.header.minor_version;
-	info.timestamp           = pb.block.header.timestamp;
-	info.previous_block_hash = pb.block.header.previous_block_hash;
-	info.nonce               = pb.block.header.nonce;
-	info.hash                = pb.bid;
-	info.height              = prev_info.height + 1;
-
-	std::string check_error = check_standalone_consensus(pb, &info, prev_info, true);
-	if (!check_error.empty())
-		throw std::runtime_error("Failed to fix consensus differences for block " + common::pod_to_hex(bid) +
-		                         ", because " + check_error + ", " + delete_blockchain_message + m_coin_folder +
-		                         "/blockchain");
-	if (info.cumulative_difficulty != was_info.cumulative_difficulty) {
-		//		std::cout << "Cumulative difficulty difference for height=" << start_height << " mustbe="
-		//				  << info.cumulative_difficulty << " was=" << was_info.cumulative_difficulty << std::endl;
-		auto key       = HEADER_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + HEADER_SUFFIX;
-		BinaryArray ba = seria::to_binary(info);
-		m_db.put(key, ba, false);
-		header_cache.erase(bid);
-		return true;
-	}
-	return false;
-}
-
-void BlockChain::test_consensus(Height start_height) {
-	int fixed_counter = 0;
-	while (true) {
-		Hash bid;
-		if (!read_chain(start_height, &bid))
-			break;  // Reached main trunk
-		api::BlockHeader was_info = read_header(bid);
-		if (start_height % 100 == 0)
-			std::cout << "Testing consensus difference. Will take several minutes. height=" << start_height
-			          << " fixed so far " << fixed_counter << std::endl;
-		if (fix_consensus(bid, was_info))
-			fixed_counter += 1;
-		start_height += 1;
-	}
-	if (fixed_counter != 0)
-		throw std::runtime_error(
-		    "test_consensus fixed_counter=" + common::to_string(fixed_counter) + " will not commit changes.");
-	std::cout << "Testing consesus complete, no differences" << std::endl;
-}
-
-void BlockChain::fix_difficulty_consensus() {
-	//	const size_t max_ch = sizeof(difficulty_check)/sizeof(*difficulty_check);
-	int fixed_counter = 0;
-	std::set<Hash> fixed_headers;
-	for (size_t ch = 0; ch != difficulty_check_count; ++ch) {
-		Hash bid;
-		invariant(common::pod_from_hex(difficulty_check[ch].hash, bid), "DifficultyCheck table corrupted");
-		api::BlockHeader was_info;
-		if (!read_header(bid, &was_info))
-			break;
-		if (ch % 1000 == 0)
-			std::cout << "Checking consensus difference. Will take several minutes. Remained blocks "
-			          << difficulty_check_count - ch << " fixed so far " << fixed_counter << std::endl;
-		fixed_headers.insert(bid);
-		if (was_info.cumulative_difficulty != difficulty_check[ch].cumulative_difficulty) {
-			if (ch == 0)  // We are not sure previous block has right difficulty, aborting
-				throw std::runtime_error("Failed to fix zero consensus differences, " + delete_blockchain_message +
-				                         m_coin_folder + "/blockchain");
-			if (fixed_counter % 100 == 0)
-				std::cout << "Fixing consensus difference for height " << difficulty_check[ch].height
-				          << ". Will take several minutes. remained blocks " << difficulty_check_count - ch
-				          << " fixed so far " << fixed_counter << std::endl;
-			fixed_counter += 1;
-			fix_consensus(bid, was_info);
-			api::BlockHeader now_info = read_header(bid);
-			if (now_info.cumulative_difficulty != difficulty_check[ch].cumulative_difficulty) {
-				throw std::runtime_error("Failed to fix consensus differences, " + delete_blockchain_message +
-				                         m_coin_folder + "/blockchain");
-			}
-		}
-	}
-	std::cout << "Checked " << difficulty_check_count << " headers for consensus differences, fixed " << fixed_counter
-	          << std::endl;
-	//	start_height = difficulty_check[0].height;
-	//	std::cout << "Found header with consensus differences at height"<< start_height << ", fixing (can take several
-	// minutes)..." << std::endl;
-	int progress_counter = 0;
-	for_each_tip([&](CumulativeDifficulty cd, Hash tip_bid) -> bool {
-		std::vector<Hash> side_chain;
-		for (Hash bid = tip_bid;;) {
-			api::BlockHeader header = read_header(bid);
-			if (fixed_headers.count(bid) != 0 || header.height < difficulty_check[0].height)
-				break;  // Do not fix beyond table start, or beyond fixed header
-			side_chain.push_back(bid);
-			bid = header.previous_block_hash;
-		}
-		std::cout << "tip cd=" << cd << " len=" << side_chain.size() << " bid=" << tip_bid << std::endl;
-		for (; !side_chain.empty(); side_chain.pop_back()) {
-			Hash bid                  = side_chain.back();
-			api::BlockHeader was_info = read_header(bid);
-			if (progress_counter % 100 == 0)
-				std::cout << "Fixing consensus difference. Will take several minutes. Remained blocks "
-				          << side_chain.size() << " fixed so far " << fixed_counter << std::endl;
-			progress_counter += 1;
-			if (fix_consensus(bid, was_info))
-				fixed_counter += 1;
-			fixed_headers.insert(bid);
-		}
-		return true;
-	});
-	api::BlockHeader tip_block  = read_header(m_tip_bid);
-	m_tip_cumulative_difficulty = tip_block.cumulative_difficulty;
-	tip_changed();
-	std::cout << "Checked consensus, made " << fixed_counter << " fixes" << std::endl;
-	//	throw std::runtime_error("Preventing DB commit");
-}
-
-void BlockChain::check_consensus_fast(Hash bid) {
-	RawBlock rb;
-	Block block;
-	invariant(
-	    read_block(bid, &rb), "Block for fix consensus not found - please delete " + m_coin_folder + "/blockchain");
-	PreparedBlock pb(std::move(rb), nullptr);
-
-	api::BlockHeader info;
-	api::BlockHeader prev_info;
-	prev_info.height = -1;
-	if (pb.bid != m_genesis_bid)
-		prev_info            = read_header(pb.block.header.previous_block_hash);
-	info.major_version       = pb.block.header.major_version;
-	info.minor_version       = pb.block.header.minor_version;
-	info.timestamp           = pb.block.header.timestamp;
-	info.previous_block_hash = pb.block.header.previous_block_hash;
-	info.nonce               = pb.block.header.nonce;
-	info.hash                = pb.bid;
-	info.height              = prev_info.height + 1;
-
-	std::string check_error = check_standalone_consensus(pb, &info, prev_info, false);
-	if (!check_error.empty())
-		throw std::runtime_error("Failed to fix consensus differences for block " + common::pod_to_hex(bid) +
-		                         ", because " + check_error + ", " + delete_blockchain_message + m_coin_folder +
-		                         "/blockchain");
-}
-
-void BlockChain::check_consensus_fast() {
-	Height CHECK_DEPTH = 20000;
-	std::set<Hash> fixed_headers;
-	int progress_counter = 0;
-	for_each_tip([&](CumulativeDifficulty cd, Hash tip_bid) -> bool {
-		std::vector<Hash> side_chain;
-		for (Hash bid = tip_bid;;) {
-			api::BlockHeader header = read_header(bid);
-			if (fixed_headers.count(bid) != 0 || bid == m_genesis_bid || header.height + CHECK_DEPTH < get_tip_height())
-				break;  // Do not fix beyond genesis, or beyond fixed header
-			side_chain.push_back(bid);
-			bid = header.previous_block_hash;
-		}
-		std::cout << "tip cd=" << cd << " len=" << side_chain.size() << " bid=" << tip_bid << std::endl;
-		for (; !side_chain.empty(); side_chain.pop_back()) {
-			Hash bid = side_chain.back();
-			if (progress_counter % 1000 == 0)
-				std::cout << "Quickly checking database indexes. Will take minute or two. Remained blocks "
-				          << side_chain.size() << std::endl;  // Checking orphan tree tips
-			progress_counter += 1;
-			check_consensus_fast(bid);
-			fixed_headers.insert(bid);
-		}
-		return true;
-	});
-}
-
 void BlockChain::start_internal_import() {
 	m_log(logging::INFO) << "Blockchain database has old format, preparing for internal block import..." << std::endl;
 	if (m_internal_import_chain.empty()) {
 		const std::vector<std::string> former_prefixes{
 		    TIP_CHAIN_PREFIX + "B/", TIP_CHAIN_PREFIX + "1/", TIP_CHAIN_PREFIX + "/", TIP_CHAIN_PREFIX};
-		for (auto prefix : former_prefixes) {
+		for (auto && prefix : former_prefixes) {
 			std::vector<Hash> main_chain;
 			for (Height ha = 0;; ha += 1) {
 				BinaryArray ba;
@@ -1042,8 +876,8 @@ void BlockChain::start_internal_import() {
 	size_t total_items = m_db.get_approximate_items_count();
 	for (DB::Cursor cur = m_db.rbegin(std::string()); !cur.end();) {
 		if ((erased + skipped) % 1000000 == 0)
-			std::cout << "Processing " << (erased + skipped) / 1000000 << "/" << (total_items + 999999) / 1000000
-			          << " million DB records" << std::endl;
+			m_log(logging::INFO) << "Processing " << (erased + skipped) / 1000000 << "/"
+			                     << (total_items + 999999) / 1000000 << " million DB records" << std::endl;
 		if (cur.get_suffix().find(BLOCK_PREFIX) == 0 &&
 		    cur.get_suffix().substr(cur.get_suffix().size() - BLOCK_SUFFIX.size()) == BLOCK_SUFFIX) {
 			Hash bid;
@@ -1058,7 +892,7 @@ void BlockChain::start_internal_import() {
 		erased += 1;
 	}
 	m_db.put("internal_import_chain", seria::to_binary(m_internal_import_chain), true);  // we've just erased it :)
-	std::cout << "Deleted " << erased << " records, skipped " << skipped << " records" << std::endl;
+	m_log(logging::INFO) << "Deleted " << erased << " records, skipped " << skipped << " records" << std::endl;
 }
 
 bool BlockChain::internal_import() {
@@ -1075,7 +909,7 @@ bool BlockChain::internal_import() {
 		}
 		PreparedBlock pb(std::move(rb), nullptr);
 		api::BlockHeader info;
-		if (add_block(pb, &info) != BroadcastAction::BROADCAST_ALL) {
+		if (add_block(pb, &info, std::string()) != BroadcastAction::BROADCAST_ALL) {
 			m_log(logging::WARNING) << "Block corrupted  during internal import for height=" << get_tip_height() + 1
 			                        << " bid=" << bid << std::endl;
 			break;
@@ -1087,7 +921,7 @@ bool BlockChain::internal_import() {
 		if (idea_ms.count() > 200)
 			return true;  // import in chunks of 0.2 seconds
 	}
-	std::cout << "Finished internal importing of blocks, will continue downloading..." << std::endl;
+	m_log(logging::INFO) << "Finished internal importing of blocks, will continue downloading..." << std::endl;
 	m_internal_import_chain.clear();
 	m_db.del("internal_import_chain", true);
 	db_commit();
@@ -1149,29 +983,42 @@ std::vector<SignedCheckPoint> BlockChain::get_stable_checkpoints() const {
 	return result;
 }
 
-bool BlockChain::add_checkpoint(const SignedCheckPoint &checkpoint) {
-	if (checkpoint.height <= m_currency.last_sw_checkpoint().first)
-		return false;
+bool BlockChain::add_checkpoint(const SignedCheckPoint &checkpoint, const std::string &source_address) {
+	if (checkpoint.height <= m_currency.last_sw_checkpoint().first &&
+	    checkpoint.counter != std::numeric_limits<uint64_t>::max())
+		return false;  // Height is ignored when disabling key_id
 	PublicKey public_key =
 	    m_currency.get_checkpoint_public_key(checkpoint.key_id);  // returns empty key if out of range
-	auto key_latest = CHECKPOINT_PREFIX_LATEST + common::write_varint_sqlite4(checkpoint.key_id);
-	auto key_stable = CHECKPOINT_PREFIX_STABLE + common::write_varint_sqlite4(checkpoint.key_id);
+	auto key_latest               = CHECKPOINT_PREFIX_LATEST + common::write_varint_sqlite4(checkpoint.key_id);
+	auto key_stable               = CHECKPOINT_PREFIX_STABLE + common::write_varint_sqlite4(checkpoint.key_id);
+	BinaryArray binary_checkpoint = seria::to_binary(checkpoint);
 	BinaryArray ba;
 	if (m_db.get(key_latest, ba)) {
 		SignedCheckPoint previous_checkpoint;
 		seria::from_binary(previous_checkpoint, ba);
-		if (checkpoint.counter <= previous_checkpoint.counter)
+		if (checkpoint.counter < previous_checkpoint.counter)
 			return false;
+		if (checkpoint.counter == previous_checkpoint.counter) {
+			if (checkpoint.hash == previous_checkpoint.hash && checkpoint.height == previous_checkpoint.height &&
+			    checkpoint.key_id == previous_checkpoint.key_id &&
+			    checkpoint.signature == previous_checkpoint.signature) {
+				m_archive.add(Archive::CHECKPOINT, binary_checkpoint,
+				    crypto::cn_fast_hash(binary_checkpoint.data(), binary_checkpoint.size()), source_address);
+			}
+			return false;
+		}
 	}
 	if (!crypto::check_signature(checkpoint.get_message_hash(), public_key, checkpoint.signature))
 		return false;
-	m_db.put(key_latest, seria::to_binary(checkpoint), false);
-	if(checkpoint.counter != std::numeric_limits<uint64_t>::max()){
+	m_db.put(key_latest, binary_checkpoint, false);
+	m_archive.add(Archive::CHECKPOINT, binary_checkpoint,
+	    crypto::cn_fast_hash(binary_checkpoint.data(), binary_checkpoint.size()), source_address);
+	if (checkpoint.counter != std::numeric_limits<uint64_t>::max()) {  // Disabling key_id
 		auto bit = blods.find(checkpoint.hash);
 		if (bit == blods.end())
 			return true;  // orphan checkpoint
 	}
-	m_db.put(key_stable, seria::to_binary(checkpoint), false);
+	m_db.put(key_stable, binary_checkpoint, false);
 	update_key_count_max_heights();
 	auto tip_check_cd = get_checkpoint_difficulty(get_tip_bid());
 	for_each_tip([&](CumulativeDifficulty cd, Hash bid) -> bool {
@@ -1204,7 +1051,7 @@ int BlockChain::compare(
 }
 
 bool BlockChain::add_blod(const api::BlockHeader &header) {
-	if (header.height <= m_currency.last_sw_checkpoint().first)
+	if (blods.empty()) // Allow any blocks if main does not pass through last sw checkpoint yet
 		return true;
 	auto bit = blods.find(header.hash);
 	if (bit != blods.end())
@@ -1219,14 +1066,14 @@ bool BlockChain::add_blod(const api::BlockHeader &header) {
 	bit->second.children.push_back(&blod);
 	blod.checkpoint_difficulty = blod.parent->checkpoint_difficulty;
 	// We inherit from parent and rebuild only if we pass through one of checlpoints
-	for (auto && ch : get_latest_checkpoints())
+	for (auto &&ch : get_latest_checkpoints())
 		if (ch.counter != std::numeric_limits<uint64_t>::max()) {  // disabled are made stable in add_checkpoint
-			if(header.hash == ch.hash){
+			if (header.hash == ch.hash) {
 				auto key_stable = CHECKPOINT_PREFIX_STABLE + common::write_varint_sqlite4(ch.key_id);
 				m_db.put(key_stable, seria::to_binary(ch), false);
 			}
 		}
-	for (auto && ch : get_stable_checkpoints())
+	for (auto &&ch : get_stable_checkpoints())
 		if (ch.counter != std::numeric_limits<uint64_t>::max()) {  // skip disabled keys
 			if (header.hash == ch.hash) {
 				update_key_count_max_heights();
@@ -1296,7 +1143,7 @@ void BlockChain::build_blods() {
 
 void BlockChain::update_key_count_max_heights() {
 	// We use simplest O(n) algo, will optimize later and use this one as a reference
-	for (auto bit : blods) {
+	for (auto &&bit : blods) {
 		bit.second.checkpoint_key_ids.reset();
 		bit.second.checkpoint_difficulty = CheckPointDifficulty{};
 	}

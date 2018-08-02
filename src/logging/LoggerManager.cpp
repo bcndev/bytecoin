@@ -26,11 +26,11 @@ void LoggerManager::configure_default(const std::string &log_folder, const std::
 		LoggerGroup::loggers.clear();
 
 		std::unique_ptr<logging::CommonLogger> logger(
-		    new FileLogger(log_folder + "/" + log_prefix + "verbose", 1024 * 1024, TRACE));
+		    new FileLogger(log_folder + "/" + log_prefix + "verbose", 10 * 1024 * 1024, TRACE));
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());
 
-		logger.reset(new FileLogger(log_folder + "/" + log_prefix + "errors", 1024 * 1024, ERROR));
+		logger.reset(new FileLogger(log_folder + "/" + log_prefix + "errors", 10 * 1024 * 1024, ERROR));
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());
 

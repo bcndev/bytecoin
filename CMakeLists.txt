@@ -39,12 +39,14 @@ if(USE_SQLITE)
     # Requires dl on Linux, we add it unconditionally for simplicity.
     message(STATUS "Database selected: SQLite 3. Make sure it is put into ../sqlite/")
     include_directories(../sqlite)
-    set(SRC_DB ../sqlite/sqlite3.c src/platform/DBsqlite3.cpp src/platform/DBsqlite3.hpp)
+    set(SRC_WARNINGS_DB ../sqlite/sqlite3.c)
+    set(SRC_DB src/platform/DBsqlite3.cpp src/platform/DBsqlite3.hpp)
     add_definitions(-Dplatform_USE_SQLITE=1)
 else()
     message(STATUS "Database selected: LMDB. Make sure it is put into ../lmdb/")
     include_directories(../lmdb/libraries/liblmdb)
-    set(SRC_DB ../lmdb/libraries/liblmdb/mdb.c ../lmdb/libraries/liblmdb/midl.c src/platform/DBlmdb.cpp src/platform/DBlmdb.hpp)
+    set(SRC_WARNINGS_DB ../lmdb/libraries/liblmdb/mdb.c ../lmdb/libraries/liblmdb/midl.c)
+    set(SRC_DB src/platform/DBlmdb.cpp src/platform/DBlmdb.hpp)
 endif()
 if(USE_SSL)
     message(STATUS "SSL usage: ON. Make sure openssl headers are in " ${OPENSSL_ROOT} "/include and static libs are in " ${OPENSSL_ROOT} "/")
@@ -86,6 +88,7 @@ file(GLOB SRC_HTTP src/http/*.cpp src/http/*.hpp)
 file(GLOB SRC_PLATFORM
     src/platform/ExclusiveLock.cpp src/platform/ExclusiveLock.hpp
     src/platform/Files.cpp src/platform/Files.hpp
+    src/platform/Time.cpp src/platform/Time.hpp
     src/platform/Network.cpp src/platform/Network.hpp
     src/platform/PathTools.cpp src/platform/PathTools.hpp
     src/platform/PreventSleep.cpp src/platform/PreventSleep.hpp
@@ -93,13 +96,15 @@ file(GLOB SRC_PLATFORM
 )
 if(WIN32)
     set_property(SOURCE ${SRC_CRYPTO} PROPERTY COMPILE_FLAGS -Ot)
-    set_property(SOURCE ${SRC_DB} PROPERTY COMPILE_FLAGS "-Ot -w")
+    set_property(SOURCE ${SRC_DB} PROPERTY COMPILE_FLAGS -Ot)
+    set_property(SOURCE ${SRC_WARNINGS_DB} PROPERTY COMPILE_FLAGS "-Ot -w")
     set_property(SOURCE ${SRC_COMMON} PROPERTY COMPILE_FLAGS -Ot)
     set_property(SOURCE ${SRC_SERIALIZATION} PROPERTY COMPILE_FLAGS -Ot)
     set_property(SOURCE ${SRC_SERIA} PROPERTY COMPILE_FLAGS -Ot)
 else()
     set_property(SOURCE ${SRC_CRYPTO} PROPERTY COMPILE_FLAGS -O3)
-    set_property(SOURCE ${SRC_DB} PROPERTY COMPILE_FLAGS "-O3 -w")
+    set_property(SOURCE ${SRC_DB} PROPERTY COMPILE_FLAGS -O3)
+    set_property(SOURCE ${SRC_WARNINGS_DB} PROPERTY COMPILE_FLAGS "-O3 -w")
     set_property(SOURCE ${SRC_COMMON} PROPERTY COMPILE_FLAGS -O3)
     set_property(SOURCE ${SRC_SERIALIZATION} PROPERTY COMPILE_FLAGS -O3)
     set_property(SOURCE ${SRC_SERIA} PROPERTY COMPILE_FLAGS -O3)
@@ -107,6 +112,7 @@ endif()
 include_directories(src)
 set(SOURCE_FILES
     ${SRC_DB}
+    ${SRC_WARNINGS_DB}
     ${SRC_COMMON}
     ${SRC_HTTP}
     ${SRC_CORE}

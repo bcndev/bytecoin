@@ -52,11 +52,13 @@ public:
 	    api::bytecoind::GetStatus::Request &&, api::bytecoind::GetStatus::Response &);
 	bool on_get_statistics(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::GetStatistics::Request &&, api::bytecoind::GetStatistics::Response &);
+	bool on_get_archive(http::Client *, http::RequestData &&, json_rpc::Request &&,
+	    api::bytecoind::GetArchive::Request &&, api::bytecoind::GetArchive::Response &);
 	bool on_get_random_outputs3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::GetRandomOutputs::Request &&, api::bytecoind::GetRandomOutputs::Response &);
 	bool handle_send_transaction3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::SendTransaction::Request &&, api::bytecoind::SendTransaction::Response &);
-	bool handle_check_send_proof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
+	bool handle_check_sendproof3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::CheckSendProof::Request &&, api::bytecoind::CheckSendProof::Response &);
 	bool on_getblocktemplate(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::GetBlockTemplate::Request &&r, api::bytecoind::GetBlockTemplate::Response &);
@@ -163,7 +165,8 @@ protected:
 		struct DownloadCell {
 			Hash bid;
 			Height expected_height = 0;
-			NetworkAddress bid_source;  // for banning culprit in case of a problem
+			NetworkAddress bid_source;    // for banning culprit in case of a problem
+			NetworkAddress block_source;  // for banning culprit in case of a problem
 			P2PClientBytecoin *downloading_client = nullptr;
 			std::chrono::steady_clock::time_point request_time;
 			RawBlock rb;

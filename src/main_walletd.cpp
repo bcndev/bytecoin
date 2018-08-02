@@ -2,11 +2,12 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include <boost/algorithm/string.hpp>
-#include <common/Base64.hpp>
 #include <future>
+#include <random>
 #include "Core/Config.hpp"
 #include "Core/Node.hpp"
 #include "Core/WalletNode.hpp"
+#include "common/Base64.hpp"
 #include "common/CommandLine.hpp"
 #include "common/ConsoleTools.hpp"
 #include "logging/LoggerManager.hpp"
@@ -41,7 +42,6 @@ Options:
   --backup-wallet-data=<folder-path>    Perform hot backup of wallet file, history, payment queue and wallet cache into specified backup data folder, then exit.
 
 Options for built-in bytecoind (run when no --bytecoind-remote-address specified):
-  --allow-local-ip                      Allow local IPs to be added to peer list (mostly for debug purposes).
   --p2p-bind-address=<ip:port>          IP and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>            External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
   --bytecoind-bind-address=<ip:port>    IP and port for bytecoind RPC [default: 127.0.0.1:8081].
@@ -53,17 +53,6 @@ static const bool separate_thread_for_bytecoind = true;
 
 int main(int argc, const char *argv[]) try {
 	common::console::UnicodeConsoleSetup console_setup;
-	/*	std::string test;
-	    std::cout << "Enter test visible: " << std::flush;
-	    if (!console_setup.getline(test)) {
-	        return 0;
-	    }
-	    std::cout << "You entered {" << test << "} Enter test invisible: " << std::flush;
-	    if (!console_setup.getline(test, true)) {
-	        return 0;
-	    }
-	    std::cout << "You entered {" << test << "}" << std::flush;
-	    return 1;*/
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	common::CommandLine cmd(argc, argv);
 	std::string wallet_file, password, new_password, export_view_only, import_keys_value, backup_wallet;
@@ -161,8 +150,8 @@ int main(int argc, const char *argv[]) try {
 	logManagerWalletNode.configure_default(config.get_data_folder("logs"), "walletd-");
 	std::unique_ptr<Wallet> wallet;
 	try {
-		wallet = std::make_unique<Wallet>(
-		    wallet_file, create_wallet ? new_password : password, create_wallet, import_keys_value);
+		wallet = std::make_unique<Wallet>(logManagerWalletNode, wallet_file, create_wallet ? new_password : password,
+		    create_wallet, import_keys_value);
 	} catch (const common::StreamError &ex) {
 		std::cout << ex.what() << std::endl;
 		return api::WALLET_FILE_READ_ERROR;

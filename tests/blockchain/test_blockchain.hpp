@@ -7,4 +7,3 @@
 #include "common/CommandLine.hpp"
 
 void test_blockchain(common::CommandLine &cmd);
-void test_blockchain2(common::CommandLine &cmd);

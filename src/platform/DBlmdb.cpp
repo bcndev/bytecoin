@@ -13,7 +13,7 @@ using namespace platform;
 #pragma comment(lib, "ntdll.lib")  // dependency of lmdb, here to avoid linker arguments
 #endif
 
-void lmdb::Error::do_throw(const std::string &msg, int rc){
+void lmdb::Error::do_throw(const std::string &msg, int rc) {
 	throw platform::lmdb::Error(msg + common::to_string(rc) + " " + std::string(::mdb_strerror(rc)));
 }
 

@@ -4,6 +4,7 @@
 #include "JsonOutputStream.hpp"
 #include <cassert>
 #include <stdexcept>
+#include "common/Invariant.hpp"
 #include "common/StringTools.hpp"
 
 using common::JsonValue;
@@ -69,4 +70,26 @@ void JsonOutputStream::binary(void *value, size_t size) {
 	std::string hex = common::to_hex(value, size);
 	bool all_zeroes = hex.find_first_not_of('0') == std::string::npos;
 	insert_or_push(all_zeroes ? std::string() : hex, all_zeroes);
+}
+
+common::JsonValue *JsonOutputStream::insert_or_push(const common::JsonValue &value, bool skip_if_optional) {
+	if (chain.empty()) {
+		invariant(expecting_root, "unexpected root");
+		root           = common::JsonValue(value);
+		expecting_root = false;
+		return &root;
+	}
+	auto js = chain.back();
+	if (js->is_array()) {
+		return &js->push_back(value);
+	}
+	if (js->is_object()) {
+		common::StringView key = next_key;
+		next_key               = common::StringView("");
+		if (skip_if_optional && next_optional)
+			return nullptr;
+		return &js->insert((std::string)key, value);
+	}
+	invariant(false, "can only insert into object array or root");
+	return nullptr;  // invariant Will always throw, but compiler does not know it
 }

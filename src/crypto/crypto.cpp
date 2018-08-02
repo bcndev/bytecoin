@@ -459,7 +459,7 @@ struct sp_comm {
 #pragma pack(pop)
 static_assert(sizeof(sp_comm) == 192, "Layout of sp_comm structure is wrong");
 
-bool generate_send_proof(const PublicKey &txkey_pub, const SecretKey &txkey_sec, const PublicKey &receiver_view_key_pub,
+bool generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_sec, const PublicKey &receiver_view_key_pub,
     const KeyDerivation &derivation, const Hash &message_hash, Signature &proof) {
 	ge_p1p1 tmp1;
 	ge_p2 tmp2;
@@ -485,7 +485,7 @@ bool generate_send_proof(const PublicKey &txkey_pub, const SecretKey &txkey_sec,
 	return true;
 }
 
-bool check_send_proof(const PublicKey &txkey_pub, const PublicKey &receiver_view_key_pub,
+bool check_sendproof(const PublicKey &txkey_pub, const PublicKey &receiver_view_key_pub,
     const KeyDerivation &derivation, const Hash &message_hash, const Signature &proof) {
 	ge_p1p1 tmp1;
 	ge_p2 tmp2;

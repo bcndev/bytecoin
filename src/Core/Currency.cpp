@@ -6,7 +6,6 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/lexical_cast.hpp>
 #include <cctype>
-#include <crypto/crypto.hpp>
 #include "CryptoNoteConfig.hpp"
 #include "CryptoNoteTools.hpp"
 #include "Difficulty.hpp"
@@ -15,8 +14,10 @@
 #include "common/StringTools.hpp"
 #include "common/Varint.hpp"
 #include "common/string.hpp"
+#include "crypto/crypto.hpp"
 #include "crypto/int-util.h"
 #include "platform/PathTools.hpp"
+#include "platform/Time.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
@@ -65,8 +66,10 @@ Currency::Currency(bool is_testnet)
     , number_of_decimal_places(parameters::CRYPTONOTE_DISPLAY_DECIMAL_POINT)
     , minimum_fee(parameters::MINIMUM_FEE)
     , default_dust_threshold(parameters::DEFAULT_DUST_THRESHOLD)
-    , difficulty_target(is_testnet ? 10 : parameters::DIFFICULTY_TARGET)
-    , minimum_difficulty_from_v2(parameters::MINIMUM_DIFFICULTY_FROM_V2)
+    , difficulty_target(std::max<Timestamp>(1,
+          parameters::DIFFICULTY_TARGET /
+              platform::get_time_multiplier_for_tests()))  // multiplier can be != 1 only in testnet
+    , minimum_difficulty_from_v2(is_testnet ? 2 : parameters::MINIMUM_DIFFICULTY_FROM_V2)
     , difficulty_window(parameters::DIFFICULTY_WINDOW(difficulty_target))
     , difficulty_lag(parameters::DIFFICULTY_LAG)
     , difficulty_cut(parameters::DIFFICULTY_CUT)
@@ -150,8 +153,8 @@ PublicKey Currency::get_checkpoint_public_key(uint32_t key_id) const {
 	return key;
 }
 
-size_t Currency::get_checkpoint_keys_count() const {
-	if(is_testnet)
+uint32_t Currency::get_checkpoint_keys_count() const {
+	if (is_testnet)
 		return sizeof(CHECKPOINT_PUBLIC_KEYS_TESTNET) / sizeof(*CHECKPOINT_PUBLIC_KEYS_TESTNET);
 	return sizeof(CHECKPOINT_PUBLIC_KEYS) / sizeof(*CHECKPOINT_PUBLIC_KEYS);
 }
@@ -436,22 +439,22 @@ bool Currency::parse_amount(size_t number_of_decimal_places, const std::string &
 }
 
 Difficulty Currency::next_difficulty(
-    std::vector<Timestamp> timestamps, std::vector<CumulativeDifficulty> cumulative_difficulties) const {
+    std::vector<Timestamp> *timestamps, std::vector<CumulativeDifficulty> *cumulative_difficulties) const {
 	assert(difficulty_window >= 2);
 
-	if (timestamps.size() > difficulty_window) {
-		timestamps.resize(difficulty_window);
-		cumulative_difficulties.resize(difficulty_window);
+	if (timestamps->size() > difficulty_window) {
+		timestamps->resize(difficulty_window);
+		cumulative_difficulties->resize(difficulty_window);
 	}
 
-	size_t length = timestamps.size();
-	assert(length == cumulative_difficulties.size());
+	size_t length = timestamps->size();
+	assert(length == cumulative_difficulties->size());
 	assert(length <= difficulty_window);
 	if (length <= 1) {
 		return 1;
 	}
 
-	sort(timestamps.begin(), timestamps.end());
+	sort(timestamps->begin(), timestamps->end());
 
 	size_t cut_begin, cut_end;
 	assert(2 * difficulty_cut <= difficulty_window - 2);
@@ -462,14 +465,16 @@ Difficulty Currency::next_difficulty(
 		cut_begin = (length - (difficulty_window - 2 * difficulty_cut) + 1) / 2;
 		cut_end   = cut_begin + (difficulty_window - 2 * difficulty_cut);
 	}
-	assert(cut_begin + 2 <= cut_end && cut_end <= length);
-	Timestamp time_span = timestamps[cut_end - 1] - timestamps[cut_begin];
+	assert(cut_begin + 2 <= cut_end && cut_end <= length);  // TODO - why + 2?
+	Timestamp time_span = timestamps->at(cut_end - 1) - timestamps->at(cut_begin);
 	if (time_span == 0) {
 		time_span = 1;
 	}
 
-	invariant(cumulative_difficulties[cut_end - 1] > cumulative_difficulties[cut_begin], "Reversed difficulties");
-	CumulativeDifficulty total_work = cumulative_difficulties[cut_end - 1] -= cumulative_difficulties[cut_begin];
+	invariant(
+	    cumulative_difficulties->at(cut_end - 1) > cumulative_difficulties->at(cut_begin), "Reversed difficulties");
+	CumulativeDifficulty total_work = cumulative_difficulties->at(cut_end - 1) -=
+	    cumulative_difficulties->at(cut_begin);
 	invariant(total_work.hi == 0, "Window difficulty difference too large");
 
 	uint64_t low, high;
@@ -479,6 +484,13 @@ Difficulty Currency::next_difficulty(
 	}
 
 	return (low + time_span - 1) / time_span;
+}
+Difficulty Currency::next_effective_difficulty(uint8_t block_major_version, std::vector<Timestamp> timestamps,
+    std::vector<CumulativeDifficulty> cumulative_difficulties) const {
+	Difficulty difficulty = next_difficulty(&timestamps, &cumulative_difficulties);
+	if (difficulty != 0 && block_major_version >= 2 && difficulty < minimum_difficulty_from_v2)
+		difficulty = minimum_difficulty_from_v2;
+	return difficulty;
 }
 
 bool Currency::check_proof_of_work_v1(const Hash &long_block_hash,

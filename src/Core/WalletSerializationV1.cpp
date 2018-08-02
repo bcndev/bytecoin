@@ -2,9 +2,9 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "WalletSerializationV1.hpp"
-#include <crypto/crypto.hpp>
 #include "CryptoNoteTools.hpp"
 #include "common/MemoryStreams.hpp"
+#include "crypto/crypto.hpp"
 #include "seria/BinaryInputStream.hpp"
 
 using namespace common;

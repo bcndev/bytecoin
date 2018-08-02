@@ -32,7 +32,7 @@ inline bool operator!=(const WalletRecord &lhs, const WalletRecord &rhs) { retur
 // We do not allow deleting first spend key. It is used in seed calculations
 // All file formats are opened as is, and saved to V2 when changing something
 class Wallet {
-	//	logging::LoggerRef m_log;
+	logging::LoggerRef m_log;
 	std::unique_ptr<platform::FileStream> file;
 	std::string m_path;
 	std::string m_password;
@@ -64,7 +64,7 @@ public:
 		const int return_code;
 		explicit Exception(int rc, const std::string &what) : std::runtime_error(what), return_code(rc) {}
 	};
-	Wallet(const std::string &path, const std::string &password, bool create = false,
+	Wallet(logging::ILogger &log, const std::string &path, const std::string &password, bool create = false,
 	    const std::string &import_keys = std::string());
 	std::vector<WalletRecord> generate_new_addresses(const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now,
 	    bool *rescan_from_ct);  // set secret_key to SecretKey{} to generate
