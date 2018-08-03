@@ -882,7 +882,7 @@ AddTransactionResult BlockChainState::add_transaction(const Hash &tid, const Tra
 	    redo_transaction_get_error(false, tx, &memory_state, &global_indices, conflict_height, check_sigs);
 	if (!redo_result.empty()) {
 		//		std::cout << "Addding anyway for test " << std::endl;
-		m_log(logging::WARNING) << "add_transaction redo failed " << redo_result << " in transaction " << tid
+		m_log(logging::TRACE) << "add_transaction redo failed " << redo_result << " in transaction " << tid
 		                      << std::endl;
 		return AddTransactionResult::FAILED_TO_REDO;  // Not a ban because reorg can change indices
 	}

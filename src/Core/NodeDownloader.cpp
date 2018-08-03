@@ -113,6 +113,7 @@ void Node::DownloaderV11::on_disconnect(P2PClientBytecoin *who) {
 	if (m_chain_client && m_chain_client == who) {
 		m_chain_timer.cancel();
 		m_chain_client = nullptr;
+		m_chain_request_sent = false;
 		m_node->m_log(logging::TRACE) << "DownloaderV11::on_disconnect m_chain_client reset to 0" << std::endl;
 	}
 	advance_download();
