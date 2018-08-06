@@ -23,8 +23,13 @@ const std::string Archive::BLOCK("b");
 const std::string Archive::TRANSACTION("t");
 const std::string Archive::CHECKPOINT("c");
 
-Archive::Archive(bool read_only, const std::string &path) : read_only(read_only) {
-	try {
+//static const float DB_COMMIT_PERIOD = 60;  // 1 minute sounds good for archive
+
+Archive::Archive(bool read_only, const std::string &path)
+ : read_only(read_only)
+// , commit_timer(std::bind(&Archive::db_commit, this))
+ {
+ 	try {
 		m_db = std::make_unique<DB>(read_only, path);
 		if (!m_db->get("$unique_id", unique_id)) {
 			DB::Cursor cur = m_db->begin(std::string());
@@ -42,6 +47,7 @@ Archive::Archive(bool read_only, const std::string &path) : read_only(read_only)
 		else
 			throw;
 	}
+//	commit_timer.once(DB_COMMIT_PERIOD);
 }
 
 // struct Record {
@@ -75,6 +81,7 @@ void Archive::db_commit() {
 	if (!m_db || read_only)
 		return;
 	m_db->commit_db_txn();
+//	commit_timer.once(DB_COMMIT_PERIOD);
 }
 
 void Archive::read_archive(api::bytecoind::GetArchive::Request &&req, api::bytecoind::GetArchive::Response &resp) {
@@ -100,6 +107,8 @@ void Archive::read_archive(api::bytecoind::GetArchive::Request &&req, api::bytec
 		api::bytecoind::GetArchive::ArchiveRecord rec;
 		seria::from_binary(rec, cur.get_value_array());
 		resp.records.push_back(rec);
+		if(req.records_only)
+			continue;
 		std::string str_hash = common::pod_to_hex(rec.hash);
 		const auto hash_key  = HASHES_PREFIX + DB::to_binary_key(rec.hash.data, sizeof(rec.hash.data));
 		if (rec.type == BLOCK) {

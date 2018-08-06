@@ -1,5 +1,10 @@
 ## Release Notes
 
+### v3.2.2
+
+- Fixed an output bufferization issue in the `bytecoind` daemon.
+- Fixed a rare downloader's crash on Windows.
+
 ### v3.2.1
 
 - Fixed a severe bug in the downloader.

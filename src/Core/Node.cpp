@@ -536,6 +536,7 @@ api::bytecoind::GetStatus::Response Node::create_status_response3() const {
 	res.top_block_hash                   = m_block_chain.get_tip_bid();
 	res.top_block_timestamp              = tip.timestamp;
 	res.top_block_difficulty             = tip.difficulty;
+	res.top_block_cumulative_difficulty  = tip.cumulative_difficulty;
 	res.recommended_fee_per_byte         = m_block_chain.get_currency().coin() / 1000000;  // TODO - calculate
 	res.next_block_effective_median_size = m_block_chain.get_next_effective_median_size();
 	res.transaction_pool_version         = m_block_chain.get_tx_pool_version();
@@ -701,7 +702,7 @@ bool Node::handle_send_transaction3(http::Client *, http::RequestData &&, json_r
 	}
 	const Hash tid = get_transaction_hash(tx);
 	auto action    = m_block_chain.add_transaction(
-	    tid, tx, request.binary_transaction, m_p2p.get_local_time(), &conflict_height, "0.0.0.0:0");
+	    tid, tx, request.binary_transaction, m_p2p.get_local_time(), &conflict_height, "json_rpc");
 	switch (action) {
 	case AddTransactionResult::BAN:
 		throw json_rpc::Error(

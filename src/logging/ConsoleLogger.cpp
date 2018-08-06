@@ -30,8 +30,8 @@ void ConsoleLogger::do_log_string(const std::string &message) {
 		}
 	}
 
+	std::cout << std::flush;
 	if (changed_color) {
-		std::cout << std::flush;
 		common::console::set_text_color(Color::Default);
 	}
 }

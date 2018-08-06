@@ -137,7 +137,7 @@ bool LegacyBlockChainReader::import_blocks(BlockChainState *block_chain) {
 			BinaryArray rba = get_block_data_by_index(block_chain->get_tip_height() + 1);
 			PreparedBlock pb(std::move(rba), nullptr);
 			api::BlockHeader info;
-			if (block_chain->add_block(pb, &info, std::string()) != BroadcastAction::BROADCAST_ALL) {
+			if (block_chain->add_block(pb, &info, "blocks_file") != BroadcastAction::BROADCAST_ALL) {
 				std::cout << "block_chain.add_block !BROADCAST_ALL block=" << block_chain->get_tip_height() + 1
 				          << std::endl;
 				block_chain->db_commit();
@@ -183,7 +183,7 @@ bool LegacyBlockChainReader::import_blockchain2(const std::string &coin_folder,
 	while (block_chain->get_tip_height() < import_height) {
 		PreparedBlock pb = reader.get_prepared_block_by_index(block_chain->get_tip_height() + 1);
 		api::BlockHeader info;
-		if (block_chain->add_block(pb, &info, std::string()) != BroadcastAction::BROADCAST_ALL) {
+		if (block_chain->add_block(pb, &info, "blocks_file") != BroadcastAction::BROADCAST_ALL) {
 			std::cout << "block_chain.add_block !BROADCAST_ALL block=" << block_chain->get_tip_height() + 1
 			          << std::endl;
 			block_chain->db_commit();
