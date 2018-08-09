@@ -1,5 +1,10 @@
-#Use Fedora 28 docker image
-FROM fedora
+# Use Fedora 28 docker image
+# Multistage docker build, requires docker 17.05
+FROM fedora:28 as builder
+
+# If you have an old version of the docker, then
+# correct the previous line, it should be the
+# FROM fedora
 
 RUN dnf -y update && dnf -y install make  gcc-c++ cmake git wget libzip bzip2 which openssl-devel
 
@@ -41,3 +46,18 @@ RUN set -ex \
     && echo '[ SHOW VERSION ]' \
     && bytecoind -v
 
+# If you have an old version of the docker:
+# (not supported Multistage docker build)
+# Please comment all the lines below this!
+
+FROM fedora:28
+
+RUN set -ex \
+    && dnf update -y \
+    && dnf install libstdc++ -y \
+    && dnf clean all
+
+COPY --from=builder /usr/local/bin/* /usr/local/bin/
+
+RUN echo '[ SHOW VERSION ]' \
+    && bytecoind -v
