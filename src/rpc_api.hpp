@@ -532,6 +532,7 @@ struct GetArchive {
 		uint64_t from_record                = 0;
 		uint64_t max_count                  = 100;
 		static constexpr uint64_t MAX_COUNT = 10000;
+		bool records_only = false; // no objects
 	};
 	struct ArchiveRecord {
 		Timestamp timestamp     = 0;

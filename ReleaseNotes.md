@@ -1,5 +1,14 @@
 ## Release Notes
 
+### v3.2.2
+
+- Fixed an output bufferization issue in the `bytecoind` daemon.
+- Fixed a rare downloader's crash on Windows.
+
+### v3.2.1
+
+- Fixed a severe bug in the downloader.
+
 ### v3.2.0
 
 - *Warning:* This version uses different format of `bytecoind` database and `walletd` caches, they will be upgraded to the new format on a first start of daemons. Prepare for downtime of up to 2 hours depending on your wallet size and computer performance.

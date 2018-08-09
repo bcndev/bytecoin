@@ -68,7 +68,7 @@ public:
 	bool read_chain(Height height, Hash *bid) const;
 	bool in_chain(Height height, Hash bid) const;
 	bool read_block(const Hash &bid, RawBlock *rb) const;
-	bool read_block(const Hash &bid, BinaryArray *block_data, RawBlock *rb) const;
+	bool read_block(const Hash &bid, BinaryArray *block_data, RawBlock *rb) const; // rb can be null here
 	bool has_block(const Hash &bid) const;
 	bool read_header(const Hash &bid, api::BlockHeader *info, Height hint = 0) const;
 	bool read_transaction(const Hash &tid, Transaction *tx, Height *block_height, Hash *block_hash,

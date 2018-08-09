@@ -180,7 +180,7 @@ BroadcastAction BlockChain::add_block(
 		return BroadcastAction::NOTHING;
 	}
 	try {
-		if (!have_block) {
+		if (!have_block) { // have block, but not header during internal_import
 			store_block(pb.bid, pb.block_data);  // Do not commit between here and
 			// reorganize_blocks or invariant might be dead
 			if (info->height > m_currency.last_sw_checkpoint().first)
@@ -197,6 +197,8 @@ BroadcastAction BlockChain::add_block(
 		}
 		check_children_counter(info->cumulative_difficulty, pb.bid, 1);
 		modify_children_counter(info->cumulative_difficulty, pb.bid, -1);  // -1 from default 1 gives 0
+		if (info->hash == m_currency.last_sw_checkpoint().second)
+			build_blods();
 		auto tip_check_cd = get_checkpoint_difficulty(get_tip_bid());
 		auto bid_check_cd = get_checkpoint_difficulty(info->hash);
 		if (compare(bid_check_cd, info->cumulative_difficulty, tip_check_cd, get_tip_cumulative_difficulty()) > 0) {
@@ -209,7 +211,6 @@ BroadcastAction BlockChain::add_block(
 			} else
 				reorganize_blocks(pb.bid, pb, *info);
 		}
-		build_blods();  // In case we just passed the last checkpoint, otherwise it is nop
 	} catch (const std::exception &ex) {
 		m_log(logging::ERROR) << "Exception while reorganizing blockchain, probably out of disk space ex.what="
 		                      << ex.what() << ", " << delete_blockchain_message << m_db.get_path() << std::endl;
@@ -548,7 +549,8 @@ bool BlockChain::read_block(const Hash &bid, BinaryArray *block_data, RawBlock *
 	auto key = BLOCK_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + BLOCK_SUFFIX;
 	if (!m_db.get(key, rb))
 		return false;
-	seria::from_binary(*raw_block, rb);
+	if(raw_block)
+		seria::from_binary(*raw_block, rb);
 	*block_data = std::move(rb);
 	return true;
 }
@@ -887,6 +889,9 @@ void BlockChain::start_internal_import() {
 				skipped += 1;
 				continue;  // block in main chain
 			}
+			BinaryArray block_data;
+			if( read_block(bid, &block_data, nullptr) )
+				m_archive.add(Archive::BLOCK, block_data, bid, "start_internal_import");
 		}
 		cur.erase();
 		erased += 1;
@@ -909,7 +914,7 @@ bool BlockChain::internal_import() {
 		}
 		PreparedBlock pb(std::move(rb), nullptr);
 		api::BlockHeader info;
-		if (add_block(pb, &info, std::string()) != BroadcastAction::BROADCAST_ALL) {
+		if (add_block(pb, &info, "internal_import") != BroadcastAction::BROADCAST_ALL) {
 			m_log(logging::WARNING) << "Block corrupted  during internal import for height=" << get_tip_height() + 1
 			                        << " bid=" << bid << std::endl;
 			break;
@@ -1086,8 +1091,9 @@ bool BlockChain::add_blod(const api::BlockHeader &header) {
 void BlockChain::build_blods() {
 	if (!blods.empty())
 		return;  // build only once per daemon launch
-	if (!in_chain(m_currency.last_sw_checkpoint().first, m_currency.last_sw_checkpoint().second))
-		return;                         // build only after main chain passes through last SW checkpoint
+	api::BlockHeader last_sw_checkpoint_header;
+	if( !read_header(m_currency.last_sw_checkpoint().second, &last_sw_checkpoint_header) )
+		return;
 	std::set<Hash> bad_header_hashes;   // sidechains that do not pass through last SW checkpoint
 	std::set<Hash> good_header_hashes;  // sidechains that pass through last SW checkpoint
 	std::vector<api::BlockHeader> good_headers;

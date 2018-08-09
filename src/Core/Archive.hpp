@@ -4,6 +4,7 @@
 #pragma once
 
 #include "platform/DB.hpp"
+//#include "platform/Network.hpp"
 #include "rpc_api.hpp"
 
 namespace bytecoin {
@@ -14,6 +15,7 @@ class Archive {
 	uint64_t next_record_id = 0;
 	std::string unique_id;
 
+//	platform::Timer commit_timer;
 public:
 	explicit Archive(bool read_only, const std::string &path);
 	std::string get_unique_id() const { return unique_id; }

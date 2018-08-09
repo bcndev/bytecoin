@@ -500,6 +500,7 @@ void ser_members(bytecoin::api::bytecoind::GetArchive::Request &v, ISeria &s) {
 	seria_kv("archive_id", v.archive_id, s);
 	seria_kv("from_record", v.from_record, s);
 	seria_kv("max_count", v.max_count, s);
+	seria_kv("records_only", v.records_only, s);
 }
 void ser_members(bytecoin::api::bytecoind::GetArchive::Response &v, ISeria &s) {
 	seria_kv("records", v.records, s);

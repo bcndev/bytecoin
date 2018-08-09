@@ -113,6 +113,7 @@ void Node::DownloaderV11::on_disconnect(P2PClientBytecoin *who) {
 	if (m_chain_client && m_chain_client == who) {
 		m_chain_timer.cancel();
 		m_chain_client = nullptr;
+		m_chain_request_sent = false;
 		m_node->m_log(logging::TRACE) << "DownloaderV11::on_disconnect m_chain_client reset to 0" << std::endl;
 	}
 	advance_download();
@@ -277,14 +278,15 @@ void Node::DownloaderV11::on_msg_notify_request_objects(P2PClientBytecoin *who,
 		}
 	}
 	for (auto &&bid : req.missed_ids) {
-		for (auto dit = m_download_chain.begin(); dit != m_download_chain.end(); ++dit) {
-			if (dit->status != DownloadCell::DOWNLOADING || dit->downloading_client != who || dit->bid != bid)
+		for (size_t dit_counter = 0; dit_counter != m_download_chain.size(); ++dit_counter) {
+			auto & dit = m_download_chain.at(dit_counter);
+			if (dit.status != DownloadCell::DOWNLOADING || dit.downloading_client != who || dit.bid != bid)
 				continue;  // downloaded or downloading
-			stop_download(*dit, false);
+			stop_download(dit, false);
 			if (!m_chain_client || m_chain_client == who) {
 				m_node->m_log(logging::INFO)
 				    << "Downloader cannot download block from any connected client, cleaning chain" << std::endl;
-				while (dit != m_download_chain.end()) {
+				while (m_download_chain.size() > dit_counter) {
 					stop_download(m_download_chain.back(), false);
 					m_download_chain.pop_back();
 				}
@@ -292,7 +294,7 @@ void Node::DownloaderV11::on_msg_notify_request_objects(P2PClientBytecoin *who,
 				advance_download();
 				return;
 			}
-			start_download(*dit, m_chain_client);
+			start_download(dit, m_chain_client);
 		}
 	}
 	advance_download();
@@ -405,8 +407,9 @@ void Node::DownloaderV11::advance_download() {
 	for (auto lit = m_who_downloaded_block.begin(); lit != m_who_downloaded_block.end(); ++lit)
 		who_downloaded_counter[*lit] += 1;
 	auto idea_now = std::chrono::steady_clock::now();
-	for (auto dit = m_download_chain.begin(); dit != m_download_chain.end(); ++dit) {
-		if (dit->status != DownloadCell::DOWNLOADING || dit->downloading_client)
+	for (size_t dit_counter = 0; dit_counter != m_download_chain.size(); ++dit_counter) {
+		auto & dit = m_download_chain.at(dit_counter);
+		if (dit.status != DownloadCell::DOWNLOADING || dit.downloading_client)
 			continue;  // downloaded or downloading
 		if (total_downloading_blocks >= TOTAL_DOWNLOAD_BLOCKS)
 			break;
@@ -419,7 +422,7 @@ void Node::DownloaderV11::advance_download() {
 			// We clamp speed so that if even 1 downloaded all blocks, we will give
 			// small % of blocks to other peers
 			if (who.second * ready_speed < ready_counter * speed &&
-			    who.first->get_last_received_sync_data().current_height >= dit->expected_height) {
+			    who.first->get_last_received_sync_data().current_height >= dit.expected_height) {
 				ready_client  = who.first;
 				ready_counter = who.second;
 				ready_speed   = speed;
@@ -431,7 +434,7 @@ void Node::DownloaderV11::advance_download() {
 			m_node->m_log(logging::INFO)
 			    << "DownloaderV11::advance_download cannot download blocks from any connected client, cleaning chain"
 			    << std::endl;
-			while (dit != m_download_chain.end()) {
+			while (m_download_chain.size() > dit_counter) {
 				stop_download(m_download_chain.back(), false);
 				m_download_chain.pop_back();
 			}
@@ -439,7 +442,7 @@ void Node::DownloaderV11::advance_download() {
 			advance_chain();
 			return;
 		}
-		start_download(*dit, ready_client);
+		start_download(dit, ready_client);
 	}
 	const bool bad_timeout =
 	    !m_download_chain.empty() && m_download_chain.front().status == DownloadCell::DOWNLOADING &&

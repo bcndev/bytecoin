@@ -189,7 +189,7 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
 	m_db.get("$version", version);
 	if (version == "B" || version == "1" || version == "2" || version == "3" || version == "4") {
 		start_internal_import();
-		version = "5";
+		version = version_current;
 		m_db.put("$version", version, false);
 		db_commit();
 	}
@@ -772,7 +772,7 @@ BroadcastAction BlockChainState::add_mined_block(
 	}
 	PreparedBlock pb(std::move(*raw_block), nullptr);
 	*raw_block = pb.raw_block;
-	return add_block(pb, info, "0.0.0.0:0");
+	return add_block(pb, info, "json_rpc");
 }
 
 void BlockChainState::clear_mining_transactions() const {
@@ -882,7 +882,7 @@ AddTransactionResult BlockChainState::add_transaction(const Hash &tid, const Tra
 	    redo_transaction_get_error(false, tx, &memory_state, &global_indices, conflict_height, check_sigs);
 	if (!redo_result.empty()) {
 		//		std::cout << "Addding anyway for test " << std::endl;
-		m_log(logging::WARNING) << "add_transaction redo failed " << redo_result << " in transaction " << tid
+		m_log(logging::TRACE) << "add_transaction redo failed " << redo_result << " in transaction " << tid
 		                      << std::endl;
 		return AddTransactionResult::FAILED_TO_REDO;  // Not a ban because reorg can change indices
 	}

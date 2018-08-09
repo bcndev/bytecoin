@@ -172,7 +172,7 @@ uint8_t Currency::get_block_minor_version_for_height(Height height) const {
 		return 0;
 	if (height > upgrade_height_v2 && height <= upgrade_height_v3)
 		return 0;
-	return 1;  // Signal of checkpoints support
+	return 2;  // Signal of checkpoints support
 }
 
 uint32_t Currency::block_granted_full_reward_zone_by_block_version(uint8_t block_major_version) const {
