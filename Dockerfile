@@ -1,7 +1,7 @@
 #Use Fedora 28 docker image
 FROM fedora
 
-RUN dnf -y update && dnf -y install make  gcc-c++ cmake git wget libzip bzip2 which openssl-devel && dnf clean all
+RUN dnf -y update && dnf -y install make  gcc-c++ cmake git wget libzip bzip2 which openssl-devel
 
 WORKDIR /app
 
@@ -24,13 +24,20 @@ ARG LMDB_HASH=5033a08c86fb6ef0adddabad327422a1c0c0069a
 RUN set -ex \
     && git clone https://github.com/LMDB/lmdb.git -b ${LMDB_VERSION} \
     && cd lmdb \
-&& test `git rev-parse HEAD` = ${LMDB_HASH} || exit 1
+    && test `git rev-parse HEAD` = ${LMDB_HASH} || exit 1
 
 COPY . /app/bytecoin
 
-RUN mkdir /app/bytecoin/build \
+RUN set -ex \
+    && mkdir /app/bytecoin/build \
     && cd bytecoin/build \
     && cmake .. \
     && time make -j4 \
     && cp -v ../bin/* /usr/local/bin \
+    && dnf remove -y make  gcc-c++ cmake git wget openssl-devel \
+    && dnf install libstdc++ -y \
+    && dnf clean all \
+    && rm -rf /app \
+    && echo '[ SHOW VERSION ]' \
     && bytecoind -v
+
