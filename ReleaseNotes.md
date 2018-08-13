@@ -1,5 +1,10 @@
 ## Release Notes
 
+### v3.2.3
+
+- Fixed issues in SQLite logic in x86-32 daemons.
+- Fixed a bug in the downloader, which hinders normal downloading blocks.
+
 ### v3.2.2
 
 - Fixed an output bufferization issue in the `bytecoind` daemon.

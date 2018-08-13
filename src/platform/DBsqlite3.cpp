@@ -4,6 +4,7 @@
 #include "DBsqlite3.hpp"
 #include <boost/lexical_cast.hpp>
 #include <iostream>
+#include <common/Invariant.hpp>
 #include "PathTools.hpp"
 #include "common/string.hpp"
 
@@ -156,10 +157,12 @@ void DBsqlite::commit_db_txn() {
 }
 
 static void put(sqlite::Stmt &stmt, const std::string &key, const void *data, size_t size) {
+	invariant(data || size == 0, "");
 	sqlite3_reset(stmt.handle);
 	sqlite_check(
 	    sqlite3_bind_blob(stmt.handle, 1, key.data(), static_cast<int>(key.size()), 0), "DB::put sqlite3_bind_blob 1 ");
-	sqlite_check(sqlite3_bind_blob(stmt.handle, 2, data, static_cast<int>(size), 0), "DB::put sqlite3_bind_blob 2 ");
+	sqlite_check(sqlite3_bind_blob(stmt.handle, 2, data ? data : "", static_cast<int>(size), 0), "DB::put sqlite3_bind_blob 2 ");
+	// sqlite3_bind_blob uses nullptr as a NULL indicator. Empty arrays can have nullptr as a data().
 	auto rc = sqlite3_step(stmt.handle);
 	if (rc != SQLITE_DONE)
 		throw platform::sqlite::Error("DB::put failed sqlite3_step in put " + common::to_string(rc));

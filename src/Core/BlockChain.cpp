@@ -410,19 +410,13 @@ std::vector<Hash> BlockChain::get_sync_headers_chain(const std::vector<Hash> &lo
 		api::BlockHeader header;
 		if (!read_header(lit, &header))
 			continue;
-		if (header.height > m_tip_height) {  // Asker has better chain then we do
-			*start_height = m_tip_height + 1;
-			return result;
+		while (header.height != 0) {
+			Hash ha;
+			if(read_chain(header.height, &ha) && ha == header.hash)
+				break;
+			header = read_header(header.previous_block_hash);
 		}
 		uint32_t min_height = header.height;
-		Hash loc_ha         = lit;
-		for (; min_height != 0; min_height -= 1) {
-			Hash ha = read_chain(min_height);
-			if (ha == loc_ha)
-				break;
-			loc_ha = header.previous_block_hash;
-			header = read_header(loc_ha);
-		}
 		*start_height = min_height;
 		for (; result.size() < max_count && min_height <= m_tip_height; min_height += 1) {
 			result.push_back(read_chain(min_height));

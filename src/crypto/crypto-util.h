@@ -1,6 +1,10 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
+// Copyright (c) 2013-2018
+// Frank Denis <j at pureftpd dot org>
+// See https://github.com/jedisct1/libsodium/blob/master/LICENSE for details
+
 #pragma once
 
 #include <stdint.h>

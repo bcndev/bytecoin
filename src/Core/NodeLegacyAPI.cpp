@@ -154,6 +154,7 @@ void Node::getblocktemplate(const api::bytecoind::GetBlockTemplate::Request &req
 	res.blocktemplate_blob       = block_blob;
 	res.top_block_hash           = m_block_chain.get_tip_bid();
 	res.transaction_pool_version = m_block_chain.get_tx_pool_version();
+	res.previous_block_hash      = m_block_chain.get_tip().previous_block_hash;
 	res.status                   = CORE_RPC_STATUS_OK;
 }
 
