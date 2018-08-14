@@ -29,7 +29,8 @@ Archive::Archive(bool read_only, const std::string &path)
  : read_only(read_only)
 // , commit_timer(std::bind(&Archive::db_commit, this))
  {
- 	try {
+#if !platform_USE_SQLITE
+	try {
 		m_db = std::make_unique<DB>(read_only, path);
 		if (!m_db->get("$unique_id", unique_id)) {
 			DB::Cursor cur = m_db->begin(std::string());
@@ -47,6 +48,7 @@ Archive::Archive(bool read_only, const std::string &path)
 		else
 			throw;
 	}
+#endif
 //	commit_timer.once(DB_COMMIT_PERIOD);
 }
 

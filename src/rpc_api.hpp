@@ -583,6 +583,7 @@ struct GetBlockTemplate {
 		std::string status;
 		Hash top_block_hash;                    // for longpoll in v3 - behaves like GetStatus
 		uint32_t transaction_pool_version = 0;  // for longpoll in v3 - behaves like GetStatus
+		Hash previous_block_hash;               // Deprecated, used by some legacy miners.
 	};
 };
 

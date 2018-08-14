@@ -282,6 +282,10 @@ void Node::P2PClientBytecoin::on_msg_notify_checkpoint(NOTIFY_CHECKPOINT::reques
 	                             << std::endl;
 	BinaryArray raw_msg = LevinProtocol::send_message(NOTIFY_CHECKPOINT::ID, LevinProtocol::encode(req), false);
 	m_node->m_p2p.broadcast(nullptr, raw_msg);  // nullptr, not this - so a sender sees "reflection" of message
+	COMMAND_TIMED_SYNC::request ts_req;
+	ts_req.payload_data = CORE_SYNC_DATA{m_node->m_block_chain.get_tip_height(), m_node->m_block_chain.get_tip_bid()};
+	raw_msg = LevinProtocol::send_message(COMMAND_TIMED_SYNC::ID, LevinProtocol::encode(ts_req), true);
+	m_node->m_p2p.broadcast(nullptr, raw_msg);
 	m_node->advance_long_poll();
 }
 
