@@ -417,7 +417,21 @@ struct GetStatus {
 	typedef walletd::GetStatus::Response Response;
 };
 
-// Signature of this method will stabilize to the end of beta
+struct GetRawBlock {
+	static std::string method() { return "get_raw_block"; }
+	struct Request {
+		Hash hash;
+	};
+	struct Response {
+		api::BlockHeader header;
+		BlockTemplate raw_header;
+		std::vector<TransactionPrefix> raw_transactions;
+		Hash base_transaction_hash;                         // BlockTemplate does not contain it
+		std::vector<std::vector<uint32_t>> global_indices;  // for each transaction, not empty only if block in main chain
+		std::vector<uint32_t> transaction_binary_sizes;     // for each transaction
+	};
+};
+
 struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoind
 	static std::string method() { return "sync_blocks"; }
 	static std::string bin_method() { return "/sync_blocks_v1.bin"; }
@@ -429,23 +443,14 @@ struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoin
 		Timestamp first_block_timestamp = 0;
 		uint32_t max_count              = MAX_COUNT / 10;
 	};
-	struct SyncBlock {  // Signatures are checked by bytecoind so usually they are of no interest
-		api::BlockHeader header;
-		BlockTemplate raw_header;
-		// the only method returning actual BlockHeader from blockchain, not api::BlockHeader
-		std::vector<TransactionPrefix> raw_transactions;
-		// the only method returning actual Transaction from blockchain, not api::Transaction
-		Hash base_transaction_hash;                         // BlockTemplate does not contain it
-		std::vector<std::vector<uint32_t>> global_indices;  // for each transaction
-		std::vector<uint32_t> transaction_binary_sizes;     // for each transaction
-	};
 	struct Response {
-		std::vector<SyncBlock> blocks;
+		std::vector<GetRawBlock::Response> blocks;
 		Height start_height = 0;
 		GetStatus::Response status;  // We save roundtrip during sync by also sending status here
 	};
 };
 
+// TODO - return json error
 struct GetRawTransaction {
 	static std::string method() { return "get_raw_transaction"; }
 	struct Request {
@@ -676,8 +681,9 @@ void ser_members(bytecoin::api::walletd::GetTransaction::Response &v, ISeria &s)
 
 void ser_members(bytecoin::api::bytecoind::GetStatus::Request &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetStatus::Response &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetRawBlock::Request &v, ISeria &s);
+void ser_members(bytecoin::api::bytecoind::GetRawBlock::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::SyncBlocks::Request &v, ISeria &s);
-void ser_members(bytecoin::api::bytecoind::SyncBlocks::SyncBlock &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::SyncBlocks::Response &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetRawTransaction::Request &v, ISeria &s);
 void ser_members(bytecoin::api::bytecoind::GetRawTransaction::Response &v, ISeria &s);

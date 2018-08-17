@@ -192,7 +192,7 @@ void WalletPreparatorMulticore::thread_run() {
 		SecretKey view_secret_key;
 		Height height          = 0;
 		int local_work_counter = 0;
-		api::bytecoind::SyncBlocks::SyncBlock sync_block;
+		api::bytecoind::GetRawBlock::Response sync_block;
 		std::vector<std::vector<uint32_t>> global_indices;
 		{
 			std::unique_lock<std::mutex> lock(mu);

@@ -44,7 +44,9 @@ public:
 	bool on_sync_mempool3(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::bytecoind::SyncMemPool::Request &&, api::bytecoind::SyncMemPool::Response &);
 	bool on_get_raw_transaction3(http::Client *, http::RequestData &&, json_rpc::Request &&,
-	    api::bytecoind::GetRawTransaction::Request &&, api::bytecoind::GetRawTransaction::Response &);
+								 api::bytecoind::GetRawTransaction::Request &&, api::bytecoind::GetRawTransaction::Response &);
+	bool on_get_raw_block(http::Client *, http::RequestData &&, json_rpc::Request &&,
+								 api::bytecoind::GetRawBlock::Request &&, api::bytecoind::GetRawBlock::Response &);
 
 	api::bytecoind::GetStatus::Response create_status_response3() const;
 	// json_rpc_node

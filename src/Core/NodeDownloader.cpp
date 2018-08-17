@@ -150,6 +150,12 @@ void Node::DownloaderV11::on_msg_notify_request_chain(P2PClientBytecoin *who,
 	if (req.m_block_ids.size() != m_chain.size() + 1) {
 		m_node->m_log(logging::INFO) << "Downloader truncated chain length=" << m_chain.size() << std::endl;
 	}
+	if (req.m_block_ids.empty()){ // Most likely peer is 3.2.0
+		const auto now = m_node->m_p2p.get_local_time();
+		m_node->m_log(logging::INFO) << "Downloader truncated chain to zero, delaying connect to " << who->get_address() << std::endl;
+		m_node->m_peer_db.delay_connection_attempt(who->get_address(), now);
+		who->disconnect(std::string());  // Will recursively call advance_chain again
+	}
 	advance_download();
 }
 

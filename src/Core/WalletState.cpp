@@ -329,7 +329,7 @@ bool WalletState::sync_with_blockchain(api::bytecoind::SyncBlocks::Response &res
 			pop_chain();
 			m_tx_pool_version = 1;
 		}
-		if (get_tip_height() + 1 < resp.start_height)
+		if (get_tip_height() < resp.start_height)
 			while (!empty_chain()) {  // undo everything
 				pop_chain();
 				m_tx_pool_version = 1;

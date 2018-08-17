@@ -865,8 +865,8 @@ AddTransactionResult BlockChainState::add_transaction(const Hash &tid, const Tra
 			if (read_keyimage(in.key_image, conflict_height)) {
 				//				std::cout << tid << " " << in.key_image <<
 				// std::endl;
-				m_log(logging::WARNING) << "OUTPUT_ALREADY_SPENT in transaction " << tid
-		                      << std::endl; // TODO - remove
+//				m_log(logging::WARNING) << "OUTPUT_ALREADY_SPENT in transaction " << tid
+//		                      << std::endl; // TODO - remove
 				return AddTransactionResult::OUTPUT_ALREADY_SPENT;  // Already spent in main chain
 			}
 		}

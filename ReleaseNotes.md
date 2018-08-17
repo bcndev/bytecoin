@@ -1,5 +1,11 @@
 ## Release Notes
 
+### v3.2.4
+
+- Added the testnet functionality.
+- Fixed `WRONG_BLOCKCHAIN` problem when walletd ends up in a state where it could not sync with `bytecoind`.
+- Put a stop to infinite attempts to download blockchain from nodes lagging behind.
+
 ### v3.2.3
 
 - Fixed issues in SQLite logic in x86-32 daemons.
