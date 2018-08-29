@@ -503,6 +503,7 @@ std::unordered_map<std::string, Node::JSONRPCHandlerFunction> Node::m_jsonrpc_ha
     {api::bytecoind::GetArchive::method(), json_rpc::make_member_method(&Node::on_get_archive)},
     {api::bytecoind::SendTransaction::method(), json_rpc::make_member_method(&Node::handle_send_transaction3)},
     {api::bytecoind::CheckSendProof::method(), json_rpc::make_member_method(&Node::handle_check_sendproof3)},
+//	{api::bytecoind::GetRawBlock::method(), json_rpc::make_member_method(&Node::on_get_raw_block)},
     {api::bytecoind::SyncBlocks::method(), json_rpc::make_member_method(&Node::on_wallet_sync3)},
     {api::bytecoind::GetRawTransaction::method(), json_rpc::make_member_method(&Node::on_get_raw_transaction3)},
     {api::bytecoind::SyncMemPool::method(), json_rpc::make_member_method(&Node::on_sync_mempool3)}};
@@ -659,6 +660,37 @@ bool Node::on_sync_mempool3(http::Client *, http::RequestData &&, json_rpc::Requ
 			res.added_transactions.back().binary_size = static_cast<uint32_t>(tx.second.binary_tx.size());
 		}
 	res.status = create_status_response3();
+	return true;
+}
+
+bool Node::on_get_raw_block(http::Client *, http::RequestData &&, json_rpc::Request &&,
+					  api::bytecoind::GetRawBlock::Request && request, api::bytecoind::GetRawBlock::Response & response){
+
+	if (!m_block_chain.read_header(request.hash, &response.header))
+		throw json_rpc::Error(-5, "Block not found by hash"); // TODO - use HASH_NOT_FOUND enum
+	BlockChainState::BlockGlobalIndices global_indices;
+
+	RawBlock rb;
+	invariant(m_block_chain.read_block(request.hash, &rb), "Block must be there, but it is not there");
+	Block block;
+	invariant(block.from_raw_block(rb), "RawBlock failed to convert into block");
+
+	auto coinbase_size = static_cast<uint32_t>(seria::binary_size(block.header.base_transaction));
+	response.header.transactions_cumulative_size = response.header.block_size;
+
+	response.header.block_size = response.header.transactions_cumulative_size + static_cast<uint32_t>(rb.block.size()) - coinbase_size;
+	response.base_transaction_hash = get_transaction_hash(block.header.base_transaction);
+	response.raw_header            = std::move(block.header);
+	response.raw_transactions.reserve(block.transactions.size());
+	response.transaction_binary_sizes.reserve(block.transactions.size() + 1);
+	response.transaction_binary_sizes.push_back(coinbase_size);
+	for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
+		response.raw_transactions.push_back(std::move(block.transactions.at(tx_index)));
+		response.transaction_binary_sizes.push_back(
+				static_cast<uint32_t>(rb.transactions.at(tx_index).size()));
+	}
+	m_block_chain.read_block_output_global_indices(request.hash, &response.global_indices);
+	// If block not in main chain - global indices will be empty
 	return true;
 }
 

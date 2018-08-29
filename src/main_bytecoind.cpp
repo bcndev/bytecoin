@@ -32,6 +32,7 @@ Options:
   --exclusive-node-address=<ip:port>     Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.
   --export-blocks=<folder-path>          Perform hot export of blockchain into specified folder as blocks.bin and blockindexes.bin, then exit. This overwrites existing files.
   --backup-blockchain=<folder-path>      Perform hot backup of blockchain into specified backup data folder, then exit.
+  --net=<main|test>                      Configure for mainnet or testnet [default: main].
   --archive                              Work as an archive node [default: off].
   --data-folder=<folder-path>            Folder for blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
     R"(bytecoin].

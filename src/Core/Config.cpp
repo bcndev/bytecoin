@@ -17,6 +17,25 @@ static void parse_peer_and_add_to_container(const std::string &str, std::vector<
 	container.push_back(na);
 }
 
+static void parse_net(const std::string &str, bool* is_testnet, bool* is_stagenet) {
+	if (str == "main") {
+		*is_stagenet = false;
+		*is_testnet = false;
+		return;
+	}
+	if (str == "stage") {
+		*is_stagenet = true;
+		*is_testnet = false;
+		return;
+	}
+	if (str == "test") {
+		*is_stagenet = false;
+		*is_testnet = true;
+		return;
+	}
+	throw std::runtime_error("Wrong net value " + str + ", should be test, or stage, or main");
+}
+
 using namespace common;
 using namespace bytecoin;
 
@@ -24,9 +43,10 @@ const static UUID BYTECOIN_NETWORK{{0x11, 0x10, 0x01, 0x11, 0x11, 0x00, 0x01, 0x
     0x01, 0x10}};  // Bender's nightmare
 
 Config::Config(common::CommandLine &cmd)
-    : is_testnet(cmd.get_bool("--testnet"))
+    : is_testnet(false)
+    , is_stagenet(false)
     , is_archive(cmd.get_bool("--archive"))
-    //    , mempool_tx_live_time(parameters::CRYPTONOTE_MEMPOOL_TX_LIVETIME)
+//    , mempool_tx_live_time(parameters::CRYPTONOTE_MEMPOOL_TX_LIVETIME)
     , blocks_file_name(parameters::CRYPTONOTE_BLOCKS_FILENAME)
     , block_indexes_file_name(parameters::CRYPTONOTE_BLOCKINDEXES_FILENAME)
     , crypto_note_name(CRYPTONOTE_NAME)
@@ -44,13 +64,15 @@ Config::Config(common::CommandLine &cmd)
     , p2p_local_gray_list_limit(P2P_LOCAL_GRAY_PEERLIST_LIMIT)
     , p2p_default_peers_in_handshake(P2P_DEFAULT_PEERS_IN_HANDSHAKE)
     , p2p_default_connections_count(P2P_DEFAULT_CONNECTIONS_COUNT)
-    , p2p_allow_local_ip(is_testnet)
+	, p2p_allow_local_ip(false)
     , p2p_whitelist_connections_percent(P2P_DEFAULT_WHITELIST_CONNECTIONS_PERCENT)
     , p2p_block_ids_sync_default_count(BLOCKS_IDS_SYNCHRONIZING_DEFAULT_COUNT)
     , p2p_blocks_sync_default_count(BLOCKS_SYNCHRONIZING_DEFAULT_COUNT)
     , rpc_get_blocks_fast_max_count(COMMAND_RPC_GET_BLOCKS_FAST_MAX_COUNT) {
 	common::pod_from_hex(P2P_STAT_TRUSTED_PUBLIC_KEY, trusted_public_key);
 
+	if (const char *pa = cmd.get("--net"))
+		parse_net(pa, &is_testnet, &is_stagenet);
 	if (is_testnet) {
 		network_id.data[0] += 1;
 		p2p_bind_port += 1000;

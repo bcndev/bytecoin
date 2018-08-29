@@ -417,19 +417,22 @@ void ser_members(api::bytecoind::GetStatus::Response &v, ISeria &s) {
 	seria_kv("next_block_effective_median_size", v.next_block_effective_median_size, s);
 	seria_kv("top_known_block_height", v.top_known_block_height, s);
 }
-void ser_members(api::bytecoind::SyncBlocks::Request &v, ISeria &s) {
-	seria_kv("sparse_chain", v.sparse_chain, s);
-	seria_kv("first_block_timestamp", v.first_block_timestamp, s);
-	seria_kv("max_count", v.max_count, s);
-	//	seria_kv("send_signatures", v.send_signatures, s);
+void ser_members(bytecoin::api::bytecoind::GetRawBlock::Request &v, ISeria &s) {
+	seria_kv("hash", v.hash, s);
 }
-void ser_members(bytecoin::api::bytecoind::SyncBlocks::SyncBlock &v, ISeria &s) {
+void ser_members(bytecoin::api::bytecoind::GetRawBlock::Response &v, ISeria &s) {
 	seria_kv("header", v.header, s);
 	seria_kv("raw_header", v.raw_header, s);
 	seria_kv("raw_transactions", v.raw_transactions, s);
 	seria_kv("base_transaction_hash", v.base_transaction_hash, s);
 	seria_kv("global_indices", v.global_indices, s);
 	seria_kv("transaction_binary_sizes", v.transaction_binary_sizes, s);
+}
+void ser_members(api::bytecoind::SyncBlocks::Request &v, ISeria &s) {
+	seria_kv("sparse_chain", v.sparse_chain, s);
+	seria_kv("first_block_timestamp", v.first_block_timestamp, s);
+	seria_kv("max_count", v.max_count, s);
+	//	seria_kv("send_signatures", v.send_signatures, s);
 }
 void ser_members(api::bytecoind::SyncBlocks::Response &v, ISeria &s) {
 	seria_kv("blocks", v.blocks, s);
