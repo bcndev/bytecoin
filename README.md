@@ -17,7 +17,10 @@ Contents
 
 [![](https://images.microbadger.com/badges/version/homdx/bytecoin.svg)](https://microbadger.com/images/homdx/bytecoin "Get your own version badge on microbadger.com")
 
-- docker pull homdx/bytecoin
+docker pull homdx/bytecoin
+### docker pull homdx/bytecoin:alpine
+
+Test Alpine docker image. In the future it will be possible to make this image basic (according to your feedback)
 
 ### You can check the result and build logs
 https://hub.docker.com/r/homdx/bytecoin/
