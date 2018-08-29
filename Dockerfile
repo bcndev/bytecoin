@@ -11,9 +11,9 @@ RUN dnf -y update && dnf -y install make  gcc-c++ cmake git wget libzip bzip2 wh
 WORKDIR /app
 
 ## Boost
-ARG BOOST_VERSION=1_67_0
-ARG BOOST_VERSION_DOT=1.67.0
-ARG BOOST_HASH=2684c972994ee57fc5632e03bf044746f6eb45d4920c343937a465fd67a5adba
+ARG BOOST_VERSION=1_68_0
+ARG BOOST_VERSION_DOT=1.68.0
+ARG BOOST_HASH=7f6130bc3cf65f56a618888ce9d5ea704fa10b462be126ad053e80e553d6d8b7
 RUN set -ex \
     && curl -s -L -o  boost_${BOOST_VERSION}.tar.bz2 https://dl.bintray.com/boostorg/release/${BOOST_VERSION_DOT}/source/boost_${BOOST_VERSION}.tar.bz2 \
     && echo "${BOOST_HASH} boost_${BOOST_VERSION}.tar.bz2" | sha256sum -c \
@@ -39,6 +39,8 @@ RUN set -ex \
     && cmake .. \
     && time make -j4 \
     && cp -v ../bin/* /usr/local/bin \
+    && mkdir /usr/local/bin/wallet_file \
+    && cp -v ../tests/wallet_file/* /usr/local/bin/wallet_file \
     && dnf remove -y make  gcc-c++ cmake git wget openssl-devel \
     && dnf install libstdc++ -y \
     && dnf clean all \
@@ -59,5 +61,9 @@ RUN set -ex \
 
 COPY --from=builder /usr/local/bin/* /usr/local/bin/
 
-RUN echo '[ SHOW VERSION ]' \
+RUN ls -la /usr/local/bin/ \
+    && mkdir -p /tests/wallet_file \
+    && cp /usr/local/bin/*.wallet /tests/wallet_file/ \
+    && cd /tests && tests || : \
+    && echo '[ SHOW VERSION ]' \
     && bytecoind -v
