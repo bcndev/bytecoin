@@ -5,6 +5,7 @@
 #include <boost/lexical_cast.hpp>
 #include <iostream>
 #include "PathTools.hpp"
+#include "common/Math.hpp"
 #include "common/string.hpp"
 
 using namespace platform;
@@ -226,7 +227,7 @@ std::string DBlmdb::to_ascending_key(uint32_t key) {
 }
 
 uint32_t DBlmdb::from_ascending_key(const std::string &key) {
-	return boost::lexical_cast<uint32_t>(std::stoull(key, nullptr, 16));
+	return common::integer_cast<uint32_t>(std::stoull(key, nullptr, 16));
 }
 
 std::string DBlmdb::clean_key(const std::string &key) {

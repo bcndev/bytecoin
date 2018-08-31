@@ -16,7 +16,7 @@ public:
 	virtual bool is_input() const override { return false; }
 
 	virtual void begin_object() override {}
-	virtual void object_key(common::StringView, bool optional = false) override {}
+	virtual bool object_key(common::StringView, bool optional = false) override { return true; }
 	virtual void end_object() override {}
 
 	virtual void begin_array(size_t &size, bool fixed_size = false) override;
@@ -43,31 +43,31 @@ private:
 	common::IOutputStream &stream;
 };
 
-template<typename T>
-common::BinaryArray to_binary(const T &obj) {
+template<typename T, typename... Context>
+common::BinaryArray to_binary(const T &obj, Context... context) {
 	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	common::BinaryArray result;
 	common::VectorOutputStream stream(result);
 	BinaryOutputStream ba(stream);
-	ba(const_cast<T &>(obj));
+	ser(const_cast<T &>(obj), ba, context...);
 	return result;
 }
-template<typename T>
-std::string to_binary_str(const T &obj) {
+template<typename T, typename... Context>
+std::string to_binary_str(const T &obj, Context... context) {
 	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	std::string result;
 	common::StringOutputStream stream(result);
 	BinaryOutputStream ba(stream);
-	ba(const_cast<T &>(obj));
+	ser(const_cast<T &>(obj), ba, context...);
 	return result;
 }
-template<typename T>
-size_t binary_size(const T &obj) {
+template<typename T, typename... Context>
+size_t binary_size(const T &obj, Context... context) {
 	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	common::BinaryArray result;
 	common::VectorOutputStream stream(result);
 	BinaryOutputStream ba(stream);
-	ba(const_cast<T &>(obj));
+	ser(const_cast<T &>(obj), ba, context...);
 	return result.size();
 }
 }

@@ -10,35 +10,43 @@
 //#include <string>
 
 #include "../io.hpp"
+#include "common/Invariant.hpp"
 #include "common/StringTools.hpp"
-#include "crypto/hash-impl.h"
+#include "crypto/crypto.hpp"
+#include "crypto/hash.h"
 #include "crypto/hash.hpp"
-
-using namespace std;
 
 static crypto::CryptoNightContext context;
 
-extern "C" {
-#ifdef _MSC_VER
-#pragma warning(disable : 4297)
-#endif
+//#ifdef _MSC_VER
+//#pragma warning(disable : 4297)
+//#endif
 
-static void hash_tree(const void *data, size_t length, unsigned char *hash) {
-	if ((length & 31) != 0) {
-		throw ios_base::failure("Invalid input length for tree_hash");
-	}
-	crypto::tree_hash((const unsigned char(*)[32])data, length >> 5, hash);
+static void hash_tree(const void *vdata, size_t vlength, crypto::CHash *hash) {
+	if (vlength % 32 != 0)
+		throw std::ios_base::failure("Invalid input length for tree_hash");
+	const struct crypto::CHash *data = (const struct crypto::CHash *)vdata;
+	size_t length                    = vlength / 32;
+	crypto::tree_hash(data, length, hash);
+	std::vector<crypto::CHash> branch(crypto::coinbase_tree_depth(length) + 1);
+	crypto::coinbase_tree_branch(data, length, branch.data());
+	invariant(branch.back() == crypto::CHash{}, "");  // No output array overwrite
+	crypto::CHash hash2;
+	crypto::tree_hash_from_branch(branch.data(), branch.size() - 1, data, nullptr, &hash2);
+	invariant(*hash == hash2, "");
 }
 
-static void slow_hash(const void *data, size_t length, unsigned char *hash) {
+static void slow_hash(const void *data, size_t length, crypto::CHash *hash) {
 	context.cn_slow_hash(data, length, hash);
-}
+	crypto::CHash hash2;
+	crypto::cn_slow_hash_platform_independent(context.get_data(), data, length, &hash2);
+	invariant(*hash == hash2, "");
 }
 
-extern "C" typedef void hash_f(const void *, size_t, unsigned char *);
+extern "C" typedef void hash_f(const void *, size_t, crypto::CHash *);
 
 struct hash_func {
-	const string name;
+	const std::string name;
 	hash_f &f;
 } hashes[] = {{"fast", crypto::cn_fast_hash}, {"slow", slow_hash}, {"tree", hash_tree},
     {"extra-blake", crypto::hash_extra_blake}, {"extra-groestl", crypto::hash_extra_groestl},
@@ -46,13 +54,13 @@ struct hash_func {
 
 void test_hash(const char *test_fun_name, const std::string &test_vectors_filename) {
 	hash_f *f = nullptr;
-	fstream input;
-	vector<char> data;
+	std::fstream input;
+	std::vector<char> data;
 	crypto::Hash expected, actual;
 	size_t test = 0;
 	for (hash_func *hf = hashes;; hf++) {
 		if (hf >= &hashes[sizeof(hashes) / sizeof(hash_func)]) {
-			cerr << "Unknown function" << endl;
+			std::cerr << "Unknown function" << std::endl;
 			throw std::runtime_error("test_hash failed");
 		}
 		if (test_fun_name == hf->name) {
@@ -63,23 +71,23 @@ void test_hash(const char *test_fun_name, const std::string &test_vectors_filena
 	//  if (f == slow_hash) {
 	//    context = new Crypto::cn_context();
 	//  }
-	input.open(test_vectors_filename, ios_base::in);
+	input.open(test_vectors_filename, std::ios_base::in);
 	for (;;) {
 		++test;
-		input.exceptions(ios_base::badbit);
+		input.exceptions(std::ios_base::badbit);
 		get(input, expected);
-		if (input.rdstate() & ios_base::eofbit) {
+		if (input.rdstate() & std::ios_base::eofbit) {
 			break;
 		}
-		input.exceptions(ios_base::badbit | ios_base::failbit | ios_base::eofbit);
+		input.exceptions(std::ios_base::badbit | std::ios_base::failbit | std::ios_base::eofbit);
 		input.clear(input.rdstate());
 		get(input, data);
-		f(data.data(), data.size(), actual.data);
+		f(data.data(), data.size(), &actual);
 		if (expected != actual) {
-			cerr << "Hash mismatch on test " << test << endl;
+			std::cerr << "Hash mismatch on test " << test << std::endl;
 			//      	cerr << "Input: " << common::pod_to_hex(data) << endl;
-			cerr << "Expected hash: " << expected << endl;
-			cerr << "Actual hash: " << actual << endl;
+			std::cerr << "Expected hash: " << expected << std::endl;
+			std::cerr << "Actual hash: " << actual << std::endl;
 			;
 			throw std::runtime_error("test_hash failed");
 		}
@@ -87,6 +95,9 @@ void test_hash(const char *test_fun_name, const std::string &test_vectors_filena
 }
 
 void test_hashes(const std::string &test_vectors_folder) {
+	size_t depths[17] = {0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4};
+	for (size_t i = 1; i < sizeof(depths) / sizeof(*depths); ++i)
+		invariant(crypto::coinbase_tree_depth(i) == depths[i], "");
 	test_hash("extra-blake", test_vectors_folder + "/tests-extra-blake.txt");
 	test_hash("extra-groestl", test_vectors_folder + "/tests-extra-groestl.txt");
 	test_hash("extra-jh", test_vectors_folder + "/tests-extra-jh.txt");
@@ -94,4 +105,22 @@ void test_hashes(const std::string &test_vectors_folder) {
 	test_hash("fast", test_vectors_folder + "/tests-fast.txt");
 	test_hash("slow", test_vectors_folder + "/tests-slow.txt");
 	test_hash("tree", test_vectors_folder + "/tests-tree.txt");
+
+	for (size_t si = 1; si != 34; ++si) {
+		std::vector<crypto::MergeMiningItem> mm_items(si);
+		for (auto &item : mm_items) {
+			item.leaf = crypto::rand<crypto::Hash>();
+			item.path = crypto::rand<crypto::Hash>();
+			if (si > 20) {
+				item.path.data[0] = (si % 2) ? 0 : 0xff;
+				item.path.data[1] = (si % 2) ? 0 : 0xff;
+			}
+		}
+		crypto::Hash root = crypto::fill_merge_mining_branches(mm_items.data(), mm_items.size());
+		for (auto &item : mm_items) {
+			crypto::Hash root2 =
+			    crypto::tree_hash_from_branch(item.branch.data(), item.branch.size(), item.leaf, &item.path);
+			invariant(root == root2, "");
+		}
+	}
 }

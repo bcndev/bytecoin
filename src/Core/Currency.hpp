@@ -17,9 +17,9 @@ public:
 	static const std::vector<Amount> PRETTY_AMOUNTS;
 	static const std::vector<Amount> DECIMAL_PLACES;
 
-	explicit Currency(bool is_testnet);
+	explicit Currency(const std::string &net);
 
-	bool is_testnet;
+	std::string net;
 	BlockTemplate genesis_block_template{};
 	Hash genesis_block_hash{};
 
@@ -38,7 +38,9 @@ public:
 	unsigned int emission_speed_factor;
 
 	Height reward_blocks_window;
-	uint32_t block_granted_full_reward_zone;
+	uint32_t minimum_size_median;
+	uint32_t get_minimum_size_median(uint8_t block_major_version) const;
+
 	uint32_t miner_tx_blob_reserved_size;
 
 	size_t number_of_decimal_places;
@@ -48,40 +50,50 @@ public:
 	Amount default_dust_threshold;
 
 	Timestamp difficulty_target;
-	Difficulty minimum_difficulty_from_v2;
+	Difficulty minimum_difficulty;
+	Difficulty get_minimum_difficulty(uint8_t block_major_version) const;
 	Height difficulty_window;
 	Height difficulty_lag;
 	size_t difficulty_cut;
 	Height difficulty_blocks_count() const { return difficulty_window + difficulty_lag; }
-	uint32_t expected_blocks_per_day() const { return 24 * 60 * 60 / difficulty_target; }
-	uint64_t max_block_size_initial;
-	uint64_t max_block_size_growth_speed_numerator;
-	uint64_t max_block_size_growth_speed_denominator;
+	uint32_t expected_blocks_per_day() const;
+	uint32_t expected_blocks_per_year() const;
+	uint32_t max_block_size_initial;
+	uint32_t max_block_size_growth_per_year;
 
 	Timestamp locked_tx_allowed_delta_seconds;
 	Height locked_tx_allowed_delta_blocks;
 
-	Height upgrade_height_v2;
-	Height upgrade_height_v3;
+	Height upgrade_height_v2;  // height of first v2 block
+	Height upgrade_height_v3;  // height of first v3 block
+	Height key_image_subgroup_checking_height;
 	uint8_t get_block_major_version_for_height(Height) const;
-	uint8_t get_block_minor_version_for_height(Height) const;
+
+	// upgrade voting threshold must not be reached before or at last sw checkpoint!
+	uint8_t upgrade_from_major_version;
+	uint8_t upgrade_indicator_minor_version;
+	uint8_t upgrade_desired_major_version;
+	Height upgrade_voting_window;
+	Height upgrade_votes_required;
+	Height upgrade_blocks_after_voting;
 
 	uint8_t current_transaction_version;
 
-	size_t sw_checkpoint_count() const;
-	bool is_in_sw_checkpoint_zone(Height index) const;
-	bool check_sw_checkpoint(Height index, const crypto::Hash &h, bool &is_sw_checkpoint) const;
-	std::pair<Height, crypto::Hash> last_sw_checkpoint() const;
+	size_t sw_checkpoint_count() const { return checkpoints_end - checkpoints_begin; }
+	bool is_in_sw_checkpoint_zone(Height height) const;
+	bool check_sw_checkpoint(Height height, const Hash &h, bool &is_sw_checkpoint) const;
+	SWCheckpoint last_sw_checkpoint() const;
 	PublicKey get_checkpoint_public_key(uint32_t key_id) const;
-	uint32_t get_checkpoint_keys_count() const;
+	uint32_t get_checkpoint_keys_count() const {
+		return static_cast<uint32_t>(checkpoint_keys_end - checkpoint_keys_begin);
+	}
 
-	uint32_t block_granted_full_reward_zone_by_block_version(uint8_t block_major_version) const;
-	bool get_block_reward(uint8_t block_major_version, size_t effective_median_size, size_t current_block_size,
+	void get_block_reward(uint8_t block_major_version, size_t effective_median_size, size_t current_block_size,
 	    Amount already_generated_coins, Amount fee, Amount *reward, SignedAmount *emission_change) const;
 	uint32_t max_block_cumulative_size(Height height) const;
 	uint32_t max_transaction_allowed_size(uint32_t effective_block_size_median) const;
 	bool construct_miner_tx(uint8_t block_major_version, Height height, size_t effective_median_size,
-	    Amount already_generated_coins, size_t current_block_size, Amount fee,
+	    Amount already_generated_coins, size_t current_block_size, Amount fee, Hash mineproof_seed,
 	    const AccountPublicAddress &miner_address, Transaction *tx, const BinaryArray &extra_nonce = BinaryArray(),
 	    size_t max_outs = 1) const;
 
@@ -99,18 +111,14 @@ public:
 	Difficulty next_effective_difficulty(uint8_t block_major_version, std::vector<Timestamp> timestamps,
 	    std::vector<CumulativeDifficulty> cumulative_difficulties) const;
 
-	bool check_proof_of_work_v1(
-	    const Hash &long_block_hash, const BlockTemplate &block, Difficulty current_difficulty) const;
-	bool check_proof_of_work_v2(
-	    const Hash &long_block_hash, const BlockTemplate &block, Difficulty current_difficulty) const;
-	bool check_proof_of_work(
-	    const Hash &long_block_hash, const BlockTemplate &block, Difficulty current_difficulty) const;
+	BinaryArray get_block_long_hashing_data(const BlockHeader &, const BlockBodyProxy &) const;
 
-	bool is_transaction_spend_time(UnlockMoment unlock_time) const { return unlock_time >= max_block_height; }
-	bool is_transaction_spend_time_block(UnlockMoment unlock_time) const { return unlock_time < max_block_height; }
-	bool is_transaction_spend_time_unlocked(UnlockMoment unlock_time, Height block_index, Timestamp block_time) const {
+	bool is_transaction_spend_time(BlockOrTimestamp unlock_time) const { return unlock_time >= max_block_height; }
+	bool is_transaction_spend_time_block(BlockOrTimestamp unlock_time) const { return unlock_time < max_block_height; }
+	bool is_transaction_spend_time_unlocked(
+	    BlockOrTimestamp unlock_time, Height block_height, Timestamp block_time) const {
 		if (unlock_time < max_block_height) {  // interpret as block index
-			return block_index + locked_tx_allowed_delta_blocks >= unlock_time;
+			return block_height + locked_tx_allowed_delta_blocks >= unlock_time;
 		}  // else interpret as time
 		return block_time + locked_tx_allowed_delta_seconds >= unlock_time;
 	}
@@ -121,6 +129,12 @@ public:
 	static std::string format_amount(size_t number_of_decimal_places, Amount);
 	static std::string format_amount(size_t number_of_decimal_places, SignedAmount);
 	static bool parse_amount(size_t number_of_decimal_places, const std::string &, Amount *);
+
+private:
+	const PublicKey *checkpoint_keys_begin = nullptr;
+	const PublicKey *checkpoint_keys_end   = nullptr;
+	const SWCheckpoint *checkpoints_begin  = nullptr;
+	const SWCheckpoint *checkpoints_end    = nullptr;
 };
 
 // we should probaly find better place for these global funs
@@ -128,8 +142,8 @@ Hash get_transaction_inputs_hash(const TransactionPrefix &);
 Hash get_transaction_prefix_hash(const TransactionPrefix &);
 Hash get_transaction_hash(const Transaction &);
 
-Hash get_block_hash(const BlockTemplate &);
-Hash get_block_long_hash(const BlockTemplate &, crypto::CryptoNightContext &);
-Hash get_auxiliary_block_header_hash(const BlockTemplate &);  // Without parent block, for merge mining calculations
+Hash get_block_hash(const BlockHeader &, const BlockBodyProxy &);
+Hash get_auxiliary_block_header_hash(const BlockHeader &, const BlockBodyProxy &);
+// Auxilary hash, or prehash - inserted into MM or CM tree
 
 }  // namespace bytecoin

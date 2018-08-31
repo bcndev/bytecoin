@@ -1,13 +1,14 @@
 # Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
 # Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.0)
 project(bytecoin)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 11)
 # message(STATUS "Bytecoind profile: According to cmake, sizeof(void *) == " ${CMAKE_SIZEOF_VOID_P})
 option(USE_INSTRUMENTATION "For testing - builds with address sanitizer instrument" OFF)
 option(WITH_THREAD_SANITIZER "For testing - builds with thread sanitizer instrument, USE_INSTRUMENTATION must be also set" OFF)
+option(BETTER_DEBUG "Disables optimizations. We do not use standard debug/realease configurations because they change too much" OFF)
 option(USE_SSL "Builds with support of https between walletd and bytecoind" ON)
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     option(USE_SQLITE "Builds with SQLite instead of LMDB. 4x slower, but works on 32-bit and mobile platforms" OFF)
@@ -17,12 +18,20 @@ else()
     set(OPENSSL_ROOT ../openssl32)
 endif()
 if(WIN32)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+#    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+#    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
     add_definitions(-D_SCL_SECURE_NO_WARNINGS=1 -D_CRT_SECURE_NO_WARNINGS=1 -D_WIN32_WINNT=0x0501)
 else()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -g -O2 -Wall -Wextra -Werror=return-type -Wno-unused-parameter")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -maes -g -O2 -Wall -Wextra -Werror=return-type -Wno-unused-parameter")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -g -Wall -Wextra -Werror=return-type -Wno-unused-parameter")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -maes -g -Wall -Wextra -Werror=return-type -Wno-unused-parameter")
+    if(BETTER_DEBUG)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
+    else()
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
+    endif()
+    message(STATUS "Better debug: " ${BETTER_DEBUG})
     message(STATUS "Instrumentation usage: " ${USE_INSTRUMENTATION})
     message(STATUS "Thread sanitizer usage: " ${WITH_THREAD_SANITIZER})
     if(USE_INSTRUMENTATION)
@@ -58,32 +67,22 @@ else()
     message(STATUS "SSL usage: OFF")
 endif()
 file(GLOB SRC_CRYPTO
-    src/crypto/*.cpp src/crypto/*.hpp src/crypto/*.h
-    src/crypto/blake256.c
-    src/crypto/chacha8.c
-    src/crypto/crypto-ops-data.c
-    src/crypto/crypto-ops.c
-    src/crypto/crypto-util.c
-    src/crypto/groestl.c
-    src/crypto/hash-extra-blake.c
-    src/crypto/hash-extra-groestl.c
-    src/crypto/hash-extra-jh.c
-    src/crypto/hash-extra-skein.c
-    src/crypto/hash.c
-    src/crypto/jh.c
-    src/crypto/keccak.c
-    src/crypto/oaes_lib.c
-    src/crypto/random.c
-    src/crypto/skein.c
-    src/crypto/slow-hash_x86.c
-    src/crypto/tree-hash.c
+        src/crypto/*.cpp src/crypto/*.hpp src/crypto/*.h
+        src/crypto/*.c src/crypto/*.h
+        src/crypto/bernstein/*.h src/crypto/bernstein/*.c
+        src/crypto/blake/*.h src/crypto/blake/*.c
+        src/crypto/groestl/*.h src/crypto/groestl/*.c
+        src/crypto/jh/*.h src/crypto/jh/*.c
+        src/crypto/keccak/*.c
+        src/crypto/oaes/*.h src/crypto/oaes/*.c
+        src/crypto/skein/*.h src/crypto/skein/*.c
 )
 file(GLOB SRC_COMMON src/common/*.cpp src/common/*.hpp)
 file(GLOB SRC_SERIALIZATION src/Serialization/*.cpp src/Serialization/*.hpp)
 file(GLOB SRC_SERIA src/seria/*.cpp src/seria/*.hpp)
 file(GLOB SRC_LOGGING src/logging/*.cpp src/logging/*.hpp)
 file(GLOB SRC_P2P src/p2p/*.cpp src/p2p/*.hpp)
-file(GLOB SRC_CORE src/Core/*.cpp src/Core/*.hpp)
+file(GLOB SRC_CORE src/Core/*.cpp src/Core/*.hpp src/CryptoNote.hpp src/CryptoNote.cpp src/rpc_api.hpp src/rpc_api.cpp)
 file(GLOB SRC_HTTP src/http/*.cpp src/http/*.hpp)
 file(GLOB SRC_PLATFORM
     src/platform/ExclusiveLock.cpp src/platform/ExclusiveLock.hpp

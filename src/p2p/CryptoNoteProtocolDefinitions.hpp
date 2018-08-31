@@ -35,8 +35,8 @@ struct NOTIFY_NEW_TRANSACTIONS {
 struct NOTIFY_REQUEST_GET_OBJECTS {
 	enum { ID = BC_COMMANDS_POOL_BASE + 3 };
 	struct request {
-		std::vector<crypto::Hash> txs;
-		std::vector<crypto::Hash> blocks;
+		std::vector<Hash> txs;
+		std::vector<Hash> blocks;
 	};
 };
 
@@ -45,7 +45,7 @@ struct NOTIFY_RESPONSE_GET_OBJECTS {
 	struct request {
 		std::vector<std::string> txs;
 		std::vector<RawBlockLegacy> blocks;
-		std::vector<crypto::Hash> missed_ids;
+		std::vector<Hash> missed_ids;
 		uint32_t current_blockchain_height = 0;  // top block height + 1
 	};
 };
@@ -54,9 +54,9 @@ struct NOTIFY_REQUEST_CHAIN {
 	enum { ID = BC_COMMANDS_POOL_BASE + 6 };
 
 	struct request {
-		std::vector<crypto::Hash> block_ids;  // IDs of the first 10 blocks are sequential, next goes with pow(2,n)
-		                                      // offset, like 2, 4, 8, 16, 32, 64 and so on, and the last one is always
-		                                      // genesis block
+		std::vector<Hash> block_ids;  // IDs of the first 10 blocks are sequential, next goes with pow(2,n)
+		                              // offset, like 2, 4, 8, 16, 32, 64 and so on, and the last one is always
+		                              // genesis block
 	};
 };
 
@@ -65,19 +65,19 @@ struct NOTIFY_RESPONSE_CHAIN_ENTRY {
 	struct request {
 		uint32_t start_height = 0;  // height of first block_id
 		uint32_t total_height = 0;  // top block height + 1
-		std::vector<crypto::Hash> m_block_ids;
+		std::vector<Hash> m_block_ids;
 	};
 };
 
 struct NOTIFY_REQUEST_TX_POOL {
 	enum { ID = BC_COMMANDS_POOL_BASE + 8 };
 	struct request {
-		std::vector<crypto::Hash> txs;
+		std::vector<Hash> txs;
 	};
 };
 struct NOTIFY_CHECKPOINT {
 	enum { ID = BC_COMMANDS_POOL_BASE + 10 };
-	typedef SignedCheckPoint request;
+	typedef SignedCheckpoint request;
 };
 }
 

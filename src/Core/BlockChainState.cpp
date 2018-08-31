@@ -32,7 +32,7 @@ using namespace platform;
 
 namespace seria {
 void ser_members(IBlockChainState::UnlockTimePublickKeyHeightSpent &v, ISeria &s) {
-	seria_kv("unlock_time", v.unlock_time, s);
+	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
 	seria_kv("public_key", v.public_key, s);
 	seria_kv("height", v.height, s);
 	seria_kv("spent", v.spent, s);
@@ -60,14 +60,14 @@ bool BlockChainState::DeltaState::read_keyimage(const KeyImage &key_image, Heigh
 }
 
 uint32_t BlockChainState::DeltaState::push_amount_output(
-    Amount amount, UnlockMoment unlock_time, Height block_height, const PublicKey &pk) {
+    Amount amount, BlockOrTimestamp unlock_time, Height block_height, const PublicKey &pk) {
 	uint32_t pg = m_parent_state->next_global_index_for_amount(amount);
 	auto &ga    = m_global_amounts[amount];
 	ga.push_back(std::make_pair(unlock_time, pk));
 	return pg + static_cast<uint32_t>(ga.size()) - 1;
 }
 
-void BlockChainState::DeltaState::pop_amount_output(Amount amount, UnlockMoment unlock_time, const PublicKey &pk) {
+void BlockChainState::DeltaState::pop_amount_output(Amount amount, BlockOrTimestamp unlock_time, const PublicKey &pk) {
 	std::vector<std::pair<uint64_t, PublicKey>> &el = m_global_amounts[amount];
 	invariant(!el.empty(), "DeltaState::pop_amount_output underflow");
 	invariant(el.back().first == unlock_time && el.back().second == pk, "DeltaState::pop_amount_output wrong element");
@@ -89,10 +89,10 @@ bool BlockChainState::DeltaState::read_amount_output(
 	auto git = m_global_amounts.find(amount);
 	if (git == m_global_amounts.end() || global_index >= git->second.size())
 		return false;
-	unp->unlock_time = git->second[global_index].first;
-	unp->public_key  = git->second[global_index].second;
-	unp->height      = m_block_height;
-	unp->spent       = false;  // Spending just created outputs inside mempool or block is prohibited, simplifying logic
+	unp->unlock_block_or_timestamp = git->second[global_index].first;
+	unp->public_key                = git->second[global_index].second;
+	unp->height                    = m_block_height;
+	unp->spent = false;  // Spending just created outputs inside mempool or block is prohibited, simplifying logic
 	return true;
 }
 void BlockChainState::DeltaState::spend_output(Amount amount, uint32_t global_index) {
@@ -136,7 +136,7 @@ static std::string validate_semantic(bool generating, const Transaction &tx, uin
 			return "OUTPUT_ZERO_AMOUNT";
 		if (output.target.type() == typeid(KeyOutput)) {
 			const KeyOutput &key_output = boost::get<KeyOutput>(output.target);
-			if (check_output_key && !key_isvalid(key_output.key))
+			if (check_output_key && !key_isvalid(key_output.public_key))
 				return "OUTPUT_INVALID_KEY";
 		} else
 			return "OUTPUT_UNKNOWN_TYPE";
@@ -202,7 +202,7 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
 		genesis_block.header = currency.genesis_block_template;
 		RawBlock raw_block;
 		invariant(genesis_block.to_raw_block(raw_block), "Genesis block failed to convert into raw block");
-		PreparedBlock pb(std::move(raw_block), nullptr);
+		PreparedBlock pb(std::move(raw_block), m_currency, nullptr);
 		api::BlockHeader info;
 		invariant(add_block(pb, &info, std::string()) != BroadcastAction::BAN, "Genesis block failed to add");
 	}
@@ -210,6 +210,54 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
 	m_log(logging::INFO) << "BlockChainState::BlockChainState height=" << get_tip_height()
 	                     << " cumulative_difficulty=" << get_tip_cumulative_difficulty() << " bid=" << get_tip_bid()
 	                     << std::endl;
+	/*	RawBlock rb;
+	    Block bb;
+	    invariant(read_block(common::pfh<Hash>("ec140124695fbe90929a3f49dbe4d2b88fa0ad5ae271aedf0ebcd9f55b6bd3d7"),
+	   &rb), "");
+	    invariant(bb.from_raw_block(rb), "");
+	    Hash ha1 = get_auxiliary_block_header_hash(bb.header);
+	    Hash ha2 = get_block_hash(bb.header);
+	    auto ba3 = currency.get_block_long_hashing_data(bb.header);
+	    auto bbh = seria::to_binary(bb.header);
+	    std::cout << common::to_hex(rb.block.data(), rb.block.size()) << std::endl;
+	    std::cout << common::to_hex(bbh.data(), bbh.size()) << std::endl;
+	    invariant(bbh == rb.block, "");*/
+	/*	size_t templates_size = 0;
+	    size_t true_headers_size = 0;
+	    Height start = 400000;
+	    Height ha = start;
+	    for(; ha < start + 10000; ++ha ){
+	        Hash bid;
+	        if(!read_chain(ha, &bid))
+	            break;
+	        RawBlock rb;
+	        Block bb;
+	        invariant(read_block(bid, &rb), "");
+	        invariant(bb.from_raw_block(rb), "");
+	        BinaryArray tba = seria::to_binary(static_cast<BlockHeader &>(bb.header));
+	        BinaryArray tba2 = seria::to_binary(get_body_proxy_from_template(bb.header));
+	        templates_size += rb.block.size();
+	        true_headers_size += tba.size() + tba2.size();
+	    }
+	    std::cout << "from height " << start << " to " << ha << " block templates size=" << templates_size << " true
+	   headers + body proxies size=" << true_headers_size << std::endl;*/
+	/*BlockHeader tr;
+	tr.major_version = 104;
+	tr.cm_merkle_branch.push_back(crypto::rand<Hash>());
+	tr.cm_merkle_branch.push_back(crypto::rand<Hash>());
+	tr.cm_merkle_branch.push_back(Hash{});
+	tr.cm_merkle_branch.push_back(Hash{});
+	tr.cm_merkle_branch.push_back(Hash{});
+	tr.cm_merkle_branch.push_back(crypto::rand<Hash>());
+	tr.cm_merkle_branch.push_back(Hash{});
+	tr.cm_merkle_branch.push_back(Hash{});
+	tr.cm_merkle_branch.push_back(Hash{});
+	tr.cm_merkle_branch.push_back(crypto::rand<Hash>());
+	BinaryArray ba = seria::to_binary(tr);
+	std::cout << seria::to_json_value(tr).to_string() << std::endl;
+	BlockHeader tr2;
+	seria::from_binary(tr2, ba);
+	invariant(tr.cm_merkle_branch == tr2.cm_merkle_branch, "");*/
 	build_blods();
 }
 
@@ -226,9 +274,8 @@ std::string BlockChainState::check_standalone_consensus(
 	if (get_tip_bid() != prev_info.hash)  // Optimization for most common case
 		calculate_consensus_values(prev_info, &info->size_median, &info->timestamp_median);
 
-	auto next_block_granted_full_reward_zone = m_currency.block_granted_full_reward_zone_by_block_version(
-	    block.header.major_version);  // We will check version later in this fun
-	info->effective_size_median = std::max(info->size_median, next_block_granted_full_reward_zone);
+	auto next_minimum_size_median = m_currency.get_minimum_size_median(block.header.major_version);
+	info->effective_size_median   = std::max(info->size_median, next_minimum_size_median);
 
 	size_t cumulative_size = 0;
 	for (size_t i = 0; i != pb.raw_block.transactions.size(); ++i) {
@@ -248,8 +295,10 @@ std::string BlockChainState::check_standalone_consensus(
 	if (info->block_size > max_block_cumulative_size)
 		return "CUMULATIVE_BLOCK_SIZE_TOO_BIG";
 
-	// block at UPGRADE_HEIGHT still has old version.
-	if (block.header.major_version != m_currency.get_block_major_version_for_height(info->height))
+	uint8_t should_be_major = 0, might_be_minor = 0;
+	if (!fill_next_block_versions(prev_info, false, &should_be_major, &might_be_minor))
+		return "DOES_NOT_PASS_THROUGH_LAST_SW_CHECKPOINT";
+	if (block.header.major_version != should_be_major)
 		return "WRONG_VERSION";
 
 	if (block.header.major_version >= 2) {
@@ -271,19 +320,19 @@ std::string BlockChainState::check_standalone_consensus(
 	if (block.header.base_transaction.inputs[0].type() != typeid(CoinbaseInput))
 		return "INPUT_UNEXPECTED_TYPE";
 
-	if (boost::get<CoinbaseInput>(block.header.base_transaction.inputs[0]).block_index != info->height)
+	if (boost::get<CoinbaseInput>(block.header.base_transaction.inputs[0]).height != info->height)
 		return "BASE_INPUT_WRONG_BLOCK_INDEX";
 
-	if (block.header.base_transaction.unlock_time != info->height + m_currency.mined_money_unlock_window)
+	if (block.header.base_transaction.unlock_block_or_timestamp != info->height + m_currency.mined_money_unlock_window)
 		return "WRONG_TRANSACTION_UNLOCK_TIME";
 
-	const bool check_keys = !m_currency.is_in_sw_checkpoint_zone(info->height);
+	const bool check_keys = m_config.paranoid_checks || !m_currency.is_in_sw_checkpoint_zone(info->height);
 	uint64_t miner_reward = 0;
 	for (const auto &output : block.header.base_transaction.outputs) {  // TODO - call validate_semantic
 		if (output.amount == 0)
 			return "OUTPUT_ZERO_AMOUNT";
 		if (output.target.type() == typeid(KeyOutput)) {
-			if (check_keys && !key_isvalid(boost::get<KeyOutput>(output.target).key))
+			if (check_keys && !key_isvalid(boost::get<KeyOutput>(output.target).public_key))
 				return "OUTPUT_INVALID_KEY";
 		} else
 			return "OUTPUT_UNKNOWN_TYPE";
@@ -312,24 +361,25 @@ std::string BlockChainState::check_standalone_consensus(
 	if (info->difficulty == 0)
 		return "DIFFICULTY_OVERHEAD";
 
-	Amount cumulative_fee = 0;
+	Amount transactions_fee = 0;
 	for (const auto &tx : block.transactions) {
 		Amount fee = 0;
 		if (!get_tx_fee(tx, &fee))
 			return "WRONG_AMOUNT";
-		cumulative_fee += fee;
+		transactions_fee += fee;
 	}
 
 	int64_t emission_change      = 0;
 	auto already_generated_coins = prev_info.already_generated_coins;
 
-	if (!m_currency.get_block_reward(block.header.major_version, info->effective_size_median, 0,
-	        already_generated_coins, 0, &info->base_reward, &emission_change) ||
-	    !m_currency.get_block_reward(block.header.major_version, info->effective_size_median, info->block_size,
-	        already_generated_coins, cumulative_fee, &info->reward, &emission_change)) {
-		// log(Logging::WARNING) << "Block " << hash << " has too big cumulative size";
+	if(info->block_size > info->effective_size_median * 2)
 		return "CUMULATIVE_BLOCK_SIZE_TOO_BIG";
-	}
+
+	m_currency.get_block_reward(block.header.major_version, info->effective_size_median, 0,
+	        already_generated_coins, 0, &info->base_reward, &emission_change);
+
+	m_currency.get_block_reward(block.header.major_version, info->effective_size_median, info->block_size,
+	        already_generated_coins, transactions_fee, &info->reward, &emission_change);
 
 	if (miner_reward != info->reward) {
 		//        log(Logging::WARNING) << "Block reward mismatch for block " <<
@@ -339,11 +389,11 @@ std::string BlockChainState::check_standalone_consensus(
 	}
 	info->already_generated_coins        = prev_info.already_generated_coins + emission_change;
 	info->already_generated_transactions = prev_info.already_generated_transactions + block.transactions.size() + 1;
-	info->total_fee_amount               = cumulative_fee;
-	info->transactions_cumulative_size   = static_cast<uint32_t>(cumulative_size);
+	info->transactions_fee               = transactions_fee;
+	info->transactions_size              = static_cast<uint32_t>(cumulative_size);
 	for (auto &&tx : pb.block.transactions) {
 		Amount tx_fee         = 0;
-		std::string tx_result = validate_semantic(false, tx, &tx_fee, check_keys);
+		std::string tx_result = validate_semantic(false, tx, &tx_fee, m_config.paranoid_checks || check_keys);
 		if (!tx_result.empty())
 			return tx_result;
 	}
@@ -352,14 +402,25 @@ std::string BlockChainState::check_standalone_consensus(
 		if (!m_currency.check_sw_checkpoint(info->height, info->hash, is_checkpoint))
 			return "CHECKPOINT_BLOCK_HASH_MISMATCH";
 	} else {
-		if (!check_pow)
+		if (!check_pow && !m_config.paranoid_checks)
 			return std::string();
-		Hash long_hash = pb.long_block_hash != Hash{} ? pb.long_block_hash
-		                                              : get_block_long_hash(block.header, m_hash_crypto_context);
-		if (!m_currency.check_proof_of_work(long_hash, block.header, info->difficulty))
+		Hash long_hash = pb.long_block_hash;
+		if (long_hash == Hash{}) {
+			auto body_proxy = get_body_proxy_from_template(block.header);
+			auto ba         = m_currency.get_block_long_hashing_data(block.header, body_proxy);
+			long_hash       = m_hash_crypto_context.cn_slow_hash(ba.data(), ba.size());
+		}
+		if (!check_hash(long_hash, info->difficulty))
 			return "PROOF_OF_WORK_TOO_WEAK";
 	}
 	return std::string();
+}
+void BlockChainState::fill_statistics(api::bytecoind::GetStatistics::Response &res) const {
+	BlockChain::fill_statistics(res);
+	res.transaction_pool_size     = m_memory_state_total_size;
+	res.transaction_pool_max_size = MAX_POOL_SIZE;
+	Hash minimal_tid;
+	res.transaction_pool_lowest_fee_per_byte = minimum_pool_fee_per_byte(&minimal_tid);
 }
 
 void BlockChainState::calculate_consensus_values(
@@ -396,22 +457,33 @@ void BlockChainState::tip_changed() {
 	calculate_consensus_values(get_tip(), &m_next_median_size, &m_next_median_timestamp);
 }
 
-bool BlockChainState::create_mining_block_template(BlockTemplate *b, const AccountPublicAddress &adr,
-    const BinaryArray &extra_nonce, Difficulty *difficulty, Height *height) const {
-	clear_mining_transactions();
-	*height = get_tip_height() + 1;
+bool BlockChainState::create_mining_block_template(const AccountPublicAddress &adr,
+													const BinaryArray &extra_nonce, BlockTemplate *b, Difficulty *difficulty, Height *height) const {
+	return create_mining_block_template(adr, extra_nonce, b, difficulty, height, get_tip_bid());
+}
 
-	*b               = BlockTemplate{};
-	b->major_version = m_currency.get_block_major_version_for_height(*height);
-	b->minor_version = m_currency.get_block_minor_version_for_height(*height);
+bool BlockChainState::create_mining_block_template(const AccountPublicAddress &adr,
+    const BinaryArray &extra_nonce, BlockTemplate *b, Difficulty *difficulty, Height * height, Hash parent_bid) const {
+	api::BlockHeader parent_info;
+	if (!read_header(parent_bid, &parent_info))
+		throw std::runtime_error("Attempt to mine from block we do not have");
+	*height = parent_info.height + 1;
+	*b = BlockTemplate{};
+	if (!fill_next_block_versions(parent_info, false, &b->major_version, &b->minor_version))
+		throw std::runtime_error(
+		    "Mining of block in chain not passing through last SW checkpoint is not possible (will not be accepted by network anyway)");
 
+	uint32_t next_median_size       = 0;
+	Timestamp next_median_timestamp = 0;
+	calculate_consensus_values(parent_info, &next_median_size, &next_median_timestamp);
+	clear_mining_transactions();  // ????
 	{
 		std::vector<Timestamp> timestamps;
 		std::vector<CumulativeDifficulty> difficulties;
-		Height blocks_count = std::min(get_tip_height(), m_currency.difficulty_blocks_count());  // TODO - excess min
+		Height blocks_count = std::min(parent_info.height, m_currency.difficulty_blocks_count());
 		timestamps.reserve(blocks_count);
 		difficulties.reserve(blocks_count);
-		auto timestamps_window = get_tip_segment(get_tip(), blocks_count, false);
+		auto timestamps_window = get_tip_segment(parent_info, blocks_count, false);
 		for (auto it = timestamps_window.begin(); it != timestamps_window.end(); ++it) {
 			timestamps.push_back(it->timestamp);
 			difficulties.push_back(it->cumulative_difficulty);
@@ -428,35 +500,34 @@ bool BlockChainState::create_mining_block_template(BlockTemplate *b, const Accou
 		b->parent_block.minor_version     = 0;
 		b->parent_block.transaction_count = 1;
 
-		TransactionExtraMergeMiningTag mm_tag{};
-		if (!append_merge_mining_tag_to_extra(b->parent_block.base_transaction.extra, mm_tag)) {
-			m_log(logging::ERROR) << logging::BrightRed << "Failed to append merge mining tag to extra of "
-			                                               "the parent block miner transaction";
-			return false;
-		}
+		extra_add_merge_mining_tag(b->parent_block.base_transaction.extra, TransactionExtraMergeMiningTag{});
 	}
 
-	b->previous_block_hash = get_tip_bid();
-	b->timestamp           = std::max(platform::now_unix_timestamp(), m_next_median_timestamp);
+	b->previous_block_hash = parent_bid;
+	b->parent_block.timestamp = std::max(platform::now_unix_timestamp(), next_median_timestamp);
+	b->timestamp           = b->parent_block.timestamp;
 
-	auto next_block_granted_full_reward_zone =
-	    m_currency.block_granted_full_reward_zone_by_block_version(b->major_version);
-	auto effective_size_median     = std::max(m_next_median_size, next_block_granted_full_reward_zone);
-	Amount already_generated_coins = get_tip().already_generated_coins;
+	auto next_minimum_size_median  = m_currency.get_minimum_size_median(b->major_version);
+	auto effective_size_median     = std::max(next_median_size, next_minimum_size_median);
+	Amount already_generated_coins = parent_info.already_generated_coins;
 
-	auto max_total_size      = (125 * effective_size_median) / 100;
-	auto max_cumulative_size = m_currency.max_block_cumulative_size(*height);
-	max_total_size           = std::min(max_total_size, max_cumulative_size) - m_currency.miner_tx_blob_reserved_size;
+//	auto max_total_size      = (150 * effective_size_median) / 100;
+	const auto max_consensus_block_size = std::min(m_currency.max_block_cumulative_size(*height), 2 * effective_size_median);
+	const auto max_txs_size           = max_consensus_block_size - m_currency.miner_tx_blob_reserved_size;
 
 	std::vector<Hash> pool_hashes;
 	for (auto &&msf : m_memory_state_fee_tx)
 		for (auto &&ha : msf.second)
 			pool_hashes.push_back(ha);
 	size_t txs_size = 0;
-	Amount fee      = 0;
+	Amount txs_fee  = 0;
 	DeltaState memory_state(*height, b->timestamp, this);  // will be get_tip().timestamp_unlock after fork
-	// technically we should give unlock timestamp of next block, but more
+	// TODO - technically we should give unlock timestamp of next block, but more
 	// conservative also works
+	Amount base_reward = 0;
+	SignedAmount emission_change = 0;
+	m_currency.get_block_reward(b->major_version, effective_size_median, 0,
+									 already_generated_coins, 0, &base_reward, &emission_change);
 
 	for (; !pool_hashes.empty(); pool_hashes.pop_back()) {
 		auto tit = m_memory_state_tx.find(pool_hashes.back());
@@ -465,23 +536,31 @@ bool BlockChainState::create_mining_block_template(BlockTemplate *b, const Accou
 			assert(false);
 			continue;
 		}
-		const size_t block_size_limit = max_total_size;
-		const size_t tx_size          = tit->second.binary_tx.size();
-		if (txs_size + tx_size > block_size_limit)
+		const size_t tx_size = tit->second.binary_tx.size();
+		const Amount tx_fee = tit->second.fee;
+		if( txs_size + tx_size > max_txs_size)
 			continue;
-		Amount single_fee = tit->second.fee;
 		BlockGlobalIndices global_indices;
 		Height conflict_height = 0;
 		const std::string result =
 		    redo_transaction_get_error(false, tit->second.tx, &memory_state, &global_indices, &conflict_height, true);
 		if (!result.empty()) {
 			m_log(logging::ERROR) << "Transaction " << tit->first
-			                      << " is in pool, but could not be redone result=" << result << std::endl;
+			                      << " is in pool, but could not be redone result=" << result
+			                      << " Conflict height=" << conflict_height << std::endl;
 			continue;
 		}
+		if (txs_size + tx_size > effective_size_median){
+			Amount reward;
+			m_currency.get_block_reward(b->major_version, effective_size_median, txs_size + tx_size,
+										already_generated_coins, txs_fee + tx_fee, &reward, &emission_change);
+			if(reward < base_reward)
+				continue;
+		}
 		txs_size += tx_size;
-		fee += single_fee;
+		txs_fee += tx_fee;
 		b->transaction_hashes.emplace_back(tit->first);
+		m_mining_transactions.erase(tit->first); // We want ot update height to most recent
 		m_mining_transactions.insert(std::make_pair(tit->first, std::make_pair(tit->second.binary_tx, *height)));
 		m_log(logging::TRACE) << "Transaction " << tit->first << " included to block template";
 	}
@@ -494,31 +573,30 @@ bool BlockChainState::create_mining_block_template(BlockTemplate *b, const Accou
 	// expected block size
 	// make blocks coin-base tx looks close to real coinbase tx to get truthful
 	// blob size
-	bool r = m_currency.construct_miner_tx(b->major_version, *height, effective_size_median, already_generated_coins,
-	    txs_size, fee, adr, &b->base_transaction, extra_nonce, 11);
-	if (!r) {
-		m_log(logging::ERROR) << logging::BrightRed << "Failed to construct miner tx, first chance";
-		return false;
-	}
 
-	size_t cumulative_size   = txs_size + seria::binary_size(b->base_transaction);
-	const size_t TRIES_COUNT = 10;
+//	bool r = m_currency.construct_miner_tx(b->major_version, *height, effective_size_median, already_generated_coins,
+//	    txs_size, txs_fee, m_config.mineproof_secret, adr, &b->base_transaction, extra_nonce, 11);
+//	if (!r) {
+//		m_log(logging::ERROR) << logging::BrightRed << "Failed to construct miner tx, first chance";
+//		return false;
+//	}
+
+	size_t cumulative_size   = txs_size;
+	const size_t TRIES_COUNT = 11;
 	for (size_t try_count = 0; try_count < TRIES_COUNT; ++try_count) {
-		r = m_currency.construct_miner_tx(b->major_version, *height, effective_size_median, already_generated_coins,
-		    cumulative_size, fee, adr, &b->base_transaction, extra_nonce, 11);
-		if (!r) {
+		if (!m_currency.construct_miner_tx(b->major_version, *height, effective_size_median, already_generated_coins,
+		    cumulative_size, txs_fee, m_config.mineproof_secret, adr, &b->base_transaction, extra_nonce, 11)) {
 			m_log(logging::ERROR) << logging::BrightRed << "Failed to construct miner tx, second chance";
 			return false;
 		}
-
 		size_t coinbase_blob_size = seria::binary_size(b->base_transaction);
-		if (coinbase_blob_size > cumulative_size - txs_size) {
+		if (coinbase_blob_size + txs_size > cumulative_size) {
 			cumulative_size = txs_size + coinbase_blob_size;
 			continue;
 		}
 
-		if (coinbase_blob_size < cumulative_size - txs_size) {
-			size_t delta = cumulative_size - txs_size - coinbase_blob_size;
+		if (coinbase_blob_size + txs_size < cumulative_size) {
+			size_t delta = cumulative_size - (coinbase_blob_size + txs_size);
 			common::append(b->base_transaction.extra, delta, 0);
 			// here could be 1 byte difference, because of extra field counter is
 			// varint, and it can become from
@@ -535,195 +613,15 @@ bool BlockChainState::create_mining_block_template(BlockTemplate *b, const Accou
 				b->base_transaction.extra.resize(b->base_transaction.extra.size() - 1);
 				if (cumulative_size != txs_size + seria::binary_size(b->base_transaction)) {
 					// ooh, not lucky, -1 makes varint-counter size smaller, in that case
-					// we continue to grow with
-					// cumulative_size
+					// we continue to grow with cumulative_size
 					m_log(logging::TRACE)
 					    << logging::BrightRed << "Miner tx creation have no luck with delta_extra size = " << delta
 					    << " and " << delta - 1;
 					cumulative_size += delta - 1;
 					continue;
 				}
-
-				m_log(logging::TRACE) << logging::BrightGreen
-				                      << "Setting extra for block: " << b->base_transaction.extra.size()
-				                      << ", try_count=" << try_count;
-			}
-		}
-		if (cumulative_size != txs_size + seria::binary_size(b->base_transaction)) {
-			m_log(logging::ERROR) << logging::BrightRed << "unexpected case: cumulative_size=" << cumulative_size
-			                      << " is not equal txs_cumulative_size=" << txs_size
-			                      << " + get_object_blobsize(b.base_transaction)="
-			                      << seria::binary_size(b->base_transaction);
-			return false;
-		}
-		return true;
-	}
-	m_log(logging::ERROR) << logging::BrightRed << "Failed to create_block_template with " << TRIES_COUNT << " tries";
-	return false;
-}
-
-bool BlockChainState::create_mining_block_template2(BlockTemplate *b, const AccountPublicAddress &adr,
-    const BinaryArray &extra_nonce, Difficulty *difficulty, Hash parent_bid) const {
-	uint32_t next_median_size       = 0;
-	Timestamp next_median_timestamp = 0;
-	const Hash bid                  = parent_bid;
-	api::BlockHeader binfo;
-	if (!read_header(bid, &binfo)) {
-		//        m_log(logging::ERROR) << logging::BrightRed << "Expected header was not found" <<
-		//        common::pod_to_hex(bid);
-		return false;
-	}
-	const Height height = binfo.height + 1;
-	*b                  = BlockTemplate{};
-	b->major_version    = m_currency.get_block_major_version_for_height(height);
-	b->minor_version    = m_currency.get_block_minor_version_for_height(height);
-
-	calculate_consensus_values(binfo, &next_median_size, &next_median_timestamp);
-	clear_mining_transactions();  // ????
-	{
-		std::vector<Timestamp> timestamps;
-		std::vector<CumulativeDifficulty> difficulties;
-		Height blocks_count = std::min(height - 1, m_currency.difficulty_blocks_count());
-		timestamps.reserve(blocks_count);
-		difficulties.reserve(blocks_count);
-		auto timestamps_window = get_tip_segment(binfo, blocks_count, false);
-		for (auto it = timestamps_window.begin(); it != timestamps_window.end(); ++it) {
-			timestamps.push_back(it->timestamp);
-			difficulties.push_back(it->cumulative_difficulty);
-		}
-		*difficulty = m_currency.next_effective_difficulty(b->major_version, timestamps, difficulties);
-	}
-	if (*difficulty == 0) {
-		m_log(logging::ERROR) << "difficulty overhead in create_mining_block_template." << std::endl;
-		return false;
-	}
-
-	if (b->major_version >= 2) {
-		b->parent_block.major_version     = 1;
-		b->parent_block.minor_version     = 0;
-		b->parent_block.transaction_count = 1;
-
-		TransactionExtraMergeMiningTag mm_tag{};
-		if (!append_merge_mining_tag_to_extra(b->parent_block.base_transaction.extra, mm_tag)) {
-			m_log(logging::ERROR) << logging::BrightRed << "Failed to append merge mining tag to extra of "
-			                                               "the parent block miner transaction";
-			return false;
-		}
-	}
-
-	b->previous_block_hash = bid;
-	b->timestamp           = std::max(platform::now_unix_timestamp(), next_median_timestamp);
-
-	auto next_block_granted_full_reward_zone =
-	    m_currency.block_granted_full_reward_zone_by_block_version(b->major_version);
-	auto effective_size_median     = std::max(next_median_size, next_block_granted_full_reward_zone);
-	Amount already_generated_coins = binfo.already_generated_coins;
-
-	auto max_total_size      = (125 * effective_size_median) / 100;
-	auto max_cumulative_size = m_currency.max_block_cumulative_size(height);
-	max_total_size           = std::min(max_total_size, max_cumulative_size) - m_currency.miner_tx_blob_reserved_size;
-
-	std::vector<Hash> pool_hashes;
-	for (auto &&msf : m_memory_state_fee_tx)
-		for (auto &&ha : msf.second)
-			pool_hashes.push_back(ha);
-	size_t txs_size = 0;
-	Amount fee      = 0;
-	DeltaState memory_state(height, b->timestamp, this);  // will be get_tip().timestamp_unlock after fork
-	// technically we should give unlock timestamp of next block, but more
-	// conservative also works
-
-	for (; !pool_hashes.empty(); pool_hashes.pop_back()) {
-		auto tit = m_memory_state_tx.find(pool_hashes.back());
-		if (tit == m_memory_state_tx.end()) {
-			m_log(logging::ERROR) << "Transaction " << common::pod_to_hex(pool_hashes.back())
-			                      << " is in pool index, but not in pool";
-			assert(false);
-			continue;
-		}
-		const size_t block_size_limit = max_total_size;
-		const size_t tx_size          = tit->second.binary_tx.size();
-		if (txs_size + tx_size > block_size_limit)
-			continue;
-		Amount single_fee = tit->second.fee;
-		BlockGlobalIndices global_indices;
-		Height conflict_height = 0;
-		const std::string result =
-		    redo_transaction_get_error(false, tit->second.tx, &memory_state, &global_indices, &conflict_height, true);
-		if (!result.empty()) {
-			m_log(logging::ERROR) << "Transaction " << common::pod_to_hex(tit->first)
-			                      << " is in pool, but could not be redone result=" << result
-			                      << " Conflict height=" << conflict_height << std::endl;
-			continue;
-		}
-		txs_size += tx_size;
-		fee += single_fee;
-		b->transaction_hashes.emplace_back(tit->first);
-		m_mining_transactions.insert(std::make_pair(tit->first, std::make_pair(tit->second.binary_tx, height)));
-		m_log(logging::TRACE) << "Transaction " << common::pod_to_hex(tit->first) << " included to block template";
-	}
-
-	// two-phase miner transaction generation: we don't know exact block size
-	// until we prepare block, but we don't know
-	// reward until we know
-	// block size, so first miner transaction generated with fake amount of money,
-	// and with phase we know think we know
-	// expected block size
-	// make blocks coin-base tx looks close to real coinbase tx to get truthful
-	// blob size
-	bool r = m_currency.construct_miner_tx(b->major_version, height, effective_size_median, already_generated_coins,
-	    txs_size, fee, adr, &b->base_transaction, extra_nonce, 11);
-	if (!r) {
-		m_log(logging::ERROR) << logging::BrightRed << "Failed to construct miner tx, first chance";
-		return false;
-	}
-
-	size_t cumulative_size   = txs_size + seria::binary_size(b->base_transaction);
-	const size_t TRIES_COUNT = 10;
-	for (size_t try_count = 0; try_count < TRIES_COUNT; ++try_count) {
-		r = m_currency.construct_miner_tx(b->major_version, height, effective_size_median, already_generated_coins,
-		    cumulative_size, fee, adr, &b->base_transaction, extra_nonce, 11);
-		if (!r) {
-			m_log(logging::ERROR) << logging::BrightRed << "Failed to construct miner tx, second chance";
-			return false;
-		}
-
-		size_t coinbase_blob_size = seria::binary_size(b->base_transaction);
-		if (coinbase_blob_size > cumulative_size - txs_size) {
-			cumulative_size = txs_size + coinbase_blob_size;
-			continue;
-		}
-
-		if (coinbase_blob_size < cumulative_size - txs_size) {
-			size_t delta = cumulative_size - txs_size - coinbase_blob_size;
-			common::append(b->base_transaction.extra, delta, 0);
-			// here could be 1 byte difference, because of extra field counter is
-			// varint, and it can become from
-			// 1-byte len to 2-bytes len.
-			if (cumulative_size != txs_size + seria::binary_size(b->base_transaction)) {
-				if (cumulative_size + 1 != txs_size + seria::binary_size(b->base_transaction)) {
-					m_log(logging::ERROR)
-					    << logging::BrightRed << "unexpected case: cumulative_size=" << cumulative_size
-					    << " + 1 is not equal txs_cumulative_size=" << txs_size
-					    << " + get_object_blobsize(b.base_transaction)=" << seria::binary_size(b->base_transaction);
-					return false;
-				}
-
-				b->base_transaction.extra.resize(b->base_transaction.extra.size() - 1);
-				if (cumulative_size != txs_size + seria::binary_size(b->base_transaction)) {
-					// ooh, not lucky, -1 makes varint-counter size smaller, in that case
-					// we continue to grow with
-					// cumulative_size
-					m_log(logging::TRACE)
-					    << logging::BrightRed << "Miner tx creation have no luck with delta_extra size = " << delta
-					    << " and " << delta - 1;
-					cumulative_size += delta - 1;
-					continue;
-				}
-
-				m_log(logging::TRACE) << logging::BrightGreen
-				                      << "Setting extra for block: " << b->base_transaction.extra.size()
-				                      << ", try_count=" << try_count;
+				m_log(logging::TRACE) << logging::BrightGreen << "Setting extra for block: " <<
+				    b->base_transaction.extra.size() << ", try_count=" << try_count;
 			}
 		}
 		if (cumulative_size != txs_size + seria::binary_size(b->base_transaction)) {
@@ -740,10 +638,10 @@ bool BlockChainState::create_mining_block_template2(BlockTemplate *b, const Acco
 }
 
 uint32_t BlockChainState::get_next_effective_median_size() const {
-	uint8_t next_major_version = m_currency.get_block_major_version_for_height(get_tip_height() + 1);
-	auto next_block_granted_full_reward_zone =
-	    m_currency.block_granted_full_reward_zone_by_block_version(next_major_version);
-	return std::max(m_next_median_size, next_block_granted_full_reward_zone);
+	uint8_t should_be_major = 0, might_be_minor = 0;
+	fill_next_block_versions(get_tip(), false, &should_be_major, &might_be_minor);
+	auto next_minimum_size_median = m_currency.get_minimum_size_median(should_be_major);
+	return std::max(m_next_median_size, next_minimum_size_median);
 }
 
 BroadcastAction BlockChainState::add_mined_block(
@@ -770,14 +668,14 @@ BroadcastAction BlockChainState::add_mined_block(
 		}
 		raw_block->transactions.emplace_back(*binary_tx);
 	}
-	PreparedBlock pb(std::move(*raw_block), nullptr);
+	PreparedBlock pb(std::move(*raw_block), m_currency, nullptr);
 	*raw_block = pb.raw_block;
 	return add_block(pb, info, "json_rpc");
 }
 
 void BlockChainState::clear_mining_transactions() const {
 	for (auto tit = m_mining_transactions.begin(); tit != m_mining_transactions.end();)
-		if (get_tip_height() > tit->second.second + 3)  // Remember txs for 3 blocks
+		if (get_tip_height() > tit->second.second + 10)  // Remember used txs for some number of blocks
 			tit = m_mining_transactions.erase(tit);
 		else
 			++tit;
@@ -865,17 +763,17 @@ AddTransactionResult BlockChainState::add_transaction(const Hash &tid, const Tra
 			if (read_keyimage(in.key_image, conflict_height)) {
 				//				std::cout << tid << " " << in.key_image <<
 				// std::endl;
-//				m_log(logging::WARNING) << "OUTPUT_ALREADY_SPENT in transaction " << tid
-//		                      << std::endl; // TODO - remove
+				//				m_log(logging::WARNING) << "OUTPUT_ALREADY_SPENT in transaction " << tid
+				//		                      << std::endl; // TODO - remove
 				return AddTransactionResult::OUTPUT_ALREADY_SPENT;  // Already spent in main chain
 			}
 		}
 	}
 	Amount my_fee3                    = 0;
-	const std::string validate_result = validate_semantic(false, tx, &my_fee3, check_sigs);
+	const std::string validate_result = validate_semantic(false, tx, &my_fee3, m_config.paranoid_checks || check_sigs);
 	if (!validate_result.empty()) {
 		m_log(logging::WARNING) << "add_transaction validation failed " << validate_result << " in transaction " << tid
-		                      << std::endl;
+		                        << std::endl;
 		return AddTransactionResult::BAN;
 	}
 	DeltaState memory_state(unlock_height, unlock_timestamp, this);
@@ -1026,7 +924,7 @@ std::string BlockChainState::redo_transaction_get_error(bool generating, const T
     DeltaState *delta_state, BlockGlobalIndices *global_indices, Height *conflict_height, bool check_sigs) const {
 	const bool check_outputs = check_sigs;
 	Hash tx_prefix_hash;
-	if (check_sigs)
+	if (m_config.paranoid_checks || check_sigs)
 		tx_prefix_hash = get_transaction_prefix_hash(transaction);
 	DeltaState tx_delta(delta_state->get_block_height(), delta_state->get_unlock_timestamp(), delta_state);
 	global_indices->resize(global_indices->size() + 1);
@@ -1039,7 +937,7 @@ std::string BlockChainState::redo_transaction_get_error(bool generating, const T
 		if (input.type() == typeid(KeyInput)) {
 			const KeyInput &in = boost::get<KeyInput>(input);
 
-			if (check_sigs || check_outputs) {
+			if (m_config.paranoid_checks || check_sigs || check_outputs) {
 				Height height = 0;
 				if (tx_delta.read_keyimage(in.key_image, &height)) {
 					*conflict_height = height;
@@ -1060,8 +958,8 @@ std::string BlockChainState::redo_transaction_get_error(bool generating, const T
 						return "INPUT_INVALID_GLOBAL_INDEX";
 					}
 					*conflict_height = std::max(*conflict_height, unp.height);
-					if (!m_currency.is_transaction_spend_time_unlocked(
-					        unp.unlock_time, delta_state->get_block_height(), delta_state->get_unlock_timestamp()))
+					if (!m_currency.is_transaction_spend_time_unlocked(unp.unlock_block_or_timestamp,
+					        delta_state->get_block_height(), delta_state->get_unlock_timestamp()))
 						return "INPUT_SPEND_LOCKED_OUT";
 					output_keys[i] = unp.public_key;
 				}
@@ -1070,9 +968,11 @@ std::string BlockChainState::redo_transaction_get_error(bool generating, const T
 				std::for_each(output_keys.begin(), output_keys.end(),
 				    [&output_key_pointers](const PublicKey &key) { output_key_pointers.push_back(&key); });
 				bool key_corrupted = false;
-				if (check_sigs &&
+				if ((m_config.paranoid_checks || check_sigs) &&
 				    !check_ring_signature(tx_prefix_hash, in.key_image, output_key_pointers.data(),
-				        output_key_pointers.size(), transaction.signatures[input_index].data(), true, &key_corrupted)) {
+				        output_key_pointers.size(), transaction.signatures[input_index].data(),
+				        delta_state->get_block_height() >= m_currency.key_image_subgroup_checking_height,
+				        &key_corrupted)) {
 					if (key_corrupted)  // TODO - db corrupted
 						return "INPUT_CORRUPTED_SIGNATURES";
 					return "INPUT_INVALID_SIGNATURES";
@@ -1087,8 +987,8 @@ std::string BlockChainState::redo_transaction_get_error(bool generating, const T
 	for (const auto &output : transaction.outputs) {
 		if (output.target.type() == typeid(KeyOutput)) {
 			const KeyOutput &key_output = boost::get<KeyOutput>(output.target);
-			auto global_index           = tx_delta.push_amount_output(output.amount, transaction.unlock_time, 0,
-			    key_output.key);  // DeltaState ignores unlock point
+			auto global_index = tx_delta.push_amount_output(output.amount, transaction.unlock_block_or_timestamp, 0,
+			    key_output.public_key);  // DeltaState ignores unlock point
 			my_indices.push_back(global_index);
 		}
 	}
@@ -1100,7 +1000,8 @@ std::string BlockChainState::redo_transaction_get_error(bool generating, const T
 void BlockChainState::undo_transaction(IBlockChainState *delta_state, Height, const Transaction &tx) {
 	for (auto oit = tx.outputs.rbegin(); oit != tx.outputs.rend(); ++oit) {
 		if (oit->target.type() == typeid(KeyOutput)) {
-			delta_state->pop_amount_output(oit->amount, tx.unlock_time, boost::get<KeyOutput>(oit->target).key);
+			delta_state->pop_amount_output(
+			    oit->amount, tx.unlock_block_or_timestamp, boost::get<KeyOutput>(oit->target).public_key);
 		}
 	}
 	for (auto iit = tx.inputs.rbegin(); iit != tx.inputs.rend(); ++iit) {
@@ -1135,8 +1036,12 @@ bool BlockChainState::redo_block(const Hash &bhash, const Block &block, const ap
 	DeltaState delta(info.height, info.timestamp, this);
 	BlockGlobalIndices global_indices;
 	global_indices.reserve(block.transactions.size() + 1);
-	const bool check_sigs = !m_currency.is_in_sw_checkpoint_zone(info.height + 1);
-	if (check_sigs && !ring_checker.start_work_get_error(this, m_currency, block, info.height, info.timestamp).empty())
+	const bool check_sigs = m_config.paranoid_checks || !m_currency.is_in_sw_checkpoint_zone(info.height + 1);
+	if (check_sigs &&
+	    !ring_checker
+	         .start_work_get_error(this, m_currency, block, info.height, info.timestamp,
+	             info.height >= m_currency.key_image_subgroup_checking_height)
+	         .empty())
 		return false;
 	if (!redo_block(block, info, &delta, &global_indices))
 		return false;
@@ -1154,13 +1059,13 @@ bool BlockChainState::redo_block(const Hash &bhash, const Block &block, const ap
 	//		update_first_seen_timestamp(th, 0);
 	//	}
 	auto now = std::chrono::steady_clock::now();
-	if (m_config.is_testnet ||
+	if (m_config.net != "main" ||
 	    std::chrono::duration_cast<std::chrono::milliseconds>(now - log_redo_block_timestamp).count() > 1000) {
 		log_redo_block_timestamp = now;
 		m_log(logging::INFO) << "redo_block height=" << info.height << " bid=" << bhash
 		                     << " #tx=" << block.transactions.size() << std::endl;
 	} else {
-		if (check_sigs)  // No point in writing log before checkpoints
+		if (m_config.paranoid_checks || check_sigs)  // No point in writing log before checkpoints
 			m_log(logging::TRACE) << "redo_block height=" << info.height << " bid=" << bhash
 			                      << " #tx=" << block.transactions.size() << std::endl;
 	}
@@ -1194,23 +1099,23 @@ bool BlockChainState::read_block_output_global_indices(const Hash &bid, BlockGlo
 }
 
 std::vector<api::Output> BlockChainState::get_random_outputs(
-    Amount amount, size_t outs_count, Height height, Timestamp time) const {
+    Amount amount, size_t output_count, Height confirmed_height, Timestamp time) const {
 	std::vector<api::Output> result;
 	uint32_t total_count = next_global_index_for_amount(amount);
 	// We might need better algorithm if we have lots of locked amounts
-	if (total_count <= outs_count) {
+	if (total_count <= output_count) {
 		for (uint32_t i = 0; i != total_count; ++i) {
 			api::Output item;
 			UnlockTimePublickKeyHeightSpent unp;
-			item.amount       = amount;
-			item.global_index = i;
+			item.amount = amount;
+			item.index  = i;
 			invariant(read_amount_output(amount, i, &unp), "global amount < total_count not found");
-			item.unlock_time = unp.unlock_time;
-			item.public_key  = unp.public_key;
-			item.height      = unp.height;
-			if (unp.spent || unp.height > height )
+			item.unlock_block_or_timestamp = unp.unlock_block_or_timestamp;
+			item.public_key                = unp.public_key;
+			item.height                    = unp.height;
+			if (unp.spent || unp.height > confirmed_height)
 				continue;
-			if( !m_currency.is_transaction_spend_time_unlocked(item.unlock_time, height, time))
+			if (!m_currency.is_transaction_spend_time_unlocked(item.unlock_block_or_timestamp, confirmed_height, time))
 				continue;
 			result.push_back(item);
 		}
@@ -1220,7 +1125,7 @@ std::vector<api::Output> BlockChainState::get_random_outputs(
 	crypto::random_engine<uint64_t> generator;
 	std::lognormal_distribution<double> distribution(1.9, 1.0);
 	size_t attempts = 0;
-	for (; result.size() < outs_count && attempts < outs_count * 20; ++attempts) {  // TODO - 20
+	for (; result.size() < output_count && attempts < output_count * 20; ++attempts) {  // TODO - 20
 		//		uint32_t num = crypto::rand<uint32_t>();
 		//		num %= total_count;  // 0 handled in if above
 		double sample = distribution(generator);
@@ -1232,15 +1137,23 @@ std::vector<api::Output> BlockChainState::get_random_outputs(
 			continue;
 		api::Output item;
 		UnlockTimePublickKeyHeightSpent unp;
-		item.amount       = amount;
-		item.global_index = num;
+		item.amount = amount;
+		item.index  = num;
 		invariant(read_amount_output(amount, num, &unp), "num < total_count not found");
-		item.unlock_time = unp.unlock_time;
-		item.public_key  = unp.public_key;
-		item.height      = unp.height;
-		if (unp.spent || unp.height > height )
+		item.unlock_block_or_timestamp = unp.unlock_block_or_timestamp;
+		item.public_key                = unp.public_key;
+		item.height                    = unp.height;
+		if (unp.height > confirmed_height) {
+			if (confirmed_height + 128 < get_tip_height())
+				total_count = num;
+			// heuristic - if confirmed_height is deep, the area under ditribution curve
+			// with height < confirmed_height might be very small, so we adjust total_count
+			// to get descent results after small number of attempts
 			continue;
-		if( !m_currency.is_transaction_spend_time_unlocked(item.unlock_time, height, time))
+		}
+		if (unp.spent)
+			continue;
+		if (!m_currency.is_transaction_spend_time_unlocked(item.unlock_block_or_timestamp, confirmed_height, time))
 			continue;
 		result.push_back(item);
 	}
@@ -1271,7 +1184,7 @@ bool BlockChainState::read_keyimage(const KeyImage &key_image, Height *height) c
 }
 
 uint32_t BlockChainState::push_amount_output(
-    Amount amount, UnlockMoment unlock_time, Height block_height, const PublicKey &pk) {
+    Amount amount, BlockOrTimestamp unlock_time, Height block_height, const PublicKey &pk) {
 	uint32_t my_gi = next_global_index_for_amount(amount);
 	auto key       = AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount) + common::write_varint_sqlite4(my_gi);
 	BinaryArray ba = seria::to_binary(UnlockTimePublickKeyHeightSpent{unlock_time, pk, block_height});
@@ -1280,7 +1193,7 @@ uint32_t BlockChainState::push_amount_output(
 	return my_gi;
 }
 
-void BlockChainState::pop_amount_output(Amount amount, UnlockMoment unlock_time, const PublicKey &pk) {
+void BlockChainState::pop_amount_output(Amount amount, BlockOrTimestamp unlock_time, const PublicKey &pk) {
 	uint32_t next_gi = next_global_index_for_amount(amount);
 	invariant(next_gi != 0, "BlockChainState::pop_amount_output underflow");
 	next_gi -= 1;
@@ -1290,7 +1203,7 @@ void BlockChainState::pop_amount_output(Amount amount, UnlockMoment unlock_time,
 	UnlockTimePublickKeyHeightSpent unp;
 	invariant(read_amount_output(amount, next_gi, &unp), "BlockChainState::pop_amount_output element does not exist");
 	// TODO - check also was_height after upgrade to version 4 ?
-	invariant(!unp.spent && unp.unlock_time == unlock_time && unp.public_key == pk,
+	invariant(!unp.spent && unp.unlock_block_or_timestamp == unlock_time && unp.public_key == pk,
 	    "BlockChainState::pop_amount_output popping wrong element");
 	m_db.del(key, true);
 }
@@ -1301,7 +1214,7 @@ uint32_t BlockChainState::next_global_index_for_amount(Amount amount) const {
 		return it->second;
 	std::string prefix = AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount);
 	DB::Cursor cur2    = m_db.rbegin(prefix);
-	uint32_t alt_in = cur2.end() ? 0 : boost::lexical_cast<Height>(common::read_varint_sqlite4(cur2.get_suffix())) + 1;
+	uint32_t alt_in = cur2.end() ? 0 : common::integer_cast<Height>(common::read_varint_sqlite4(cur2.get_suffix())) + 1;
 	m_next_gi_for_amount[amount] = alt_in;
 	return alt_in;
 }
@@ -1337,9 +1250,9 @@ void BlockChainState::test_print_outputs() {
 		const char *be        = cur.get_suffix().data();
 		const char *en        = be + cur.get_suffix().size();
 		auto amount           = common::read_varint_sqlite4(be, en);
-		uint32_t global_index = boost::lexical_cast<uint32_t>(common::read_varint_sqlite4(be, en));
+		uint32_t global_index = common::integer_cast<uint32_t>(common::read_varint_sqlite4(be, en));
 		if (be != en)
-			std::cout << "Excess value bytes for amount=" << amount << " global_index=" << global_index << std::endl;
+			std::cout << "Excess value bytes for amount=" << amount << " index=" << global_index << std::endl;
 		if (amount != previous_amount) {
 			if (previous_amount != (Amount)-1) {
 				if (!coins.insert(std::make_pair(previous_amount, next_global_index)).second) {
@@ -1351,11 +1264,11 @@ void BlockChainState::test_print_outputs() {
 			next_global_index = 0;
 		}
 		if (global_index != next_global_index) {
-			std::cout << "Bad output index for amount=" << amount << " global_index=" << global_index << std::endl;
+			std::cout << "Bad output index for amount=" << amount << " index=" << global_index << std::endl;
 		}
 		next_global_index += 1;
 		if (++total_counter % 2000000 == 0)
-			std::cout << "Working on amount=" << amount << " global_index=" << global_index << std::endl;
+			std::cout << "Working on amount=" << amount << " index=" << global_index << std::endl;
 	}
 	total_counter = 0;
 	std::cout << "Total coins=" << total_counter << " total stacks=" << coins.size() << std::endl;
@@ -1367,9 +1280,9 @@ void BlockChainState::test_print_outputs() {
 		for (uint32_t i = 0; i != total_count; ++i) {
 			UnlockTimePublickKeyHeightSpent unp;
 			if (!read_amount_output(co.first, i, &unp))
-				std::cout << "Failed to read amount=" << co.first << " global_index=" << i << std::endl;
+				std::cout << "Failed to read amount=" << co.first << " index=" << i << std::endl;
 			if (++total_counter % 1000000 == 0)
-				std::cout << "Working on amount=" << co.first << " global_index=" << i << std::endl;
+				std::cout << "Working on amount=" << co.first << " index=" << i << std::endl;
 		}
 	}
 }

@@ -13,7 +13,7 @@
 #include "Multicore.hpp"
 #include "Wallet.hpp"
 #include "WalletStateBasic.hpp"
-#include "crypto/chacha8.h"
+#include "crypto/chacha8.hpp"
 #include "platform/DB.hpp"
 
 namespace bytecoin {
@@ -41,7 +41,7 @@ class WalletState : public WalletStateBasic {
 
 		void undo_transaction(const Hash &tid);  // For mem pool
 
-		virtual Amount add_incoming_output(const api::Output &) override;  // added amount may be lower
+		virtual Amount add_incoming_output(const api::Output &, const Hash & tid) override;  // added amount may be lower
 		virtual Amount add_incoming_keyimage(Height, const KeyImage &) override;
 		virtual void add_transaction(
 		    Height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override;
@@ -100,6 +100,7 @@ protected:
 		Height remove_height = 0;
 		bool in_blockchain() const { return remove_height != 0; }
 	};
+	Height get_pq_confirmations() const;
 
 private:
 	uint32_t m_tx_pool_version = 1;

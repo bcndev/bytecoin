@@ -6,65 +6,75 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "hash.h"
 #include "int-util.h"
-#include "hash-impl.h"
-#include "oaes_lib.h"
+#include "oaes/oaes_lib.h"
 #ifdef __APPLE__
 #include "TargetConditionals.h"
 #endif
 
-static void (*const extra_hashes[4])(const void *, size_t, unsigned char *) = {
-	hash_extra_blake, hash_extra_groestl, hash_extra_jh, hash_extra_skein
-};
+static void (*const extra_hashes[4])(const void *, size_t, struct CHash *) = {
+    hash_extra_blake, hash_extra_groestl, hash_extra_jh, hash_extra_skein};
 
-#define MEMORY         (1 << 21) /* 2 MiB */
-#define ITER           (1 << 20)
-#define AES_BLOCK_SIZE  16
-#define AES_KEY_SIZE    32 /*16*/
-#define INIT_SIZE_BLK   8
+#define MEMORY (1 << 21) /* 2 MiB */
+#define ITER (1 << 20)
+#define AES_BLOCK_SIZE 16
+#define AES_KEY_SIZE 32 /*16*/
+#define INIT_SIZE_BLK 8
 #define INIT_SIZE_BYTE (INIT_SIZE_BLK * AES_BLOCK_SIZE)
 
-static size_t e2i(const uint8_t* a, size_t count) { return (*((uint64_t*)a) / AES_BLOCK_SIZE) & (count - 1); }
+static void uint_le_to_bytes(unsigned char *buf, size_t si, uint64_t val) {
+	for (size_t i = 0; i != si; ++i) {
+		buf[i] = (unsigned char)val;
+		val >>= 8;
+	}
+}
+static uint64_t uint_le_from_bytes(const unsigned char *buf, size_t si) {
+	uint64_t result = 0;
+	for (size_t i = si; i-- > 0;)
+		result = (result << 8) + buf[i];
+	return result;
+}
 
-static void mul(const uint8_t* a, const uint8_t* b, uint8_t* res) {
+static size_t e2i(const uint8_t *a, size_t count) { return (uint_le_from_bytes(a, 8) / AES_BLOCK_SIZE) & (count - 1); }
+
+static void mul(const uint8_t *a, const uint8_t *b, uint8_t *res) {
 	uint64_t a0, b0;
 	uint64_t hi, lo;
-	
-	a0 = SWAP64LE(((uint64_t*)a)[0]);
-	b0 = SWAP64LE(((uint64_t*)b)[0]);
+
+	a0 = uint_le_from_bytes(a, 8);
+	b0 = uint_le_from_bytes(b, 8);
 	lo = mul128(a0, b0, &hi);
-	((uint64_t*)res)[0] = SWAP64LE(hi);
-	((uint64_t*)res)[1] = SWAP64LE(lo);
+	uint_le_to_bytes(res, 8, hi);
+	uint_le_to_bytes(res + 8, 8, lo);
 }
 
-static void sum_half_blocks(uint8_t* a, const uint8_t* b) {
+static void sum_half_blocks(uint8_t *a, const uint8_t *b) {
 	uint64_t a0, a1, b0, b1;
-	
-	a0 = SWAP64LE(((uint64_t*)a)[0]);
-	a1 = SWAP64LE(((uint64_t*)a)[1]);
-	b0 = SWAP64LE(((uint64_t*)b)[0]);
-	b1 = SWAP64LE(((uint64_t*)b)[1]);
+
+	a0 = uint_le_from_bytes(a, 8);
+	a1 = uint_le_from_bytes(a + 8, 8);
+	b0 = uint_le_from_bytes(b, 8);
+	b1 = uint_le_from_bytes(b + 8, 8);
 	a0 += b0;
 	a1 += b1;
-	((uint64_t*)a)[0] = SWAP64LE(a0);
-	((uint64_t*)a)[1] = SWAP64LE(a1);
+	uint_le_to_bytes(a, 8, a0);
+	uint_le_to_bytes(a + 8, 8, a1);
 }
 
-static void copy_block(uint8_t* dst, const uint8_t* src) {
-	memcpy(dst, src, AES_BLOCK_SIZE);
-}
+static void copy_block(uint8_t *dst, const uint8_t *src) { memcpy(dst, src, AES_BLOCK_SIZE); }
 
-static void swap_blocks(uint8_t* a, uint8_t* b) {
+static void swap_blocks(uint8_t *a, uint8_t *b) {
 	size_t i;
 	uint8_t t;
 	for (i = 0; i < AES_BLOCK_SIZE; i++) {
-		t = a[i];
+		t    = a[i];
 		a[i] = b[i];
 		b[i] = t;
 	}
 }
 
-static void xor_blocks(uint8_t* a, const uint8_t* b) {
+static void xor_blocks(uint8_t *a, const uint8_t *b) {
 	size_t i;
 	for (i = 0; i < AES_BLOCK_SIZE; i++) {
 		a[i] ^= b[i];
@@ -73,7 +83,7 @@ static void xor_blocks(uint8_t* a, const uint8_t* b) {
 
 #pragma pack(push, 1)
 union cn_slow_hash_state {
-	union hash_state hs;
+	struct keccak_state hs;
 	struct {
 		uint8_t k[64];
 		uint8_t init[INIT_SIZE_BYTE];
@@ -81,8 +91,8 @@ union cn_slow_hash_state {
 };
 #pragma pack(pop)
 
-static void cn_slow_hash_platform_independent(void * scratchpad, const void *data, size_t length, void *hash) {
-	uint8_t * long_state = (uint8_t*)scratchpad;
+void cn_slow_hash_platform_independent(void *scratchpad, const void *data, size_t length, struct CHash *hash) {
+	uint8_t *long_state = (uint8_t *)scratchpad;
 	union cn_slow_hash_state state;
 	uint8_t text[INIT_SIZE_BYTE];
 	uint8_t a[AES_BLOCK_SIZE];
@@ -91,9 +101,9 @@ static void cn_slow_hash_platform_independent(void * scratchpad, const void *dat
 	uint8_t d[AES_BLOCK_SIZE];
 	size_t i, j;
 	uint8_t aes_key[AES_KEY_SIZE];
-	OAES_CTX* aes_ctx;
+	OAES_CTX *aes_ctx;
 
-	hash_process(&state.hs, data, length);
+	keccak_into_state(data, length, &state.hs);
 	memcpy(text, state.init, INIT_SIZE_BYTE);
 	memcpy(aes_key, state.hs.b, AES_KEY_SIZE);
 	aes_ctx = oaes_alloc();
@@ -107,7 +117,7 @@ static void cn_slow_hash_platform_independent(void * scratchpad, const void *dat
 	}
 
 	for (i = 0; i < 16; i++) {
-		a[i] = state.k[     i] ^ state.k[32 + i];
+		a[i] = state.k[i] ^ state.k[32 + i];
 		b[i] = state.k[16 + i] ^ state.k[48 + i];
 	}
 
@@ -146,13 +156,15 @@ static void cn_slow_hash_platform_independent(void * scratchpad, const void *dat
 		}
 	}
 	memcpy(state.init, text, INIT_SIZE_BYTE);
-	hash_permutation(&state.hs);
+	keccak_permutation(&state.hs);
 	extra_hashes[state.hs.b[0] & 3](&state, 200, hash);
 	oaes_free(&aes_ctx);
 }
 
-#if TARGET_OS_IPHONE || defined(__ANDROID__) // We need if !x86, but no portable way to express that
-void cn_slow_hash(void * scratchpad, const void *data, size_t length, void *hash) {
+#if defined(__PPC__) || TARGET_OS_IPHONE || \
+    defined(__ANDROID__)  // We need if !x86, but no portable way to express that
+void cn_slow_hash(void *scratchpad, const void *data, size_t length, void *hash) {
 	cn_slow_hash_platform_independent(scratchpad, data, length, hash);
 }
-#endif // TARGET_OS_IPHONE
+
+#endif  // TARGET_OS_IPHONE

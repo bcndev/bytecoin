@@ -6,24 +6,6 @@
 
 namespace common {
 
-template<class T>
-T uint_be_from_bytes(const unsigned char *buf, size_t si) {
-	T result = 0;
-	for (size_t i = 0; i != si; ++i) {
-		result <<= 8;
-		result |= buf[i];
-	}
-	return result;
-}
-
-template<class T>
-void uint_be_to_bytes(unsigned char *buf, size_t si, T val) {
-	for (size_t i = si; i-- > 0;) {
-		buf[i] = static_cast<unsigned char>(val);
-		val >>= 8;
-	}
-}
-
 size_t get_varint_sqlite4_size(uint64_t val) {
 	if (val <= 240)
 		return 1;

@@ -228,6 +228,12 @@ private:
 class TCPAcceptor : private common::Nocopy {
 public:
 	typedef std::function<void()> A_handler;
+	class AddressInUse : public std::runtime_error {
+	public:
+		explicit AddressInUse(const std::string &msg) : std::runtime_error(msg) {}
+	};
+
+	static std::vector<std::string> local_addresses(bool ipv4, bool ipv6);
 
 	explicit TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_handler,
 	    const std::string &ssl_pem_file = std::string(), const std::string &ssl_certificate_password = std::string());
@@ -244,6 +250,19 @@ private:
 	class Impl;
 	std::shared_ptr<Impl> impl;  // Owned by boost async machinery
 	A_handler a_handler;
+};
+
+// Experimental zero-config for finding local peers (good for testnets)
+class UDPMulticast : private common::Nocopy {
+public:
+	typedef std::function<void(const std::string &addr, const unsigned char *data, size_t size)> P_handler;
+	UDPMulticast(const std::string &addr, uint16_t port, P_handler p_handler);
+	~UDPMulticast();
+	static void send(const std::string &addr, uint16_t port, const void *data, size_t size);  // simple synchronous send
+private:
+	class Impl;
+	std::shared_ptr<Impl> impl;  // Owned by boost async machinery
+	P_handler p_handler;
 };
 }
 #endif

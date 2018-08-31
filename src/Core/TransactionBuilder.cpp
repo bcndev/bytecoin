@@ -25,21 +25,13 @@ bool TransactionBuilder::derive_public_key(const AccountPublicAddress &to,
 	return crypto::derive_public_key(derivation, output_index, to.spend_public_key, ephemeral_key);
 }
 
-TransactionBuilder::TransactionBuilder(const Currency &currency, UnlockMoment unlock_time) {
-	m_transaction.version     = currency.current_transaction_version;
-	m_transaction.unlock_time = unlock_time;
+TransactionBuilder::TransactionBuilder(const Currency &currency, BlockOrTimestamp unlock_time) {
+	m_transaction.version                   = currency.current_transaction_version;
+	m_transaction.unlock_block_or_timestamp = unlock_time;
 }
 
 void TransactionBuilder::set_payment_id(const Hash &hash) {
-	BinaryArray payment_id_blob;
-	set_payment_id_to_transaction_extra_nonce(payment_id_blob, reinterpret_cast<const Hash &>(hash));
-	set_extra_nonce(payment_id_blob);
-}
-
-void TransactionBuilder::set_extra_nonce(const BinaryArray &nonce) {
-	TransactionExtraNonce extra_nonce = {nonce};
-	m_extra.set(extra_nonce);
-	m_transaction.extra = m_extra.serialize();
+	extra_add_payment_id(m_transaction.extra, hash);
 }
 
 size_t TransactionBuilder::add_output(uint64_t amount, const AccountPublicAddress &to) {
@@ -52,12 +44,8 @@ size_t TransactionBuilder::add_output(uint64_t amount, const AccountPublicAddres
 	return m_output_descs.size() - 1;
 }
 
-static bool APIOutputLessGlobalIndex(const api::Output &a, const api::Output &b) {
-	return a.global_index < b.global_index;
-}
-static bool APIOutputEqualGlobalIndex(const api::Output &a, const api::Output &b) {
-	return a.global_index == b.global_index;
-}
+static bool APIOutputLessGlobalIndex(const api::Output &a, const api::Output &b) { return a.index < b.index; }
+static bool APIOutputEqualGlobalIndex(const api::Output &a, const api::Output &b) { return a.index == b.index; }
 bool TransactionBuilder::generate_key_image_helper(const AccountKeys &ack, const PublicKey &tx_public_key,
     size_t real_output_index, KeyPair &in_ephemeral, KeyImage &ki) {
 	KeyDerivation recv_derivation;
@@ -105,7 +93,7 @@ size_t TransactionBuilder::add_input(const AccountKeys &sender_keys,
 	for (const auto &out : desc.outputs) {
 		if (out.amount != real_output.amount)  // they are all zero as sent from node
 			throw std::runtime_error("Mixin outputs with different amounts is not allowed");
-		desc.input.output_indexes.push_back(out.global_index);
+		desc.input.output_indexes.push_back(out.index);
 	}
 
 	desc.input.output_indexes = absolute_output_offsets_to_relative(desc.input.output_indexes);
@@ -141,14 +129,12 @@ Transaction TransactionBuilder::sign(const Hash &tx_derivation_seed) {
 		m_transaction.inputs.at(i) = std::move(m_input_descs[i].input);
 	KeyPair tx_keys                = deterministic_keys_from_seed(m_transaction, tx_derivation_seed);
 
-	TransactionExtraPublicKey pk = {tx_keys.public_key};
-	m_extra.set(pk);
-	m_transaction.extra = m_extra.serialize();
+	extra_add_transaction_public_key(m_transaction.extra, tx_keys.public_key);
 	// Now when we set tx keys we can derive output keys
 	m_transaction.outputs.resize(m_output_descs.size());
 	for (size_t i = 0; i != m_output_descs.size(); ++i) {
 		KeyOutput out_key;
-		if (!derive_public_key(m_output_descs[i].addr, tx_keys.secret_key, i, out_key.key))
+		if (!derive_public_key(m_output_descs[i].addr, tx_keys.secret_key, i, out_key.public_key))
 			throw std::runtime_error("output keys detected as corrupted during output key derivation");
 		TransactionOutput out;  // TODO - return {} initializer after NDK compiler upgrade
 		out.amount                  = m_output_descs[i].amount;
@@ -188,16 +174,16 @@ void UnspentSelector::reset(Unspents &&unspents) {
 	m_ra_amounts.clear();
 }
 
-void UnspentSelector::add_mixed_inputs(const SecretKey &view_secret_key,
+void UnspentSelector::add_mixed_inputs(const SecretKey &view_secret_key, const Wallet *wallet,
     const std::unordered_map<PublicKey, WalletRecord> &wallet_records, TransactionBuilder *builder, uint32_t anonymity,
     api::bytecoind::GetRandomOutputs::Response &&ra_response) {
-	for (const auto & uu : m_used_unspents) {
+	for (const auto &uu : m_used_unspents) {
 		std::vector<api::Output> mix_outputs;
 		auto &our_ra_outputs = ra_response.outputs[uu.amount];
 		while (mix_outputs.size() < anonymity + 1) {
 			if (our_ra_outputs.empty())
-				throw api::walletd::CreateTransaction::Error(api::walletd::CreateTransaction::NOT_ENOUGH_ANONYMITY,
-				    "Not enough anonymity for amount " + common::to_string(uu.amount));
+				throw json_rpc::Error(api::walletd::CreateTransaction::NOT_ENOUGH_ANONYMITY,
+				    "Requested anonymity too high for amount " + common::to_string(uu.amount));
 			mix_outputs.push_back(std::move(our_ra_outputs.back()));
 			our_ra_outputs.pop_back();
 		}
@@ -207,7 +193,7 @@ void UnspentSelector::add_mixed_inputs(const SecretKey &view_secret_key,
 		int best_distance = 0;
 		size_t best_index = mix_outputs.size();
 		for (size_t i = 0; i != mix_outputs.size(); ++i) {
-			int distance = abs(int(uu.global_index) - int(mix_outputs[i].global_index));
+			int distance = abs(int(uu.index) - int(mix_outputs[i].index));
 			if (best_index == mix_outputs.size() || distance < best_distance) {
 				best_index    = i;
 				best_distance = distance;
@@ -218,11 +204,18 @@ void UnspentSelector::add_mixed_inputs(const SecretKey &view_secret_key,
 		AccountKeys sender_keys;
 		sender_keys.view_secret_key = view_secret_key;
 		if (!m_currency.parse_account_address_string(uu.address, &sender_keys.address))
-			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Could not parse address " + uu.address);
-		auto rit = wallet_records.find(sender_keys.address.spend_public_key);
-		if (rit == wallet_records.end() || rit->second.spend_public_key != sender_keys.address.spend_public_key)
-			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "No keys in wallet for address " + uu.address);
-		sender_keys.spend_secret_key = rit->second.spend_secret_key;
+			throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "Could not parse address " + uu.address);
+		if (wallet) {
+			WalletRecord record;
+			if (!wallet->get_record(record, sender_keys.address))
+				throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "No keys in wallet for address " + uu.address);
+			sender_keys.spend_secret_key = record.spend_secret_key;
+		} else {
+			auto rit = wallet_records.find(sender_keys.address.spend_public_key);
+			if (rit == wallet_records.end() || rit->second.spend_public_key != sender_keys.address.spend_public_key)
+				throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "No keys in wallet for address " + uu.address);
+			sender_keys.spend_secret_key = rit->second.spend_secret_key;
+		}
 		builder->add_input(sender_keys, uu, mix_outputs);
 	}
 }
@@ -257,10 +250,11 @@ std::string UnspentSelector::select_optimal_outputs(Height block_height, Timesta
 	size_t optimization_median_percent =
 	    (optimization_level == "aggressive") ? MEDIAN_PERCENT_AGGRESSIVE : MEDIAN_PERCENT;
 	const size_t optimization_median = effective_median_size * optimization_median_percent / 100;
+	const Amount dust_threshold = m_currency.default_dust_threshold;
 	while (true) {
 		if (!select_optimal_outputs(&have_coins, &dust_coins, max_digits, total_amount + fee, anonymity, optimizations))
 			return "NOT_ENOUGH_FUNDS";
-		Amount change_dust_fee = (m_used_total - total_amount - fee) % m_currency.default_dust_threshold;
+		Amount change_dust_fee = (m_used_total - total_amount - fee) % dust_threshold;
 		size_t tx_size         = get_maximum_tx_size(m_inputs_count, total_outputs + 8,
 		    anonymity);  // TODO - 8 is expected max change outputs
 		if (tx_size > optimization_median && optimizations > 0) {
@@ -277,15 +271,13 @@ std::string UnspentSelector::select_optimal_outputs(Height block_height, Timesta
 			*change = m_used_total - total_amount - fee - change_dust_fee;
 			combine_optimized_unspents();
 			std::string final_coins;
-			for (const auto & uu : m_used_unspents)
+			for (const auto &uu : m_used_unspents)
 				final_coins += " " + common::to_string(uu.amount);
 			m_log(logging::INFO) << "Selected used_total=" << m_used_total << " for total_amount=" << total_amount
 			                     << ", final coins" << final_coins << std::endl;
 			return std::string();
 		}
-		fee =
-		    ((size_fee - change_dust_fee + m_currency.default_dust_threshold - 1) / m_currency.default_dust_threshold) *
-		    m_currency.default_dust_threshold;
+		fee = ((size_fee - change_dust_fee + dust_threshold - 1) / dust_threshold) * dust_threshold;
 		unoptimize_amounts(&have_coins, &dust_coins);
 	}
 }
@@ -297,7 +289,7 @@ void UnspentSelector::create_have_coins(Height block_height, Timestamp block_tim
 		api::Output &un = *uit;
 		if (un.height >= confirmed_height)  // unconfirmed
 			continue;
-		if (!m_currency.is_transaction_spend_time_unlocked(un.unlock_time, block_height, block_time))
+		if (!m_currency.is_transaction_spend_time_unlocked(un.unlock_block_or_timestamp, block_height, block_time))
 			continue;
 		if (!Currency::is_dust(un.amount)) {
 			Amount am    = un.amount;
@@ -353,8 +345,8 @@ void UnspentSelector::optimize_amounts(HaveCoins *have_coins, size_t max_digit, 
 			continue;
 		size_t best_two_counts[2] = {};
 		size_t best_weight        = 0;
-		for (const auto & ait : dit->second)
-			for (const auto & bit : dit->second) {
+		for (const auto &ait : dit->second)
+			for (const auto &bit : dit->second) {
 				if ((ait.first + bit.first + am) % 10 == 0 &&
 				    (ait.second.size() >= TWO_THRESHOLD || bit.second.size() >= TWO_THRESHOLD) &&
 				    (ait.second.size() + bit.second.size()) > best_weight) {
@@ -385,7 +377,7 @@ void UnspentSelector::optimize_amounts(HaveCoins *have_coins, size_t max_digit, 
 			continue;
 		size_t best_single = 0;
 		best_weight        = 0;
-		for (const auto & ait : dit->second)
+		for (const auto &ait : dit->second)
 			if ((ait.first + am) % 10 == 0) {
 				best_single = ait.first;
 				break;

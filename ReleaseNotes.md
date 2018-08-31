@@ -1,5 +1,95 @@
 ## Release Notes
 
+### v3.3.0
+
+*Consensus update (hard fork)*
+
+- Voting starts immediately, once 90% of mined blocks contain votes for update, the update height will be automatically selected so that consensus update will happen approximately 2 weeks after that.
+- Market fees - any transaction fee including 0 is now legal for all transactions. Miners will increase block size only if it is profitable for them in a short run.
+
+*General improvements*
+
+- Better priority and exclusive nodes logic.
+- Seed nodes are now contacted approximately once per day (greatly helps to catch up after `bytecoind` is started for users who run it after delay of several weeks or more).
+- Binary methods now share single access point `/binary_rpc`.
+- Code for consensus upgrade voting correctly counts votes on both main chain and each side chain.
+- Limited on incoming connections (default is 100).
+- Fixed ignored external port on peer handshake (made connects through exposed non-standard ports to nodes behind NAT impossible).
+- Groestl hash function is updated from the official source.
+- Keccak permutation function is updated from the official source.
+- `bytecoind` never searches for `blocks.bin` and `blockindex.bin` outside the data folder.
+- now when you specify `--p2p-bind-address`, but not `--p2p-external-port`, p2p external port will be set to p2p bind port. When you wish NAT tunneling, good practice is to specify both.
+
+*Command line changes/additions*
+
+- Paranoid mode to check every byte of blockchain when downloading (usually checks only blocks beyond the last checkpoint).
+- *Warning:* Now `walletd` exits by default after `--create-wallet` and `--set-password` operations. This change can break your scripts. If you need the wallet running after those commands, you can add `--launch-after-command` parameter
+- Now you can use `--set-password` with `--export-view-only` and `--backup-wallet-data`, to encrypt result wallet with a different password.
+- Fixed bug with `walletd` not returning `api::WALLETD_BIND_PORT_IN_USE` error code when the JSON API port is in use and using inproc `bytecoind`.
+- Fixed bug with `bytecoind` not returning `api::BYTECOIND_BIND_PORT_IN_USE` error code when the JSON API port is in use.
+- `walletd` now prints address after creation of wallet.
+- `walletd` now prints deprecation warning when using inproc `bytecoind`.
+- `walletd` now binds to port `9070` on testnet and `10070` on stagenet resp. by default.
+
+*General API improvements*
+
+- Optimisation of JSON RPC calls (2x speed up on very large responses).
+- Made the `jsonrpc` argument mandatory with value "2.0" in all JSON RPC calls according to the spec.
+- JSON RPC `id` is required now according to spec.
+- JSON RPC error's additional data moved into `data` object inside the `error` object according to spec.
+- Now any field in requests that daemons do not understand will be reported as a error.
+- Much better error handling, more specific error codes.
+
+*Specific API improvements*
+
+- New `get_block_header` method for blockchain structure inspection (to replace `getblockheaderbyhash`, `getblockheaderbyheight`, and `getlastblockheader` legacy methods).
+- New `get_wallet_info` method.
+- New `VIEW_ONLY_WALLET` (`-304`) error code, returned from `create_transaction`.
+- In methods supporting longpoll (`get_statu`s and `get_block_template`) all longpoll arguments are now optional. So, for example, if you are interested in `outgoing_peer_count` only, you can specify only `outgoing_peer_count` in request and get response when `outgoing_peer_count` changes. Changes to other fields will not trigger response to longpoll.
+- New `ADDRESS_FAILED_TO_PARSE` (`-4`) and `ADDRESS_NOT_IN_WALLET` (`-1002`) error codes, returned from lots of methods
+- New fields in get_addresses request/response to iterate through list of addresses
+- Now `top_block_timestamp_median` returned correctly from get_status JSON RPC methods.
+- New `need_signatures` fields in APIs returning raw transactions.
+- `check_sendproof` now returns values from sendproof in response if proof is valid.
+- All methods return new correct values for `block_size` and `transactions_cumulative_size`.
+- `get_raw_block` and `get_block_header` now return `orphan_status` and `depth` (consistent with `height_or_depth` fields where top block is `-1`).
+- `get_random_amounts` has no more depth limit of 128 block (distribution would be skewed a bit for very large depths).
+- `get_statistics` response now includes much more information.
+- `submit_block` now returns `block_header` in result.
+- All `transfer` objects now have `transaction_hash` field - especially useful when processing `unlocked_transfers` in result of `get_transfers` method.
+
+*API deprecations (will be removed in version 3.4.0)*
+
+- In all `output` and `transaction` objects `unlock_time` is deprecated (renamed to `unlock_block_or_timestamp`).
+- In all `output` objects `global_index` deprecated (renamed to `index`).
+- In `get_random_outputs` request `outs_count` is deprecated (renamed to `output_count`).
+- In `get_transfers` request `desired_transactions_count` is deprecated (renamed to `desired_transaction_count`).
+- In all `transaction` objects 'binary_size' is deprecated (renamed to `size`).
+
+*Incompatible API changes*
+
+- `get_raw_transaction` method now returns json error `-5` if transaction not found.
+- Deprecated `prev_hash` field remains only in result of legacy methods (`getblockheaderbyhash`, `getblockheaderbyheight`, and `getlastblockheader` legacy methods), use 'previous_block_hash' instead.
+- Deprecated `total_fee_amount` field remains only in result of legacy methods (`getblockheaderbyhash`, `getblockheaderbyheight`, and `getlastblockheader`), use `transactions_fee` instead.
+- Deprecated `transactions_cumulative_size` field remains only in result of legacy methods (`getblockheaderbyhash`, `getblockheaderbyheight`, and `getlastblockheader`), use `transactions_size` instead.
+
+*Incompatible API changes (likely to affect only developers of block explorers)*
+
+- In all raw block objects `global_indices` renamed to `output_indexes`.
+- In all raw transaction objects `vin`, `vout` renamed to `inputs`, `outputs` resp. 
+- In all raw output objects `key` renamed to `public_key`.
+- In all raw output objects `target` object removed and all its fields moved into raw output object.
+- In all raw coinbase input objects `block_index` renamed to `height`.
+- In all raw header objects (including `parent_block`) `miner_tx`, `base_transaction_branch` renamed to `coinbase_transaction`, `coinbase_transaction_branch` resp.
+- In all raw input and raw output objects, `tag`:`ff` renamed to `type`:`coinbase` and `tag`:`02` renamed to `type`:`key`.
+
+*Testnet/Stagenet related*
+
+- New command line parameter `--net=test|stage|main` configures daemons for testnet, stagenet, or mainnet resp.
+- For testnet time multiplier can now be set to speed up all processes 10x, 100x or even more.
+- When participating in testnet or stagenet, `bytecoind` now uses UDP Multicast to announce/discover other bytecoind nodes in local network. Thus in most local networks testnet will self-assemble without seed nodes. In mainnet multicasts are disabled due to anonymity concerns.
+- Testnet/Stagenet now have fixed 1MB max block size limit.
+
 ### v3.2.4
 
 - Added the testnet functionality.
@@ -96,7 +186,6 @@
 - Fixed stuck dowloading from misbehaving nodes.
 - Added early support of JSON-RPC API basic authentification that prevents CSRF attacks.
 - Added (experimental) support of 32-bit platforms.
-
 
 ### v3.0.0-beta-20180206
 

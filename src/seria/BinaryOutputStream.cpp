@@ -14,7 +14,7 @@ using namespace seria;
 
 void BinaryOutputStream::begin_map(size_t &size) { write_varint(stream, size); }
 
-void BinaryOutputStream::next_map_key(std::string &name) { (*this)(name); }
+void BinaryOutputStream::next_map_key(std::string &name) { ser(name, *this); }
 
 void BinaryOutputStream::begin_array(size_t &size, bool fixed_size) {
 	if (!fixed_size)
@@ -53,5 +53,5 @@ void BinaryOutputStream::binary(void *value, size_t size) { stream.write(static_
 
 void BinaryOutputStream::seria_v(double &value) {
 	assert(false);  // the method is not supported for this type of serialization
-	invariant(false, "double serialization is not supported in BinaryOutputStreamSeria");
+	throw std::logic_error("double serialization is not supported in BinaryOutputStreamSeria");
 }

@@ -9,9 +9,73 @@
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
-namespace bytecoin {
+using namespace bytecoin;
+
+template<typename T, typename U>
+bool set_field_good(const T &, U &){
+	return false;
+}
+template<typename T>
+bool set_field_good(const T & a, T & b){
+	b = a;
+	return true;
+}
 
 template<typename T>
+bool find_field_in_extra(const BinaryArray &extra, T & field) {
+	try {
+		common::MemoryInputStream iss(extra.data(), extra.size());
+		seria::BinaryInputStream ar(iss);
+
+		while (!iss.empty()) {
+			int c = common::read<uint8_t>(iss);
+			switch (c) {
+			case TransactionExtraPadding::tag: {
+				size_t size = 1; // tag is itself '0', counts towards max count
+				for (; !iss.empty() && size <= TransactionExtraPadding::MAX_COUNT; ++size) {
+					if (common::read<uint8_t>(iss) != 0)
+						return false;  // all bytes should be zero
+				}
+				if (size > TransactionExtraPadding::MAX_COUNT)
+					return false;
+				TransactionExtraPadding padding;
+				padding.size = size;
+				return set_field_good(padding, field); // last field
+			}
+			case TransactionExtraPublicKey::tag: {
+				TransactionExtraPublicKey extra_pk;
+				iss.read(extra_pk.public_key.data, sizeof(extra_pk.public_key.data));
+				if(set_field_good(extra_pk, field))
+					return true;
+				break;
+			}
+			case TransactionExtraNonce::tag: {
+				TransactionExtraNonce extra_nonce;
+				uint8_t size = common::read<uint8_t>(iss);
+				extra_nonce.nonce.resize(size);
+				iss.read(extra_nonce.nonce.data(), extra_nonce.nonce.size());
+				// We have some base transactions (like in blocks 558479, 558984)
+				// which have wrong extra nonce size, so they will not parse and
+				// throw here from iss.read
+				if(set_field_good(extra_nonce, field))
+					return true;
+				break;
+			}
+			case TransactionExtraMergeMiningTag::tag: {
+				TransactionExtraMergeMiningTag mm_tag;
+				ser(mm_tag, ar);
+				if(set_field_good(mm_tag, field))
+					return true;
+				break;
+			}
+			}
+		}
+	} catch (std::exception &) {
+	}
+	return false; // Not found
+}
+
+/*template<typename T>
 bool find_transaction_extra_field_by_type(const std::vector<TransactionExtraField> &tx_extra_fields, T &field) {
 	auto it = std::find_if(tx_extra_fields.begin(), tx_extra_fields.end(),
 	    [](const TransactionExtraField &f) { return typeid(T) == f.type(); });
@@ -23,35 +87,30 @@ bool find_transaction_extra_field_by_type(const std::vector<TransactionExtraFiel
 	return true;
 }
 
-bool parse_transaction_extra(const BinaryArray &extra, std::vector<TransactionExtraField> &extra_fields) {
+bool bytecoin::parse_transaction_extra(const BinaryArray &extra, std::vector<TransactionExtraField> &extra_fields) {
 	extra_fields.clear();
 
-	if (extra.empty())
-		return true;
+//	if (extra.empty())
+//		return true;
 
 	try {
 		common::MemoryInputStream iss(extra.data(), extra.size());
 		seria::BinaryInputStream ar(iss);
 
-		int c = 0;
-
 		while (!iss.empty()) {
-			c = common::read<uint8_t>(iss);
+			int c = common::read<uint8_t>(iss);
 			switch (c) {
 			case TransactionExtraPadding::tag: {
-				size_t size = 1;
+				size_t size = 1; // tag is itself '0', counts towards max count
 				for (; !iss.empty() && size <= TX_EXTRA_PADDING_MAX_COUNT; ++size) {
-					if (common::read<uint8_t>(iss) != 0) {
+					if (common::read<uint8_t>(iss) != 0)
 						return false;  // all bytes should be zero
-					}
 				}
-
-				if (size > TX_EXTRA_PADDING_MAX_COUNT) {
+				if (size > TX_EXTRA_PADDING_MAX_COUNT)
 					return false;
-				}
 				TransactionExtraPadding padding;
 				padding.size = size;
-				extra_fields.push_back(padding);  // TODO - return {} initializer when Google updates NDK copmiler
+				extra_fields.push_back(padding);  // TODO - return {} initializer when Google updates NDK compiler
 				break;
 			}
 
@@ -65,22 +124,22 @@ bool parse_transaction_extra(const BinaryArray &extra, std::vector<TransactionEx
 			case TransactionExtraNonce::tag: {
 				TransactionExtraNonce extra_nonce;
 				uint8_t size = common::read<uint8_t>(iss);
-				if (size > 0) {
+//				if (size > 0) {
 					extra_nonce.nonce.resize(size);
 					iss.read(extra_nonce.nonce.data(), extra_nonce.nonce.size());
 					// We have some base transactions (like in blocks 558479, 558984)
 					// which have wrong
 					// extra nonce size, so they will not parse and throw here from
 					// iss.read
-				}
-
+//				}
 				extra_fields.push_back(extra_nonce);
+				if (size > 127)
+					throw std::runtime_error(""); // TODO - remove before release
 				break;
 			}
-
 			case TransactionExtraMergeMiningTag::tag: {
 				TransactionExtraMergeMiningTag mm_tag;
-				ar(mm_tag);
+				ser(mm_tag, ar);
 				extra_fields.push_back(mm_tag);
 				break;
 			}
@@ -107,15 +166,16 @@ struct ExtraSerializerVisitor : public boost::static_visitor<bool> {
 	}
 
 	bool operator()(const TransactionExtraPublicKey &t) {
-		return add_transaction_public_key_to_extra(extra, t.public_key);
+		add_transaction_public_key_to_extra(extra, t.public_key); return true;
 	}
 
-	bool operator()(const TransactionExtraNonce &t) { return add_extra_nonce_to_transaction_extra(extra, t.nonce); }
+	bool operator()(const TransactionExtraNonce &t) { add_extra_nonce_to_transaction_extra(extra, t.nonce); return true; }
 
-	bool operator()(const TransactionExtraMergeMiningTag &t) { return append_merge_mining_tag_to_extra(extra, t); }
+	bool operator()(const TransactionExtraMergeMiningTag &t) { append_merge_mining_tag_to_extra(extra, t); return true; }
 };
 
-bool write_transaction_extra(BinaryArray &tx_extra, const std::vector<TransactionExtraField> &tx_extra_fields) {
+bool bytecoin::write_transaction_extra(
+    BinaryArray &tx_extra, const std::vector<TransactionExtraField> &tx_extra_fields) {
 	ExtraSerializerVisitor visitor(tx_extra);
 
 	for (const auto &tag : tx_extra_fields) {
@@ -125,85 +185,69 @@ bool write_transaction_extra(BinaryArray &tx_extra, const std::vector<Transactio
 	}
 
 	return true;
-}
+}*/
 
-PublicKey get_transaction_public_key_from_extra(const BinaryArray &tx_extra) {
-	std::vector<TransactionExtraField> tx_extra_fields;
-	parse_transaction_extra(tx_extra, tx_extra_fields);
-
+PublicKey bytecoin::extra_get_transaction_public_key(const BinaryArray &tx_extra) {
 	TransactionExtraPublicKey pub_key_field;
-	if (!find_transaction_extra_field_by_type(tx_extra_fields, pub_key_field))
+	if( !find_field_in_extra(tx_extra, pub_key_field) )
 		return PublicKey{};
-
 	return pub_key_field.public_key;
 }
 
-bool add_transaction_public_key_to_extra(BinaryArray &tx_extra, const PublicKey &tx_pub_key) {
+void bytecoin::extra_add_transaction_public_key(BinaryArray &tx_extra, const PublicKey &tx_pub_key) {
 	tx_extra.push_back(TransactionExtraPublicKey::tag);
 	common::append(tx_extra, std::begin(tx_pub_key.data), std::end(tx_pub_key.data));
-	return true;
 }
 
-bool add_extra_nonce_to_transaction_extra(BinaryArray &tx_extra, const BinaryArray &extra_nonce) {
-	if (extra_nonce.size() > TX_EXTRA_NONCE_MAX_COUNT) {
-		return false;
-	}
-
-	size_t start_pos = tx_extra.size();
-	tx_extra.resize(tx_extra.size() + 2 + extra_nonce.size());
+void bytecoin::extra_add_nonce(BinaryArray &tx_extra, const BinaryArray &extra_nonce) {
+	if (extra_nonce.size() > TransactionExtraNonce::MAX_COUNT)
+		throw std::runtime_error("Extra nonce cannot be > " + common::to_string(TransactionExtraNonce::MAX_COUNT));
+	tx_extra.push_back(TransactionExtraNonce::tag);
+	tx_extra.push_back(static_cast<uint8_t>(extra_nonce.size()));
+	common::append(tx_extra, extra_nonce.begin(), extra_nonce.end());
+//	size_t start_pos = tx_extra.size();
+//	tx_extra.resize(tx_extra.size() + 2 + extra_nonce.size());
 	// write tag
-	tx_extra[start_pos] = TransactionExtraNonce::tag;
+//	tx_extra[start_pos] = TransactionExtraNonce::tag;
 	// write len
-	++start_pos;
-	tx_extra[start_pos] = static_cast<uint8_t>(extra_nonce.size());
+//	++start_pos;
+//	tx_extra[start_pos] = static_cast<uint8_t>(extra_nonce.size());
 	// write data
-	++start_pos;
-	memcpy(&tx_extra[start_pos], extra_nonce.data(), extra_nonce.size());
-	return true;
+//	++start_pos;
+//	memcpy(&tx_extra[start_pos], extra_nonce.data(), extra_nonce.size());
 }
 
-bool append_merge_mining_tag_to_extra(BinaryArray &tx_extra, const TransactionExtraMergeMiningTag &mm_tag) {
+void bytecoin::extra_add_merge_mining_tag(BinaryArray &tx_extra, const TransactionExtraMergeMiningTag &mm_tag) {
 	BinaryArray blob = seria::to_binary(mm_tag);
 	tx_extra.push_back(TransactionExtraMergeMiningTag::tag);
 	common::append(tx_extra, blob.begin(), blob.end());
-	return true;
 }
 
-bool get_merge_mining_tag_from_extra(const BinaryArray &tx_extra, TransactionExtraMergeMiningTag &mm_tag) {
-	std::vector<TransactionExtraField> tx_extra_fields;
-	parse_transaction_extra(tx_extra, tx_extra_fields);
-
-	return find_transaction_extra_field_by_type(tx_extra_fields, mm_tag);
+bool bytecoin::extra_get_merge_mining_tag(const BinaryArray &tx_extra, TransactionExtraMergeMiningTag &mm_tag) {
+	return find_field_in_extra(tx_extra, mm_tag);
 }
 
-void set_payment_id_to_transaction_extra_nonce(BinaryArray &extra_nonce, const Hash &payment_id) {
-	extra_nonce.clear();
-	extra_nonce.push_back(TX_EXTRA_NONCE_PAYMENT_ID);
+void bytecoin::extra_add_payment_id(BinaryArray &tx_extra, const Hash &payment_id) {
+	BinaryArray extra_nonce;
+	extra_nonce.push_back(TransactionExtraNonce::PAYMENT_ID);
 	common::append(extra_nonce, std::begin(payment_id.data), std::end(payment_id.data));
+	extra_add_nonce(tx_extra, extra_nonce);
 }
 
-bool get_payment_id_from_transaction_extra_nonce(const BinaryArray &extra_nonce, Hash &payment_id) {
-	if (sizeof(Hash) + 1 != extra_nonce.size())
-		return false;
-	if (TX_EXTRA_NONCE_PAYMENT_ID != extra_nonce[0])
-		return false;
-	payment_id = *reinterpret_cast<const Hash *>(extra_nonce.data() + 1);
-	return true;
-}
-
-bool get_payment_id_from_tx_extra(const BinaryArray &extra, Hash &payment_id) {
-	std::vector<TransactionExtraField> tx_extra_fields;
-	parse_transaction_extra(extra, tx_extra_fields);
+bool bytecoin::extra_get_payment_id(const BinaryArray &tx_extra, Hash &payment_id) {
 	TransactionExtraNonce extra_nonce;
-	if (!find_transaction_extra_field_by_type(tx_extra_fields, extra_nonce))
+	if (!find_field_in_extra(tx_extra, extra_nonce))
 		return false;
-	if (!get_payment_id_from_transaction_extra_nonce(extra_nonce.nonce, payment_id))
+	if (extra_nonce.nonce.size() != sizeof(Hash) + 1)
 		return false;
+	if (extra_nonce.nonce.at(0) != TransactionExtraNonce::PAYMENT_ID)
+		return false;
+//	memcpy(payment_id.data, extra_nonce.nonce.data() + 1, sizeof(Hash));
+	std::copy(extra_nonce.nonce.begin() + 1, extra_nonce.nonce.end(), payment_id.data);
 	return true;
 }
-}
 
-static void do_serialize(bytecoin::TransactionExtraMergeMiningTag &tag, seria::ISeria &s) {
+static void do_serialize(TransactionExtraMergeMiningTag &tag, seria::ISeria &s) {
 	s.begin_object();
 	uint64_t depth = static_cast<uint64_t>(tag.depth);
 	seria_kv("depth", depth, s);
@@ -212,10 +256,10 @@ static void do_serialize(bytecoin::TransactionExtraMergeMiningTag &tag, seria::I
 	s.end_object();
 }
 
-void seria::ser(bytecoin::TransactionExtraMergeMiningTag &v, ISeria &s) {
+void seria::ser(TransactionExtraMergeMiningTag &v, ISeria &s) {
 	if (s.is_input()) {
 		std::string field;
-		s(field);
+		ser(field, s);
 		common::MemoryInputStream stream(field.data(), field.size());
 		seria::BinaryInputStream input(stream);
 		do_serialize(v, input);
@@ -224,6 +268,6 @@ void seria::ser(bytecoin::TransactionExtraMergeMiningTag &v, ISeria &s) {
 		common::StringOutputStream os(field);
 		seria::BinaryOutputStream output(os);
 		do_serialize(v, output);
-		s(field);
+		ser(field, s);
 	}
 }

@@ -2,10 +2,10 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "DBsqlite3.hpp"
-#include <boost/lexical_cast.hpp>
-#include <iostream>
 #include <common/Invariant.hpp>
+#include <iostream>
 #include "PathTools.hpp"
+#include "common/Math.hpp"
 #include "common/string.hpp"
 
 using namespace platform;
@@ -67,7 +67,7 @@ size_t DBsqlite::get_approximate_items_count() const {
 	           //	if (rc != SQLITE_ROW)
 	           //		throw platform::sqlite::Error("DB::get_approximate_items_count failed sqlite3_step in get " +
 	           // common::to_string(rc));
-	           //	return boost::lexical_cast<size_t>(sqlite3_column_int64(stmt_select_star.handle, 0));
+	           //	return common::integer_cast<size_t>(sqlite3_column_int64(stmt_select_star.handle, 0));
 }
 
 static const size_t max_key_size = 128;
@@ -161,7 +161,8 @@ static void put(sqlite::Stmt &stmt, const std::string &key, const void *data, si
 	sqlite3_reset(stmt.handle);
 	sqlite_check(
 	    sqlite3_bind_blob(stmt.handle, 1, key.data(), static_cast<int>(key.size()), 0), "DB::put sqlite3_bind_blob 1 ");
-	sqlite_check(sqlite3_bind_blob(stmt.handle, 2, data ? data : "", static_cast<int>(size), 0), "DB::put sqlite3_bind_blob 2 ");
+	sqlite_check(
+	    sqlite3_bind_blob(stmt.handle, 2, data ? data : "", static_cast<int>(size), 0), "DB::put sqlite3_bind_blob 2 ");
 	// sqlite3_bind_blob uses nullptr as a NULL indicator. Empty arrays can have nullptr as a data().
 	auto rc = sqlite3_step(stmt.handle);
 	if (rc != SQLITE_DONE)
@@ -232,7 +233,8 @@ uint32_t DBsqlite::from_ascending_key(const std::string &key) {
 	long long unsigned val = 0;
 	if (sscanf(key.c_str(), "%llx", &val) != 1)
 		throw std::runtime_error("from_ascending_key failed to convert key=" + key);
-	return boost::lexical_cast<uint32_t>(val);  // TODO - std::stoull(key, nullptr, 16) when Google updates NDK compiler
+	return common::integer_cast<uint32_t>(
+	    val);  // TODO - std::stoull(key, nullptr, 16) when Google updates NDK compiler
 }
 
 std::string DBsqlite::clean_key(const std::string &key) {

@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include "Config.hpp"
+#include "CryptoNoteTools.hpp"
 #include "Node.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
@@ -62,7 +63,9 @@ void Node::DownloaderV11::thread_run() {
 			wo = std::move(work.front());
 			work.pop_front();
 		}
-		PreparedBlock result(std::move(std::get<2>(wo)), std::get<1>(wo) ? &hash_crypto_context : nullptr);
+		PreparedBlock result(std::move(std::get<2>(wo)),
+		    m_node->m_block_chain.get_currency(),
+		    std::get<1>(wo) ? &hash_crypto_context : nullptr);
 		{
 			std::unique_lock<std::mutex> lock(mu);
 			prepared_blocks[std::get<0>(wo)] = std::move(result);
@@ -77,25 +80,25 @@ uint32_t Node::DownloaderV11::get_known_block_count(uint32_t my) const {
 	return my;
 }
 
-void Node::DownloaderV11::on_connect(P2PClientBytecoin *who) {
+void Node::DownloaderV11::on_connect(P2PProtocolBytecoin *who) {
 	if (who->is_incoming())  // Never sync from incoming
 		return;
 	m_node->m_log(logging::TRACE) << "DownloaderV11::on_connect " << who->get_address() << std::endl;
-	if (who->get_version() == 1) {
-		m_good_clients.insert(std::make_pair(who, 0));
-		if (who->get_last_received_sync_data().current_height == m_block_chain.get_tip_height()) {
-			m_node->m_log(logging::TRACE)
-			    << "DownloaderV11::on_connect sync_transactions to " << who->get_address()
-			    << " our pool size=" << m_node->m_block_chain.get_memory_state_transactions().size() << std::endl;
-			m_node->sync_transactions(who);
-			// If we at same height, sync tx now, otherwise will sync after we reach same height
-		}
-		advance_download();
+	invariant(m_good_clients.insert(std::make_pair(who, 0)).second, "");
+	if (who->get_last_received_sync_data().current_height == m_block_chain.get_tip_height()) {
+		m_node->m_log(logging::TRACE) << "DownloaderV11::on_connect sync_transactions to " << who->get_address()
+		                              << " our pool size="
+		                              << m_node->m_block_chain.get_memory_state_transactions().size() << std::endl;
+		m_node->sync_transactions(who);
+		// If we at same height, sync tx now, otherwise will sync after we reach same height
 	}
+	advance_download();
 }
 
-void Node::DownloaderV11::on_disconnect(P2PClientBytecoin *who) {
+void Node::DownloaderV11::on_disconnect(P2PProtocolBytecoin *who) {
 	if (who->is_incoming())
+		return;
+	if (m_good_clients.count(who) == 0)  // Remove only if we have it added
 		return;
 	m_node->m_log(logging::TRACE) << "DownloaderV11::on_disconnect " << who->get_address() << std::endl;
 	invariant(total_downloading_blocks >= m_good_clients[who], "total_downloading_blocks mismatch in disconnect");
@@ -112,7 +115,7 @@ void Node::DownloaderV11::on_disconnect(P2PClientBytecoin *who) {
 	}
 	if (m_chain_client && m_chain_client == who) {
 		m_chain_timer.cancel();
-		m_chain_client = nullptr;
+		m_chain_client       = nullptr;
 		m_chain_request_sent = false;
 		m_node->m_log(logging::TRACE) << "DownloaderV11::on_disconnect m_chain_client reset to 0" << std::endl;
 	}
@@ -126,13 +129,13 @@ void Node::DownloaderV11::on_chain_timer() {
 	}
 }
 
-void Node::DownloaderV11::on_msg_notify_request_chain(P2PClientBytecoin *who,
+void Node::DownloaderV11::on_msg_notify_request_chain(P2PProtocolBytecoin *who,
     const NOTIFY_RESPONSE_CHAIN_ENTRY::request &req) {
 	if (m_chain_client != who || !m_chain_request_sent)
 		return;  // TODO - who just sent us chain we did not ask, ban
 	m_chain_request_sent = false;
 	m_chain_timer.cancel();
-	m_node->m_log(logging::INFO) << "Downloader received chain from " << who->get_address()
+	m_node->m_log(logging::INFO) << "DownloaderV11 received chain from " << who->get_address()
 	                             << " start_height=" << req.start_height << " length=" << req.m_block_ids.size()
 	                             << std::endl;
 	m_chain_start_height = req.start_height;
@@ -148,13 +151,15 @@ void Node::DownloaderV11::on_msg_notify_request_chain(P2PClientBytecoin *who,
 		m_chain_start_height += 1;
 	}  // We stop removing as soon as we find new block, because wrong order might prevent us from applying blocks
 	if (req.m_block_ids.size() != m_chain.size() + 1) {
-		m_node->m_log(logging::INFO) << "Downloader truncated chain length=" << m_chain.size() << std::endl;
+		m_node->m_log(logging::INFO) << "DownloaderV11 truncated chain length=" << m_chain.size() << std::endl;
 	}
-	if (req.m_block_ids.empty()){ // Most likely peer is 3.2.0
+	if (req.m_block_ids.empty()) {  // Most likely peer is 3.2.0
 		const auto now = m_node->m_p2p.get_local_time();
-		m_node->m_log(logging::INFO) << "Downloader truncated chain to zero, delaying connect to " << who->get_address() << std::endl;
+		m_node->m_log(logging::INFO) << "DownloaderV11 truncated chain to zero, delaying connect to "
+		                             << who->get_address() << std::endl;
 		m_node->m_peer_db.delay_connection_attempt(who->get_address(), now);
 		who->disconnect(std::string());  // Will recursively call advance_chain again
+		return;
 	}
 	advance_download();
 }
@@ -165,8 +170,8 @@ void Node::DownloaderV11::advance_chain() {
 	if (!m_chain.empty() || !m_download_chain.empty() || m_chain_request_sent)
 		return;
 	m_chain_client = nullptr;
-	std::vector<P2PClientBytecoin *> lagging_clients;
-	std::vector<P2PClientBytecoin *> worth_clients;
+	std::vector<P2PProtocolBytecoin *> lagging_clients;
+	std::vector<P2PProtocolBytecoin *> worth_clients;
 	const auto now = m_node->m_p2p.get_local_time();
 	for (auto &&who : m_good_clients) {
 		if (who.first->get_last_received_sync_data().current_height + GOOD_LAG < m_node->m_block_chain.get_tip_height())
@@ -175,10 +180,11 @@ void Node::DownloaderV11::advance_chain() {
 		if (!m_node->m_block_chain.read_header(who.first->get_last_received_sync_data().top_id, &info))
 			worth_clients.push_back(who.first);
 	}
-	if (lagging_clients.size() > m_node->m_config.p2p_default_connections_count / 4) {
+	if (lagging_clients.size() > m_node->m_config.p2p_max_outgoing_connections / 4) {
 		auto who = lagging_clients.front();
 		m_node->m_peer_db.delay_connection_attempt(who->get_address(), now);
-		m_node->m_log(logging::INFO) << "Downloader disconnecting lagging client " << who->get_address() << std::endl;
+		m_node->m_log(logging::INFO) << "DownloaderV11 disconnecting lagging client " << who->get_address()
+		                             << std::endl;
 		who->disconnect(std::string());  // Will recursively call advance_chain again
 		return;
 	}
@@ -198,7 +204,7 @@ void Node::DownloaderV11::advance_chain() {
 	m_chain_timer.once(SYNC_TIMEOUT);
 }
 
-void Node::DownloaderV11::start_download(DownloadCell &dc, P2PClientBytecoin *who) {
+void Node::DownloaderV11::start_download(DownloadCell &dc, P2PProtocolBytecoin *who) {
 	auto idea_now         = std::chrono::steady_clock::now();
 	dc.downloading_client = who;
 	dc.block_source       = who->get_address();
@@ -235,17 +241,19 @@ void Node::DownloaderV11::stop_download(DownloadCell &dc, bool success) {
 	dc.downloading_client = nullptr;
 }
 
-void Node::DownloaderV11::on_msg_notify_request_objects(P2PClientBytecoin *who,
+void Node::DownloaderV11::on_msg_notify_request_objects(P2PProtocolBytecoin *who,
     const NOTIFY_RESPONSE_GET_OBJECTS::request &req) {
 	for (auto &&rb : req.blocks) {
 		Hash bid;
 		try {
 			BlockTemplate bheader;
 			seria::from_binary(bheader, rb.block);
-			bid = bytecoin::get_block_hash(bheader);
+			auto body_proxy = get_body_proxy_from_template(bheader);
+			bid             = bytecoin::get_block_hash(bheader, body_proxy);
 		} catch (const std::exception &ex) {
-			m_node->m_log(logging::INFO) << "Exception " << ex.what() << " while parsing returned block, banning "
-			                             << who->get_address() << std::endl;
+			m_node->m_log(logging::INFO) << "Exception " << common::what(ex)
+			                             << " while parsing returned block, banning " << who->get_address()
+			                             << std::endl;
 			who->disconnect(std::string());
 			break;
 		}
@@ -263,7 +271,7 @@ void Node::DownloaderV11::on_msg_notify_request_objects(P2PClientBytecoin *who,
 				          << " (queue=" << total_downloading_blocks << ") from " << who->get_address() << std::endl;
 			}
 			m_node->m_log(logging::TRACE)
-			    << "Downloader received block with height=" << dc.expected_height << " hash=" << dc.bid
+			    << "DownloaderV11 received block with height=" << dc.expected_height << " hash=" << dc.bid
 			    << " (queue=" << total_downloading_blocks << ") from " << who->get_address() << std::endl;
 			cell_found = true;
 			if (multicore) {
@@ -272,26 +280,27 @@ void Node::DownloaderV11::on_msg_notify_request_objects(P2PClientBytecoin *who,
 				    !m_node->m_block_chain.get_currency().is_in_sw_checkpoint_zone(dc.expected_height),
 				    std::move(dc.rb)));
 			} else {
-				dc.pb     = PreparedBlock(std::move(dc.rb), nullptr);
+				dc.pb     = PreparedBlock(std::move(dc.rb), m_node->m_block_chain.get_currency(), nullptr);
 				dc.status = DownloadCell::PREPARED;
 			}
 			break;
 		}
 		if (!cell_found) {
-			m_node->m_log(logging::INFO) << "Downloader received stray block from " << who->get_address() << std::endl;
+			m_node->m_log(logging::INFO) << "DownloaderV11 received stray block from " << who->get_address()
+			                             << std::endl;
 			//			who->disconnect(std::string());
 			//			break;
 		}
 	}
 	for (auto &&bid : req.missed_ids) {
 		for (size_t dit_counter = 0; dit_counter != m_download_chain.size(); ++dit_counter) {
-			auto & dit = m_download_chain.at(dit_counter);
+			auto &dit = m_download_chain.at(dit_counter);
 			if (dit.status != DownloadCell::DOWNLOADING || dit.downloading_client != who || dit.bid != bid)
 				continue;  // downloaded or downloading
 			stop_download(dit, false);
 			if (!m_chain_client || m_chain_client == who) {
 				m_node->m_log(logging::INFO)
-				    << "Downloader cannot download block from any connected client, cleaning chain" << std::endl;
+				    << "DownloaderV11 cannot download block from any connected client, cleaning chain" << std::endl;
 				while (m_download_chain.size() > dit_counter) {
 					stop_download(m_download_chain.back(), false);
 					m_download_chain.pop_back();
@@ -328,7 +337,7 @@ bool Node::DownloaderV11::on_idle() {
 		auto action = m_block_chain.add_block(
 		    dc.pb, &info, common::ip_address_and_port_to_string(dc.block_source.ip, dc.block_source.port));
 		if (action == BroadcastAction::BAN) {
-			m_node->m_log(logging::INFO) << "Downloader DownloadCell BAN height=" << dc.expected_height
+			m_node->m_log(logging::INFO) << "DownloaderV11 DownloadCell BAN height=" << dc.expected_height
 			                             << " wb=" << dc.bid << std::endl;
 			// TODO - ban client who gave us chain
 			//			continue;
@@ -342,13 +351,17 @@ bool Node::DownloaderV11::on_idle() {
 			//			          << " cd=" << info.cumulative_difficulty.lo << std::endl;
 			if (m_download_chain.empty()) {
 				// We do not want to broadcast too often during download
+				m_node->m_log(logging::INFO) << "Added last (from batch) downloaded block height=" << info.height
+				                             << " bid=" << info.hash << std::endl;
 				COMMAND_TIMED_SYNC::request req;
 				req.payload_data =
 				    CORE_SYNC_DATA{m_node->m_block_chain.get_tip_height(), m_node->m_block_chain.get_tip_bid()};
 				BinaryArray raw_msg =
 				    LevinProtocol::send_message(COMMAND_TIMED_SYNC::ID, LevinProtocol::encode(req), true);
-				m_node->m_p2p.broadcast(
+				m_node->broadcast(
 				    nullptr, raw_msg);  // nullptr - we can not always know which connection was block source
+				//				m_node->broadcast_new(nullptr, raw_msg); // TODO nullptr - we can not always know which
+				// connection was block source
 			}
 		}
 		added_counter += 1;
@@ -385,7 +398,7 @@ void Node::DownloaderV11::on_download_timer() {
 	        SYNC_TIMEOUT) {
 		auto who = m_download_chain.front().downloading_client;
 		m_node->m_peer_db.delay_connection_attempt(who->get_address(), m_node->m_p2p.get_local_time());
-		m_node->m_log(logging::INFO) << "Downloader disconnecting protected slacker " << who->get_address()
+		m_node->m_log(logging::INFO) << "DownloaderV11 disconnecting protected slacker " << who->get_address()
 		                             << std::endl;
 		who->disconnect(std::string());
 	}
@@ -409,19 +422,19 @@ void Node::DownloaderV11::advance_download() {
 
 	while (m_who_downloaded_block.size() > TOTAL_DOWNLOAD_BLOCKS)
 		m_who_downloaded_block.pop_front();
-	std::map<P2PClientBytecoin *, size_t> who_downloaded_counter;
+	std::map<P2PProtocolBytecoin *, size_t> who_downloaded_counter;
 	for (auto lit = m_who_downloaded_block.begin(); lit != m_who_downloaded_block.end(); ++lit)
 		who_downloaded_counter[*lit] += 1;
 	auto idea_now = std::chrono::steady_clock::now();
 	for (size_t dit_counter = 0; dit_counter != m_download_chain.size(); ++dit_counter) {
-		auto & dit = m_download_chain.at(dit_counter);
+		auto &dit = m_download_chain.at(dit_counter);
 		if (dit.status != DownloadCell::DOWNLOADING || dit.downloading_client)
 			continue;  // downloaded or downloading
 		if (total_downloading_blocks >= TOTAL_DOWNLOAD_BLOCKS)
 			break;
-		P2PClientBytecoin *ready_client = nullptr;
-		size_t ready_counter            = std::numeric_limits<size_t>::max();
-		size_t ready_speed              = 1;
+		P2PProtocolBytecoin *ready_client = nullptr;
+		size_t ready_counter              = std::numeric_limits<size_t>::max();
+		size_t ready_speed                = 1;
 		for (auto &&who : m_good_clients) {
 			size_t speed =
 			    std::max<size_t>(1, std::min<size_t>(TOTAL_DOWNLOAD_BLOCKS / 4, who_downloaded_counter[who.first]));

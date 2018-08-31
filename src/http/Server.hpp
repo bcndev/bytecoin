@@ -13,6 +13,13 @@
 
 namespace http {
 
+class ErrorAuthorization : public std::runtime_error {
+public:
+	explicit ErrorAuthorization(const std::string &realm)
+	    : std::runtime_error("Error Authorization Required"), realm(realm) {}
+	std::string realm;
+};
+
 class Client {
 public:
 	typedef std::function<void()> handler;

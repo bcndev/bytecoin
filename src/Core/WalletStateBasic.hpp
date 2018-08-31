@@ -14,7 +14,7 @@
 #include "BlockChainState.hpp"
 #include "CryptoNote.hpp"
 #include "Wallet.hpp"
-#include "crypto/chacha8.h"
+#include "crypto/chacha8.hpp"
 #include "platform/DB.hpp"
 #include "rpc_api.hpp"
 
@@ -26,7 +26,7 @@ class IWalletState {
 public:
 	virtual ~IWalletState() {}
 
-	virtual Amount add_incoming_output(const api::Output &) = 0;  // added amount may be lower
+	virtual Amount add_incoming_output(const api::Output &, const Hash & tid) = 0;  // added amount may be lower
 	virtual Amount add_incoming_keyimage(Height block_height, const KeyImage &) = 0;
 	virtual void add_transaction(
 	    Height block_height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) = 0;
@@ -52,7 +52,7 @@ public:
 	virtual std::vector<api::Output> api_get_locked_or_unconfirmed_unspent(
 	    const std::string &address, Height height) const;
 	virtual api::Balance get_balance(const std::string &address, Height height) const;
-	std::map<std::pair<Amount, uint32_t>, api::Output> api_get_unlocked_outputs(
+	std::vector<api::Transfer> api_get_unlocked_transfers(
 	    const std::string &address, Height from_height, Height to_height = std::numeric_limits<Height>::max()) const;
 	bool get_transaction(Hash tid, TransactionPrefix *tx, api::Transaction *ptx) const;
 	bool has_transaction(Hash tid) const;
@@ -102,7 +102,7 @@ protected:
 	// returns true if our keyimage
 
 	// methods to add incoming tx
-	Amount add_incoming_output(const api::Output &) override;  // added amount may be lower
+	Amount add_incoming_output(const api::Output &, const Hash & tid) override;  // added amount may be lower
 	Amount add_incoming_keyimage(Height block_height, const KeyImage &) override;
 	void add_transaction(Height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override;
 
@@ -113,26 +113,31 @@ private:
 	Height m_tail_height = 0;
 	api::BlockHeader m_tip;
 
+	void version_3_to_4();
+	void put_am_gi_tid(Amount am, uint32_t gi, Hash tid);
+	Hash get_am_gi_tid(Amount am, uint32_t gi)const;
 	// DB generic undo machinery
 	typedef std::map<std::string, UndoValue> UndoMap;
 	UndoMap current_undo_map;
-	void record_undo(UndoMap &undo_map, const std::string &key);
+	UndoMap::iterator record_undo(UndoMap &undo_map, const std::string &key);
 	void put_with_undo(const std::string &key, const common::BinaryArray &value, bool nooverwrite);
 	void del_with_undo(const std::string &key, bool mustexist);
 	void save_db_state(uint32_t state, const UndoMap &undo_map);
 	void undo_db_state(uint32_t state);
 
 	// indices implemenation
-	Amount add_incoming_output(const api::Output &, bool just_unlocked);
+	Amount add_incoming_output(const api::Output &, const Hash & tid, bool just_unlocked);
 	void modify_balance(const api::Output &output, int locked_op, int spendable_op);
 	// lock/unlock
-	void add_to_lock_index(const api::Output &);
+	void add_to_lock_index(const api::Output &, const Hash & tid);
 	void remove_from_lock_index(const api::Output &);
 
 	void unlock(Height now_height, api::Output &&output);
 	void add_to_unlocked_index(const api::Output &, Height);
 	void read_unlock_index(std::map<std::pair<Amount, uint32_t>, api::Output> *add, const std::string &index_prefix,
 	    const std::string &address, uint32_t begin, uint32_t end) const;
+	std::map<std::pair<Amount, uint32_t>, api::Output> get_unlocked_outputs(const std::string &address,
+			Height from_height, Height to_height) const;
 
 	// add coin/spend coin
 	void add_to_unspent_index(const api::Output &);

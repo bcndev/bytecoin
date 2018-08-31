@@ -20,7 +20,7 @@ void test_json(const std::string &filename, bool should_be) {
 		common::JsonValue val = common::JsonValue::from_string(content);
 		success               = true;
 	} catch (const std::exception &) {
-		//		std::cout << filename << " fail reason: " << ex.what() << std::endl;
+		//		std::cout << filename << " fail reason: " << common::what(ex) << std::endl;
 	}
 	if (success != should_be)
 		throw std::runtime_error("test case failed " + filename);

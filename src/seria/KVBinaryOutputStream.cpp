@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include "common/Invariant.hpp"
 #include "common/Streams.hpp"
+#include "common/Varint.hpp"
 
 using namespace common;
 using namespace bytecoin;
@@ -21,14 +22,17 @@ namespace {
 
 template<typename T>
 void write_pod(IOutputStream &s, const T &value) {
-	s.write(&value, sizeof(T));
+	unsigned char buf[sizeof(T)];
+	common::uint_le_to_bytes(buf, sizeof(T), static_cast<typename std::make_unsigned<T>::type>(value));
+	s.write(buf, sizeof(T));
 }
 
 template<class T>
 size_t pack_varint(IOutputStream &s, uint8_t type_or, size_t pv) {
 	T v = static_cast<T>(pv << 2);
 	v |= type_or;
-	s.write(&v, sizeof(T));
+	write_pod(s, v);
+	//	s.write(&v, sizeof(T));
 	return sizeof(T);
 }
 
@@ -54,7 +58,7 @@ size_t write_array_size(IOutputStream &s, size_t val) {
 	} else if (val <= 1073741823) {
 		return pack_varint<uint32_t>(s, PORTABLE_RAW_SIZE_MARK_DWORD, val);
 	} else {
-		if (val > 4611686018427387903) {
+		if (val > 4611686018427387903) {  // Warning here on 32-bit platforms
 			throw std::runtime_error("failed to pack varint - too big amount");
 		}
 		return pack_varint<uint64_t>(s, PORTABLE_RAW_SIZE_MARK_INT64, val);
@@ -63,15 +67,17 @@ size_t write_array_size(IOutputStream &s, size_t val) {
 }
 
 KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : m_target(target) {
-	KVBinaryStorageBlockHeader hdr;
-	hdr.m_signature_a = PORTABLE_STORAGE_SIGNATUREA;
-	hdr.m_signature_b = PORTABLE_STORAGE_SIGNATUREB;
-	hdr.m_ver         = PORTABLE_STORAGE_FORMAT_VER;
-
-	m_target.write(&hdr, sizeof(hdr));
+	KVBinaryStorageBlockHeader hdr{
+	    PORTABLE_STORAGE_SIGNATUREA, PORTABLE_STORAGE_SIGNATUREB, PORTABLE_STORAGE_FORMAT_VER};
+	write_pod(m_target, hdr.m_signature_a);
+	write_pod(m_target, hdr.m_signature_b);
+	m_target.write(&hdr.m_ver, 1);
 }
 
-void KVBinaryOutputStream::object_key(common::StringView name, bool optional) { m_next_key = name; }
+bool KVBinaryOutputStream::object_key(common::StringView name, bool optional) {
+	m_next_key = name;
+	return true;
+}
 void KVBinaryOutputStream::next_map_key(std::string &name) { m_next_key = name; }
 
 void KVBinaryOutputStream::begin_object() {
@@ -208,12 +214,14 @@ void KVBinaryOutputStream::seria_v(uint64_t &value) {
 
 void KVBinaryOutputStream::seria_v(bool &value) {
 	write_element_prefix(BIN_KV_SERIALIZE_TYPE_BOOL);
-	write_pod(stream(), value);
+	write_pod(stream(), uint8_t(value));
 }
 
 void KVBinaryOutputStream::seria_v(double &value) {
-	write_element_prefix(BIN_KV_SERIALIZE_TYPE_DOUBLE);
-	write_pod(stream(), value);
+	assert(false);  // the method is not supported for this type of serialization
+	throw std::logic_error("double serialization is not supported in KVBinaryOutputStream");
+	//	write_element_prefix(BIN_KV_SERIALIZE_TYPE_DOUBLE);
+	//	stream().write(&value, sizeof(double)); // TODO - double in binary is bug
 }
 
 void KVBinaryOutputStream::seria_v(std::string &value) {

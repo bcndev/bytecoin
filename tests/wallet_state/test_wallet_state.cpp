@@ -16,8 +16,8 @@ public:
 	std::map<KeyImage, int> memory_spent;
 	explicit WalletStateTest(logging::ILogger &log, const Config &config, const Currency &currency)
 	    : WalletStateBasic(log, config, currency, "test_wallet_state") {}
-	Amount add_incoming_output(const api::Output &output) override {
-		return WalletStateBasic::add_incoming_output(output);
+	Amount add_incoming_output(const api::Output &output, const Hash & tid) override {
+		return WalletStateBasic::add_incoming_output(output, tid);
 	}
 	Amount add_incoming_keyimage(Height block_height, const KeyImage &ki) override {
 		return WalletStateBasic::add_incoming_keyimage(block_height, ki);
@@ -37,10 +37,10 @@ public:
 };
 
 static bool less_output(const api::Output &a, const api::Output &b) {
-	return std::tie(a.height, a.amount, a.global_index) < std::tie(b.height, b.amount, b.global_index);
+	return std::tie(a.height, a.amount, a.index) < std::tie(b.height, b.amount, b.index);
 }
 static bool eq_output(const api::Output &a, const api::Output &b) {
-	return std::tie(a.height, a.amount, a.global_index) == std::tie(b.height, b.amount, b.global_index);
+	return std::tie(a.height, a.amount, a.index) == std::tie(b.height, b.amount, b.index);
 }
 
 // We will check that WalletStateBasic and model have the same behaviour
@@ -67,8 +67,8 @@ public:
 		bool ki_exists      = all_keyimages.count(output.key_image) != 0;
 		bool unspent_exists = ki_exists && outputs.count(all_keyimages.at(output.key_image)) != 0;
 		if (ki_exists && !unspent_exists)
-			return 0;                                     // second unspent after first spent
-		if (output.unlock_time != 0 && !just_unlocked) {  // incoming
+			return 0;                                                   // second unspent after first spent
+		if (output.unlock_block_or_timestamp != 0 && !just_unlocked) {  // incoming
 			locked_outputs.push_back(output);
 			return output.amount;
 		}
@@ -80,7 +80,7 @@ public:
 			added_amount = output.amount - existing_output.amount;
 			invariant(outputs.erase(all_keyimages.at(output.key_image)) == 1, "");
 		}
-		auto pa = std::make_pair(output.amount, output.global_index);
+		auto pa = std::make_pair(output.amount, output.index);
 		invariant(outputs.insert(std::make_pair(pa, output)).second, "");
 		if (output.key_image != KeyImage{})
 			all_keyimages[output.key_image] = pa;
@@ -100,20 +100,19 @@ public:
 	}
 	void unlock(Height block_height, const api::Output &output) {
 		for (size_t i = 0; i != locked_outputs.size(); ++i) {
-			if (locked_outputs.at(i).amount == output.amount &&
-			    locked_outputs.at(i).global_index == output.global_index) {
+			if (locked_outputs.at(i).amount == output.amount && locked_outputs.at(i).index == output.index) {
 				locked_outputs.erase(locked_outputs.begin() + i);
 				--i;
 			}
 		}
 		Amount adjusted_amount = add_incoming_output(block_height, output, true);
-		auto pa                = std::make_pair(output.amount, output.global_index);
+		auto pa                = std::make_pair(output.amount, output.index);
 		invariant(
 		    unlocked_outputs.insert(std::make_pair(pa, std::make_pair(block_height, adjusted_amount))).second, "");
 	}
 
 public:
-	virtual Amount add_incoming_output(const api::Output &output) override {
+	virtual Amount add_incoming_output(const api::Output &output, const Hash & tid) override {
 		return add_incoming_output(output.height, output, false);
 	}
 	std::map<KeyImage, int> memory_spent;
@@ -121,11 +120,11 @@ public:
 	void unlock(Height height, Timestamp timestamp) {
 		std::vector<api::Output> to_unlock;
 		for (size_t i = 0; i != locked_outputs.size(); ++i)
-			if (m_currency.is_transaction_spend_time_block(locked_outputs.at(i).unlock_time)) {
-				if (locked_outputs.at(i).unlock_time <= height)
+			if (m_currency.is_transaction_spend_time_block(locked_outputs.at(i).unlock_block_or_timestamp)) {
+				if (locked_outputs.at(i).unlock_block_or_timestamp <= height)
 					to_unlock.push_back(locked_outputs.at(i));
 			} else {
-				if (locked_outputs.at(i).unlock_time <= timestamp)
+				if (locked_outputs.at(i).unlock_block_or_timestamp <= timestamp)
 					to_unlock.push_back(locked_outputs.at(i));
 			}
 		for (auto &&unl : to_unlock)
@@ -184,7 +183,7 @@ public:
 			    (address.empty() || la.second.address == address))
 				result.push_back(la.second);
 		}
-		for (const auto & la : locked_outputs)
+		for (const auto &la : locked_outputs)
 			if (!is_memory_spent(la) && (address.empty() || la.address == address))
 				result.push_back(la);
 		return result;
@@ -234,11 +233,11 @@ public:
 void test_wallet_state(common::CommandLine &cmd) {
 	common::Random random{};
 	logging::ConsoleLogger logger;
-	bytecoin::Currency currency(false);
-	bytecoin::Config config(cmd);
+	Currency currency("main");
+	Config config(cmd);
 	config.data_folder = "../tests/scratchpad";
 
-	bytecoin::BlockChain::DB::delete_db(config.data_folder + "/wallet_cache/test_wallet_state");
+	BlockChain::DB::delete_db(config.data_folder + "/wallet_cache/test_wallet_state");
 	WalletStateTest ws(logger, config, currency);
 	WalletStateModel wm(currency);
 
@@ -305,17 +304,17 @@ void test_wallet_state(common::CommandLine &cmd) {
 		if (add_outputs < 3 && ha != TEST_HEIGHT - 1) {
 			for (uint32_t j = 0; j != add_outputs; ++j) {
 				api::Output output;
-				size_t dc           = 5 + (random() % 5);
-				size_t am           = 1 + (random() % 9);
-				output.height       = ha;
-				output.amount       = am * Currency::DECIMAL_PLACES.at(dc);
-				output.dust         = currency.is_dust(output.amount);
-				output.global_index = next_gi[output.amount];
-				output.address      = addresses.at(random() % (addresses.size() - 1));  // last one is empty
+				size_t dc      = 5 + (random() % 5);
+				size_t am      = 1 + (random() % 9);
+				output.height  = ha;
+				output.amount  = am * Currency::DECIMAL_PLACES.at(dc);
+				output.dust    = currency.is_dust(output.amount);
+				output.index   = next_gi[output.amount];
+				output.address = addresses.at(random() % (addresses.size() - 1));  // last one is empty
 				if (random() % 20 == 0)
-					output.unlock_time = (3 * ha / 4) + random() % (TEST_HEIGHT / 2);
+					output.unlock_block_or_timestamp = (3 * ha / 4) + random() % (TEST_HEIGHT / 2);
 				else if (random() % 20 == 1)
-					output.unlock_time =
+					output.unlock_block_or_timestamp =
 					    TEST_TIMESTAMP + currency.difficulty_target * ((3 * ha / 4) + random() % (TEST_HEIGHT / 2));
 				next_gi[output.amount] += 1;
 				if (!VIEW_ONLY) {
@@ -330,12 +329,12 @@ void test_wallet_state(common::CommandLine &cmd) {
 					transfer.amount += confirmed_balance_delta;
 					transfer.address = output.address;
 					transfer.ours    = true;
-					transfer.locked  = output.unlock_time != 0;
+					transfer.locked  = output.unlock_block_or_timestamp != 0;
 					transfer.outputs.push_back(output);
 					ptx.transfers.push_back(transfer);
 				}
-				auto inc1 = wm.add_incoming_output(output);
-				auto inc2 = ws.add_incoming_output(output);
+				auto inc1 = wm.add_incoming_output(output, Hash{});
+				auto inc2 = ws.add_incoming_output(output, Hash{});
 				invariant(inc1 == inc2, "");
 			}
 		}
@@ -344,7 +343,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 			std::cout << "Total coins remains before final spend"
 			          << (ba.locked_or_unconfirmed_outputs + ba.spendable_outputs + ba.spendable_dust_outputs)
 			          << " spent " << wm.all_keyimages.size() << std::endl;
-			for (const auto & ki : output_keyimages) {
+			for (const auto &ki : output_keyimages) {
 				//				if (used_keyimages.insert(ki).second) {  // We never get same ki from blockchain
 				api::Output spending_output;
 				if (ws.try_adding_incoming_keyimage(ki, &spending_output)) {
@@ -369,7 +368,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 				continue;
 			//			if(ha == 19 && wi == 1)
 			//				std::cout << "Aha";
-			for (const auto & addr : addresses) {
+			for (const auto &addr : addresses) {
 				auto ba1 = wm.get_balance(addr, ha + wi - 20);
 				auto ba2 = ws.get_balance(addr, ha + wi - 20);
 				if (ba1 != ba2 || ha == TEST_HEIGHT - 1) {
@@ -393,7 +392,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 				invariant(ba1 == ba2, "");
 			}
 		}
-		for (const auto & addr : addresses) {
+		for (const auto &addr : addresses) {
 			std::map<std::string, SignedAmount> transfer_balances1;
 			std::map<std::string, SignedAmount> transfer_balances2;
 			Height from_height = ha == 0 ? ha : ha - 1;
@@ -411,11 +410,11 @@ void test_wallet_state(common::CommandLine &cmd) {
 						}
 			from_height = ha == 0 ? ha : ha - 1;
 			to_height   = ha;
-			auto unl2   = ws.api_get_unlocked_outputs(addr, from_height, to_height);
+			auto unl2   = ws.api_get_unlocked_transfers(addr, from_height, to_height);
 			for (auto &&u : unl2)
-				if (addr.empty() || u.second.address == addr) {
-					invariant(!u.second.address.empty(), "");
-					transfer_balances2[addr] += u.second.amount;
+				if (addr.empty() || u.address == addr) {
+					invariant(!u.address.empty(), "");
+					transfer_balances2[addr] += u.amount;
 					//					invariant(transfer_balances2[addr] >= 0, "");
 					if (transfer_balances2[addr] == 0)
 						transfer_balances2.erase(addr);

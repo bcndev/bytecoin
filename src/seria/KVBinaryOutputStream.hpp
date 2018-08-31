@@ -17,7 +17,7 @@ public:
 	virtual bool is_input() const override { return false; }
 
 	virtual void begin_object() override;
-	virtual void object_key(common::StringView name, bool optional = false) override;
+	virtual bool object_key(common::StringView name, bool optional = false) override;
 	virtual void end_object() override;
 
 	virtual void begin_array(size_t &size, bool fixed_size = false) override;
@@ -69,21 +69,21 @@ private:
 };
 
 template<typename T>
-common::BinaryArray to_binary_key_value(const T &v) {
+common::BinaryArray to_binary_kv(const T &v) {
 	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	common::BinaryArray ba;
 	common::VectorOutputStream stream(ba);
 	KVBinaryOutputStream s(stream);
-	s(const_cast<T &>(v));
+	ser(const_cast<T &>(v), s);
 	return ba;
 }
 template<typename T>
-std::string to_binary_key_value_str(const T &v) {
+std::string to_binary_kv_str(const T &v) {
 	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	std::string ba;
 	common::StringOutputStream stream(ba);
 	KVBinaryOutputStream s(stream);
-	s(const_cast<T &>(v));
+	ser(const_cast<T &>(v), s);
 	return ba;
 }
 }

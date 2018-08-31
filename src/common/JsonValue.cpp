@@ -3,8 +3,11 @@
 
 #include "JsonValue.hpp"
 #include <iomanip>
+#include <iterator>
+#include <limits>
 #include <sstream>
 #include "StringTools.hpp"
+#include "string.hpp"
 
 namespace common {
 
@@ -13,7 +16,7 @@ JsonValue::JsonValue() : type(NIL) {}
 JsonValue::JsonValue(const JsonValue &other) {
 	switch (other.type) {
 	case ARRAY:
-		new (&value_array) Array(*reinterpret_cast<const Array *>(&other.value_array));
+		new (&value_array) Array(reinterpret_cast<const Array &>(other.value_array));
 		break;
 	case BOOL:
 		value_bool = other.value_bool;
@@ -27,24 +30,22 @@ JsonValue::JsonValue(const JsonValue &other) {
 	case NIL:
 		break;
 	case OBJECT:
-		new (&value_object) Object(*reinterpret_cast<const Object *>(&other.value_object));
+		new (&value_object) Object(reinterpret_cast<const Object &>(other.value_object));
 		break;
 	case DOUBLE:
 		value_real = other.value_real;
 		break;
 	case STRING:
-		new (&value_string) String(*reinterpret_cast<const String *>(&other.value_string));
+		new (&value_string) String(reinterpret_cast<const String &>(other.value_string));
 		break;
 	}
-
 	type = other.type;
 }
 
 JsonValue::JsonValue(JsonValue &&other) {
 	switch (other.type) {
 	case ARRAY:
-		new (&value_array) Array(std::move(*reinterpret_cast<Array *>(&other.value_array)));
-		reinterpret_cast<Array *>(&other.value_array)->~Array();
+		new (&value_array) Array(std::move(reinterpret_cast<Array &>(other.value_array)));
 		break;
 	case BOOL:
 		value_bool = other.value_bool;
@@ -58,20 +59,17 @@ JsonValue::JsonValue(JsonValue &&other) {
 	case NIL:
 		break;
 	case OBJECT:
-		new (&value_object) Object(std::move(*reinterpret_cast<Object *>(&other.value_object)));
-		reinterpret_cast<Object *>(&other.value_object)->~Object();
+		new (&value_object) Object(std::move(reinterpret_cast<Object &>(other.value_object)));
 		break;
 	case DOUBLE:
 		value_real = other.value_real;
 		break;
 	case STRING:
-		new (&value_string) String(std::move(*reinterpret_cast<String *>(&other.value_string)));
-		reinterpret_cast<String *>(&other.value_string)->~String();
+		new (&value_string) String(std::move(reinterpret_cast<String &>(other.value_string)));
 		break;
 	}
-
-	type       = other.type;
-	other.type = NIL;
+	type = other.type;
+	other.destruct_value();
 }
 
 JsonValue::JsonValue(Type value_type) {
@@ -143,8 +141,7 @@ JsonValue &JsonValue::operator=(const JsonValue &other) {
 		destruct_value();
 		switch (other.type) {
 		case ARRAY:
-			type = NIL;
-			new (&value_array) Array(*reinterpret_cast<const Array *>(&other.value_array));
+			new (&value_array) Array(reinterpret_cast<const Array &>(other.value_array));
 			break;
 		case BOOL:
 			value_bool = other.value_bool;
@@ -158,23 +155,20 @@ JsonValue &JsonValue::operator=(const JsonValue &other) {
 		case NIL:
 			break;
 		case OBJECT:
-			type = NIL;
-			new (&value_object) Object(*reinterpret_cast<const Object *>(&other.value_object));
+			new (&value_object) Object(reinterpret_cast<const Object &>(other.value_object));
 			break;
 		case DOUBLE:
 			value_real = other.value_real;
 			break;
 		case STRING:
-			type = NIL;
-			new (&value_string) String(*reinterpret_cast<const String *>(&other.value_string));
+			new (&value_string) String(reinterpret_cast<const String &>(other.value_string));
 			break;
 		}
-
 		type = other.type;
 	} else {
 		switch (type) {
 		case ARRAY:
-			*reinterpret_cast<Array *>(&value_array) = *reinterpret_cast<const Array *>(&other.value_array);
+			reinterpret_cast<Array &>(value_array) = reinterpret_cast<const Array &>(other.value_array);
 			break;
 		case BOOL:
 			value_bool = other.value_bool;
@@ -188,17 +182,16 @@ JsonValue &JsonValue::operator=(const JsonValue &other) {
 		case NIL:
 			break;
 		case OBJECT:
-			*reinterpret_cast<Object *>(&value_object) = *reinterpret_cast<const Object *>(&other.value_object);
+			reinterpret_cast<Object &>(value_object) = reinterpret_cast<const Object &>(other.value_object);
 			break;
 		case DOUBLE:
 			value_real = other.value_real;
 			break;
 		case STRING:
-			*reinterpret_cast<String *>(&value_string) = *reinterpret_cast<const String *>(&other.value_string);
+			reinterpret_cast<String &>(value_string) = reinterpret_cast<const String &>(other.value_string);
 			break;
 		}
 	}
-
 	return *this;
 }
 
@@ -208,9 +201,7 @@ JsonValue &JsonValue::operator=(JsonValue &&other) {
 		destruct_value();
 		switch (other.type) {
 		case ARRAY:
-			type = NIL;
-			new (&value_array) Array(std::move(*reinterpret_cast<const Array *>(&other.value_array)));
-			reinterpret_cast<Array *>(&other.value_array)->~Array();
+			new (&value_array) Array(std::move(reinterpret_cast<Array &>(other.value_array)));
 			break;
 		case BOOL:
 			value_bool = other.value_bool;
@@ -224,26 +215,20 @@ JsonValue &JsonValue::operator=(JsonValue &&other) {
 		case NIL:
 			break;
 		case OBJECT:
-			type = NIL;
-			new (&value_object) Object(std::move(*reinterpret_cast<const Object *>(&other.value_object)));
-			reinterpret_cast<Object *>(&other.value_object)->~Object();
+			new (&value_object) Object(std::move(reinterpret_cast<Object &>(other.value_object)));
 			break;
 		case DOUBLE:
 			value_real = other.value_real;
 			break;
 		case STRING:
-			type = NIL;
-			new (&value_string) String(std::move(*reinterpret_cast<const String *>(&other.value_string)));
-			reinterpret_cast<String *>(&other.value_string)->~String();
+			new (&value_string) String(std::move(reinterpret_cast<String &>(other.value_string)));
 			break;
 		}
-
 		type = other.type;
 	} else {
 		switch (type) {
 		case ARRAY:
-			*reinterpret_cast<Array *>(&value_array) = std::move(*reinterpret_cast<const Array *>(&other.value_array));
-			reinterpret_cast<Array *>(&other.value_array)->~Array();
+			reinterpret_cast<Array &>(value_array) = std::move(reinterpret_cast<Array &>(other.value_array));
 			break;
 		case BOOL:
 			value_bool = other.value_bool;
@@ -257,21 +242,17 @@ JsonValue &JsonValue::operator=(JsonValue &&other) {
 		case NIL:
 			break;
 		case OBJECT:
-			*reinterpret_cast<Object *>(&value_object) =
-			    std::move(*reinterpret_cast<const Object *>(&other.value_object));
-			reinterpret_cast<Object *>(&other.value_object)->~Object();
+			reinterpret_cast<Object &>(value_object) = std::move(reinterpret_cast<Object &>(other.value_object));
 			break;
 		case DOUBLE:
 			value_real = other.value_real;
 			break;
 		case STRING:
-			*reinterpret_cast<String *>(&value_string) =
-			    std::move(*reinterpret_cast<const String *>(&other.value_string));
-			reinterpret_cast<String *>(&other.value_string)->~String();
+			reinterpret_cast<String &>(value_string) = std::move(reinterpret_cast<String &>(other.value_string));
 			break;
 		}
 	}
-	other.type = NIL;
+	other.destruct_value();
 	return *this;
 }
 
@@ -281,7 +262,7 @@ JsonValue &JsonValue::operator=(const Array &value) {
 		new (&value_array) Array(value);
 		type = ARRAY;
 	} else {
-		*reinterpret_cast<Array *>(&value_array) = value;
+		reinterpret_cast<Array &>(value_array) = value;
 	}
 	return *this;
 }
@@ -292,7 +273,7 @@ JsonValue &JsonValue::operator=(Array &&value) {
 		new (&value_array) Array(std::move(value));
 		type = ARRAY;
 	} else {
-		*reinterpret_cast<Array *>(&value_array) = std::move(value);
+		reinterpret_cast<Array &>(value_array) = std::move(value);
 	}
 	return *this;
 }
@@ -329,7 +310,7 @@ JsonValue &JsonValue::operator=(const Object &value) {
 		new (&value_object) Object(value);
 		type = OBJECT;
 	} else {
-		*reinterpret_cast<Object *>(&value_object) = value;
+		reinterpret_cast<Object &>(value_object) = value;
 	}
 	return *this;
 }
@@ -340,7 +321,7 @@ JsonValue &JsonValue::operator=(Object &&value) {
 		new (&value_object) Object(std::move(value));
 		type = OBJECT;
 	} else {
-		*reinterpret_cast<Object *>(&value_object) = std::move(value);
+		reinterpret_cast<Object &>(value_object) = std::move(value);
 	}
 	return *this;
 }
@@ -358,7 +339,7 @@ JsonValue &JsonValue::operator=(const String &value) {
 		new (&value_string) String(value);
 		type = STRING;
 	} else {
-		*reinterpret_cast<String *>(&value_string) = value;
+		reinterpret_cast<String &>(value_string) = value;
 	}
 	return *this;
 }
@@ -369,89 +350,89 @@ JsonValue &JsonValue::operator=(String &&value) {
 		new (&value_string) String(std::move(value));
 		type = STRING;
 	} else {
-		*reinterpret_cast<String *>(&value_string) = std::move(value);
+		reinterpret_cast<String &>(value_string) = std::move(value);
 	}
 	return *this;
 }
 
 JsonValue::Array &JsonValue::get_array() {
-	if (type != ARRAY) {
+	if (type != ARRAY)
 		throw std::runtime_error("JsonValue type is not ARRAY");
-	}
-	return *reinterpret_cast<Array *>(&value_array);
+	return reinterpret_cast<Array &>(value_array);
 }
 
 const JsonValue::Array &JsonValue::get_array() const {
-	if (type != ARRAY) {
+	if (type != ARRAY)
 		throw std::runtime_error("JsonValue type is not ARRAY");
-	}
-	return *reinterpret_cast<const Array *>(&value_array);
+	return reinterpret_cast<const Array &>(value_array);
 }
 
 JsonValue::Bool JsonValue::get_bool() const {
-	if (type != BOOL) {
+	if (type != BOOL)
 		throw std::runtime_error("JsonValue type is not BOOL");
-	}
 	return value_bool;
 }
 
 JsonValue::Integer JsonValue::get_integer() const {
 	if (type == SIGNED_INTEGER)
 		return value_integer;
-	if (type == UNSIGNED_INTEGER)
+	if (type == UNSIGNED_INTEGER) {
+		if (value_unsigned > static_cast<Unsigned>(std::numeric_limits<Integer>::max()))
+			throw std::runtime_error(
+			    "Too big unsigned number does not fit into integer (" + common::to_string(value_unsigned) + ")");
 		return value_unsigned;
+	}
 	throw std::runtime_error("JsonValue type is not INTEGER");
 }
 
 JsonValue::Unsigned JsonValue::get_unsigned() const {
-	if (type == SIGNED_INTEGER)
+	if (type == SIGNED_INTEGER) {
+		if (value_integer < 0)
+			throw std::runtime_error(
+			    "JsonValue value < 0 cannot be returned as unsigned (" + common::to_string(value_integer) + ")");
 		return value_integer;
+	}
 	if (type == UNSIGNED_INTEGER)
 		return value_unsigned;
 	throw std::runtime_error("JsonValue type is not INTEGER");
 }
 
 JsonValue::Object &JsonValue::get_object() {
-	if (type != OBJECT) {
+	if (type != OBJECT)
 		throw std::runtime_error("JsonValue type is not OBJECT");
-	}
-	return *reinterpret_cast<Object *>(&value_object);
+	return reinterpret_cast<Object &>(value_object);
 }
 
 const JsonValue::Object &JsonValue::get_object() const {
-	if (type != OBJECT) {
+	if (type != OBJECT)
 		throw std::runtime_error("JsonValue type is not OBJECT");
-	}
-	return *reinterpret_cast<const Object *>(&value_object);
+	return reinterpret_cast<const Object &>(value_object);
 }
 
 JsonValue::Double JsonValue::get_double() const {
-	if (type != DOUBLE) {
+	if (type != DOUBLE)
 		throw std::runtime_error("JsonValue type is not REAL");
-	}
 	return value_real;
 }
 
 JsonValue::String &JsonValue::get_string() {
-	if (type != STRING) {
+	if (type != STRING)
 		throw std::runtime_error("JsonValue type is not STRING");
-	}
-	return *reinterpret_cast<String *>(&value_string);
+	return reinterpret_cast<String &>(value_string);
 }
 
 const JsonValue::String &JsonValue::get_string() const {
-	if (type != STRING) {
+	if (type != STRING)
 		throw std::runtime_error("JsonValue type is not STRING");
-	}
-	return *reinterpret_cast<const String *>(&value_string);
+	return reinterpret_cast<const String &>(value_string);
 }
 
 size_t JsonValue::size() const {
 	switch (type) {
 	case ARRAY:
-		return reinterpret_cast<const Array *>(&value_array)->size();
+		return reinterpret_cast<const Array &>(value_array).size();
 	case OBJECT:
-		return reinterpret_cast<const Object *>(&value_object)->size();
+		return reinterpret_cast<const Object &>(value_object).size();
 	default:
 		throw std::runtime_error("JsonValue type is not ARRAY or OBJECT");
 	}
@@ -502,15 +483,11 @@ size_t JsonValue::erase(const Key &key) { return get_object().erase(key); }
 JsonValue JsonValue::from_string(const std::string &source) {
 	JsonValue json_value;
 	std::istringstream stream(source);
-	stream >> json_value;
-	if (stream.fail()) {
-		throw std::runtime_error("Unable to parse JsonValue");
-	}
-	char c = 0;
-	while (stream >> c) {
-		if (!isspace(c))
-			throw std::runtime_error("Extra characters at end of stream");
-	}
+	StreamContext ctx(stream);
+	json_value.read_json(ctx);
+	if (stream.fail())
+		ctx.throw_error("Stream error");
+	ctx.eat_all_whitespace();
 	//	if( !json_value.is_object() && !json_value.is_array())
 	//		throw std::runtime_error("Json should be object or array at top level");
 	return json_value;
@@ -522,7 +499,7 @@ std::string JsonValue::to_string() const {
 	return stream.str();
 }
 
-static std::string escape_string(const std::string &str) {
+std::string JsonValue::escape_string(const std::string &str) {
 	std::string result;
 	static const std::string escape_table[32] = {"\\u0000", "\\u0001", "\\u0002", "\\u0003", "\\u0004", "\\u0005",
 	    "\\u0006", "\\u0007", "\\b", "\\t", "\\n", "\\u000B", "\\f", "\\r", "\\u000E", "\\u000F", "\\u0010", "\\u0011",
@@ -572,10 +549,10 @@ std::ostream &operator<<(std::ostream &out, const JsonValue &json_value) {
 		out << '{';
 		auto iter = object.begin();
 		if (iter != object.end()) {
-			out << '"' << escape_string(iter->first) << "\":" << iter->second;
+			out << '"' << JsonValue::escape_string(iter->first) << "\":" << iter->second;
 			++iter;
 			for (; iter != object.end(); ++iter) {
-				out << ",\"" << escape_string(iter->first) << "\":" << iter->second;
+				out << ",\"" << JsonValue::escape_string(iter->first) << "\":" << iter->second;
 			}
 		}
 
@@ -594,55 +571,89 @@ std::ostream &operator<<(std::ostream &out, const JsonValue &json_value) {
 		break;
 	}
 	case JsonValue::STRING:
-		out << '"' << escape_string(*reinterpret_cast<const JsonValue::String *>(&json_value.value_string)) << '"';
+		out << '"' << JsonValue::escape_string(*reinterpret_cast<const JsonValue::String *>(&json_value.value_string))
+		    << '"';
 		break;
 	}
 
 	return out;
 }
 
-namespace {
+JsonValue::StreamContext::StreamContext(std::istream &in) : it(in) {}
 
-char read_char(std::istream &in) {
-	char c = 0;
-
-	if (!(in >> c)) {
-		throw std::runtime_error("Unable to parse: unexpected end of stream");
+char JsonValue::StreamContext::read_char() {
+	if (it == end)
+		throw_error("unexpected end of stream");
+	char c           = *it++;
+	bool white_space = isspace(c);
+	if (!white_space || !prev_white_space) {
+		if (mini_pos == mini_buf.size()) {
+			if (mini_buf.size() < 32)     // We track up to 32 characters
+				mini_buf.push_back(' ');  // will be overwritten immediately
+			else
+				mini_pos = 0;
+		}
+		mini_buf[mini_pos++] = c;
+		prev_white_space     = white_space;
 	}
 	return c;
 }
 
-char read_non_ws_char(std::istream &in) {
+char JsonValue::StreamContext::peek_char() {
+	if (it == end)
+		throw_error("unexpected end of stream");
+	return *it;
+}
+
+char JsonValue::StreamContext::read_non_ws_char() {
 	char c = 0;
 
 	do {
-		c = read_char(in);
+		c = read_char();
 	} while (isspace(c));
 
 	return c;
 }
 
-char read_char2(std::istreambuf_iterator<char> &it, const std::istreambuf_iterator<char> &end) {
-	if (it == end)
-		throw std::runtime_error("Unable to parse: unexpected end of stream");
-	char c = *it++;
+char JsonValue::StreamContext::peek_non_ws_char() {
+	char c = peek_char();
+
+	while (isspace(c)) {
+		read_char();
+		c = peek_char();
+	}
 	return c;
 }
 
-std::string read_string_token(std::istream &in) {
+void JsonValue::StreamContext::throw_error(const std::string &text) {
+	std::string before = mini_buf.substr(mini_pos) + mini_buf.substr(0, mini_pos);
+	throw std::runtime_error("Failed to parse json, " + text + ", ..." + before + " <-- here");
+}
+void JsonValue::StreamContext::expect(char c, char should_be_c) {
+	if (c == should_be_c)
+		return;
+	throw_error("expecting '" + std::string({should_be_c}) + "' but got '" + std::string({c}) + "' (character code " +
+	            common::to_string(static_cast<unsigned char>(c)) + ") instead");
+}
+
+void JsonValue::StreamContext::eat_all_whitespace() {
+	while (it != end)
+		if (!isspace(read_char()))
+			throw_error("expecting only whitespace at the end of json");
+}
+
+std::string JsonValue::StreamContext::read_string_token() {
 	std::string value;
 
-	std::istreambuf_iterator<char> it(in), end;
-
 	while (it != end) {
-		char c = read_char2(it, end);
+		char c = read_char();
 		if (iscntrl(c))
-			throw std::runtime_error("Unable to parse: control character inside string");
-		if (c == '"') {
+			throw_error("control character inside string '" + std::string({c}) + "' (character code " +
+			            common::to_string(static_cast<unsigned char>(c)) + ")");
+		if (c == '"')
 			return value;
-		}
 		if (c == '\\') {
-			c = read_char2(it, end);
+			c = read_char();
 			switch (c) {
 			case '\\':
 				value += '\\';
@@ -670,19 +681,19 @@ std::string read_string_token(std::istream &in) {
 				continue;
 			case 'u': {
 				// WTF those retards invented...
-				char c0           = read_char2(it, end);
-				char c1           = read_char2(it, end);
-				char c2           = read_char2(it, end);
-				char c3           = read_char2(it, end);
+				char c0           = read_char();
+				char c1           = read_char();
+				char c2           = read_char();
+				char c3           = read_char();
 				unsigned char c0v = 0, c1v = 0, c2v = 0, c3v = 0;
 				if (!common::from_hex(c0, c0v) || !common::from_hex(c1, c1v) || !common::from_hex(c2, c2v) ||
 				    !common::from_hex(c3, c3v))
-					throw std::runtime_error(
-					    "Unable to parse: \\u wrong control code " + std::string({c0, c1, c2, c3}));
+					throw_error(
+					    "Unable to parse json: \\u wrong hex characters '" + std::string({c0, c1, c2, c3}) + "'");
 				unsigned cp = unsigned(c0v) * 4096 + unsigned(c1v) * 256 + unsigned(c2v) * 16 + unsigned(c3v);
 				if ((cp >= 0xD800 && cp <= 0xDFFF) || cp >= 0xFFFE)
-					throw std::runtime_error(
-					    "Unable to parse: \\u does not support surrogate pairs " + std::string({c0, c1, c2, c3}));
+					throw_error(
+					    "Unable to parse json: \\u does not support surrogate pairs " + std::string({c0, c1, c2, c3}));
 				if (cp < 0x80) {
 					value += static_cast<char>(cp);
 					continue;
@@ -701,37 +712,36 @@ std::string read_string_token(std::istream &in) {
 				continue;
 			}
 			default:
-				throw std::runtime_error("Unable to parse: unknown escape character " + std::string({c}));
+				throw_error("unknown escape character '" + std::string({c}) + "' (character code " +
+				            common::to_string(static_cast<unsigned char>(c)) + ")");
 			}
 		}
 		value += c;
 	}
-	throw std::runtime_error("Unable to parse: end of stream inside string");
-}
+	throw_error("end of stream inside string");
+	return std::string();
 }
 
-std::istream &operator>>(std::istream &in, JsonValue &json_value) {
-	char c = read_non_ws_char(in);
+void JsonValue::read_json(StreamContext &ctx) {
+	char c = ctx.read_non_ws_char();
 
 	if (c == '[') {
-		json_value.read_array(in);
+		read_array(ctx);
 	} else if (c == 't') {
-		json_value.read_true(in);
+		read_true(ctx);
 	} else if (c == 'f') {
-		json_value.read_false(in);
+		read_false(ctx);
 	} else if ((c == '-') || (c >= '0' && c <= '9')) {
-		json_value.read_number(in, c);
+		read_number(ctx, c);
 	} else if (c == 'n') {
-		json_value.read_null(in);
+		read_null(ctx);
 	} else if (c == '{') {
-		json_value.read_object(in);
+		read_object(ctx);
 	} else if (c == '"') {
-		json_value.read_string(in);
+		read_string(ctx);
 	} else {
-		throw std::runtime_error("Unable to parse");
+		ctx.throw_error("Unexpected character");
 	}
-
-	return in;
 }
 
 void JsonValue::destruct_value() {
@@ -751,75 +761,65 @@ void JsonValue::destruct_value() {
 	type = NIL;
 }
 
-void JsonValue::read_array(std::istream &in) {
+void JsonValue::read_array(StreamContext &ctx) {
 	JsonValue::Array value;
-	char c = read_non_ws_char(in);
+	char c = ctx.peek_non_ws_char();
 
-	if (c != ']') {
-		in.putback(c);
+	if (c == ']')
+		ctx.read_non_ws_char();
+	else {
 		for (;;) {
 			value.resize(value.size() + 1);
-			in >> value.back();
-			c = read_non_ws_char(in);
+			value.back().read_json(ctx);
+			c = ctx.read_non_ws_char();
 
-			if (c == ']') {
+			if (c == ']')
 				break;
-			}
-
-			if (c != ',') {
-				throw std::runtime_error("Unable to parse");
-			}
+			ctx.expect(c, ',');
 		}
 	}
 
 	*this = std::move(value);
 }
 
-void JsonValue::read_true(std::istream &in) {
-	char data[3];
-	in.read(data, 3);
-	if (data[0] != 'r' || data[1] != 'u' || data[2] != 'e') {
-		throw std::runtime_error("Unable to parse");
-	}
-
+void JsonValue::read_true(StreamContext &ctx) {
+	char data[3]{ctx.read_char(), ctx.read_char(), ctx.read_char()};
+	if (data[0] != 'r' || data[1] != 'u' || data[2] != 'e')
+		ctx.throw_error("'true' is expected");
 	destruct_value();
 	type       = JsonValue::BOOL;
 	value_bool = true;
 }
 
-void JsonValue::read_false(std::istream &in) {
-	char data[4];
-	in.read(data, 4);
-	if (data[0] != 'a' || data[1] != 'l' || data[2] != 's' || data[3] != 'e') {
-		throw std::runtime_error("Unable to parse");
-	}
+void JsonValue::read_false(StreamContext &ctx) {
+	char data[4]{ctx.read_char(), ctx.read_char(), ctx.read_char(), ctx.read_char()};
+	if (data[0] != 'a' || data[1] != 'l' || data[2] != 's' || data[3] != 'e')
+		ctx.throw_error("'false' is expected");
 
 	destruct_value();
 	type       = JsonValue::BOOL;
 	value_bool = false;
 }
 
-void JsonValue::read_null(std::istream &in) {
-	char data[3];
-	in.read(data, 3);
-	if (data[0] != 'u' || data[1] != 'l' || data[2] != 'l') {
-		throw std::runtime_error("Unable to parse");
-	}
+void JsonValue::read_null(StreamContext &ctx) {
+	char data[3]{ctx.read_char(), ctx.read_char(), ctx.read_char()};
+	if (data[0] != 'u' || data[1] != 'l' || data[2] != 'l')
+		ctx.throw_error("'null' is expected");
 
 	destruct_value();
 }
 
-void JsonValue::read_number(std::istream &in, char c) {
+void JsonValue::read_number(StreamContext &ctx, char c) {
 	std::string text;
 	text += c;
 	size_t dots = 0;
 	for (;;) {
-		int i = in.peek();
+		int i = ctx.peek_char();
 		if (i >= '0' && i <= '9') {
-			in.read(&c, 1);
+			c = ctx.read_char();
 			text += c;
 		} else if (i == '.') {
-			in.read(&c, 1);
+			c = ctx.read_char();
 			text += '.';
 			++dots;
 		} else {
@@ -827,43 +827,40 @@ void JsonValue::read_number(std::istream &in, char c) {
 		}
 	}
 
-	char pee = in.peek();
+	char pee = ctx.peek_char();
 	if (dots > 0 || pee == 'e' || pee == 'E') {
 		if (dots > 1) {
-			throw std::runtime_error("Unable to parse");
+			ctx.throw_error("More than one '.' in a number");
 		}
 		if (pee == 'e' || pee == 'E') {
-			in.read(&c, 1);
+			c = ctx.read_char();
 			text += c;
-			int i = in.peek();
+			int i = ctx.peek_char();
 			if (i == '+') {
-				in.read(&c, 1);
+				c = ctx.read_char();
 				text += c;
-				i = in.peek();
+				i = ctx.peek_char();
 			} else if (i == '-') {
-				in.read(&c, 1);
+				c = ctx.read_char();
 				text += c;
-				i = in.peek();
+				i = ctx.peek_char();
 			}
 
-			if (i < '0' || i > '9') {
-				throw std::runtime_error("Unable to parse");
-			}
+			if (i < '0' || i > '9')
+				ctx.throw_error("Digit expected");
 
 			do {
-				in.read(&c, 1);
+				c = ctx.read_char();
 				text += c;
-				i = in.peek();
+				i = ctx.peek_char();
 			} while (i >= '0' && i <= '9');
 		}
-
 		destruct_value();
 		std::istringstream(text) >> value_real;
 		type = DOUBLE;
 	} else {
-		if (text.size() > 1 && ((text[0] == '0') || (text[0] == '-' && text[1] == '0'))) {
-			throw std::runtime_error("Unable to parse");
-		}
+		if (text.size() > 1 && ((text[0] == '0') || (text[0] == '-' && text[1] == '0')))
+			ctx.throw_error("Number expected");
 		destruct_value();
 		if (text.size() > 1 && text[0] == '-') {
 			std::istringstream(text) >> value_integer;
@@ -875,44 +872,33 @@ void JsonValue::read_number(std::istream &in, char c) {
 	}
 }
 
-void JsonValue::read_object(std::istream &in) {
-	char c = read_non_ws_char(in);
+void JsonValue::read_object(StreamContext &ctx) {
+	char c = ctx.read_non_ws_char();
 	JsonValue::Object value;
 
 	if (c != '}') {
 		std::string name;
-
 		for (;;) {
-			if (c != '"') {
-				throw std::runtime_error("Unable to parse");
-			}
+			ctx.expect(c, '"');
+			name = ctx.read_string_token();
+			c    = ctx.read_non_ws_char();
 
-			name = read_string_token(in);
-			c    = read_non_ws_char(in);
+			ctx.expect(c, ':');
 
-			if (c != ':') {
-				throw std::runtime_error("Unable to parse");
-			}
+			value[name].read_json(ctx);
+			c = ctx.read_non_ws_char();
 
-			in >> value[name];
-			c = read_non_ws_char(in);
-
-			if (c == '}') {
+			if (c == '}')
 				break;
-			}
-
-			if (c != ',') {
-				throw std::runtime_error("Unable to parse");
-			}
-
-			c = read_non_ws_char(in);
+			ctx.expect(c, ',');
+			c = ctx.read_non_ws_char();
 		}
 	}
 	*this = std::move(value);
 }
 
-void JsonValue::read_string(std::istream &in) {
-	String value = read_string_token(in);
+void JsonValue::read_string(StreamContext &ctx) {
+	String value = ctx.read_string_token();
 	*this        = std::move(value);
 }
 }

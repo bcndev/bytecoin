@@ -5,6 +5,7 @@
 #include <thread>
 
 #include "common/CommandLine.hpp"
+#include "platform/DB.hpp"
 #include "version.hpp"
 
 #include "../tests/blockchain/test_blockchain.hpp"
@@ -30,23 +31,25 @@ Options:
 int main(int argc, const char *argv[]) {
 	common::CommandLine cmd(argc, argv);
 
-	std::cout << "Testing Block Chain" << std::endl;
-	test_blockchain(cmd);
+	std::cout << "Testing Hashes" << std::endl;
+	test_hashes("../tests/hash");
+
+	std::cout << "Testing Crypto" << std::endl;
+	test_crypto("../tests/crypto/tests.txt");
+	std::cout << "Testing Wallet Files" << std::endl;
+	test_wallet_file("../tests/wallet_file");
 
 	std::cout << "Testing Wallet State" << std::endl;
 	test_wallet_state(cmd);
 
-	std::cout << "Testing Wallet Files" << std::endl;
-	test_wallet_file("../tests/wallet_file");
+	std::cout << "Testing Block Chain" << std::endl;
+	test_blockchain(cmd);
 
-	std::cout << "Testing Hashes" << std::endl;
-	test_hashes("../tests/hash");
+	std::cout << "Testing DB" << std::endl;
+	platform::DB::run_tests();
 
 	std::cout << "Testing Json" << std::endl;
 	test_json("../tests/json");
-
-	std::cout << "Testing Crypto" << std::endl;
-	test_crypto("../tests/crypto/tests.txt");
 
 	if (cmd.should_quit(USAGE, bytecoin::app_version()))
 		return 0;

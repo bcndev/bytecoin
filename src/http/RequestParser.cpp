@@ -164,7 +164,7 @@ bool RequestParser::process_ready_header(request &req) {
 			req.content_length = boost::lexical_cast<decltype(req.content_length)>(lowcase.value);  // std::stoull
 			req.headers.pop_back();
 			return true;
-		} catch (...) {
+		} catch (const std::exception &) {
 		}
 		return false;
 	}

@@ -39,9 +39,9 @@ const uint8_t BIN_KV_SERIALIZE_FLAG_ARRAY  = 0x80;
 #pragma pack(push)
 #pragma pack(1)
 struct KVBinaryStorageBlockHeader {
-	uint32_t m_signature_a;
-	uint32_t m_signature_b;
-	uint8_t m_ver;
+	uint32_t m_signature_a = 0;
+	uint32_t m_signature_b = 0;
+	uint8_t m_ver          = 0;
 };
 #pragma pack(pop)
 }

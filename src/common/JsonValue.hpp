@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <map>
 #include <string>
 #include <type_traits>
@@ -126,10 +127,9 @@ public:
 	static JsonValue from_string(const std::string &source);
 	std::string to_string() const;
 
-	// those operators should no be used because they do not check for correct end of object (example - extra comma
-	// after json object)
 	friend std::ostream &operator<<(std::ostream &out, const JsonValue &json_value);
-	friend std::istream &operator>>(std::istream &in, JsonValue &json_value);
+
+	static std::string escape_string(const std::string &str);
 
 private:
 	Type type;
@@ -145,12 +145,31 @@ private:
 
 	void destruct_value();
 
-	void read_array(std::istream &in);
-	void read_true(std::istream &in);
-	void read_false(std::istream &in);
-	void read_null(std::istream &in);
-	void read_number(std::istream &in, char c);
-	void read_object(std::istream &in);
-	void read_string(std::istream &in);
+	struct StreamContext {
+		std::istreambuf_iterator<char> it;
+		const std::istreambuf_iterator<char> end;
+		std::string mini_buf;  // relatively efficient char history buffer
+		size_t mini_pos       = 0;
+		bool prev_white_space = true;  // collapse whitespaces in mini_buf
+	public:
+		explicit StreamContext(std::istream &in);
+		char peek_char();
+		char read_char();
+		char read_non_ws_char();
+		char peek_non_ws_char();
+		std::string read_string_token();
+		void eat_all_whitespace();
+		void throw_error(const std::string &text);
+		void expect(char c, char should_be_c);
+	};
+	void read_json(StreamContext &ctx);
+
+	void read_array(StreamContext &ctx);
+	void read_true(StreamContext &ctx);
+	void read_false(StreamContext &ctx);
+	void read_null(StreamContext &ctx);
+	void read_number(StreamContext &ctx, char c);
+	void read_object(StreamContext &ctx);
+	void read_string(StreamContext &ctx);
 };
 }

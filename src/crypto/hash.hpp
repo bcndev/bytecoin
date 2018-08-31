@@ -5,7 +5,8 @@
 
 #include <stddef.h>
 
-#include "hash-ops.h"
+#include "hash.h"
+#include "tree-hash.h"
 #include "types.hpp"
 
 namespace crypto {
@@ -13,7 +14,7 @@ namespace crypto {
 
 inline Hash cn_fast_hash(const void *data, size_t length) {
 	Hash h;
-	cn_fast_hash(data, length, h.data);
+	cn_fast_hash(data, length, &h);
 	return h;
 }
 //	inline Hash cn_fast_hash(const std::vector<uint8_t> & data) {
@@ -28,34 +29,37 @@ public:
 	CryptoNightContext(const CryptoNightContext &) = delete;
 	void operator=(const CryptoNightContext &) = delete;
 
-	inline void cn_slow_hash(const void *src_data, size_t length, unsigned char *hash) {
+	inline void cn_slow_hash(const void *src_data, size_t length, CHash *hash) {
 		crypto::cn_slow_hash(data, src_data, length, hash);
 	}
 	inline Hash cn_slow_hash(const void *src_data, size_t length) {
 		Hash hash;
-		crypto::cn_slow_hash(data, src_data, length, hash.data);
+		crypto::cn_slow_hash(data, src_data, length, &hash);
 		return hash;
 	}
+	void *get_data() const { return data; }
 
 private:
 	void *data;
 };
 
-inline Hash tree_hash(const Hash *hashes, size_t count) {
+inline Hash tree_hash(const Hash hashes[], size_t count) {
 	Hash root_hash;
-	tree_hash(reinterpret_cast<const unsigned char(*)[HASH_SIZE]>(hashes), count, root_hash.data);
+	tree_hash(hashes, count, &root_hash);
 	return root_hash;
 }
 
-inline void tree_branch(const Hash *hashes, size_t count, Hash *branch) {
-	tree_branch(reinterpret_cast<const unsigned char(*)[HASH_SIZE]>(hashes), count,
-	    reinterpret_cast<unsigned char(*)[HASH_SIZE]>(branch));
-}
-
-inline Hash tree_hash_from_branch(const Hash *branch, size_t depth, const Hash &leaf, const void *path) {
+inline Hash tree_hash_from_branch(const Hash branch[], size_t depth, const Hash &leaf, const Hash *path) {
 	Hash root_hash;
-	tree_hash_from_branch(
-	    reinterpret_cast<const unsigned char(*)[HASH_SIZE]>(branch), depth, leaf.data, path, root_hash.data);
+	tree_hash_from_branch(branch, depth, &leaf, path, &root_hash);
 	return root_hash;
 }
+
+struct MergeMiningItem {
+	Hash leaf;
+	Hash path;
+	std::vector<Hash> branch;
+};
+
+Hash fill_merge_mining_branches(MergeMiningItem items[], size_t count);
 }

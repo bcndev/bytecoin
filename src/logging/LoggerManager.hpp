@@ -15,8 +15,9 @@ namespace logging {
 class LoggerManager : public LoggerGroup {
 public:
 	LoggerManager();
-	void configure_default(const std::string &log_folder, const std::string &log_prefix);  // log_folder must exist
-	void configure(const common::JsonValue &val);                                          // from json config
+	void configure_default(const std::string &log_folder, const std::string &log_prefix, const std::string &version);
+	// log_folder must exist
+	void configure(const common::JsonValue &val);  // from json config
 	virtual void write(
 	    const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) override;
 

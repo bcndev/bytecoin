@@ -21,6 +21,7 @@ class Currency;
 struct RingSignatureArg {
 	Hash tx_prefix_hash;
 	KeyImage key_image;
+	bool key_image_subgroup_check = false;
 	std::vector<PublicKey> output_keys;
 	std::vector<Signature> signatures;
 };
@@ -45,7 +46,7 @@ public:
 	~RingCheckerMulticore();
 	void cancel_work();
 	std::string start_work_get_error(IBlockChainState *state, const Currency &currency, const Block &block,
-	    Height unlock_height, Timestamp unlock_timestamp);  // can fail immediately
+	    Height unlock_height, Timestamp unlock_timestamp, bool key_image_subgroup_check);  // can fail immediately
 	bool signatures_valid() const;
 };
 

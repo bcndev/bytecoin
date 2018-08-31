@@ -19,7 +19,8 @@ void LoggerManager::write(
 	LoggerGroup::write(category, level, time, body);
 }
 
-void LoggerManager::configure_default(const std::string &log_folder, const std::string &log_prefix) {
+void LoggerManager::configure_default(
+    const std::string &log_folder, const std::string &log_prefix, const std::string &version) {
 	{
 		std::unique_lock<std::mutex> lock(reconfigure_lock);  // TODO - investigate possible deadlocks
 		loggers.clear();
@@ -39,8 +40,8 @@ void LoggerManager::configure_default(const std::string &log_folder, const std::
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());
 	}
-	write(
-	    "START", TRACE, boost::posix_time::microsec_clock::local_time(), "----------------------------------------\n");
+	write("START", TRACE, boost::posix_time::microsec_clock::local_time(),
+	    version + " ----------------------------------------\n");
 }
 
 void LoggerManager::configure(const JsonValue &val) {

@@ -12,9 +12,9 @@ namespace bytecoin {
 
 class Config;
 
-class P2PClientBasic : public P2PClient {
+class P2PProtocolBasic : public P2PProtocol {
 public:
-	typedef std::function<void(P2PClientBasic *who, BinaryArray &&body)> LevinHandlerFunction;
+	typedef std::function<void(P2PProtocolBasic *who, BinaryArray &&body)> LevinHandlerFunction;
 
 private:
 	platform::Timer no_activity_timer;
@@ -42,12 +42,15 @@ protected:
 	const Config &config;
 	virtual void on_connect() override;
 	virtual void on_disconnect(const std::string &ban_reason) override;
-	virtual size_t on_request_header(const BinaryArray &header, std::string &ban_reason) const override;
-	virtual void on_request_ready() override;
+	virtual size_t on_parse_header(
+	    common::CircularBuffer &buffer, BinaryArray &request, std::string &ban_reason) override;
+	virtual void on_request_ready(BinaryArray &&header, BinaryArray &&body) override;
 	virtual bool handshake_ok() const override { return version != 0; }
 
-	virtual void on_msg_bytes(size_t, size_t) {}  // downloaded, uploaded
-	virtual void on_first_message_after_handshake() {}
+	virtual void on_immediate_protocol_switch(unsigned char first_byte) {}
+
+	virtual void on_msg_bytes(size_t, size_t) {}                        // downloaded, uploaded
+	virtual void on_first_message_after_handshake() {}                  // calling disconnect from here will crash
 	virtual void on_msg_handshake(COMMAND_HANDSHAKE::request &&) {}     // called after some internal processing
 	virtual void on_msg_handshake(COMMAND_HANDSHAKE::response &&) {}    // called after some internal processing
 	virtual void on_msg_ping(COMMAND_PING::request &&) {}               // called after some internal processing
@@ -69,16 +72,16 @@ protected:
 	virtual void on_msg_notify_request_objects(NOTIFY_RESPONSE_GET_OBJECTS::request &&) {}
 	virtual void on_msg_notify_checkpoint(NOTIFY_CHECKPOINT::request &&) {}
 	virtual CORE_SYNC_DATA get_sync_data() const = 0;
-	virtual std::vector<PeerlistEntry> get_peers_to_share() const { return std::vector<PeerlistEntry>(); }
+	virtual std::vector<PeerlistEntryLegacy> get_peers_to_share() const { return std::vector<PeerlistEntryLegacy>(); }
 
 	void set_last_received_sync_data(CORE_SYNC_DATA cd) { last_received_sync_data = cd; }
 
 public:
-	explicit P2PClientBasic(const Config &config, uint64_t unique_number, bool incoming, D_handler d_handler);
+	explicit P2PProtocolBasic(const Config &config, uint64_t unique_number, P2PClient *client);
 	int get_version() const { return version; }
 	uint64_t get_unique_number() const { return unique_number; }
 	virtual void send(BinaryArray &&body) override;
-	basic_node_data get_node_data() const;
+	virtual basic_node_data get_node_data() const;
 	CORE_SYNC_DATA get_last_received_sync_data() const { return last_received_sync_data; }
 	uint64_t get_last_received_unique_number() const { return last_received_unique_number; }
 };

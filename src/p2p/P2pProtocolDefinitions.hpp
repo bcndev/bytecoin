@@ -20,8 +20,6 @@ struct network_config {
 	uint32_t send_peerlist_sz        = 0;
 };
 
-enum P2PProtocolVersion : uint8_t { V0 = 0, V1 = 1, CURRENT = V1, EXPERIMENTAL = 3 };
-
 struct basic_node_data {
 	UUID network_id;
 	uint8_t version     = 0;
@@ -33,7 +31,7 @@ struct basic_node_data {
 struct CORE_SYNC_DATA {
 	uint32_t current_height = 0;  // crazy, but this one is top block + 1 instead of top block
 	// We conform to legacy by sending incremented field on wire
-	crypto::Hash top_id;
+	Hash top_id;
 };
 
 enum { P2P_COMMANDS_POOL_BASE = 1000 };
@@ -49,7 +47,7 @@ struct COMMAND_HANDSHAKE {
 	struct response {
 		basic_node_data node_data;
 		CORE_SYNC_DATA payload_data;
-		std::vector<PeerlistEntry> local_peerlist;
+		std::vector<PeerlistEntryLegacy> local_peerlist;
 	};
 };
 
@@ -63,7 +61,7 @@ struct COMMAND_TIMED_SYNC {
 	struct response {
 		uint64_t local_time = 0;
 		CORE_SYNC_DATA payload_data;
-		std::vector<PeerlistEntry> local_peerlist;
+		std::vector<PeerlistEntryLegacy> local_peerlist;
 	};
 };
 
@@ -87,12 +85,12 @@ struct COMMAND_PING {
 // These commands are considered as insecure, and made in debug purposes for a limited lifetime.
 // Anyone who feel unsafe with this commands can disable the bytecoin_ALLOW_DEBUG_COMMANDS macro in CryptoNote.hpp
 
-struct proof_of_trust {
+struct ProofOfTrustLegacy {
 	PeerIdType peer_id = 0;
 	uint64_t time      = 0;
 	crypto::Signature sign;
 
-	crypto::Hash get_hash() const;
+	Hash get_hash() const;
 };
 
 struct CoreStatistics {
@@ -107,7 +105,7 @@ struct COMMAND_REQUEST_STAT_INFO {
 	enum { ID = P2P_COMMANDS_POOL_BASE + 4 };
 
 	struct request {
-		proof_of_trust tr;
+		ProofOfTrustLegacy tr;
 	};
 
 	struct response {
@@ -123,12 +121,12 @@ struct COMMAND_REQUEST_NETWORK_STATE {
 	enum { ID = P2P_COMMANDS_POOL_BASE + 5 };
 
 	struct request {
-		proof_of_trust tr;
+		ProofOfTrustLegacy tr;
 	};
 
 	struct response {
-		std::vector<PeerlistEntry> local_peerlist_white;
-		std::vector<PeerlistEntry> local_peerlist_gray;
+		std::vector<PeerlistEntryLegacy> local_peerlist_white;
+		std::vector<PeerlistEntryLegacy> local_peerlist_gray;
 		std::vector<connection_entry> connections_list;
 		PeerIdType my_id    = 0;
 		uint64_t local_time = 0;
@@ -158,7 +156,7 @@ void ser_members(bytecoin::COMMAND_TIMED_SYNC::response &v, seria::ISeria &s);
 void ser_members(bytecoin::COMMAND_PING::request &v, seria::ISeria &s);
 void ser_members(bytecoin::COMMAND_PING::response &v, seria::ISeria &s);
 #if bytecoin_ALLOW_DEBUG_COMMANDS
-void ser_members(bytecoin::proof_of_trust &v, seria::ISeria &s);
+void ser_members(bytecoin::ProofOfTrustLegacy &v, seria::ISeria &s);
 void ser_members(bytecoin::COMMAND_REQUEST_STAT_INFO::request &v, seria::ISeria &s);
 void ser_members(bytecoin::COMMAND_REQUEST_STAT_INFO::response &v, seria::ISeria &s);
 void ser_members(bytecoin::COMMAND_REQUEST_NETWORK_STATE::request &v, seria::ISeria &s);

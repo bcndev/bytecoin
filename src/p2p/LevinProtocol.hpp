@@ -41,6 +41,7 @@ public:
 	};
 
 	static size_t HEADER_SIZE();
+	static unsigned char FIRST_BYTE();
 	static size_t read_command_header(const BinaryArray &raw_header, Command &cmd, std::string &ban_reason);
 
 	static BinaryArray send_message(uint32_t command, const BinaryArray &out, bool need_response);
@@ -49,8 +50,8 @@ public:
 	template<typename T>
 	static bool decode(const BinaryArray &buf, T &value) {
 		try {
-			seria::from_binary_key_value(value, buf);
-		} catch (std::exception &) {
+			seria::from_binary_kv(value, buf);
+		} catch (const std::exception &) {
 			return false;
 		}
 		return true;
@@ -58,7 +59,7 @@ public:
 
 	template<typename T>
 	static BinaryArray encode(const T &value) {
-		return seria::to_binary_key_value(value);
+		return seria::to_binary_kv(value);
 	}
 };
 }

@@ -23,12 +23,12 @@ const std::string Archive::BLOCK("b");
 const std::string Archive::TRANSACTION("t");
 const std::string Archive::CHECKPOINT("c");
 
-//static const float DB_COMMIT_PERIOD = 60;  // 1 minute sounds good for archive
+// static const float DB_COMMIT_PERIOD = 60;  // 1 minute sounds good for archive
 
 Archive::Archive(bool read_only, const std::string &path)
- : read_only(read_only)
+    : read_only(read_only)
 // , commit_timer(std::bind(&Archive::db_commit, this))
- {
+{
 #if !platform_USE_SQLITE
 	try {
 		m_db = std::make_unique<DB>(read_only, path);
@@ -49,7 +49,7 @@ Archive::Archive(bool read_only, const std::string &path)
 			throw;
 	}
 #endif
-//	commit_timer.once(DB_COMMIT_PERIOD);
+	//	commit_timer.once(DB_COMMIT_PERIOD);
 }
 
 // struct Record {
@@ -83,17 +83,16 @@ void Archive::db_commit() {
 	if (!m_db || read_only)
 		return;
 	m_db->commit_db_txn();
-//	commit_timer.once(DB_COMMIT_PERIOD);
+	//	commit_timer.once(DB_COMMIT_PERIOD);
 }
 
 void Archive::read_archive(api::bytecoind::GetArchive::Request &&req, api::bytecoind::GetArchive::Response &resp) {
-	if (req.archive_id != unique_id) {
-		api::bytecoind::GetArchive::Error err;
-		err.code       = api::bytecoind::GetArchive::WRONG_ARCHIVE_ID;
-		err.message    = "Archive id changed";
-		err.archive_id = unique_id;
-		throw err;
-	}
+	if (unique_id.empty())
+		throw api::bytecoind::GetArchive::Error(
+		    api::bytecoind::GetArchive::ARCHIVE_NOT_ENABLED, "Archive was never enabled on this bytecoind", unique_id);
+	if (req.archive_id != unique_id)
+		throw api::bytecoind::GetArchive::Error(
+		    api::bytecoind::GetArchive::WRONG_ARCHIVE_ID, "Archive id changed", unique_id);
 	resp.from_record = req.from_record;
 	if (resp.from_record > next_record_id)
 		resp.from_record = next_record_id;
@@ -109,7 +108,7 @@ void Archive::read_archive(api::bytecoind::GetArchive::Request &&req, api::bytec
 		api::bytecoind::GetArchive::ArchiveRecord rec;
 		seria::from_binary(rec, cur.get_value_array());
 		resp.records.push_back(rec);
-		if(req.records_only)
+		if (req.records_only)
 			continue;
 		std::string str_hash = common::pod_to_hex(rec.hash);
 		const auto hash_key  = HASHES_PREFIX + DB::to_binary_key(rec.hash.data, sizeof(rec.hash.data));
@@ -124,6 +123,9 @@ void Archive::read_archive(api::bytecoind::GetArchive::Request &&req, api::bytec
 				invariant(block.from_raw_block(raw_block), "");
 				bl.raw_header = block.header;
 				bl.raw_transactions.reserve(block.transactions.size());
+				bl.transaction_binary_sizes.reserve(block.transactions.size() + 1);
+				auto coinbase_size = static_cast<uint32_t>(seria::binary_size(block.header.base_transaction));
+				bl.transaction_binary_sizes.push_back(coinbase_size);
 				for (size_t i = 0; i != block.transactions.size(); ++i) {
 					bl.raw_transactions.push_back(static_cast<TransactionPrefix &>(block.transactions.at(i)));
 					bl.transaction_binary_sizes.push_back(static_cast<uint32_t>(raw_block.transactions.at(i).size()));
@@ -145,7 +147,7 @@ void Archive::read_archive(api::bytecoind::GetArchive::Request &&req, api::bytec
 			if (resp.checkpoints.count(str_hash) == 0) {
 				BinaryArray data;
 				invariant(m_db->get(hash_key, data), "");
-				SignedCheckPoint &ch = resp.checkpoints[str_hash];
+				SignedCheckpoint &ch = resp.checkpoints[str_hash];
 				seria::from_binary(ch, data);
 			}
 		}

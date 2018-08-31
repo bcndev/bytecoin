@@ -17,6 +17,7 @@ namespace bytecoin {
 class BlockChainState;
 // TODO - convert all read/writes to little endian
 class LegacyBlockChainReader {
+	const Currency &currency;
 	std::unique_ptr<platform::FileStream> m_items_file;
 	std::unique_ptr<platform::FileStream> m_indexes_file;
 	Height m_count = 0;
@@ -37,7 +38,8 @@ class LegacyBlockChainReader {
 
 public:
 	// No exceptions, just return block count 0
-	explicit LegacyBlockChainReader(const std::string &index_file_name, const std::string &item_file_name);
+	explicit LegacyBlockChainReader(
+	    const Currency &currency, const std::string &index_file_name, const std::string &item_file_name);
 	~LegacyBlockChainReader();
 	Height get_block_count() const { return m_count; }
 	BinaryArray get_block_data_by_index(Height);
@@ -55,7 +57,7 @@ class LegacyBlockChainWriter {
 
 public:
 	LegacyBlockChainWriter(const std::string &index_file_name, const std::string &item_file_name, uint64_t count);
-	void write_block(const bytecoin::RawBlock &raw_block);
+	void write_block(const RawBlock &raw_block);
 
 	static bool export_blockchain2(const std::string &export_folder, const BlockChainState &block_chain);
 };
