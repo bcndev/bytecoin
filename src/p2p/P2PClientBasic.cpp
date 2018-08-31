@@ -13,8 +13,8 @@ const float TIMED_SYNC_TIMEOUT = 60 * 4;
 using namespace bytecoin;
 
 template<typename Cmd>
-bytecoin::P2PClientBasic::LevinHandlerFunction levin_method(void (bytecoin::P2PClientBasic::*handler)(Cmd &&)) {
-	return [handler](P2PClientBasic *who, BinaryArray &&body) {
+P2PProtocolBasic::LevinHandlerFunction levin_method(void (P2PProtocolBasic::*handler)(Cmd &&)) {
+	return [handler](P2PProtocolBasic *who, BinaryArray &&body) {
 
 		Cmd req{};
 		if (!LevinProtocol::decode(body, req)) {
@@ -26,49 +26,51 @@ bytecoin::P2PClientBasic::LevinHandlerFunction levin_method(void (bytecoin::P2PC
 	};
 }
 
-std::map<std::pair<uint32_t, bool>, P2PClientBasic::LevinHandlerFunction> P2PClientBasic::before_handshake_handlers = {
-    {{COMMAND_PING::ID, false}, levin_method<COMMAND_PING::request>(&P2PClientBasic::msg_ping)},
-    {{COMMAND_PING::ID, true}, levin_method<COMMAND_PING::response>(&P2PClientBasic::msg_ping)},
-    {{COMMAND_HANDSHAKE::ID, false}, levin_method<COMMAND_HANDSHAKE::request>(&P2PClientBasic::msg_handshake)},
-    {{COMMAND_HANDSHAKE::ID, true}, levin_method<COMMAND_HANDSHAKE::response>(&P2PClientBasic::msg_handshake)}};
+std::map<std::pair<uint32_t, bool>, P2PProtocolBasic::LevinHandlerFunction>
+    P2PProtocolBasic::before_handshake_handlers = {
+        {{COMMAND_PING::ID, false}, levin_method<COMMAND_PING::request>(&P2PProtocolBasic::msg_ping)},
+        {{COMMAND_PING::ID, true}, levin_method<COMMAND_PING::response>(&P2PProtocolBasic::msg_ping)},
+        {{COMMAND_HANDSHAKE::ID, false}, levin_method<COMMAND_HANDSHAKE::request>(&P2PProtocolBasic::msg_handshake)},
+        {{COMMAND_HANDSHAKE::ID, true}, levin_method<COMMAND_HANDSHAKE::response>(&P2PProtocolBasic::msg_handshake)}};
 
-std::map<std::pair<uint32_t, bool>, P2PClientBasic::LevinHandlerFunction> P2PClientBasic::after_handshake_handlers = {
-    {{COMMAND_TIMED_SYNC::ID, false}, levin_method<COMMAND_TIMED_SYNC::request>(&P2PClientBasic::msg_timed_sync)},
-    {{COMMAND_TIMED_SYNC::ID, true}, levin_method<COMMAND_TIMED_SYNC::response>(&P2PClientBasic::msg_timed_sync)},
+std::map<std::pair<uint32_t, bool>, P2PProtocolBasic::LevinHandlerFunction> P2PProtocolBasic::after_handshake_handlers =
+    {{{COMMAND_TIMED_SYNC::ID, false}, levin_method<COMMAND_TIMED_SYNC::request>(&P2PProtocolBasic::msg_timed_sync)},
+        {{COMMAND_TIMED_SYNC::ID, true}, levin_method<COMMAND_TIMED_SYNC::response>(&P2PProtocolBasic::msg_timed_sync)},
 #if bytecoin_ALLOW_DEBUG_COMMANDS
-    {{COMMAND_REQUEST_NETWORK_STATE::ID, false},
-        levin_method<COMMAND_REQUEST_NETWORK_STATE::request>(&P2PClientBasic::on_msg_network_state)},
-    {{COMMAND_REQUEST_NETWORK_STATE::ID, true},
-        levin_method<COMMAND_REQUEST_NETWORK_STATE::response>(&P2PClientBasic::on_msg_network_state)},
-    {{COMMAND_REQUEST_STAT_INFO::ID, false},
-        levin_method<COMMAND_REQUEST_STAT_INFO::request>(&P2PClientBasic::on_msg_stat_info)},
-    {{COMMAND_REQUEST_STAT_INFO::ID, true},
-        levin_method<COMMAND_REQUEST_STAT_INFO::response>(&P2PClientBasic::on_msg_stat_info)},
+        {{COMMAND_REQUEST_NETWORK_STATE::ID, false},
+            levin_method<COMMAND_REQUEST_NETWORK_STATE::request>(&P2PProtocolBasic::on_msg_network_state)},
+        {{COMMAND_REQUEST_NETWORK_STATE::ID, true},
+            levin_method<COMMAND_REQUEST_NETWORK_STATE::response>(&P2PProtocolBasic::on_msg_network_state)},
+        {{COMMAND_REQUEST_STAT_INFO::ID, false},
+            levin_method<COMMAND_REQUEST_STAT_INFO::request>(&P2PProtocolBasic::on_msg_stat_info)},
+        {{COMMAND_REQUEST_STAT_INFO::ID, true},
+            levin_method<COMMAND_REQUEST_STAT_INFO::response>(&P2PProtocolBasic::on_msg_stat_info)},
 #endif
-    {{NOTIFY_NEW_BLOCK::ID, false}, levin_method<NOTIFY_NEW_BLOCK::request>(&P2PClientBasic::on_msg_notify_new_block)},
-    {{NOTIFY_NEW_TRANSACTIONS::ID, false},
-        levin_method<NOTIFY_NEW_TRANSACTIONS::request>(&P2PClientBasic::on_msg_notify_new_transactions)},
-    {{NOTIFY_REQUEST_TX_POOL::ID, false},
-        levin_method<NOTIFY_REQUEST_TX_POOL::request>(&P2PClientBasic::on_msg_notify_request_tx_pool)},
-    {{NOTIFY_REQUEST_CHAIN::ID, false},
-        levin_method<NOTIFY_REQUEST_CHAIN::request>(&P2PClientBasic::on_msg_notify_request_chain)},
-    {{NOTIFY_RESPONSE_CHAIN_ENTRY::ID, false},
-        levin_method<NOTIFY_RESPONSE_CHAIN_ENTRY::request>(&P2PClientBasic::on_msg_notify_request_chain)},
-    {{NOTIFY_CHECKPOINT::ID, false},
-        levin_method<NOTIFY_CHECKPOINT::request>(&P2PClientBasic::on_msg_notify_checkpoint)},
-    {{NOTIFY_REQUEST_GET_OBJECTS::ID, false},
-        levin_method<NOTIFY_REQUEST_GET_OBJECTS::request>(&P2PClientBasic::on_msg_notify_request_objects)},
-    {{NOTIFY_RESPONSE_GET_OBJECTS::ID, false},
-        levin_method<NOTIFY_RESPONSE_GET_OBJECTS::request>(&P2PClientBasic::on_msg_notify_request_objects)}};
+        {{NOTIFY_NEW_BLOCK::ID, false},
+            levin_method<NOTIFY_NEW_BLOCK::request>(&P2PProtocolBasic::on_msg_notify_new_block)},
+        {{NOTIFY_NEW_TRANSACTIONS::ID, false},
+            levin_method<NOTIFY_NEW_TRANSACTIONS::request>(&P2PProtocolBasic::on_msg_notify_new_transactions)},
+        {{NOTIFY_REQUEST_TX_POOL::ID, false},
+            levin_method<NOTIFY_REQUEST_TX_POOL::request>(&P2PProtocolBasic::on_msg_notify_request_tx_pool)},
+        {{NOTIFY_REQUEST_CHAIN::ID, false},
+            levin_method<NOTIFY_REQUEST_CHAIN::request>(&P2PProtocolBasic::on_msg_notify_request_chain)},
+        {{NOTIFY_RESPONSE_CHAIN_ENTRY::ID, false},
+            levin_method<NOTIFY_RESPONSE_CHAIN_ENTRY::request>(&P2PProtocolBasic::on_msg_notify_request_chain)},
+        {{NOTIFY_CHECKPOINT::ID, false},
+            levin_method<NOTIFY_CHECKPOINT::request>(&P2PProtocolBasic::on_msg_notify_checkpoint)},
+        {{NOTIFY_REQUEST_GET_OBJECTS::ID, false},
+            levin_method<NOTIFY_REQUEST_GET_OBJECTS::request>(&P2PProtocolBasic::on_msg_notify_request_objects)},
+        {{NOTIFY_RESPONSE_GET_OBJECTS::ID, false},
+            levin_method<NOTIFY_RESPONSE_GET_OBJECTS::request>(&P2PProtocolBasic::on_msg_notify_request_objects)}};
 
-P2PClientBasic::P2PClientBasic(const Config &config, uint64_t unique_number, bool incoming, D_handler d_handler)
-    : P2PClient(LevinProtocol::HEADER_SIZE(), incoming, d_handler)
+P2PProtocolBasic::P2PProtocolBasic(const Config &config, uint64_t unique_number, P2PClient *client)
+    : P2PProtocol(client)
     , no_activity_timer([this]() { disconnect(std::string()); })
-    , timed_sync_timer(std::bind(&P2PClientBasic::send_timed_sync, this))
+    , timed_sync_timer(std::bind(&P2PProtocolBasic::send_timed_sync, this))
     , unique_number(unique_number)
     , config(config) {}
 
-void P2PClientBasic::send_timed_sync() {
+void P2PProtocolBasic::send_timed_sync() {
 	COMMAND_TIMED_SYNC::request req;
 	req.payload_data = get_sync_data();
 
@@ -79,15 +81,15 @@ void P2PClientBasic::send_timed_sync() {
 	timed_sync_timer.once(TIMED_SYNC_TIMEOUT);
 }
 
-void P2PClientBasic::send(BinaryArray &&body) {
+void P2PProtocolBasic::send(BinaryArray &&body) {
 	timed_sync_timer.once(TIMED_SYNC_TIMEOUT);
 	on_msg_bytes(0, body.size());
-	P2PClient::send(std::move(body));
+	P2PProtocol::send(std::move(body));
 }
 
-Timestamp P2PClientBasic::get_local_time() const { return platform::now_unix_timestamp(); }
+Timestamp P2PProtocolBasic::get_local_time() const { return platform::now_unix_timestamp(); }
 
-basic_node_data P2PClientBasic::get_node_data() const {
+basic_node_data P2PProtocolBasic::get_node_data() const {
 	basic_node_data node_data;
 	node_data.version    = P2PProtocolVersion::CURRENT;
 	node_data.local_time = get_local_time();
@@ -97,7 +99,7 @@ basic_node_data P2PClientBasic::get_node_data() const {
 	return node_data;
 }
 
-void P2PClientBasic::on_connect() {
+void P2PProtocolBasic::on_connect() {
 	no_activity_timer.once(HANDSHAKE_TIMEOUT);
 	if (is_incoming())
 		return;
@@ -110,19 +112,34 @@ void P2PClientBasic::on_connect() {
 	send(std::move(msg));
 }
 
-void P2PClientBasic::on_disconnect(const std::string &ban_reason) {
+void P2PProtocolBasic::on_disconnect(const std::string &ban_reason) {
+	P2PProtocol::on_disconnect(ban_reason);
+	timed_sync_timer.cancel();
+	no_activity_timer.cancel();
 	version                                 = 0;  // We reuse client instances between connects, so we reinit vars here
 	first_message_after_handshake_processed = false;
 	last_received_sync_data                 = CORE_SYNC_DATA{};
 	last_received_unique_number             = 0;
 }
 
-size_t P2PClientBasic::on_request_header(const BinaryArray &header, std::string &ban_reason) const {
+size_t P2PProtocolBasic::on_parse_header(
+    common::CircularBuffer &buffer, BinaryArray &request, std::string &ban_reason) {
+	if (!handshake_ok() && buffer.size() > 0 && *buffer.read_ptr() != LevinProtocol::FIRST_BYTE()) {
+		on_immediate_protocol_switch(*buffer.read_ptr());
+		return std::string::npos;
+	}
 	LevinProtocol::Command cmd;
-	return LevinProtocol::read_command_header(header, cmd, ban_reason);
+	if (buffer.size() < LevinProtocol::HEADER_SIZE())
+		return std::string::npos;
+	request.resize(LevinProtocol::HEADER_SIZE());
+	buffer.read(request.data(), request.size());
+	auto body_size = LevinProtocol::read_command_header(request, cmd, ban_reason);
+	if (body_size == std::string::npos)
+		return std::string::npos;  // ban_reason set by LevinProtocol
+	return static_cast<size_t>(body_size);
 }
 
-void P2PClientBasic::msg_handshake(COMMAND_HANDSHAKE::request &&req) {
+void P2PProtocolBasic::msg_handshake(COMMAND_HANDSHAKE::request &&req) {
 	if (!is_incoming()) {
 		disconnect("COMMAND_HANDSHAKE from outgoing node");
 		return;
@@ -147,10 +164,10 @@ void P2PClientBasic::msg_handshake(COMMAND_HANDSHAKE::request &&req) {
 	std::cout << "P2p COMMAND_HANDSHAKE request version=" << int(req.node_data.version)
 	          << " unique_number=" << req.node_data.peer_id << " current_height=" << req.payload_data.current_height
 	          << " from " << get_address() << std::endl;
+	timed_sync_timer.once(TIMED_SYNC_TIMEOUT);  // Order important, can switch to different protocol
 	on_msg_handshake(std::move(req));
-	timed_sync_timer.once(TIMED_SYNC_TIMEOUT);
 }
-void P2PClientBasic::msg_handshake(COMMAND_HANDSHAKE::response &&req) {
+void P2PProtocolBasic::msg_handshake(COMMAND_HANDSHAKE::response &&req) {
 	if (is_incoming()) {
 		disconnect("COMMAND_HANDSHAKE response from incoming node");
 		return;
@@ -170,10 +187,10 @@ void P2PClientBasic::msg_handshake(COMMAND_HANDSHAKE::response &&req) {
 	std::cout << "P2p COMMAND_HANDSHAKE response version=" << int(req.node_data.version)
 	          << " unique_number=" << req.node_data.peer_id << " current_height=" << req.payload_data.current_height
 	          << " local_peerlist.size=" << req.local_peerlist.size() << " from " << get_address() << std::endl;
+	timed_sync_timer.once(TIMED_SYNC_TIMEOUT);  // Order important, can switch to different protocol
 	on_msg_handshake(std::move(req));
-	timed_sync_timer.once(TIMED_SYNC_TIMEOUT);
 }
-void P2PClientBasic::msg_ping(COMMAND_PING::request &&req) {
+void P2PProtocolBasic::msg_ping(COMMAND_PING::request &&req) {
 	if (!is_incoming()) {
 		disconnect("COMMAND_PING from outgoing node");
 		return;
@@ -188,7 +205,7 @@ void P2PClientBasic::msg_ping(COMMAND_PING::request &&req) {
 	std::cout << "P2p PING" << std::endl;
 	on_msg_ping(std::move(req));
 }
-void P2PClientBasic::msg_ping(COMMAND_PING::response &&req) {
+void P2PProtocolBasic::msg_ping(COMMAND_PING::response &&req) {
 	if (is_incoming()) {
 		disconnect("COMMAND_PING response from incoming node");
 		return;
@@ -196,7 +213,7 @@ void P2PClientBasic::msg_ping(COMMAND_PING::response &&req) {
 	std::cout << "P2p PONG" << std::endl;
 	on_msg_ping(std::move(req));
 }
-void P2PClientBasic::msg_timed_sync(COMMAND_TIMED_SYNC::request &&req) {
+void P2PProtocolBasic::msg_timed_sync(COMMAND_TIMED_SYNC::request &&req) {
 	//	std::cout << "P2p COMMAND_TIMED_SYNC request height=" << req.payload_data.current_height << std::endl;
 	last_received_sync_data = req.payload_data;
 
@@ -209,51 +226,47 @@ void P2PClientBasic::msg_timed_sync(COMMAND_TIMED_SYNC::request &&req) {
 	send(std::move(raw_msg));
 	on_msg_timed_sync(std::move(req));
 }
-void P2PClientBasic::msg_timed_sync(COMMAND_TIMED_SYNC::response &&req) {
+void P2PProtocolBasic::msg_timed_sync(COMMAND_TIMED_SYNC::response &&req) {
 	//	std::cout << "P2p COMMAND_TIMED_SYNC response height=" << req.payload_data.current_height << std::endl;
 	last_received_sync_data = req.payload_data;
 	on_msg_timed_sync(std::move(req));
 }
 
-void P2PClientBasic::on_request_ready() {
-	BinaryArray header;
-	BinaryArray body;
-	while (read_next_request(header, body)) {
-		try {
-			no_activity_timer.once(MESSAGE_TIMEOUT);
-			on_msg_bytes(header.size() + body.size(), 0);
-			LevinProtocol::Command cmd;
-			std::string ban_reason;
-			if (LevinProtocol::read_command_header(header, cmd, ban_reason) == std::string::npos) {
-				disconnect(ban_reason);
-				return;
-			}
-			if (!handshake_ok()) {
-				auto ha = before_handshake_handlers.find({cmd.command, cmd.is_response});
-				if (ha != before_handshake_handlers.end()) {
-					(ha->second)(this, std::move(body));
-					continue;
-				}
-				disconnect("202 Expecting handshake or ping");
-				return;
-			}
-			auto ha = after_handshake_handlers.find({cmd.command, cmd.is_response});
-			if (ha != after_handshake_handlers.end()) {
-				(ha->second)(this, std::move(body));
-				if (!first_message_after_handshake_processed) {
-					first_message_after_handshake_processed = true;
-					on_first_message_after_handshake();
-				}
-				continue;
-			}
-			std::cout << "generic bytecoin::P2P cmd=" << cmd.command << " " << cmd.is_response << " " << cmd.is_notify
-			          << std::endl;
-		} catch (const std::exception &ex) {
-			disconnect(std::string("299 Exception processing p2p message what=") + ex.what());
-			return;
-		} catch (...) {
-			disconnect("299 Exception processing p2p message");
+void P2PProtocolBasic::on_request_ready(BinaryArray &&header, BinaryArray &&body) {
+	try {
+		no_activity_timer.once(MESSAGE_TIMEOUT);
+		on_msg_bytes(header.size() + body.size(), 0);
+		LevinProtocol::Command cmd;
+		std::string ban_reason;
+		if (LevinProtocol::read_command_header(header, cmd, ban_reason) == std::string::npos) {
+			disconnect(ban_reason);
 			return;
 		}
+		if (!handshake_ok()) {
+			auto ha = before_handshake_handlers.find({cmd.command, cmd.is_response});
+			if (ha != before_handshake_handlers.end()) {
+				(ha->second)(this, std::move(body));
+				return;
+			}
+			disconnect("202 Expecting handshake or ping");
+			return;
+		}
+		auto ha = after_handshake_handlers.find({cmd.command, cmd.is_response});
+		if (ha != after_handshake_handlers.end()) {
+			if (!first_message_after_handshake_processed) {
+				first_message_after_handshake_processed = true;
+				on_first_message_after_handshake();
+			}
+			(ha->second)(this, std::move(body));
+			return;
+		}
+		std::cout << "generic bytecoin::P2P cmd={" << cmd.command << "} " << cmd.is_response << " " << cmd.is_notify
+		          << std::endl;
+	} catch (const std::exception &ex) {
+		disconnect(std::string("299 Exception processing p2p message what=") + common::what(ex));
+		return;
+	} catch (...) {
+		disconnect("299 Exception processing p2p message");
+		return;
 	}
 }

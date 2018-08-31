@@ -8,33 +8,36 @@
 
 namespace common {
 
-std::string ip_address_to_string(uint32_t ip) {
-	uint8_t bytes[4]{};
-	bytes[0] = uint8_t(ip & 0xFF);
-	bytes[1] = uint8_t((ip >> 8) & 0xFF);
-	bytes[2] = uint8_t((ip >> 16) & 0xFF);
-	bytes[3] = uint8_t((ip >> 24) & 0xFF);
-
+std::string ip_address_to_string(BinaryArray ip) {
+	if (ip.size() != 4)
+		return "?.?.?.?";
 	char buf[16]{};
-	sprintf(buf, "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);
+	sprintf(buf, "%u.%u.%u.%u", ip.data()[0], ip.data()[1], ip.data()[2], ip.data()[3]);
 
 	return std::string(buf);
 }
 
-std::string ip_address_and_port_to_string(uint32_t ip, uint32_t port) {
-	uint8_t bytes[4]{};
-	bytes[0] = uint8_t(ip & 0xFF);
-	bytes[1] = uint8_t((ip >> 8) & 0xFF);
-	bytes[2] = uint8_t((ip >> 16) & 0xFF);
-	bytes[3] = uint8_t((ip >> 24) & 0xFF);
+uint32_t ip_address_to_legacy(BinaryArray ip) {
+	if (ip.size() != 4)
+		return 0;
+	return (static_cast<uint32_t>(ip.data()[0])) | (static_cast<uint32_t>(ip.data()[1]) << 8) |
+	       (static_cast<uint32_t>(ip.data()[2]) << 16) | (static_cast<uint32_t>(ip.data()[3]) << 24);
+}
+BinaryArray ip_address_from_legacy(uint32_t ip) {
+	return BinaryArray{static_cast<uint8_t>(ip), static_cast<uint8_t>(ip >> 8), static_cast<uint8_t>(ip >> 16),
+	    static_cast<uint8_t>(ip >> 24)};
+}
 
+std::string ip_address_and_port_to_string(BinaryArray ip, uint16_t port) {
+	if (ip.size() != 4)
+		return "?.?.?.?";
 	char buf[24]{};
-	sprintf(buf, "%d.%d.%d.%d:%d", bytes[0], bytes[1], bytes[2], bytes[3], port);
+	sprintf(buf, "%u.%u.%u.%u:%u", ip.data()[0], ip.data()[1], ip.data()[2], ip.data()[3], port);
 
 	return std::string(buf);
 }
 
-bool parse_ip_address(const std::string &addr, uint32_t *ip) {
+bool parse_ip_address(const std::string &addr, BinaryArray *ip) {
 	uint32_t v[4]{};
 
 	if (sscanf(addr.c_str(), "%u.%u.%u.%u", &v[0], &v[1], &v[2], &v[3]) != 4) {
@@ -46,12 +49,14 @@ bool parse_ip_address(const std::string &addr, uint32_t *ip) {
 			return false;
 		}
 	}
-
-	*ip = (v[3] << 24u) | (v[2] << 16u) | (v[1] << 8u) | v[0];
+	*ip = BinaryArray{
+	    static_cast<uint8_t>(v[0]), static_cast<uint8_t>(v[1]), static_cast<uint8_t>(v[2]), static_cast<uint8_t>(v[3])};
+	//	*ip = (v[3] << 24) | (v[2] << 16) | (v[1] << 8) | v[0];
 	return true;
 }
 
-bool parse_ip_address_and_port(const std::string &addr, uint32_t *ip, uint32_t *port) {
+// TODO - add IPv6 support
+bool parse_ip_address_and_port(const std::string &addr, BinaryArray *ip, uint16_t *port) {
 	uint32_t v[4]{};
 	uint32_t local_port = 0;
 
@@ -65,7 +70,8 @@ bool parse_ip_address_and_port(const std::string &addr, uint32_t *ip, uint32_t *
 		}
 	}
 
-	*ip = (v[3] << 24u) | (v[2] << 16u) | (v[1] << 8u) | v[0];
+	*ip = BinaryArray{
+	    static_cast<uint8_t>(v[0]), static_cast<uint8_t>(v[1]), static_cast<uint8_t>(v[2]), static_cast<uint8_t>(v[3])};
 	if (local_port > 65535)
 		return false;
 	*port = local_port;
@@ -73,27 +79,24 @@ bool parse_ip_address_and_port(const std::string &addr, uint32_t *ip, uint32_t *
 }
 
 bool parse_ip_address_and_port(const std::string &addr, std::string *ip, uint16_t *port) {
-	uint32_t sip = 0, sport = 0;
-	if (!parse_ip_address_and_port(addr, &sip, &sport))
+	BinaryArray sip;
+	if (!parse_ip_address_and_port(addr, &sip, port))
 		return false;
-	*port = static_cast<uint16_t>(sport);
-	*ip   = ip_address_to_string(sip);
+	//	*port = static_cast<uint16_t>(sport);
+	*ip = ip_address_to_string(sip);
 	return true;
 }
 
-int get_private_network_prefix(uint32_t ip) {
-	uint8_t bytes[4]{};
-	bytes[0] = uint8_t(ip & 0xFF);
-	bytes[1] = uint8_t((ip >> 8) & 0xFF);
-	bytes[2] = uint8_t((ip >> 16) & 0xFF);
-	bytes[3] = uint8_t((ip >> 24) & 0xFF);
-	if (bytes[0] == 127)  // 127.x.x.x
+int get_private_network_prefix(BinaryArray ip) {
+	if (ip.size() != 4)
+		return 6;
+	if (ip.data()[0] == 127)  // 127.x.x.x
 		return 127;
-	if (bytes[0] == 10)  // 10.0.0.0/8
+	if (ip.data()[0] == 10)  // 10.0.0.0/8
 		return 10;
-	if (bytes[0] == 192 && bytes[1] == 168)  // 192.168.0.0/16
+	if (ip.data()[0] == 192 && ip.data()[1] == 168)  // 192.168.0.0/16
 		return 192;
-	if (bytes[0] == 172 && (bytes[1] & 0xf0) == 16)  // 172.16.0.0/12
+	if (ip.data()[0] == 172 && (ip.data()[1] & 0xf0) == 16)  // 172.16.0.0/12
 		return 172;
 	return 0;
 }

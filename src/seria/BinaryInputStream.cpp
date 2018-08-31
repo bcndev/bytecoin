@@ -8,6 +8,7 @@
 #include <cassert>
 #include <stdexcept>
 #include "common/Invariant.hpp"
+#include "common/Math.hpp"
 #include "common/Streams.hpp"
 
 using namespace common;
@@ -29,7 +30,7 @@ void BinaryInputStream::begin_array(size_t &size, bool fixed_size) {
 
 void BinaryInputStream::begin_map(size_t &size) { read_varint_as<uint64_t>(stream, size); }
 
-void BinaryInputStream::next_map_key(std::string &name) { (*this)(name); }
+void BinaryInputStream::next_map_key(std::string &name) { ser(name, *this); }
 
 void BinaryInputStream::seria_v(uint8_t &value) { read_varint(stream, value); }
 
@@ -50,19 +51,19 @@ void BinaryInputStream::seria_v(bool &value) { value = read<uint8_t>(stream) != 
 void BinaryInputStream::seria_v(BinaryArray &value) {
 	uint64_t size;
 	read_varint(stream, size);
-	common::read(stream, value, boost::lexical_cast<size_t>(size));
+	common::read(stream, value, common::integer_cast<size_t>(size));
 }
 
 void BinaryInputStream::seria_v(std::string &value) {
 	uint64_t size;
 	read_varint(stream, size);
 
-	common::read(stream, value, boost::lexical_cast<size_t>(size));
+	common::read(stream, value, common::integer_cast<size_t>(size));
 }
 
 void BinaryInputStream::binary(void *value, size_t size) { stream.read(value, size); }
 
 void BinaryInputStream::seria_v(double &value) {
 	assert(false);  // the method is not supported for this type of serialization
-	invariant(false, "double serialization is not supported in BinaryInputStreamSeria");
+	throw std::logic_error("double serialization is not supported in BinaryInputStreamSeria");
 }

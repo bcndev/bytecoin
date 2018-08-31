@@ -6,11 +6,12 @@
 #include <iostream>
 #include <sstream>
 #include "common/Invariant.hpp"
+#include "common/exception.hpp"
 
 // to test
 // httperf --port 8090 --num-calls 100000 --uri /index.html
-// curl -s "http://localhost:8888/?[1-10000]"
-// USELESS siege -b -r 1000 -c 100 http://localhost:8888/index.html
+// curl -s "http://127.0.0.1:8888/?[1-10000]"
+// USELESS siege -b -r 1000 -c 100 http://127.0.0.1:8888/index.html
 // USELESS ab -n 100000 -c 50 -k localhost:8090/index.html
 // wrk -t2 -c20 -d5s http://127.0.0.1:8888/index.html
 
@@ -134,10 +135,14 @@ void Server::on_client_handler(Client *who) {
 		bool result = true;
 		try {
 			result = r_handler(who, std::move(request), response);
+		} catch (const ErrorAuthorization &e) {
+			std::cout << "HTTP unauthorized request" << std::endl;
+			response.r.headers.push_back({"WWW-Authenticate", "Basic realm=\"" + e.realm + "\", charset=\"UTF-8\""});
+			response.r.status = 401;
 		} catch (const std::exception &e) {
-			std::cout << "HTTP request leads to throw/catch, what=" << e.what() << std::endl;
+			std::cout << "HTTP request leads to throw/catch, what=" << common::what(e) << std::endl;
 			response.r.status = 422;
-			response.set_body(e.what());
+			response.set_body(common::what(e));
 		} catch (...) {
 			std::cout << "HTTP request leads to throw/catch" << std::endl;
 			response.r.status = 422;

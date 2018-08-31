@@ -16,6 +16,8 @@
 #include "platform/PathTools.hpp"
 #include "version.hpp"
 
+#include "common/Base58.hpp"
+
 using namespace bytecoin;
 
 static const char USAGE[] =
@@ -28,21 +30,25 @@ Usage:
 
 Options:
   --wallet-file=<file-path>             Path to wallet file to open.
-  --wallet-password=<pass>              DEPRECATED AND NOT RECOMMENDED (as entailing security risk). Use given string as password and not read it from stdin.
-  --create-wallet                       Create wallet file with new random keys. Must be used with --wallet-file option.
+  --wallet-password=<pass>              DEPRECATED AND NOT RECOMMENDED as entailing security risk. Use given string as password and not read it from stdin.
+  --create-wallet                       Create wallet file with new random keys, then exit. Must be used with --wallet-file option.
   --import-keys                         Create wallet file with imported keys read as a line from stdin. Must be used with --create-wallet.
-  --set-password                        Read new password as a line from stdin (twice) and re-encrypt wallet file.
-  --export-view-only=<file-path>        Export view-only version of wallet file with the same password, then exit.
-  --export-keys                         Export wallet keys to stdout, then exit.
+  --set-password                        Read new password as a line from stdin (twice) and re-encrypt wallet file, then exit.
+  --launch-after-command                Instead of exiting, continue launching after --create-wallet and --set-password commands
+  --export-view-only=<file-path>        Export view-only version of wallet file, then exit. Add --set-password to export with different password.
+  --export-keys                         Export unencrypted wallet keys to stdout, then exit.
   --walletd-bind-address=<ip:port>      IP and port for walletd RPC API [default: 127.0.0.1:8070].
   --data-folder=<foler-path>            Folder for wallet cache, blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
     R"(bytecoin].
   --bytecoind-remote-address=<ip:port>  Connect to remote bytecoind and suppress running built-in bytecoind.
+                                        Set this option to https://<host:port> instead, to connect to remote bytecoind via https
   --bytecoind-authorization=<user:pass> HTTP basic authentication credentials for RPC API.
   --backup-wallet-data=<folder-path>    Perform hot backup of wallet file, history, payment queue and wallet cache into specified backup data folder, then exit.
-  --net=<main|test>                     Configure for mainnet or testnet [default: main].
+                                        Add --set-password to set different password for backed-up wallet file.
+  --net=<main|stage|test>               Configure for mainnet or testnet [default: main].
 
 Options for built-in bytecoind (run when no --bytecoind-remote-address specified):
+DEPRECATED AND NOT RECOMMENDED as entailing security risk. Please always run bytecoind as a separate process.
   --p2p-bind-address=<ip:port>          IP and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>            External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
   --bytecoind-bind-address=<ip:port>    IP and port for bytecoind RPC [default: 127.0.0.1:8081].
@@ -57,13 +63,14 @@ int main(int argc, const char *argv[]) try {
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	common::CommandLine cmd(argc, argv);
 	std::string wallet_file, password, new_password, export_view_only, import_keys_value, backup_wallet;
-	//	const bool set_password_and_continue  = cmd.get_bool("--set-password-and-continue"); // Run normally after set
-	// password, used by GUI wallet
-	const bool set_password  = cmd.get_bool("--set-password");  // || set_password_and_continue;
-	bool ask_password        = true;
-	const bool export_keys   = cmd.get_bool("--export-keys");
-	const bool create_wallet = cmd.get_bool("--create-wallet");
-	const bool import_keys   = cmd.get_bool("--import-keys");
+	const bool launch_after_command = cmd.get_bool("--launch-after-command");
+	// used by GUI wallet, launch normally after create-wallet and set_password
+	const bool set_password           = cmd.get_bool("--set-password");
+	bool ask_password                 = true;
+	const bool export_keys            = cmd.get_bool("--export-keys");
+	const bool create_wallet          = cmd.get_bool("--create-wallet");
+	const bool import_keys            = cmd.get_bool("--import-keys");
+	const bool print_mineproof_secret = cmd.get_bool("--print-mineproof-secret");
 	if (import_keys && !create_wallet) {
 		std::cout << "When importing keys, you should use --create-wallet. You cannot import into existing wallet."
 		          << std::endl;
@@ -93,9 +100,8 @@ int main(int argc, const char *argv[]) try {
 		          << std::endl;
 		return api::WALLETD_WRONG_ARGS;
 	}
-
-	bytecoin::Config config(cmd);
-	bytecoin::Currency currency(config.is_testnet);
+	Config config(cmd);
+	Currency currency(config.net);
 
 	if (cmd.should_quit(USAGE, bytecoin::app_version()))
 		return api::WALLETD_WRONG_ARGS;
@@ -110,11 +116,24 @@ int main(int argc, const char *argv[]) try {
 			std::cout << "Unexpected end of stdin" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
+		std::cout << std::endl;
 		boost::algorithm::trim(import_keys_value);
 		if (import_keys_value.empty()) {
 			std::cout << "Imported keys should not be empty" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
+	}
+	if (!config.bytecoind_remote_port && !create_wallet && !set_password && !export_keys && export_view_only.empty() &&
+	    backup_wallet.empty()) {
+		common::console::set_text_color(common::console::BrightRed);
+		std::cout << "Warning: inproc bytecoind is deprecated and will be removed soon." << std::endl;
+		std::cout
+		    << "  Please run bytecoind separately, then specify --remote-bytecoind-address=<ip>:<port> argument to walletd"
+		    << std::endl;
+		std::cout
+		    << "  This is important to prevent bytecoind P2P attack vectors from reaching walletd address space where wallet keys reside"
+		    << std::endl;
+		common::console::set_text_color(common::console::Default);
 	}
 	if (!create_wallet && ask_password) {
 		std::cout << "Enter current wallet password: " << std::flush;
@@ -122,6 +141,7 @@ int main(int argc, const char *argv[]) try {
 			std::cout << "Unexpected end of stdin" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
+		std::cout << std::endl;
 		boost::algorithm::trim(password);
 	}
 	if (create_wallet || set_password) {
@@ -130,6 +150,7 @@ int main(int argc, const char *argv[]) try {
 			std::cout << "Unexpected end of stdin" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
+		std::cout << std::endl;
 		boost::algorithm::trim(new_password);
 		std::cout << "Repeat new wallet password:" << std::flush;
 		std::string new_password2;
@@ -137,6 +158,7 @@ int main(int argc, const char *argv[]) try {
 			std::cout << "Unexpected end of stdin" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
+		std::cout << std::endl;
 		boost::algorithm::trim(new_password2);
 		if (new_password != new_password2) {
 			std::cout << "New passwords do not match" << std::endl;
@@ -148,17 +170,28 @@ int main(int argc, const char *argv[]) try {
 	//		wallet_file = "C:\\Users\\user\\test.wallet";
 
 	logging::LoggerManager logManagerWalletNode;
-	logManagerWalletNode.configure_default(config.get_data_folder("logs"), "walletd-");
+	logManagerWalletNode.configure_default(config.get_data_folder("logs"), "walletd-", bytecoin::app_version());
 	std::unique_ptr<Wallet> wallet;
 	try {
 		wallet = std::make_unique<Wallet>(logManagerWalletNode, wallet_file, create_wallet ? new_password : password,
 		    create_wallet, import_keys_value);
 	} catch (const common::StreamError &ex) {
-		std::cout << ex.what() << std::endl;
+		std::cout << common::what(ex) << std::endl;
 		return api::WALLET_FILE_READ_ERROR;
 	} catch (const Wallet::Exception &ex) {
-		std::cout << ex.what() << std::endl;
+		std::cout << common::what(ex) << std::endl;
 		return ex.return_code;
+	}
+	if (print_mineproof_secret) {
+		std::cout << "To mine with mineproofs to this wallet address "
+		          << currency.account_address_as_string(wallet->get_first_address()) << std::endl;
+		std::cout << "Run bytecoind with --mineproof-secret=" << wallet->get_coinbase_tx_derivation_seed() << std::endl;
+	}
+	if (create_wallet) {
+		std::cout << "Successfully created wallet with address "
+		          << currency.account_address_as_string(wallet->get_first_address()) << std::endl;
+		if (!launch_after_command)
+			return 0;
 	}
 	try {
 		if (!backup_wallet.empty()) {
@@ -172,14 +205,6 @@ int main(int argc, const char *argv[]) try {
 			const std::string dst_history_name  = dst_name + ".history";
 			const std::string dst_payments_name = dst_name + ".payments";
 			const std::string dst_cache         = backup_wallet + "/wallet_cache/" + wallet->get_cache_name();
-			if (!platform::create_folder_if_necessary(backup_wallet + "/wallet_cache")) {
-				std::cout << "Could not create folder for backup " << (backup_wallet + "/wallet_cache") << std::endl;
-				return 1;
-			}
-			if (!platform::create_folder_if_necessary(dst_cache)) {
-				std::cout << "Could not create folder for backup " << dst_cache << std::endl;
-				return 1;
-			}
 			if (!platform::create_folder_if_necessary(dst_payments_name)) {
 				std::cout << "Could not create folder for backup " << dst_payments_name << std::endl;
 				return 1;
@@ -188,25 +213,31 @@ int main(int argc, const char *argv[]) try {
 				std::cout << "Could not create folder for backup " << dst_history_name << std::endl;
 				return 1;
 			}
-			common::console::set_text_color(common::console::BrightRed);
-			std::cout
-			    << "There will be no progress printed for 1-20 minutes, depending on wallet size and computer speed."
-			    << std::endl;
-			common::console::set_text_color(common::console::Default);
-
-			std::cout << "Starting wallet cache backup..." << std::endl;
-			platform::DB::backup_db(coin_folder + "/wallet_cache/" + wallet->get_cache_name(), dst_cache);
-			std::cout << "Finished wallet cache backup." << std::endl;
-
+			if (!platform::create_folder_if_necessary(backup_wallet + "/wallet_cache")) {
+				std::cout << "Could not create folder for backup " << (backup_wallet + "/wallet_cache") << std::endl;
+				return 1;
+			}
+			if (!platform::create_folder_if_necessary(dst_cache)) {
+				std::cout << "Could not create folder for backup " << dst_cache << std::endl;
+				return 1;
+			}
+			std::cout << "Backing up wallet file to " << dst_name << std::endl;
+			wallet->export_wallet(dst_name, set_password ? new_password : password, false);
 			for (const auto &file : platform::get_filenames_in_folder(wallet->get_payment_queue_folder())) {
 				platform::copy_file(wallet->get_payment_queue_folder() + "/" + file, dst_payments_name + "/" + file);
 			}
 			for (const auto &file : platform::get_filenames_in_folder(wallet->get_history_folder())) {
 				platform::copy_file(wallet->get_history_folder() + "/" + file, dst_history_name + "/" + file);
 			}
-			std::cout << "Backing up wallet file to " << (backup_wallet + "/" + name) << std::endl;
-			wallet->export_wallet(backup_wallet + "/" + name, false);  // TODO - use set_password
-			std::cout << "Backing up wallet cache to " << dst_cache << std::endl;
+			common::console::set_text_color(common::console::BrightRed);
+			std::cout
+			    << "There will be no progress printed for 1-20 minutes, depending on wallet size and computer speed."
+			    << std::endl;
+			common::console::set_text_color(common::console::Default);
+
+			std::cout << "Starting wallet cache backup to " << dst_cache << std::endl;
+			platform::DB::backup_db(coin_folder + "/wallet_cache/" + wallet->get_cache_name(), dst_cache);
+			std::cout << "Backing of wallet data finished successfully" << std::endl;
 			return 0;
 		}
 		if (!export_view_only.empty()) {
@@ -214,25 +245,28 @@ int main(int argc, const char *argv[]) try {
 				std::cout << "Cannot export as view-only, wallet file is already view-only" << std::endl;
 				return api::WALLETD_WRONG_ARGS;
 			}
-			wallet->export_wallet(export_view_only, true);  // TODO - use set_password
+			wallet->export_wallet(export_view_only, set_password ? new_password : password, true);
+			std::cout << "Successfully exported view-only copy of the wallet" << std::endl;
 			return 0;
 		}
 		if (export_keys) {
+			if (wallet->get_records().size() != 1)
+				throw Wallet::Exception(
+				    api::WALLETD_EXPORTKEYS_MORETHANONE, "You can only export keys from a wallet containing 1 address");
 			std::cout << common::to_hex(wallet->export_keys()) << std::endl;
 			return 0;
 		}
 		if (set_password) {
 			wallet->set_password(new_password);
-			//			if( !set_password_and_continue ){
-			//				std::cout << "New password set" << std::endl;
-			//				return 0;
-			//			}
+			std::cout << "Successfully set new password" << std::endl;
+			if (!launch_after_command)
+				return 0;
 		}
 	} catch (const common::StreamError &ex) {
-		std::cout << ex.what() << std::endl;
+		std::cout << common::what(ex) << std::endl;
 		return api::WALLET_FILE_WRITE_ERROR;
 	} catch (const Wallet::Exception &ex) {
-		std::cout << ex.what() << std::endl;
+		std::cout << common::what(ex) << std::endl;
 		return ex.return_code;
 	}
 	std::unique_ptr<platform::ExclusiveLock> blockchain_lock;
@@ -240,7 +274,7 @@ int main(int argc, const char *argv[]) try {
 		if (!config.bytecoind_remote_port)
 			blockchain_lock = std::make_unique<platform::ExclusiveLock>(coin_folder, "bytecoind.lock");
 	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
-		std::cout << "Bytecoind already running - " << ex.what() << std::endl;
+		std::cout << "Bytecoind already running - " << common::what(ex) << std::endl;
 		return api::BYTECOIND_ALREADY_RUNNING;
 	}
 	std::unique_ptr<platform::ExclusiveLock> walletcache_lock;
@@ -250,7 +284,7 @@ int main(int argc, const char *argv[]) try {
 		walletcache_lock = std::make_unique<platform::ExclusiveLock>(
 		    config.get_data_folder("wallet_cache"), wallet->get_cache_name() + ".lock");
 	} catch (const platform::ExclusiveLock::FailedToLock &ex) {
-		std::cout << "Wallet with the same viewkey is in use - " << ex.what() << std::endl;
+		std::cout << "Wallet with the same first address is in use - " << common::what(ex) << std::endl;
 		return api::WALLET_WITH_SAME_KEYS_IN_USE;
 	}
 	if (!ask_password) {
@@ -266,6 +300,7 @@ int main(int argc, const char *argv[]) try {
 		std::cout << "Unexpected end of stdin" << std::endl;
 		return api::WALLETD_WRONG_ARGS;
 	}
+	std::cout << std::endl;
 	boost::algorithm::trim(auth);
 	config.walletd_authorization = common::base64::encode(BinaryArray(auth.data(), auth.data() + auth.size()));
 	if (config.walletd_authorization.empty()) {
@@ -287,8 +322,16 @@ int main(int argc, const char *argv[]) try {
 	std::unique_ptr<Node> node;
 
 	logging::LoggerManager logManagerNode;
-	logManagerNode.configure_default(config.get_data_folder("logs"), "bytecoind-");
+	logManagerNode.configure_default(config.get_data_folder("logs"), "bytecoind-", bytecoin::app_version());
 
+	std::unique_ptr<WalletNode> wallet_node;
+	try {
+		wallet_node = std::make_unique<WalletNode>(nullptr, logManagerWalletNode, config, wallet_state);
+	} catch (const platform::TCPAcceptor::AddressInUse &ex) {
+		std::cout << common::what(ex) << std::endl;
+		return api::WALLETD_BIND_PORT_IN_USE;  // We should return before we create bytecoind thread, otherwise
+		                                       // terminate
+	}
 	std::promise<void> prm;
 	std::thread bytecoind_thread;
 	if (!config.bytecoind_remote_port) {
@@ -322,24 +365,17 @@ int main(int argc, const char *argv[]) try {
 				block_chain = std::make_unique<BlockChainState>(logManagerNode, config, currency, false);
 				node        = std::make_unique<Node>(logManagerNode, config, *block_chain);
 			}
-		} catch (const boost::system::system_error &ex) {
-			std::cout << ex.what() << std::endl;
+		} catch (const platform::TCPAcceptor::AddressInUse &ex) {
+			std::cout << common::what(ex) << std::endl;
 			if (bytecoind_thread.joinable())
 				bytecoind_thread.join();  // otherwise terminate will be called in ~thread
 			return api::BYTECOIND_BIND_PORT_IN_USE;
 		} catch (const std::exception &ex) {  // On Windows what() is not printed if thrown from main
-			std::cout << "Exception in main() - " << ex.what() << std::endl;
+			std::cout << "Uncaught Exception in main() - " << common::what(ex) << std::endl;
+			// TODO - check that ..joinable()..join().. code from above does not apply also
 			throw;
 		}
 	}
-	std::unique_ptr<WalletNode> wallet_node;
-	try {
-		wallet_node = std::make_unique<WalletNode>(nullptr, logManagerWalletNode, config, wallet_state);
-	} catch (const boost::system::system_error &ex) {
-		std::cout << ex.what() << std::endl;
-		return api::WALLETD_BIND_PORT_IN_USE;
-	}
-
 	auto idea_ms =
 	    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - idea_start);
 	std::cout << "walletd started seconds=" << double(idea_ms.count()) / 1000 << std::endl;
@@ -352,6 +388,6 @@ int main(int argc, const char *argv[]) try {
 	}
 	return 0;
 } catch (const std::exception &ex) {  // On Windows what() is not printed if thrown from main
-	std::cout << "Exception in main() - " << ex.what() << std::endl;
+	std::cout << "Uncaught Exception in main() - " << common::what(ex) << std::endl;
 	throw;
 }

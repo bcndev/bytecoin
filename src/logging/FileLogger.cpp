@@ -3,6 +3,7 @@
 
 #include "FileLogger.hpp"
 #include "common/ConsoleTools.hpp"
+#include "common/exception.hpp"
 #include "platform/PathTools.hpp"
 
 namespace logging {
@@ -41,7 +42,7 @@ void FileLogger::do_log_string(const std::string &message) {
 			file_stream->write(real_message.data(), real_message.size());
 	} catch (const std::exception &ex) {  // Will continue trying to write when space becomes available
 		common::console::set_text_color(Color::Yellow);
-		std::cout << "Log File Write Failed, error=" << ex.what() << std::endl;
+		std::cout << "Log File Write Failed, error=" << common::what(ex) << std::endl;
 		common::console::set_text_color(Color::Default);
 	}
 
@@ -65,7 +66,7 @@ void FileLogger::do_log_string(const std::string &message) {
 			max_size *= 2;  // doubling size of next rotation...
 			common::console::set_text_color(Color::Yellow);
 			std::cout << "Failed to fully rotate log, writing to prev, next rotate attempt on size " << max_size
-			          << " error=" << ex.what() << std::endl;
+			          << " error=" << common::what(ex) << std::endl;
 			common::console::set_text_color(Color::Default);
 		}
 	}

@@ -10,7 +10,7 @@
 #include <memory>
 #include <mutex>
 
-#include "crypto-ops.h"
+#include "bernstein/crypto-ops.h"
 #include "crypto.hpp"
 #include "hash.hpp"
 #include "random.h"
@@ -86,10 +86,12 @@ static void write_varint(uint8_t *&dest, size_t i) {
 	*dest++ = static_cast<uint8_t>(i);
 }
 static void derivation_to_scalar(const KeyDerivation &derivation, size_t output_index, EllipticCurveScalar &res) {
+#pragma pack(push, 1)
 	struct {
 		KeyDerivation derivation;
 		uint8_t output_index[(sizeof(size_t) * 8 + 6) / 7];
 	} buf;
+#pragma pack(pop)
 	uint8_t *end   = buf.output_index;
 	buf.derivation = derivation;
 	write_varint(end, output_index);
@@ -100,10 +102,12 @@ static void derivation_to_scalar(const KeyDerivation &derivation, size_t output_
 static void derivation_to_scalar(const KeyDerivation &derivation, size_t output_index, const uint8_t *suffix,
     size_t suffix_length, EllipticCurveScalar &res) {
 	assert(suffix_length <= 32);
+#pragma pack(push, 1)
 	struct {
 		KeyDerivation derivation;
 		uint8_t output_index[(sizeof(size_t) * 8 + 6) / 7 + 32];
 	} buf;
+#pragma pack(pop)
 	uint8_t *end   = buf.output_index;
 	buf.derivation = derivation;
 	write_varint(end, output_index);
@@ -400,7 +404,7 @@ bool generate_ring_signature(const Hash &prefix_hash, const KeyImage &image, con
 }
 
 bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey *const pubs[],
-    size_t pubs_count, const Signature sigs[], bool check_key_image, bool *key_corrupted) {
+    size_t pubs_count, const Signature sigs[], bool key_image_subgroup_check, bool *key_corrupted) {
 	if (key_corrupted)
 		*key_corrupted = false;
 	ge_p3 image_unp;
@@ -412,7 +416,7 @@ bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const 
 		return false;
 	}
 	ge_dsm_precomp(image_pre, &image_unp);
-	if (check_key_image && ge_check_subgroup_precomp_vartime(image_pre) != 0) {
+	if (key_image_subgroup_check && ge_check_subgroup_precomp_vartime(image_pre) != 0) {
 		// Example of key_images that fail subgroup check
 		// c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa
 		// c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a

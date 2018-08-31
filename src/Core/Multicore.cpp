@@ -50,7 +50,7 @@ void RingCheckerMulticore::thread_run() {
 		    [&output_key_pointers](const PublicKey &key) { output_key_pointers.push_back(&key); });
 		bool key_corrupted = false;
 		bool result        = check_ring_signature(arg.tx_prefix_hash, arg.key_image, output_key_pointers.data(),
-		    output_key_pointers.size(), arg.signatures.data(), true, &key_corrupted);
+		    output_key_pointers.size(), arg.signatures.data(), arg.key_image_subgroup_check, &key_corrupted);
 		{
 			std::unique_lock<std::mutex> lock(mu);
 			if (local_work_counter == work_counter) {
@@ -71,7 +71,7 @@ void RingCheckerMulticore::cancel_work() {
 }
 
 std::string RingCheckerMulticore::start_work_get_error(IBlockChainState *state, const Currency &currency,
-    const Block &block, Height unlock_height, Timestamp unlock_timestamp) {
+    const Block &block, Height unlock_height, Timestamp unlock_timestamp, bool key_image_subgroup_check) {
 	{
 		std::unique_lock<std::mutex> lock(mu);
 		args.clear();
@@ -89,10 +89,11 @@ std::string RingCheckerMulticore::start_work_get_error(IBlockChainState *state, 
 			} else if (input.type() == typeid(KeyInput)) {
 				const KeyInput &in = boost::get<KeyInput>(input);
 				RingSignatureArg arg;
-				arg.tx_prefix_hash = tx_prefix_hash;
-				arg.key_image      = in.key_image;
-				arg.signatures     = transaction.signatures[input_index];
-				Height height      = 0;
+				arg.key_image_subgroup_check = key_image_subgroup_check;
+				arg.tx_prefix_hash           = tx_prefix_hash;
+				arg.key_image                = in.key_image;
+				arg.signatures               = transaction.signatures[input_index];
+				Height height                = 0;
 				if (state->read_keyimage(in.key_image, &height))
 					return "INPUT_KEYIMAGE_ALREADY_SPENT";
 				if (in.output_indexes.empty())
@@ -107,7 +108,8 @@ std::string RingCheckerMulticore::start_work_get_error(IBlockChainState *state, 
 					IBlockChainState::UnlockTimePublickKeyHeightSpent unp;
 					if (!state->read_amount_output(in.amount, global_indexes[i], &unp))
 						return "INPUT_INVALID_GLOBAL_INDEX";
-					if (!currency.is_transaction_spend_time_unlocked(unp.unlock_time, unlock_height, unlock_timestamp))
+					if (!currency.is_transaction_spend_time_unlocked(
+					        unp.unlock_block_or_timestamp, unlock_height, unlock_timestamp))
 						return "INPUT_SPEND_LOCKED_OUT";
 					arg.output_keys[i] = unp.public_key;
 				}
@@ -156,7 +158,7 @@ WalletPreparatorMulticore::~WalletPreparatorMulticore() {
 
 PreparedWalletTransaction::PreparedWalletTransaction(TransactionPrefix &&ttx, const SecretKey &view_secret_key)
     : tx(std::move(ttx)) {
-	PublicKey tx_public_key = get_transaction_public_key_from_extra(tx.extra);
+	PublicKey tx_public_key = extra_get_transaction_public_key(tx.extra);
 	if (!generate_key_derivation(tx_public_key, view_secret_key, derivation))
 		return;
 	KeyPair tx_keys;
@@ -167,7 +169,7 @@ PreparedWalletTransaction::PreparedWalletTransaction(TransactionPrefix &&ttx, co
 		if (output.target.type() == typeid(KeyOutput)) {
 			const KeyOutput &key_output = boost::get<KeyOutput>(output.target);
 			PublicKey spend_key;
-			underive_public_key(derivation, key_index, key_output.key,
+			underive_public_key(derivation, key_index, key_output.public_key,
 			    spend_key);  // error indicated by spend_key not in our wallet
 			spend_keys.push_back(spend_key);
 			++key_index;
@@ -192,7 +194,7 @@ void WalletPreparatorMulticore::thread_run() {
 		SecretKey view_secret_key;
 		Height height          = 0;
 		int local_work_counter = 0;
-		api::bytecoind::GetRawBlock::Response sync_block;
+		api::RawBlock sync_block;
 		std::vector<std::vector<uint32_t>> global_indices;
 		{
 			std::unique_lock<std::mutex> lock(mu);
@@ -210,7 +212,7 @@ void WalletPreparatorMulticore::thread_run() {
 			work.blocks.erase(work.blocks.begin());
 		}
 		PreparedWalletBlock result(std::move(sync_block.raw_header), std::move(sync_block.raw_transactions),
-		    sync_block.base_transaction_hash, view_secret_key);
+		    sync_block.transactions.at(0).hash, view_secret_key);
 		{
 			std::unique_lock<std::mutex> lock(mu);
 			if (local_work_counter == work_counter) {

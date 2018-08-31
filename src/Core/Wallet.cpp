@@ -4,8 +4,10 @@
 #include "CryptoNoteTools.hpp"
 #include "WalletSerializationV1.hpp"
 #include "WalletState.hpp"
+#include "common/Math.hpp"
 #include "common/MemoryStreams.hpp"
 #include "common/StringTools.hpp"
+#include "common/Varint.hpp"
 #include "crypto/crypto.hpp"
 #include "http/JsonRpc.hpp"
 #include "platform/Files.hpp"
@@ -16,41 +18,43 @@ using namespace bytecoin;
 
 static const uint8_t SERIALIZATION_VERSION_V2 = 6;
 
-static const size_t CHECK_KEYS_COUNT = 100;
+static const size_t CHECK_KEYS_COUNT = 128;  // >8 KB checked at start and end of file
 #pragma pack(push, 1)
 struct EncryptedWalletRecord {
 	crypto::chacha8_iv iv;
 	// Secret key, public key and creation timestamp
-	uint8_t data[sizeof(crypto::PublicKey) + sizeof(crypto::SecretKey) + sizeof(uint64_t)]{};
+	uint8_t data[sizeof(PublicKey) + sizeof(SecretKey) + sizeof(uint64_t)]{};
 };
 struct ContainerStoragePrefix {
 	// We moved uint8_t version out of this struct, because with it other fields become unaligned
 	crypto::chacha8_iv next_iv;
 	EncryptedWalletRecord encrypted_view_keys;
 };
-struct ContainerStorageWalletRecord {
-	crypto::PublicKey pk{};
-	crypto::SecretKey sk{};
-	uint64_t ct = 0;
-};
+// struct ContainerStorageWalletRecord {
+//	PublicKey pk{};
+//	SecretKey sk{};
+//	uint64_t ct = 0;
+//};
 #pragma pack(pop)
 
 static void decrypt_key_pair(
     const EncryptedWalletRecord &r, PublicKey &pk, SecretKey &sk, Timestamp &ct, const WalletKey &key) {
-	ContainerStorageWalletRecord rec;
-	chacha8(r.data, sizeof(r.data), key, r.iv, &rec);
-	pk = rec.pk;
-	sk = rec.sk;
-	ct = static_cast<Timestamp>(rec.ct);
+	//	ContainerStorageWalletRecord rec;
+	unsigned char rec_data[sizeof(r.data)]{};
+	chacha8(r.data, sizeof(r.data), key, r.iv, rec_data);
+	memcpy(pk.data, rec_data, sizeof(PublicKey));
+	memcpy(sk.data, rec_data + sizeof(PublicKey), sizeof(SecretKey));
+	ct = static_cast<Timestamp>(
+	    common::uint_le_from_bytes<uint64_t>(rec_data + sizeof(PublicKey) + sizeof(SecretKey), sizeof(uint64_t)));
 }
 
 static void encrypt_key_pair(EncryptedWalletRecord &r, PublicKey pk, SecretKey sk, Timestamp ct, const WalletKey &key) {
-	ContainerStorageWalletRecord rec;
-	rec.pk = pk;
-	rec.sk = sk;
-	rec.ct = ct;
-	r.iv   = crypto::rand<crypto::chacha8_iv>();
-	chacha8(&rec, sizeof(r.data), key, r.iv, r.data);
+	unsigned char rec_data[sizeof(r.data)]{};
+	memcpy(rec_data, pk.data, sizeof(PublicKey));
+	memcpy(rec_data + sizeof(PublicKey), sk.data, sizeof(SecretKey));
+	common::uint_le_to_bytes<uint64_t>(rec_data + sizeof(PublicKey) + sizeof(SecretKey), sizeof(uint64_t), ct);
+	r.iv = crypto::rand<crypto::chacha8_iv>();
+	chacha8(&rec_data, sizeof(r.data), key, r.iv, r.data);
 }
 
 size_t Wallet::wallet_file_size(size_t records) {
@@ -60,12 +64,13 @@ size_t Wallet::wallet_file_size(size_t records) {
 void Wallet::load_container_storage() {
 	uint8_t version = 0;
 	ContainerStoragePrefix prefix{};
-	uint64_t f_item_capacity = 0;
-	uint64_t f_item_count    = 0;
+	unsigned char count_capacity_data[2 * sizeof(uint64_t)]{};
 	file->read(&version, 1);
-	file->read(reinterpret_cast<char *>(&prefix), sizeof(prefix));
-	file->read(reinterpret_cast<char *>(&f_item_capacity), sizeof(f_item_capacity));
-	file->read(reinterpret_cast<char *>(&f_item_count), sizeof(f_item_count));
+	file->read(&prefix, sizeof(prefix));
+	file->read(count_capacity_data, 2 * sizeof(uint64_t));
+	uint64_t f_item_capacity = common::uint_le_from_bytes<uint64_t>(count_capacity_data, sizeof(uint64_t));
+	uint64_t f_item_count =
+	    common::uint_le_from_bytes<uint64_t>(count_capacity_data + sizeof(uint64_t), sizeof(uint64_t));
 
 	if (version < SERIALIZATION_VERSION_V2)
 		throw Exception(api::WALLET_FILE_DECRYPT_ERROR, "Wallet version too old");
@@ -77,10 +82,14 @@ void Wallet::load_container_storage() {
 		throw Exception(api::WALLET_FILE_DECRYPT_ERROR, "Restored view public key doesn't correspond to secret key");
 
 	const size_t item_count =
-	    boost::lexical_cast<size_t>(std::min(f_item_count, f_item_capacity));  // Protection against write shredding
+	    common::integer_cast<size_t>(std::min(f_item_count, f_item_capacity));  // Protection against write shredding
+	if (item_count > std::numeric_limits<size_t>::max() / sizeof(EncryptedWalletRecord))
+		throw Exception(
+		    api::WALLET_FILE_DECRYPT_ERROR, "Restored item count is too big " + common::to_string(item_count));
 	std::vector<EncryptedWalletRecord> all_encrypted(item_count);
 	file->read(reinterpret_cast<char *>(all_encrypted.data()), sizeof(EncryptedWalletRecord) * item_count);
 	bool tracking_mode = false;
+	m_wallet_records.reserve(item_count);
 	for (size_t i = 0; i != item_count; ++i) {
 		WalletRecord wallet_record;
 		decrypt_key_pair(all_encrypted[i], wallet_record.spend_public_key, wallet_record.spend_secret_key,
@@ -88,7 +97,6 @@ void Wallet::load_container_storage() {
 
 		if (i == 0) {
 			tracking_mode = wallet_record.spend_secret_key == SecretKey{};
-			first_record  = wallet_record;
 		} else if ((tracking_mode && wallet_record.spend_secret_key != SecretKey{}) ||
 		           (!tracking_mode && wallet_record.spend_secret_key == SecretKey{})) {
 			throw Exception(api::WALLET_FILE_DECRYPT_ERROR, "All addresses must be either tracking or not");
@@ -106,7 +114,8 @@ void Wallet::load_container_storage() {
 			}
 		}
 		m_oldest_timestamp = std::min(m_oldest_timestamp, wallet_record.creation_timestamp);
-		m_wallet_records.insert(std::make_pair(wallet_record.spend_public_key, wallet_record));
+		m_records_map.insert(std::make_pair(wallet_record.spend_public_key, m_wallet_records.size()));
+		m_wallet_records.push_back(wallet_record);
 	}
 	auto file_size           = file->seek(0, SEEK_END);
 	auto should_be_file_size = wallet_file_size(item_count);
@@ -121,16 +130,18 @@ void Wallet::load_container_storage() {
 }
 
 void Wallet::load_legacy_wallet_file() {
-	std::vector<WalletRecord> wallets_container;
+	//	m_wallet_records.clear();
+	//	std::vector<WalletRecord> wallets_container;
 
-	WalletSerializerV1 s(m_view_public_key, m_view_secret_key, wallets_container);
+	WalletSerializerV1 s(m_view_public_key, m_view_secret_key, m_wallet_records);
 
 	s.load(m_wallet_key, *file.get());
 
-	first_record = wallets_container.at(0);
-	for (auto &&w : wallets_container) {
-		m_oldest_timestamp = std::min(m_oldest_timestamp, w.creation_timestamp);
-		m_wallet_records.insert(std::make_pair(w.spend_public_key, w));
+	//	m_wallet_records.reserve()
+	//	m_first_record = wallets_container.at(0);
+	for (size_t i = 0; i != m_wallet_records.size(); ++i) {
+		m_oldest_timestamp = std::min(m_oldest_timestamp, m_wallet_records[i].creation_timestamp);
+		m_records_map.insert(std::make_pair(m_wallet_records[i].spend_public_key, i));
 	}
 }
 
@@ -152,9 +163,9 @@ Wallet::Wallet(logging::ILogger &log, const std::string &path, const std::string
 		if (import_keys.empty()) {
 			m_oldest_timestamp = platform::now_unix_timestamp();
 			crypto::random_keypair(m_view_public_key, m_view_secret_key);
-			first_record.creation_timestamp = m_oldest_timestamp;
-			crypto::random_keypair(first_record.spend_public_key, first_record.spend_secret_key);
-			m_wallet_records.insert(std::make_pair(first_record.spend_public_key, first_record));
+			m_wallet_records.push_back(WalletRecord{});
+			m_wallet_records.at(0).creation_timestamp = m_oldest_timestamp;
+			crypto::random_keypair(m_wallet_records.at(0).spend_public_key, m_wallet_records.at(0).spend_secret_key);
 		} else {
 			if (import_keys.size() != 256)
 				throw Exception(api::WALLET_FILE_DECRYPT_ERROR, "Imported keys should be exactly 128 hex bytes");
@@ -170,10 +181,10 @@ Wallet::Wallet(logging::ILogger &log, const std::string &path, const std::string
 			if (record.spend_secret_key != SecretKey{} && !keys_match(record.spend_secret_key, record.spend_public_key))
 				throw Exception(api::WALLET_FILE_DECRYPT_ERROR,
 				    "Imported secret spend key does not match corresponding public key");
-			m_wallet_records.insert(std::make_pair(record.spend_public_key, record));
-			first_record       = m_wallet_records.begin()->second;
+			m_wallet_records.push_back(record);
 			m_oldest_timestamp = 0;  // Alas, will scan entire blockchain
 		}
+		m_records_map.insert(std::make_pair(m_wallet_records.at(0).spend_public_key, 0));
 		save_and_check();
 	}
 	try {
@@ -190,9 +201,11 @@ Wallet::Wallet(logging::ILogger &log, const std::string &path, const std::string
 		try {
 			load_legacy_wallet_file();
 		} catch (const common::StreamError &ex) {
-			throw Exception(api::WALLET_FILE_READ_ERROR, std::string("Error reading wallet file ") + ex.what());
+			std::throw_with_nested(
+			    Exception(api::WALLET_FILE_READ_ERROR, std::string("Error reading wallet file ") + common::what(ex)));
 		} catch (const std::exception &ex) {
-			throw Exception(api::WALLET_FILE_DECRYPT_ERROR, std::string("Error decrypting wallet file ") + ex.what());
+			std::throw_with_nested(Exception(
+			    api::WALLET_FILE_DECRYPT_ERROR, std::string("Error decrypting wallet file ") + common::what(ex)));
 		}
 		file.reset();  // Indicates legacy format
 		try {
@@ -209,50 +222,57 @@ Wallet::Wallet(logging::ILogger &log, const std::string &path, const std::string
 	if (!is_view_only()) {
 		BinaryArray seed_data;
 		seed_data.assign(std::begin(m_view_secret_key.data), std::end(m_view_secret_key.data));
-		common::append(
-		    seed_data, std::begin(first_record.spend_secret_key.data), std::end(first_record.spend_secret_key.data));
+		common::append(seed_data, std::begin(m_wallet_records.at(0).spend_secret_key.data),
+		    std::end(m_wallet_records.at(0).spend_secret_key.data));
 		m_seed = crypto::cn_fast_hash(seed_data.data(), seed_data.size());
 
-		const unsigned char derivation_prefix[] = "tx_derivation";
-		seed_data.assign(derivation_prefix, derivation_prefix + sizeof(derivation_prefix) - 1);
-		common::append(seed_data, std::begin(m_seed.data), std::end(m_seed.data));
-		m_tx_derivation_seed = crypto::cn_fast_hash(seed_data.data(), seed_data.size());
+		//		const unsigned char derivation_prefix[] = "tx_derivation";
+		//		seed_data.assign(derivation_prefix, derivation_prefix + sizeof(derivation_prefix) - 1);
+		//		common::append(seed_data, std::begin(m_seed.data), std::end(m_seed.data));
+		//		m_tx_derivation_seed = crypto::cn_fast_hash(seed_data.data(), seed_data.size());
+		m_tx_derivation_seed = derive_from_seed("tx_derivation");
 
-		const unsigned char history_filename_prefix[] = "history_filename";
-		seed_data.assign(history_filename_prefix, history_filename_prefix + sizeof(history_filename_prefix) - 1);
-		common::append(seed_data, std::begin(m_seed.data), std::end(m_seed.data));
-		m_history_filename_seed = crypto::cn_fast_hash(seed_data.data(), seed_data.size());
+		m_coinbase_tx_derivation_seed = derive_from_seed("coinbase_tx_derivation");
 
-		const unsigned char history_prefix[] = "history";
-		seed_data.assign(history_prefix, history_prefix + sizeof(history_prefix) - 1);
-		common::append(seed_data, std::begin(m_seed.data), std::end(m_seed.data));
-		m_history_key = crypto::chacha8_key{crypto::cn_fast_hash(seed_data.data(), seed_data.size())};
+		//		const unsigned char history_filename_prefix[] = "history_filename";
+		//		seed_data.assign(history_filename_prefix, history_filename_prefix + sizeof(history_filename_prefix) -
+		// 1);
+		//		common::append(seed_data, std::begin(m_seed.data), std::end(m_seed.data));
+		//		m_history_filename_seed = crypto::cn_fast_hash(seed_data.data(), seed_data.size());
+		m_history_filename_seed = derive_from_seed("history_filename");
+
+		//		const unsigned char history_prefix[] = "history";
+		//		seed_data.assign(history_prefix, history_prefix + sizeof(history_prefix) - 1);
+		//		common::append(seed_data, std::begin(m_seed.data), std::end(m_seed.data));
+		//		m_history_key = crypto::chacha8_key{crypto::cn_fast_hash(seed_data.data(), seed_data.size())};
+		m_history_key = crypto::chacha8_key{derive_from_seed("history")};
 	}
 }
 
-void Wallet::save(const std::string &export_path, bool view_only) {
+Hash Wallet::derive_from_seed(const std::string &append) {
+	BinaryArray seed_data(append.data(), append.data() + append.size());
+	common::append(seed_data, std::begin(m_seed.data), std::end(m_seed.data));
+	return crypto::cn_fast_hash(seed_data.data(), seed_data.size());
+}
+
+void Wallet::save(const std::string &export_path, const WalletKey &wallet_key, bool view_only) {
 	platform::FileStream f(export_path, platform::FileStream::TRUNCATE_READ_WRITE);
 
 	uint8_t version = SERIALIZATION_VERSION_V2;
 	ContainerStoragePrefix prefix{};
-	encrypt_key_pair(
-	    prefix.encrypted_view_keys, m_view_public_key, m_view_secret_key, m_oldest_timestamp, m_wallet_key);
-	uint64_t item_count = m_wallet_records.size();
+	encrypt_key_pair(prefix.encrypted_view_keys, m_view_public_key, m_view_secret_key, m_oldest_timestamp, wallet_key);
+	unsigned char count_capacity_data[sizeof(uint64_t)]{};
+	common::uint_le_to_bytes<uint64_t>(count_capacity_data, sizeof(uint64_t), m_wallet_records.size());
 	f.write(&version, 1);
 	f.write(&prefix, sizeof(prefix));
-	f.write(&item_count, sizeof(item_count));  // we set capacity to item_count
-	f.write(&item_count, sizeof(item_count));
+
+	f.write(count_capacity_data, sizeof(uint64_t));  // we set capacity to item_count
+	f.write(count_capacity_data, sizeof(uint64_t));
 
 	EncryptedWalletRecord record;
-	encrypt_key_pair(record, first_record.spend_public_key, view_only ? SecretKey{} : first_record.spend_secret_key,
-	    first_record.creation_timestamp, m_wallet_key);
-	f.write(&record, sizeof(record));
-	for (auto &&r : m_wallet_records) {
-		if (r.second.spend_public_key == first_record.spend_public_key)
-			continue;
-		encrypt_key_pair(record, r.second.spend_public_key, view_only ? SecretKey{} : r.second.spend_secret_key,
-		    r.second.creation_timestamp, m_wallet_key);
-
+	for (const auto &rec : m_wallet_records) {
+		encrypt_key_pair(record, rec.spend_public_key, view_only ? SecretKey{} : rec.spend_secret_key,
+		    rec.creation_timestamp, wallet_key);
 		f.write(&record, sizeof(record));
 	}
 	f.fsync();
@@ -260,14 +280,11 @@ void Wallet::save(const std::string &export_path, bool view_only) {
 
 BinaryArray Wallet::export_keys() const {
 	BinaryArray result;
-	if (m_wallet_records.size() != 1)
-		throw Exception(
-		    api::WALLETD_EXPORTKEYS_MORETHANONE, "You can only export keys from a wallet containing 1 address");
-	common::append(
-	    result, std::begin(first_record.spend_public_key.data), std::end(first_record.spend_public_key.data));
+	common::append(result, std::begin(m_wallet_records.at(0).spend_public_key.data),
+	    std::end(m_wallet_records.at(0).spend_public_key.data));
 	common::append(result, std::begin(m_view_public_key.data), std::end(m_view_public_key.data));
-	common::append(
-	    result, std::begin(first_record.spend_secret_key.data), std::end(first_record.spend_secret_key.data));
+	common::append(result, std::begin(m_wallet_records.at(0).spend_secret_key.data),
+	    std::end(m_wallet_records.at(0).spend_secret_key.data));
 	common::append(result, std::begin(m_view_secret_key.data), std::end(m_view_secret_key.data));
 	return result;
 }
@@ -275,7 +292,7 @@ BinaryArray Wallet::export_keys() const {
 void Wallet::save_and_check() {
 	const std::string tmp_path = m_path + ".tmp";
 
-	save(tmp_path, false);
+	save(tmp_path, m_wallet_key, false);
 
 	Wallet other(m_log.get_logger(), tmp_path, m_password);
 	if (*this != other)
@@ -293,7 +310,7 @@ void Wallet::set_password(const std::string &password) {
 	save_and_check();
 }
 
-void Wallet::export_wallet(const std::string &export_path, bool view_only) {
+void Wallet::export_wallet(const std::string &export_path, const std::string &new_password, bool view_only) {
 	std::unique_ptr<platform::FileStream> export_file;
 	try {
 		export_file.reset(new platform::FileStream(export_path, platform::FileStream::READ_EXISTING));
@@ -303,18 +320,20 @@ void Wallet::export_wallet(const std::string &export_path, bool view_only) {
 	if (export_file.get())  // opened ok
 		throw Exception(api::WALLET_FILE_EXISTS,
 		    "Will not overwrite existing wallet - delete it first or specify another file " + export_path);
-	for (auto &&r : m_wallet_records) {
-		if (r.second.spend_secret_key != SecretKey{}) {
-			if (!keys_match(r.second.spend_secret_key, r.second.spend_public_key))
+	for (const auto &rec : m_wallet_records) {
+		if (rec.spend_secret_key != SecretKey{}) {
+			if (!keys_match(rec.spend_secret_key, rec.spend_public_key))
 				throw Exception(api::WALLET_FILE_DECRYPT_ERROR,
 				    "Spend public key doesn't correspond to secret key (corrupted wallet?)");
 		} else {
-			if (!key_isvalid(r.second.spend_public_key)) {
+			if (!key_isvalid(rec.spend_public_key)) {
 				throw Exception(api::WALLET_FILE_DECRYPT_ERROR, "Public spend key is incorrect (corrupted wallet?)");
 			}
 		}
 	}
-	save(export_path, view_only);
+	crypto::CryptoNightContext cn_ctx;
+	auto new_wallet_key = generate_chacha8_key(cn_ctx, new_password);
+	save(export_path, new_wallet_key, view_only);
 }
 
 bool Wallet::operator==(const Wallet &other) const {
@@ -323,7 +342,7 @@ bool Wallet::operator==(const Wallet &other) const {
 }
 
 AccountPublicAddress Wallet::get_first_address() const {
-	return AccountPublicAddress{first_record.spend_public_key, m_view_public_key};
+	return AccountPublicAddress{m_wallet_records.at(0).spend_public_key, m_view_public_key};
 }
 
 std::vector<WalletRecord> Wallet::generate_new_addresses(
@@ -344,7 +363,7 @@ std::vector<WalletRecord> Wallet::generate_new_addresses(
 			record.creation_timestamp = now;
 			do {
 				crypto::random_keypair(record.spend_public_key, record.spend_secret_key);
-			} while (m_wallet_records.count(record.spend_public_key) != 0);
+			} while (m_records_map.count(record.spend_public_key) != 0);
 			m_oldest_timestamp = std::min(m_oldest_timestamp, record.creation_timestamp);
 		} else {
 			record.creation_timestamp = ct;
@@ -352,31 +371,33 @@ std::vector<WalletRecord> Wallet::generate_new_addresses(
 			if (!secret_key_to_public_key(sk, record.spend_public_key))
 				throw Exception(101, "Imported keypair is invalid - sk=" + common::pod_to_hex(sk));
 		}
-		if (first_record.spend_public_key == record.spend_public_key &&
-		    first_record.creation_timestamp > record.creation_timestamp)
-			first_record.creation_timestamp = record.creation_timestamp;
-		auto rit                            = m_wallet_records.find(record.spend_public_key);
-		if (rit != m_wallet_records.end()) {
-			if (rit->second.creation_timestamp > record.creation_timestamp) {
-				rit->second.creation_timestamp = record.creation_timestamp;
-				m_oldest_timestamp             = std::min(m_oldest_timestamp, record.creation_timestamp);
-				*rescan_from_ct                = true;
+		auto rit = m_records_map.find(record.spend_public_key);
+		if (rit != m_records_map.end()) {
+			if (m_wallet_records.at(rit->second).creation_timestamp > record.creation_timestamp) {
+				m_wallet_records.at(rit->second).creation_timestamp = record.creation_timestamp;
+				m_oldest_timestamp = std::min(m_oldest_timestamp, record.creation_timestamp);
+				*rescan_from_ct    = true;
 			}
-			result.push_back(rit->second);
+			result.push_back(m_wallet_records.at(rit->second));
 			continue;
 		}
-		rit = m_wallet_records.insert(std::make_pair(record.spend_public_key, record)).first;
+		m_records_map.insert(std::make_pair(record.spend_public_key, m_wallet_records.size()));
+		m_wallet_records.push_back(record);
 		EncryptedWalletRecord enc_record;
-		encrypt_key_pair(enc_record, rit->second.spend_public_key, rit->second.spend_secret_key,
-		    rit->second.creation_timestamp, m_wallet_key);
+		encrypt_key_pair(
+		    enc_record, record.spend_public_key, record.spend_secret_key, record.creation_timestamp, m_wallet_key);
 		file->write(&enc_record, sizeof(enc_record));
-		result.push_back(rit->second);
+		result.push_back(record);
 	}
 	file->fsync();
 	file->seek(1 + sizeof(ContainerStoragePrefix), SEEK_SET);
-	uint64_t item_count = m_wallet_records.size();
-	file->write(&item_count, sizeof(item_count));
-	file->write(&item_count, sizeof(item_count));
+
+	unsigned char count_capacity_data[sizeof(uint64_t)]{};
+	common::uint_le_to_bytes<uint64_t>(count_capacity_data, sizeof(uint64_t), m_wallet_records.size());
+
+	file->write(count_capacity_data, sizeof(uint64_t));
+	file->write(count_capacity_data, sizeof(uint64_t));
+
 	file->fsync();
 	if (*rescan_from_ct) {  // We never write to the middle of the file
 		m_log(logging::WARNING) << "Updating creation timestamp of existing addresses to " << ct
@@ -387,14 +408,12 @@ std::vector<WalletRecord> Wallet::generate_new_addresses(
 }
 
 void Wallet::on_first_output_found(Timestamp ts) {
-	if (ts == 0 || m_oldest_timestamp >= ts)  // TODO - investigate why ts == 0 is possible
+	if (ts == 0 || m_oldest_timestamp != 0)  // TODO - investigate why ts == 0 is possible
 		return;
 	m_oldest_timestamp = ts;
-	if (first_record.creation_timestamp < ts)
-		first_record.creation_timestamp = ts;
 	for (auto &&rec : m_wallet_records)
-		if (rec.second.creation_timestamp < ts)
-			rec.second.creation_timestamp = ts;
+		if (rec.creation_timestamp == 0)
+			rec.creation_timestamp = ts;
 	m_log(logging::WARNING) << "Updating creation timestamp to " << ts
 	                        << " in a wallet file (might take minutes for large wallets)..." << std::endl;
 	save_and_check();
@@ -405,24 +424,20 @@ std::string Wallet::get_cache_name() const {
 	return common::pod_to_hex(h) + (is_view_only() ? "-view-only" : std::string());
 }
 
-bool Wallet::spend_keys_for_address(const AccountPublicAddress &addr, AccountKeys &keys) const {
-	auto sec = m_wallet_records.find(addr.spend_public_key);
-	if (m_view_public_key != addr.view_public_key || sec == m_wallet_records.end() ||
-	    sec->second.spend_public_key != addr.spend_public_key || sec->second.spend_secret_key == SecretKey{})
+bool Wallet::is_our_address(const AccountPublicAddress &addr) const {
+	auto rit = m_records_map.find(addr.spend_public_key);
+	if (m_view_public_key != addr.view_public_key || rit == m_records_map.end())
 		return false;
-	keys.address          = addr;
-	keys.spend_secret_key = sec->second.spend_secret_key;
-	keys.view_secret_key  = m_view_secret_key;
-	return true;
+	return m_wallet_records.at(rit->second).spend_public_key == addr.spend_public_key;
 }
 
-bool Wallet::get_only_record(
-    std::unordered_map<PublicKey, WalletRecord> &records, const AccountPublicAddress &addr) const {
-	auto rit = m_wallet_records.find(addr.spend_public_key);
-	if (rit == m_wallet_records.end() || rit->second.spend_public_key != addr.spend_public_key ||
-	    m_view_public_key != addr.view_public_key)
+bool Wallet::get_record(WalletRecord &record, const AccountPublicAddress &addr) const {
+	auto rit = m_records_map.find(addr.spend_public_key);
+	if (m_view_public_key != addr.view_public_key || rit == m_records_map.end())
 		return false;
-	records.insert(*rit);
+	if (m_wallet_records.at(rit->second).spend_public_key != addr.spend_public_key)
+		return false;  // TODO - invariant
+	record = m_wallet_records.at(rit->second);
 	return true;
 }
 

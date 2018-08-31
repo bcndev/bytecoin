@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include "common/Invariant.hpp"
+#include "common/exception.hpp"
 
 using namespace http;
 
@@ -159,13 +160,20 @@ void Agent::on_client_response() {
 			Request::R_handler r_handler = std::move(was_sent_request->r_handler);
 			Request::E_handler e_handler = std::move(was_sent_request->e_handler);
 			try {
-				r_handler(std::move(response));
+				try {
+					r_handler(std::move(response));
+				} catch (const std::exception &ex) {
+					std::cout << "    Parsing received submit leads to throw/catch what=" << common::what(ex)
+					          << std::endl;
+					e_handler(common::what(ex));
+				} catch (...) {
+					std::cout << "    Parsing received submit leads to throw/catch" << std::endl;
+					e_handler("catch ...");
+				}
 			} catch (const std::exception &ex) {
-				std::cout << "    Parsing received submit leads to throw/catch what=" << ex.what() << std::endl;
-				e_handler(ex.what());
+				std::cout << "    Error handler leads to throw/catch what=" << common::what(ex) << std::endl;
 			} catch (...) {
-				std::cout << "    Parsing received submit leads to throw/catch" << std::endl;
-				e_handler("catch ...");
+				std::cout << "    Error handler leads to throw/catch" << std::endl;
 			}
 		}
 	}

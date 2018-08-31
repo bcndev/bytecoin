@@ -32,11 +32,12 @@ Options:
   --exclusive-node-address=<ip:port>     Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.
   --export-blocks=<folder-path>          Perform hot export of blockchain into specified folder as blocks.bin and blockindexes.bin, then exit. This overwrites existing files.
   --backup-blockchain=<folder-path>      Perform hot backup of blockchain into specified backup data folder, then exit.
-  --net=<main|test>                      Configure for mainnet or testnet [default: main].
+  --net=<main|stage|test>                Configure for mainnet or testnet [default: main].
   --archive                              Work as an archive node [default: off].
   --data-folder=<folder-path>            Folder for blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
     R"(bytecoin].
-  --bytecoind-authorization=<usr:pass>   HTTP basic authentication credentials for RPC API.)"
+  --bytecoind-authorization=<usr:pass>   HTTP basic authentication credentials for RPC API.
+  --bytecoind-authorization-private=<usr:pass>   HTTP basic authentication credentials for get_statistics and get_archive methods.)"
 #if platform_USE_SSL
     R"(
   --ssl-certificate-pem-file=<file-path> Full path to file containing both server SSL certificate and private key in PEM format.
@@ -57,8 +58,8 @@ int main(int argc, const char *argv[]) try {
 	std::string backup_blockchain;
 	if (const char *pa = cmd.get("--backup-blockchain"))
 		backup_blockchain = pa;
-	bytecoin::Config config(cmd);
-	bytecoin::Currency currency(config.is_testnet);
+	Config config(cmd);
+	Currency currency(config.net);
 
 	Height print_structure = Height(-1);
 	if (const char *pa = cmd.get("--print-structure"))
@@ -116,7 +117,7 @@ int main(int argc, const char *argv[]) try {
 	platform::ExclusiveLock coin_lock(coin_folder, "bytecoind.lock");
 
 	logging::LoggerManager log_manager;
-	log_manager.configure_default(config.get_data_folder("logs"), "bytecoind-");
+	log_manager.configure_default(config.get_data_folder("logs"), "bytecoind-", bytecoin::app_version());
 
 	BlockChainState block_chain(log_manager, config, currency, false);
 	//	block_chain.test_undo_everything(0);
@@ -126,7 +127,11 @@ int main(int argc, const char *argv[]) try {
 		LegacyBlockChainReader::import_blockchain2(coin_folder, &block_chain, 300000);
 		return 0;
 	}
-	// block_chain.test_undo_everything(0);
+	//	block_chain.test_undo_everything(0);
+	//	block_chain.test_print_tips();
+	//	while(block_chain.test_prune_oldest()){
+	//		block_chain.test_print_tips();
+	//	}
 
 	boost::asio::io_service io;
 	platform::EventLoop run_loop(io);
@@ -144,9 +149,12 @@ int main(int argc, const char *argv[]) try {
 	}
 	return 0;
 } catch (const platform::ExclusiveLock::FailedToLock &ex) {
-	std::cout << "Bytecoind already running - " << ex.what() << std::endl;
+	std::cout << "Bytecoind already running - " << common::what(ex) << std::endl;
 	return api::BYTECOIND_ALREADY_RUNNING;
+} catch (const platform::TCPAcceptor::AddressInUse &ex) {
+	std::cout << common::what(ex) << std::endl;
+	return api::BYTECOIND_BIND_PORT_IN_USE;
 } catch (const std::exception &ex) {  // On Windows what() is not printed if thrown from main
-	std::cout << "Exception in main() - " << ex.what() << std::endl;
+	std::cout << "Uncaught Exception in main() - " << common::what(ex) << std::endl;
 	throw;
 }

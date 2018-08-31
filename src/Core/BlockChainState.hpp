@@ -17,7 +17,7 @@ class Config;
 class IBlockChainState {
 public:
 	struct UnlockTimePublickKeyHeightSpent {
-		UnlockMoment unlock_time = 0;
+		BlockOrTimestamp unlock_block_or_timestamp = 0;
 		PublicKey public_key;
 		Height height = 0;
 		bool spent    = false;
@@ -27,8 +27,8 @@ public:
 	virtual void delete_keyimage(const KeyImage &) = 0;
 	virtual bool read_keyimage(const KeyImage &, Height *) const = 0;
 
-	virtual uint32_t push_amount_output(Amount, UnlockMoment, Height, const PublicKey &) = 0;
-	virtual void pop_amount_output(Amount, UnlockMoment, const PublicKey &) = 0;
+	virtual uint32_t push_amount_output(Amount, BlockOrTimestamp, Height, const PublicKey &) = 0;
+	virtual void pop_amount_output(Amount, BlockOrTimestamp, const PublicKey &) = 0;
 	virtual uint32_t next_global_index_for_amount(Amount) const = 0;
 	virtual bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightSpent *) const = 0;
 	virtual void spend_output(Amount, uint32_t global_index) = 0;
@@ -38,10 +38,9 @@ class BlockChainState : public BlockChain, private IBlockChainState {
 public:
 	BlockChainState(logging::ILogger &, const Config &, const Currency &, bool read_only);
 
-	const Currency &get_currency() const { return m_currency; }
 	uint32_t get_next_effective_median_size() const;
 
-	std::vector<api::Output> get_random_outputs(Amount, size_t outs_count, Height, Timestamp) const;
+	std::vector<api::Output> get_random_outputs(Amount, size_t output_count, Height, Timestamp) const;
 	typedef std::vector<std::vector<uint32_t>> BlockGlobalIndices;
 	bool read_block_output_global_indices(const Hash &bid, BlockGlobalIndices *) const;
 
@@ -64,14 +63,16 @@ public:
 	const PoolTransMap &get_memory_state_transactions() const { return m_memory_state_tx; }
 
 	bool create_mining_block_template(
-	    BlockTemplate *, const AccountPublicAddress &, const BinaryArray &extra_nonce, Difficulty *, Height *) const;
-	bool create_mining_block_template2(
-	    BlockTemplate *, const AccountPublicAddress &, const BinaryArray &extra_nonce, Difficulty *, Hash) const;
+			const AccountPublicAddress &, const BinaryArray &extra_nonce, BlockTemplate *, Difficulty *, Height *) const;
+	bool create_mining_block_template(
+	    const AccountPublicAddress &, const BinaryArray &extra_nonce, BlockTemplate *, Difficulty *, Height *, Hash) const;
 	BroadcastAction add_mined_block(const BinaryArray &raw_block_template, RawBlock *, api::BlockHeader *);
 
 	static api::BlockHeader fill_genesis(Hash genesis_bid, const BlockTemplate &);
 
 	void test_print_outputs();
+
+	void fill_statistics(api::bytecoind::GetStatistics::Response &res) const override;
 
 protected:
 	virtual std::string check_standalone_consensus(const PreparedBlock &pb, api::BlockHeader *info,
@@ -100,8 +101,8 @@ private:
 		void delete_keyimage(const KeyImage &) override;
 		bool read_keyimage(const KeyImage &, Height *) const override;
 
-		uint32_t push_amount_output(Amount, UnlockMoment, Height, const PublicKey &) override;
-		void pop_amount_output(Amount, UnlockMoment, const PublicKey &) override;
+		uint32_t push_amount_output(Amount, BlockOrTimestamp, Height, const PublicKey &) override;
+		void pop_amount_output(Amount, BlockOrTimestamp, const PublicKey &) override;
 		uint32_t next_global_index_for_amount(Amount) const override;
 		bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightSpent *) const override;
 		void spend_output(Amount, uint32_t global_index) override;
@@ -111,8 +112,8 @@ private:
 	void delete_keyimage(const KeyImage &) override;
 	bool read_keyimage(const KeyImage &, Height *) const override;
 
-	uint32_t push_amount_output(Amount, UnlockMoment, Height, const PublicKey &) override;
-	void pop_amount_output(Amount, UnlockMoment, const PublicKey &) override;
+	uint32_t push_amount_output(Amount, BlockOrTimestamp, Height, const PublicKey &) override;
+	void pop_amount_output(Amount, BlockOrTimestamp, const PublicKey &) override;
 	uint32_t next_global_index_for_amount(Amount) const override;
 	bool read_amount_output(Amount, uint32_t global_index, UnlockTimePublickKeyHeightSpent *) const override;
 	void spend_output(Amount, uint32_t global_index) override;

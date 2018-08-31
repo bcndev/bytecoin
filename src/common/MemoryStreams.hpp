@@ -68,6 +68,7 @@ public:
 
 	std::string &buffer() { return m_buffer; }
 	const std::string &buffer() const { return m_buffer; }
+	std::string move_buffer() { return std::move(m_buffer); }
 
 	void clear() {
 		in_position = 0;

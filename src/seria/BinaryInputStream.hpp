@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include <typeinfo>
 #include "ISeria.hpp"
 #include "common/MemoryStreams.hpp"
+#include "common/exception.hpp"
 
 namespace seria {
 
@@ -17,7 +17,7 @@ public:
 	virtual bool is_input() const override { return true; }
 
 	virtual void begin_object() override {}
-	virtual void object_key(common::StringView, bool optional = false) override {}
+	virtual bool object_key(common::StringView, bool optional = false) override { return true; }
 	virtual void end_object() override {}
 
 	virtual void begin_map(size_t &size) override;
@@ -44,22 +44,28 @@ private:
 	common::IInputStream &stream;
 };
 
-template<typename T>
-void from_binary(T &obj, const common::BinaryArray &blob) {
+template<typename T, typename... Context>
+void from_binary(T &obj, common::MemoryInputStream &stream, Context... context) {
 	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
-	common::MemoryInputStream stream(blob.data(), blob.size());
 	BinaryInputStream ba(stream);
-	ba(obj);
+	try {
+		ser(obj, ba, context...);
+	} catch (const std::exception &) {
+		std::throw_with_nested(std::runtime_error(
+		    "Error while serializing binary object of type '" + common::demangle(typeid(T).name()) + "'"));
+	}
 	if (!stream.empty())
-		throw std::runtime_error("Excess data in from_binary " + std::string(typeid(T).name()));
+		throw std::runtime_error(
+		    "Excess data after serializing binary object of type '" + common::demangle(typeid(T).name()) + "'");
 }
-template<typename T>
-void from_binary(T &obj, const std::string &blob) {
-	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
+template<typename T, typename... Context>
+void from_binary(T &obj, const common::BinaryArray &blob, Context... context) {
 	common::MemoryInputStream stream(blob.data(), blob.size());
-	BinaryInputStream ba(stream);
-	ba(obj);
-	if (!stream.empty())
-		throw std::runtime_error("Excess data in from_binary " + std::string(typeid(T).name()));
+	from_binary(obj, stream, context...);
+}
+template<typename T, typename... Context>
+void from_binary(T &obj, const std::string &blob, Context... context) {
+	common::MemoryInputStream stream(blob.data(), blob.size());
+	from_binary(obj, stream, context...);
 }
 }

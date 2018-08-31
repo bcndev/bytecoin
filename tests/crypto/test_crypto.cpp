@@ -9,10 +9,16 @@
 #include "test_crypto.hpp"
 
 #include "../io.hpp"
-#include "crypto/crypto-ops.h"
+#include "crypto/bernstein/crypto-ops.h"
 #include "crypto/crypto.hpp"
 #include "crypto/hash.hpp"
 #include "crypto/random.h"
+
+CRYPTO_MAKE_HASHABLE(crypto, EllipticCurveScalar)
+CRYPTO_MAKE_COMPARABLE(crypto, EllipticCurveScalar, crypto::sodium_compare)
+
+CRYPTO_MAKE_HASHABLE(crypto, EllipticCurvePoint)
+CRYPTO_MAKE_COMPARABLE(crypto, EllipticCurvePoint, std::memcmp)
 
 static void check(bool expr, size_t test) {
 	if (expr)

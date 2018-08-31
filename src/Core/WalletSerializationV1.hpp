@@ -5,15 +5,15 @@
 
 #include "Core/Wallet.hpp"  // for WalletRecord
 #include "common/Streams.hpp"
-#include "crypto/chacha8.h"
+#include "crypto/chacha8.hpp"
 #include "seria/ISeria.hpp"
 
 namespace bytecoin {
 
 class WalletSerializerV1 {
 public:
-	WalletSerializerV1(crypto::PublicKey &view_public_key, crypto::SecretKey &view_secret_key,
-	    std::vector<WalletRecord> &wallets_container);
+	WalletSerializerV1(
+	    PublicKey &view_public_key, SecretKey &view_secret_key, std::vector<WalletRecord> &wallets_container);
 
 	void load(const crypto::chacha8_key &key, common::IInputStream &source);
 
@@ -41,8 +41,8 @@ private:
 
 	void load_wallet_v1_keys(seria::ISeria &s);
 
-	crypto::PublicKey &m_view_public_key;
-	crypto::SecretKey &m_view_secret_key;
+	PublicKey &m_view_public_key;
+	SecretKey &m_view_secret_key;
 
 	std::vector<WalletRecord> &m_wallets_container;
 };

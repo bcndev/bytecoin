@@ -3,37 +3,45 @@
 
 #pragma once
 
-#include <typeinfo>
 #include "ISeria.hpp"
-#include "JsonInputValue.hpp"
+#include "JsonInputStream.hpp"
 #include "common/MemoryStreams.hpp"
+#include "common/exception.hpp"
 
 namespace seria {
 
-class KVBinaryInputStream : public JsonInputValue {
+class KVBinaryInputStream : public JsonInputStreamValue {
+	common::JsonValue value_storage;
+
 public:
 	KVBinaryInputStream(common::IInputStream &strm);
-	using JsonInputValue::seria_v;
+	using JsonInputStreamValue::seria_v;
 	virtual void seria_v(common::BinaryArray &value) override;
 	virtual void binary(void *value, size_t size) override;
 };
 
 template<typename T>
-void from_binary_key_value(T &v, const common::BinaryArray &buf) {
+void from_binary_kv(T &v, common::MemoryInputStream &stream) {
 	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
-	common::MemoryInputStream stream(buf.data(), buf.size());
 	KVBinaryInputStream s(stream);
-	s(v);
+	try {
+		ser(v, s);
+	} catch (const std::exception &) {
+		std::throw_with_nested(std::runtime_error(
+		    "Error while serializing KV binary object of type '" + common::demangle(typeid(T).name()) + "'"));
+	}
 	if (!stream.empty())
-		throw std::runtime_error("Excess data in from_binary_key_value " + std::string(typeid(T).name()));
+		throw std::runtime_error(
+		    "Excess data after serializing KV binary object of type '" + common::demangle(typeid(T).name()) + "'");
 }
 template<typename T>
-void from_binary_key_value(T &v, const std::string &buf) {
-	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
+void from_binary_kv(T &v, const common::BinaryArray &buf) {
 	common::MemoryInputStream stream(buf.data(), buf.size());
-	KVBinaryInputStream s(stream);
-	s(v);
-	if (!stream.empty())
-		throw std::runtime_error("Excess data in from_binary_key_value " + std::string(typeid(T).name()));
+	from_binary_kv(v, stream);
+}
+template<typename T>
+void from_binary_kv(T &v, const std::string &buf) {
+	common::MemoryInputStream stream(buf.data(), buf.size());
+	from_binary_kv(v, stream);
 }
 }

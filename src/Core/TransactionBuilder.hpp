@@ -7,7 +7,7 @@
 #include "CryptoNote.hpp"
 #include "TransactionExtra.hpp"
 #include "Wallet.hpp"
-#include "crypto/chacha8.h"
+#include "crypto/chacha8.hpp"
 #include "rpc_api.hpp"
 
 namespace bytecoin {
@@ -31,15 +31,15 @@ class TransactionBuilder {
 		static bool less_amount(const OutputDesc &a, const OutputDesc &b) { return a.amount < b.amount; }
 	};
 	std::vector<OutputDesc> m_output_descs;
-	TransactionExtra m_extra;
+//	TransactionExtra m_extra;
 	Amount m_outputs_amount = 0;
 	Amount m_inputs_amount  = 0;
 
 public:
-	explicit TransactionBuilder(const Currency &, UnlockMoment);
+	explicit TransactionBuilder(const Currency &, BlockOrTimestamp);
 
 	void set_payment_id(const Hash &);
-	void set_extra_nonce(const BinaryArray &);
+//	void set_extra_nonce(const BinaryArray &);
 
 	// before calling, make sure mix_outputs do not contain real_output...
 	size_t add_input(
@@ -53,10 +53,10 @@ public:
 
 	BinaryArray generate_history(const crypto::chacha8_key &history_key) const;
 
-	static crypto::KeyPair deterministic_keys_from_seed(const Hash &tx_inputs_hash, const Hash &tx_derivation_seed);
-	static crypto::KeyPair deterministic_keys_from_seed(const TransactionPrefix &tx, const Hash &tx_derivation_seed);
-	static bool generate_key_image_helper(const AccountKeys &ack, const crypto::PublicKey &tx_public_key,
-	    size_t real_output_index, KeyPair &in_ephemeral, crypto::KeyImage &ki);
+	static KeyPair deterministic_keys_from_seed(const Hash &tx_inputs_hash, const Hash &tx_derivation_seed);
+	static KeyPair deterministic_keys_from_seed(const TransactionPrefix &tx, const Hash &tx_derivation_seed);
+	static bool generate_key_image_helper(const AccountKeys &ack, const PublicKey &tx_public_key,
+	    size_t real_output_index, KeyPair &in_ephemeral, KeyImage &ki);
 	static bool derive_public_key(
 	    const AccountPublicAddress &to, const SecretKey &tx_key, size_t output_index, PublicKey &ephemeral_key);
 	static std::vector<uint32_t> absolute_output_offsets_to_relative(const std::vector<uint32_t> &off);
@@ -86,7 +86,7 @@ class UnspentSelector {
 public:
 	explicit UnspentSelector(logging::ILogger &logger, const Currency &currency, Unspents &&unspents);
 	void reset(Unspents &&unspents);
-	void add_mixed_inputs(const SecretKey &view_secret_key,
+	void add_mixed_inputs(const SecretKey &view_secret_key, const Wallet *wallet,
 	    const std::unordered_map<PublicKey, WalletRecord> &wallet_records, TransactionBuilder *builder,
 	    uint32_t anonymity, api::bytecoind::GetRandomOutputs::Response &&ra_response);
 

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <boost/optional.hpp>
 #include <cstdint>
 #include <list>
 #include <map>
@@ -15,13 +16,14 @@
 #include "common/BinaryArray.hpp"
 #include "common/Int128.hpp"
 #include "common/StringView.hpp"
+#include "common/exception.hpp"
 #include "common/string.hpp"
 
 namespace seria {
 class ISeria;
 
-template<typename T>
-void ser(T &value, ISeria &s);
+// template<typename T>
+// void ser(T &value, ISeria &s);
 
 class ISeria {
 public:
@@ -30,7 +32,8 @@ public:
 	virtual bool is_input() const = 0;
 
 	virtual void begin_object() = 0;
-	virtual void object_key(common::StringView name, bool optional = false) = 0;  // throw if key not found
+	virtual bool object_key(common::StringView name, bool optional = false) = 0;
+	// return true if key is there
 	virtual void end_object() = 0;
 
 	virtual void begin_map(size_t &size)         = 0;
@@ -55,11 +58,6 @@ public:
 
 	// read/write binary block
 	virtual void binary(void *value, size_t size) = 0;  // fixed width, no size written
-
-	template<typename T>
-	void operator()(T &value) {
-		ser(value, *this);
-	}
 };
 
 inline void ser(uint8_t &value, ISeria &s) { return s.seria_v(value); }
@@ -104,9 +102,42 @@ inline void ser(std::string &value, ISeria &s) { return s.seria_v(value); }
 inline void ser(common::BinaryArray &value, ISeria &s) { return s.seria_v(value); }
 
 template<typename T>
-void seria_kv(common::StringView name, T &value, ISeria &s, bool optional = false) {
-	s.object_key(name, optional);
-	s(value);
+void seria_kv(common::StringView name, T &value, ISeria &s) {
+	try {
+		s.object_key(name);
+		ser(value, s);
+	} catch (const std::exception &) {
+		std::throw_with_nested(
+		    std::runtime_error("Error while serializing object value for key '" + std::string(name) + "'"));
+	}
+}
+template<typename T>
+void seria_kv(common::StringView name, boost::optional<T> &value, ISeria &s) {
+	try {
+		if (s.is_input()) {
+			if (s.object_key(name, true)) {
+				value = T{};
+				ser(value.get(), s);
+			}
+		} else {
+			s.object_key(name, !value);
+			T temp{};
+			ser(value ? value.get() : temp, s);
+		}
+	} catch (const std::exception &) {
+		std::throw_with_nested(
+		    std::runtime_error("Error while serializing object value for key '" + std::string(name) + "'"));
+	}
+}
+template<typename T>
+void seria_kv_optional(common::StringView name, T &value, ISeria &s) {
+	try {
+		s.object_key(name, true);
+		ser(value, s);
+	} catch (const std::exception &) {
+		std::throw_with_nested(
+		    std::runtime_error("Error while serializing object value for key '" + std::string(name) + "'"));
+	}
 }
 
 template<typename T>
@@ -114,10 +145,10 @@ void ser_members(T &value, ISeria &s);  //{
 //        static_assert(false); // Good idea, but clang complains
 //    }
 
-template<typename T>
-void ser(T &value, ISeria &s) {
+template<typename T, typename... Context>
+void ser(T &value, ISeria &s, Context... context) {
 	s.begin_object();
-	ser_members(value, s);
+	ser_members(value, s, context...);
 	s.end_object();
 }
 template<typename Cont>
@@ -126,8 +157,15 @@ void seria_container(Cont &value, ISeria &s) {
 	s.begin_array(size);
 	if (s.is_input())
 		value.resize(size);
+	size_t counter = 0;
 	for (auto &item : value) {
-		s(const_cast<typename Cont::value_type &>(item));
+		try {
+			ser(const_cast<typename Cont::value_type &>(item), s);
+		} catch (const std::exception &) {
+			std::throw_with_nested(
+			    std::runtime_error("Error while serializing array element #" + common::to_string(counter)));
+		}
+		counter += 1;
 	}
 	s.end_array();
 }
@@ -149,15 +187,30 @@ void seria_map_string(MapT &value, ISeria &s) {
 	if (s.is_input()) {
 		for (size_t i = 0; i != size; ++i) {
 			std::string k;
-			typename MapT::mapped_type v;
-			s.next_map_key(k);
-			s(v);
-			value.insert(std::make_pair(std::move(k), std::move(v)));
+			try {
+				s.next_map_key(k);
+			} catch (const std::exception &) {
+				std::throw_with_nested(std::runtime_error("Error while serializing map key #" + common::to_string(i)));
+			}
+			try {
+				typename MapT::mapped_type v;
+				ser(v, s);
+				value.insert(std::make_pair(std::move(k), std::move(v)));
+			} catch (const std::exception &) {
+				std::throw_with_nested(std::runtime_error("Error while serializing map value for key '" + k + "'"));
+			}
 		}
 	} else {
+		size_t counter = 0;
 		for (auto &kv : value) {
-			s.next_map_key(const_cast<std::string &>(kv.first));
-			s(const_cast<typename MapT::mapped_type &>(kv.second));
+			try {
+				s.next_map_key(const_cast<std::string &>(kv.first));
+				ser(const_cast<typename MapT::mapped_type &>(kv.second), s);
+			} catch (const std::exception &) {
+				std::throw_with_nested(
+				    std::runtime_error("Error while serializing map value for key '" + kv.first + "'"));
+			}
+			counter += 1;
 		}
 	}
 	s.end_map();
@@ -170,18 +223,34 @@ void seria_map_integral(MapT &value, ISeria &s, std::true_type) {
 	if (s.is_input()) {
 		for (size_t i = 0; i != size; ++i) {
 			std::string key;
-			s.next_map_key(key);
-			typename MapT::key_type k = static_cast<typename MapT::key_type>(common::stoll(key));
+			typename MapT::key_type k;
+			try {
+				s.next_map_key(key);
+				k = static_cast<typename MapT::key_type>(common::stoll(key));
+			} catch (const std::exception &) {
+				std::throw_with_nested(std::runtime_error("Error while serializing map key #" + common::to_string(i)));
+			}
 			// We use widest possible conversion because no generic function provided in C++
-			typename MapT::mapped_type v;
-			s(v);
-			value.insert(std::make_pair(k, std::move(v)));
+			try {
+				typename MapT::mapped_type v;
+				ser(v, s);
+				value.insert(std::make_pair(k, std::move(v)));
+			} catch (const std::exception &) {
+				std::throw_with_nested(std::runtime_error("Error while serializing map value for key '" + key + "'"));
+			}
 		}
 	} else {
+		size_t counter = 0;
 		for (auto &kv : value) {
 			auto str_key = common::to_string(kv.first);
-			s.next_map_key(const_cast<std::string &>(str_key));
-			s(const_cast<typename MapT::mapped_type &>(kv.second));
+			try {
+				s.next_map_key(const_cast<std::string &>(str_key));
+				ser(const_cast<typename MapT::mapped_type &>(kv.second), s);
+			} catch (const std::exception &) {
+				std::throw_with_nested(
+				    std::runtime_error("Error while serializing map value for key '" + str_key + "'"));
+			}
+			counter += 1;
 		}
 	}
 	s.end_map();
@@ -195,12 +264,24 @@ void seria_set(SetT &value, ISeria &s) {
 	if (s.is_input()) {
 		for (size_t i = 0; i < size; ++i) {
 			typename SetT::value_type key;
-			s(key);
-			value.insert(std::move(key));
+			try {
+				ser(key, s);
+				value.insert(std::move(key));
+			} catch (const std::exception &) {
+				std::throw_with_nested(
+				    std::runtime_error("Error while serializing set element #" + common::to_string(i)));
+			}
 		}
 	} else {
+		size_t counter = 0;
 		for (auto &key : value) {
-			s(const_cast<typename SetT::value_type &>(key));
+			try {
+				ser(const_cast<typename SetT::value_type &>(key), s);
+			} catch (const std::exception &) {
+				std::throw_with_nested(
+				    std::runtime_error("Error while serializing set element #" + common::to_string(counter)));
+			}
+			counter += 1;
 		}
 	}
 	s.end_array();
@@ -245,9 +326,7 @@ void ser(std::array<uint8_t, size> &value, ISeria &s) {
 }
 template<typename T1, typename T2>
 void ser_members(std::pair<T1, T2> &value, ISeria &s) {
-	s.object_key("first");
-	s(value.first);
-	s.object_key("second");
-	s(value.second);
+	seria_kv("first", value.first, s);
+	seria_kv("second", value.second, s);
 }
 }

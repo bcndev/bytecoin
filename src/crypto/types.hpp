@@ -7,36 +7,37 @@
 #include <iosfwd>
 #include <string>
 #include <vector>
-#include "c_types.h"
+#include "bernstein/c_types.h"
 #include "crypto-util.h"
+#include "hash.h"
 
 namespace crypto {
 
 #pragma pack(push, 1)
-struct Hash {
-	uint8_t data[32]{};
+struct Hash : public CHash {
+	constexpr Hash() : CHash{} {}
 };
 
 struct PublicKey : public EllipticCurvePoint {
-	PublicKey() : EllipticCurvePoint{} {}
+	constexpr PublicKey() : EllipticCurvePoint{} {}
 };
 
 struct SecretKey : public EllipticCurveScalar {
-	SecretKey() : EllipticCurveScalar{} {}
+	constexpr SecretKey() : EllipticCurveScalar{} {}
 	~SecretKey() { sodium_memzero(data, sizeof(data)); }
 };
 
 struct KeyDerivation : public EllipticCurvePoint {
-	KeyDerivation() : EllipticCurvePoint{} {}
+	constexpr KeyDerivation() : EllipticCurvePoint{} {}
 };
 
 struct KeyImage : public EllipticCurvePoint {
-	KeyImage() : EllipticCurvePoint{} {}
+	constexpr KeyImage() : EllipticCurvePoint{} {}
 };
 
 struct Signature {
 	EllipticCurveScalar c, r;
-	Signature() : c{}, r{} {}
+	constexpr Signature() : c{}, r{} {}
 };
 #pragma pack(pop)
 
@@ -63,10 +64,13 @@ CRYPTO_MAKE_COMPARABLE(crypto, Hash, std::memcmp)
 CRYPTO_MAKE_HASHABLE(crypto, PublicKey)
 CRYPTO_MAKE_COMPARABLE(crypto, PublicKey, std::memcmp)
 
-CRYPTO_MAKE_HASHABLE(crypto, KeyImage)
-CRYPTO_MAKE_COMPARABLE(crypto, KeyImage, std::memcmp)
-
 CRYPTO_MAKE_HASHABLE(crypto, SecretKey)
 CRYPTO_MAKE_COMPARABLE(crypto, SecretKey, crypto::sodium_compare)
+
+CRYPTO_MAKE_HASHABLE(crypto, KeyDerivation)
+CRYPTO_MAKE_COMPARABLE(crypto, KeyDerivation, std::memcmp)
+
+CRYPTO_MAKE_HASHABLE(crypto, KeyImage)
+CRYPTO_MAKE_COMPARABLE(crypto, KeyImage, std::memcmp)
 
 CRYPTO_MAKE_COMPARABLE(crypto, Signature, std::memcmp)

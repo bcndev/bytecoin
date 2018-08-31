@@ -19,21 +19,22 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "hash-impl.h"
+#include "hash.h"
 #include "initializer.h"
 #include "random.h"
 
+static inline void *padd(void *p, size_t i) { return (char *)p + i; }
+
 #if defined(_WIN32)
-	#include <windows.h>
-	#include <wincrypt.h>
+#include <windows.h>
+#include <wincrypt.h>
 
 static void generate_system_random_bytes(size_t n, void *result) {
 	HCRYPTPROV prov = 0;
-	if(!CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT | CRYPT_SILENT) ||
-	   !CryptGenRandom(prov, (DWORD)n, result) ||
-	   !CryptReleaseContext(prov, 0)){
+	if (!CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT | CRYPT_SILENT) ||
+	    !CryptGenRandom(prov, (DWORD)n, result) || !CryptReleaseContext(prov, 0)) {
 		assert(0);
-//		std::terminate(); // TODO - exit with message on Windows
+		//		std::terminate(); // TODO - exit with message on Windows
 	}
 }
 
@@ -52,7 +53,7 @@ static void generate_system_random_bytes(size_t n, void *result) {
 	}
 	for (;;) {
 		ssize_t res = read(fd, result, n);
-		if ((size_t) res == n) {
+		if ((size_t)res == n) {
 			break;
 		}
 		if (res < 0) {
@@ -62,8 +63,8 @@ static void generate_system_random_bytes(size_t n, void *result) {
 		} else if (res == 0) {
 			err(EXIT_FAILURE, "read /dev/urandom: end of file");
 		} else {
-			result = padd(result, (size_t) res);
-			n -= (size_t) res;
+			result = padd(result, (size_t)res);
+			n -= (size_t)res;
 		}
 	}
 	if (close(fd) < 0) {
@@ -73,19 +74,19 @@ static void generate_system_random_bytes(size_t n, void *result) {
 
 #endif
 
-static union hash_state state;
-static bool initialized = false;
+static struct keccak_state state;
+static int initialized = 0;
 
-void initialize_random(void){
+void initialize_random(void) {
 	generate_system_random_bytes(32, &state);
-	initialized = true;
+	initialized = 1;
 }
 
 void unsafe_generate_random_bytes(size_t n, void *result) {
-	if( !initialized)
+	if (!initialized)
 		initialize_random();
 	for (;;) {
-		hash_permutation(&state);
+		keccak_permutation(&state);
 		if (n <= HASH_DATA_AREA) {
 			memcpy(result, &state, n);
 			return;
@@ -97,12 +98,10 @@ void unsafe_generate_random_bytes(size_t n, void *result) {
 }
 
 void initialize_random_for_tests(void) {
-	memset(&state, 42, sizeof(union hash_state));
-	initialized = true;
+	memset(&state, 42, sizeof(struct keccak_state));
+	initialized = 1;
 }
 
 // We keep initialize@start, because generate_system_random_bytes will exit on errror
-// If INITIALIZER fails to compile on your platform, just comment out 3 lines below
-INITIALIZER(init_random) {
-	initialize_random();
-}
+// If INITIALIZER fails to compile on your platform, just comment out INITIALIZER below
+INITIALIZER(init_random) { initialize_random(); }

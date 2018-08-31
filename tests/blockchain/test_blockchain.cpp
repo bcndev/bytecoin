@@ -58,19 +58,24 @@ public:
 
 		BlockTemplate block;
 		Difficulty difficulty = 0;
-		invariant(
-		    block_chain.create_mining_block_template2(&block, address, bytecoin::BinaryArray{}, &difficulty, bid), "");
-		fix_merge_mining_tag(block);
-		block.timestamp = parent.timestamp + currency.difficulty_target;
-		block.nonce     = crypto::rand<uint32_t>();
+		Height height = 0;
+		invariant(block_chain.create_mining_block_template(address, BinaryArray{}, &block, &difficulty, &height, bid), "");
+		set_solo_mining_tag(block);
+		block.parent_block.timestamp = parent.timestamp + currency.difficulty_target;
+		block.timestamp = block.parent_block.timestamp;
+		block.parent_block.nonce = crypto::rand<uint32_t>();
+		block.nonce     = block.parent_block.nonce;
+		auto body_proxy = get_body_proxy_from_template(block);
 		while (true) {
-			crypto::Hash hash = get_block_long_hash(block, cryptoContext);
+			BinaryArray ba = currency.get_block_long_hashing_data(block, body_proxy);
+			Hash hash      = cryptoContext.cn_slow_hash(ba.data(), ba.size());
 			if (check_hash(hash, difficulty))
 				break;
-			block.nonce += 1;
+			block.parent_block.nonce += 1;
+			block.nonce = block.parent_block.nonce;
 		}
 		RawBlock rb;
-		MinedBlockDesc desc{block, seria::to_binary(block), get_block_hash(block), parent.height + 1};
+		MinedBlockDesc desc{block, seria::to_binary(block), get_block_hash(block, body_proxy), parent.height + 1};
 		return desc;
 	}
 	void add_mined_block(const MinedBlockDesc &desc, bool log = true) {
@@ -93,7 +98,7 @@ public:
 		return desc;
 	}
 	void add_checkpoint(uint32_t key_id, uint64_t counter, Hash hash, Height height) {
-		SignedCheckPoint small_checkpoint;
+		SignedCheckpoint small_checkpoint;
 		small_checkpoint.height  = height;
 		small_checkpoint.hash    = hash;
 		small_checkpoint.key_id  = key_id;
@@ -110,17 +115,22 @@ void test_blockchain(common::CommandLine &cmd) {
 	logging::ConsoleLogger logger;
 	Config config(cmd);
 	config.data_folder = "../tests/scratchpad";
-	config.is_testnet  = true;
-	bytecoin::BlockChain::DB::delete_db(config.data_folder + "/blockchain");
+	config.net         = "test";
+	BlockChain::DB::delete_db(config.data_folder + "/blockchain");
 
-	Currency currency(config.is_testnet);
+	std::cout << "Point 1" << std::endl;
+	Currency currency(config.net);
 
+	std::cout << "Point 2" << std::endl;
 	BlockChainState block_chain(logger, config, currency, /*read only*/ false);
 
+	std::cout << "Point 3" << std::endl;
 	TestMiner test_miner(block_chain, currency);
 
+	std::cout << "Point 4" << std::endl;
 	auto middle_desc = test_miner.test_grow_chain(block_chain.get_tip().hash, 25);
 
+	std::cout << "Point 5" << std::endl;
 	auto small_desc = test_miner.test_grow_chain(middle_desc.hash, 25);
 
 	invariant(block_chain.get_tip_bid() == small_desc.hash, "");
@@ -170,14 +180,14 @@ class TestBlockChain {
 		api::BlockHeader header;
 
 		std::bitset<64> checkpoint_key_ids;
-		BlockChain::CheckPointDifficulty checkpoint_difficulty;  // (key_count-1)->max_height
+		BlockChain::CheckpointDifficulty checkpoint_difficulty;  // (key_count-1)->max_height
 
 		TestBlock *parent = nullptr;
 		std::vector<TestBlock *> children;
 	};
 	std::map<Hash, TestBlock> blocks;
-	std::map<uint32_t, SignedCheckPoint> checkpoints;
-	std::map<uint32_t, SignedCheckPoint> stable_checkpoints;
+	std::map<uint32_t, SignedCheckpoint> checkpoints;
+	std::map<uint32_t, SignedCheckpoint> stable_checkpoints;
 
 	bool add_block(const api::BlockHeader &info) {
 		auto bit = blocks.find(info.hash);
@@ -203,7 +213,7 @@ public:
 	}
 	Hash get_tip_bid() const { return m_tip_bid; }
 	Height get_tip_height() const { return m_tip_height; }
-	bool add_checkpoint(const SignedCheckPoint &checkpoint) { return false; }
+	bool add_checkpoint(const SignedCheckpoint &checkpoint) { return false; }
 	BroadcastAction add_block(const PreparedBlock &pb, api::BlockHeader *info) { return BroadcastAction::NOTHING; }
 	BroadcastAction add_mined_block(const BinaryArray &raw_block_template,
 	    RawBlock *raw_block,

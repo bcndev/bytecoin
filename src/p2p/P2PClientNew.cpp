@@ -5,34 +5,68 @@
 #include <iostream>
 #include "Core/Config.hpp"
 #include "platform/Time.hpp"
-#include "seria/BinaryInputStream.hpp"
-#include "seria/BinaryOutputStream.hpp"
+#include "seria/KVBinaryInputStream.hpp"
+#include "seria/KVBinaryOutputStream.hpp"
 
 const float NO_INCOMING_HANDSHAKE_DISCONNECT_TIMEOUT = 30;
-const float NO_INCOMING_MESSAGE_DISCONNECT_TIMEOUT   = 60 * 6;
-const float NO_OUTGOING_MESSAGE_PING_TIMEOUT         = 60 * 4;
+const float NO_INCOMING_MESSAGE_DISCONNECT_TIMEOUT   = 60 * 3;
+const float NO_OUTGOING_MESSAGE_PING_TIMEOUT         = 60 * 2;
 
 using namespace bytecoin;
 
-static size_t parse_header(const BinaryArray &header_data, np::Header &header, std::string &ban_reason) {
+bool P2PProtocolNew::parse_header(const BinaryArray &header_data, np::Header &header, std::string &ban_reason) {
 	if (header_data.size() != sizeof(np::Header)) {
-		ban_reason = "Levin wrong header size";
-		return std::string::npos;
+		ban_reason = "P2P wrong header size";
+		return false;
 	}
 	memmove(&header, header_data.data(), sizeof(np::Header));
 
 	if (header.magic != np::Header::MAGIC) {
-		ban_reason = "Magic mismatch";
-		return std::string::npos;
+		ban_reason = "P2P magic mismatch";
+		return false;
 	}
 	if (header.body_size > np::Header::MAX_PACKET_SIZE) {
-		ban_reason = "Packet size is too big";
-		return std::string::npos;
+		ban_reason = "P2P packet size is too big";
+		return false;
 	}
-	return static_cast<size_t>(header.body_size);
+	return true;
 }
 
-static BinaryArray create_header(uint32_t cmd, size_t size) {
+BinaryArray P2PProtocolNew::create_multicast_announce(Hash genesis_bid, uint16_t p2p_external_port) {
+	np::Handshake::Request resp;
+	resp.peer_desc.p2p_version        = P2PProtocolVersion::V3_NEW;
+	resp.peer_desc.p2p_external_port  = p2p_external_port;
+	resp.peer_desc.genesis_block_hash = genesis_bid;
+	resp.top_block_desc.cd            = 1;
+	resp.top_block_desc.hash          = genesis_bid;
+
+	BinaryArray msg = seria::to_binary_kv(resp);
+	BinaryArray ha  = P2PProtocolNew::create_header(np::Handshake::Request::ID, msg.size());
+	common::append(ha, msg.begin(), msg.end());
+	return ha;
+}
+
+uint16_t P2PProtocolNew::parse_multicast_announce(const unsigned char *data, size_t size, Hash genesis_bid) {
+	try {
+		if (size < sizeof(np::Header))
+			return 0;
+		np::Header header;
+		std::string ban_reason;
+		if (!parse_header(BinaryArray(data, data + sizeof(np::Header)), header, ban_reason))
+			return 0;
+		if (header.command != np::Handshake::Request::ID || header.body_size != size - sizeof(np::Header))
+			return 0;
+		np::Handshake::Request req;
+		seria::from_binary_kv(req, BinaryArray(data + sizeof(np::Header), data + size));
+		if (req.peer_desc.p2p_version != P2PProtocolVersion::V3_NEW || req.peer_desc.genesis_block_hash != genesis_bid)
+			return 0;
+		return req.peer_desc.p2p_external_port;
+	} catch (const std::exception &) {
+	}
+	return false;
+}
+
+BinaryArray P2PProtocolNew::create_header(uint32_t cmd, size_t size) {
 	if (size > np::Header::MAX_PACKET_SIZE)
 		throw std::runtime_error("Attempt to send packet with too big size");
 	np::Header header{};
@@ -45,19 +79,19 @@ static BinaryArray create_header(uint32_t cmd, size_t size) {
 }
 
 template<typename Cmd>
-bytecoin::P2PClientNew::HandlerFunction handler_method(void (bytecoin::P2PClientNew::*handler)(Cmd &&)) {
-	return [handler](P2PClientNew *who, BinaryArray &&body) {
+P2PProtocolNew::HandlerFunction handler_method(void (P2PProtocolNew::*handler)(Cmd &&)) {
+	return [handler](P2PProtocolNew *who, BinaryArray &&body) {
 		Cmd req{};
-		seria::from_binary(req, body);
+		seria::from_binary_kv(req, body);
 		(who->*handler)(std::move(req));
 	};
 }
 
-std::map<uint32_t, P2PClientNew::HandlerFunction> P2PClientNew::handler_functions = {
-    {np::Handshake::Request::ID, handler_method<np::Handshake::Request>(&P2PClientNew::msg_handshake)},
-    {np::Handshake::Response::ID, handler_method<np::Handshake::Response>(&P2PClientNew::msg_handshake)},
-    {np::FindDiff::Request::ID, handler_method<np::FindDiff::Request>(&P2PClientNew::on_msg_find_diff)},
-    {np::FindDiff::Response::ID, handler_method<np::FindDiff::Response>(&P2PClientNew::on_msg_find_diff)}};
+std::map<uint32_t, P2PProtocolNew::HandlerFunction> P2PProtocolNew::handler_functions = {
+    {np::Handshake::Request::ID, handler_method<np::Handshake::Request>(&P2PProtocolNew::msg_handshake)},
+    {np::Handshake::Response::ID, handler_method<np::Handshake::Response>(&P2PProtocolNew::msg_handshake)},
+    {np::FindDiff::Request::ID, handler_method<np::FindDiff::Request>(&P2PProtocolNew::on_msg_find_diff)},
+    {np::FindDiff::Response::ID, handler_method<np::FindDiff::Response>(&P2PProtocolNew::on_msg_find_diff)}};
 
 /*std::map<std::pair<uint32_t, bool>, P2PClientBasic::LevinHandlerFunction> P2PClientBasic::before_handshake_handlers =
 {
@@ -94,45 +128,45 @@ std::map<std::pair<uint32_t, bool>, P2PClientBasic::LevinHandlerFunction> P2PCli
         levin_method<NOTIFY_RESPONSE_GET_OBJECTS::request>(&P2PClientBasic::on_msg_notify_request_objects)}};
 */
 
-P2PClientNew::P2PClientNew(
-    const Config &config, const Currency &currency, uint64_t unique_number, bool incoming, D_handler d_handler)
-    : P2PClient(sizeof(np::Header), incoming, d_handler)
+P2PProtocolNew::P2PProtocolNew(const Config &config,
+    const Currency &currency,
+    uint64_t unique_number,
+    P2PClient *client)
+    : P2PProtocol(client)
     , no_incoming_timer([this]() { disconnect(std::string()); })
-    , no_outgoing_timer(std::bind(&P2PClientNew::send_timed_sync, this))
+    , no_outgoing_timer(std::bind(&P2PProtocolNew::send_timed_sync, this))
     , unique_number(unique_number)
     , m_config(config)
     , m_currency(currency) {}
 
-void P2PClientNew::send_timed_sync() {
+void P2PProtocolNew::send_timed_sync() {
 	np::RelayTransactionDescs resp;
 	resp.top_block_desc = get_top_block_desc();
 
-	BinaryArray msg = seria::to_binary(resp);
+	BinaryArray msg = seria::to_binary_kv(resp);
 	send(create_header(np::RelayTransactionDescs::ID, msg.size()));
 	send(std::move(msg));
-
-	//	no_outgoing_timer.once(NO_OUTGOING_MESSAGE_PING_TIMEOUT);
 }
 
-void P2PClientNew::send(BinaryArray &&body) {
+void P2PProtocolNew::send(BinaryArray &&body) {
 	no_outgoing_timer.once(NO_OUTGOING_MESSAGE_PING_TIMEOUT);
 	on_msg_bytes(0, body.size());
-	P2PClient::send(std::move(body));
+	P2PProtocol::send(std::move(body));
 }
 
-Timestamp P2PClientNew::get_local_time() const { return platform::now_unix_timestamp(); }
+Timestamp P2PProtocolNew::get_local_time() const { return platform::now_unix_timestamp(); }
 
-np::PeerDesc P2PClientNew::get_peer_desc() const {
+np::PeerDesc P2PProtocolNew::get_peer_desc() const {
 	np::PeerDesc result;
-	result.p2p_version        = np::P2PProtocolVersion::EXPERIMENTAL;
+	result.p2p_version        = P2PProtocolVersion::V3_NEW;
 	result.local_time         = get_local_time();
 	result.peer_id            = unique_number;
-	result.my_external_port   = m_config.p2p_external_port;
+	result.p2p_external_port  = m_config.p2p_external_port;
 	result.genesis_block_hash = m_currency.genesis_block_hash;  // TODO
 	return result;
 }
 
-void P2PClientNew::on_connect() {
+void P2PProtocolNew::on_connect() {
 	no_incoming_timer.once(NO_INCOMING_HANDSHAKE_DISCONNECT_TIMEOUT);
 	if (is_incoming())
 		return;
@@ -140,23 +174,31 @@ void P2PClientNew::on_connect() {
 	resp.peer_desc      = get_peer_desc();
 	resp.top_block_desc = get_top_block_desc();
 
-	BinaryArray msg = seria::to_binary(resp);
+	BinaryArray msg = seria::to_binary_kv(resp);
 	send(create_header(np::Handshake::Request::ID, msg.size()));
 	send(std::move(msg));
 }
 
-void P2PClientNew::on_disconnect(const std::string &ban_reason) {
-	peer_desc = np::PeerDesc{};  // We reuse client instances between connects, so we reinit vars here
-	last_received_top_block_desc            = np::TopBlockDesc{};
+void P2PProtocolNew::on_disconnect(const std::string &ban_reason) {
+	P2PProtocol::on_disconnect(ban_reason);
+	no_incoming_timer.cancel();
+	no_outgoing_timer.cancel();
+	other_peer_desc      = np::PeerDesc{};  // We reuse client instances between connects, so we reinit vars here
+	other_top_block_desc = np::TopBlockDesc{};
 	first_message_after_handshake_processed = false;
 }
 
-size_t P2PClientNew::on_request_header(const BinaryArray &header_data, std::string &ban_reason) const {
+size_t P2PProtocolNew::on_parse_header(common::CircularBuffer &buffer, BinaryArray &request, std::string &ban_reason) {
 	np::Header header{};
-	return parse_header(header_data, header, ban_reason);
+	if (buffer.size() < sizeof(np::Header))
+		return std::string::npos;
+	request.resize(sizeof(np::Header));
+	buffer.read(request.data(), request.size());
+	if (!parse_header(request, header, ban_reason))
+		return std::string::npos;  // ban_reason set by parse_header
+	return static_cast<size_t>(header.body_size);
 }
-
-void P2PClientNew::msg_handshake(np::Handshake::Request &&req) {
+void P2PProtocolNew::msg_handshake(np::Handshake::Request &&req) {
 	if (!is_incoming()) {
 		disconnect("Handshake::Request from outgoing node");
 		return;
@@ -171,20 +213,19 @@ void P2PClientNew::msg_handshake(np::Handshake::Request &&req) {
 	resp.top_block_desc = get_top_block_desc();
 	resp.peerlist       = get_peers_to_share();
 
-	BinaryArray msg = seria::to_binary(resp);
+	BinaryArray msg = seria::to_binary_kv(resp);
 	send(create_header(np::Handshake::Response::ID, msg.size()));
 	send(std::move(msg));
 
-	peer_desc                    = req.peer_desc;
-	last_received_top_block_desc = req.top_block_desc;
-	std::cout << "P2p COMMAND_HANDSHAKE request version=" << int(peer_desc.p2p_version)
-	          << " unique_number=" << peer_desc.peer_id << " current_cd=" << last_received_top_block_desc.cd
-	          << std::endl;
+	other_peer_desc      = req.peer_desc;
+	other_top_block_desc = req.top_block_desc;
+	std::cout << "NewP2p COMMAND_HANDSHAKE request version=" << int(other_peer_desc.p2p_version)
+	          << " unique_number=" << other_peer_desc.peer_id << " current_cd=" << other_top_block_desc.cd << std::endl;
 	on_msg_handshake(std::move(req));
 	//	no_outgoing_timer.once(NO_OUTGOING_MESSAGE_PING_TIMEOUT);
 }
 
-void P2PClientNew::msg_handshake(np::Handshake::Response &&req) {
+void P2PProtocolNew::msg_handshake(np::Handshake::Response &&req) {
 	if (is_incoming()) {
 		disconnect("Handshake::Response response from incoming node");
 		return;
@@ -198,102 +239,57 @@ void P2PClientNew::msg_handshake(np::Handshake::Response &&req) {
 		disconnect("203 self-connect");
 		return;
 	}
-	peer_desc                    = req.peer_desc;
-	last_received_top_block_desc = req.top_block_desc;
-	std::cout << "P2p COMMAND_HANDSHAKE response version=" << int(peer_desc.p2p_version)
-	          << " unique_number=" << peer_desc.peer_id << " current_cd=" << last_received_top_block_desc.cd
+	other_peer_desc      = req.peer_desc;
+	other_top_block_desc = req.top_block_desc;
+	std::cout << "NewP2p COMMAND_HANDSHAKE response version=" << int(other_peer_desc.p2p_version)
+	          << " unique_number=" << other_peer_desc.peer_id << " current_cd=" << other_top_block_desc.cd
 	          << " peerlist.size=" << req.peerlist.size() << std::endl;
 	on_msg_handshake(std::move(req));
 	//	no_outgoing_timer.once(NO_OUTGOING_MESSAGE_PING_TIMEOUT);
 }
-/*void P2PClientNew::msg_ping(COMMAND_PING::request &&req) {
-    if (!is_incoming()) {
-        disconnect("COMMAND_PING from outgoing node");
-        return;
-    }
-    COMMAND_PING::response msg;
-    msg.status  = COMMAND_PING::status_ok();
-    msg.peer_id = unique_number;
 
-    BinaryArray raw_msg = LevinProtocol::send_reply(COMMAND_PING::ID, LevinProtocol::encode(msg), 0);
-    send(std::move(raw_msg));
-    send_shutdown();
-    std::cout << "P2p PING" << std::endl;
-    on_msg_ping(std::move(req));
-}
-void P2PClientNew::msg_ping(COMMAND_PING::response &&req) {
-    if (is_incoming()) {
-        disconnect("COMMAND_PING response from incoming node");
-        return;
-    }
-    std::cout << "P2p PONG" << std::endl;
-    on_msg_ping(std::move(req));
-}
-void P2PClientNew::msg_timed_sync(COMMAND_TIMED_SYNC::request &&req) {
-    //	std::cout << "P2p COMMAND_TIMED_SYNC request height=" << req.payload_data.current_height << std::endl;
-    last_received_sync_data = req.payload_data;
-
-    COMMAND_TIMED_SYNC::response msg;
-    msg.payload_data   = get_sync_data();
-    msg.local_time     = get_local_time();
-    msg.local_peerlist = get_peers_to_share();
-
-    BinaryArray raw_msg = LevinProtocol::send_reply(COMMAND_TIMED_SYNC::ID, LevinProtocol::encode(msg), 0);
-    send(std::move(raw_msg));
-    on_msg_timed_sync(std::move(req));
-}
-void P2PClientNew::msg_timed_sync(COMMAND_TIMED_SYNC::response &&req) {
-    //	std::cout << "P2p COMMAND_TIMED_SYNC response height=" << req.payload_data.current_height << std::endl;
-    last_received_sync_data = req.payload_data;
-    on_msg_timed_sync(std::move(req));
-}*/
-
-void P2PClientNew::on_request_ready() {
-	BinaryArray binary_header;
-	BinaryArray body;
-	while (read_next_request(binary_header, body)) {
-		try {
-			no_incoming_timer.once(NO_INCOMING_MESSAGE_DISCONNECT_TIMEOUT);
-			on_msg_bytes(binary_header.size() + body.size(), 0);
-			np::Header header;
-			std::string ban_reason;
-			if (parse_header(binary_header, header, ban_reason) == std::string::npos) {
-				disconnect(ban_reason);
-				return;
-			}
-			if (!handshake_ok()) {
-				if (header.command == np::Handshake::Request::ID) {
-					np::Handshake::Request req;
-					seria::from_binary(req, body);
-					msg_handshake(std::move(req));
-					continue;
-				}
-				if (header.command == np::Handshake::Response::ID) {
-					np::Handshake::Response req;
-					seria::from_binary(req, body);
-					msg_handshake(std::move(req));
-					continue;
-				}
-				disconnect("202 Expecting handshake");
-				return;
-			}
-			auto ha = handler_functions.find(header.command);
-			if (ha != handler_functions.end()) {
-				(ha->second)(this, std::move(body));
-				if (!first_message_after_handshake_processed) {
-					first_message_after_handshake_processed = true;
-					on_first_message_after_handshake();
-				}
-				continue;
-			}
-			std::cout << "Skipping unknown bytecoin::P2P cmd=" << header.command << " size=" << header.body_size
-			          << std::endl;
-		} catch (const std::exception &ex) {
-			disconnect(std::string("299 Exception processing p2p message what=") + ex.what());
-			return;
-		} catch (...) {
-			disconnect("299 Exception processing p2p message");
+void P2PProtocolNew::on_request_ready(BinaryArray &&binary_header, BinaryArray &&body) {
+	try {
+		no_incoming_timer.once(NO_INCOMING_MESSAGE_DISCONNECT_TIMEOUT);
+		on_msg_bytes(binary_header.size() + body.size(), 0);
+		np::Header header;
+		std::string ban_reason;
+		if (!parse_header(binary_header, header, ban_reason)) {
+			disconnect(ban_reason);
 			return;
 		}
+		if (!handshake_ok()) {
+			if (header.command == np::Handshake::Request::ID) {
+				np::Handshake::Request req;
+				seria::from_binary_kv(req, body);
+				msg_handshake(std::move(req));
+				return;
+			}
+			if (header.command == np::Handshake::Response::ID) {
+				np::Handshake::Response req;
+				seria::from_binary_kv(req, body);
+				msg_handshake(std::move(req));
+				return;
+			}
+			disconnect("202 Expecting handshake");
+			return;
+		}
+		auto ha = handler_functions.find(header.command);
+		if (ha != handler_functions.end()) {
+			(ha->second)(this, std::move(body));
+			if (!first_message_after_handshake_processed) {
+				first_message_after_handshake_processed = true;
+				on_first_message_after_handshake();
+			}
+			return;
+		}
+		std::cout << "Skipping unknown bytecoin::P2P cmd=" << header.command << " size=" << header.body_size
+		          << std::endl;
+	} catch (const std::exception &ex) {
+		disconnect(std::string("299 Exception processing p2p message what=") + common::what(ex));
+		return;
+	} catch (...) {
+		disconnect("299 Exception processing p2p message");
+		return;
 	}
 }

@@ -3,9 +3,9 @@
 
 #include "Files.hpp"
 #include <algorithm>
-#include <boost/lexical_cast.hpp>
 #include <ios>
 #include <stdexcept>
+#include "common/Math.hpp"
 #include "common/string.hpp"
 #ifdef _WIN32
 #include "platform/Windows.hpp"
@@ -28,7 +28,12 @@ FileStream::FileStream(const std::string &filename, OpenMode mode) {
 	handle = INVALID_HANDLE_VALUE;
 #endif
 	if (!try_open(filename, mode))
-		throw common::StreamError("File failed to open " + filename);
+		throw common::StreamError(
+		    std::string("Failed to ") +
+		    (mode == READ_EXISTING
+		            ? "open file for reading "
+		            : mode == READ_WRITE_EXISTING ? "open file for reading/writing " : "truncate file for writing ") +
+		    filename);
 }
 
 FileStream::~FileStream() {
@@ -134,8 +139,8 @@ void FileStream::truncate(uint64_t size) {
 std::wstring FileStream::utf8_to_utf16(const std::string &str) {
 	std::wstring result;
 	result.resize(str.size() * 2);  // str.size should be enough, but who knows
-	auto si = MultiByteToWideChar(CP_UTF8, 0, str.data(), boost::lexical_cast<int>(str.size()), &result[0],
-	    boost::lexical_cast<int>(result.size()));
+	auto si = MultiByteToWideChar(CP_UTF8, 0, str.data(), common::integer_cast<int>(str.size()), &result[0],
+	    common::integer_cast<int>(result.size()));
 	result.resize(si);
 	return result;
 }
@@ -143,8 +148,8 @@ std::wstring FileStream::utf8_to_utf16(const std::string &str) {
 std::string FileStream::utf16_to_utf8(const std::wstring &str) {
 	std::string result;
 	result.resize(str.size() * 5);  // str.size*4 should be enough, but who knows
-	auto si = WideCharToMultiByte(CP_UTF8, 0, str.data(), boost::lexical_cast<int>(str.size()), &result[0],
-	    boost::lexical_cast<int>(result.size()), nullptr, nullptr);
+	auto si = WideCharToMultiByte(CP_UTF8, 0, str.data(), common::integer_cast<int>(str.size()), &result[0],
+	    common::integer_cast<int>(result.size()), nullptr, nullptr);
 	result.resize(si);
 	return result;
 }

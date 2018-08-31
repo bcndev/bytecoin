@@ -4,7 +4,12 @@
 #include "Network.hpp"
 #include "Time.hpp"
 #include "common/MemoryStreams.hpp"
+#include "common/exception.hpp"
 #include "common/string.hpp"
+
+#ifndef _WIN32
+#include <ifaddrs.h>
+#endif
 
 #ifdef _WIN32
 #pragma comment(lib, "ws2_32.lib")   // Windows SDK sockets
@@ -505,7 +510,15 @@ public:
 	    , pending_connect(false)
 	    , socket(EventLoop::current()->io())
 	    , incoming_buffer(8192)
-	    , outgoing_buffer(8192) {}
+	    , outgoing_buffer(8192) {
+		//		std::cout << std::hex << "TCPSocket::Impl this=" << (size_t)this << " owner=" << (size_t)owner <<
+		// std::dec
+		//<< std::endl;
+	}
+	~Impl() {
+		//		std::cout << std::hex << "TCPSocket::~Impl this=" << (size_t)this << " owner=" << (size_t)owner <<
+		// std::dec << std::endl;
+	}
 	TCPSocket *owner;
 	bool connected;
 	bool asked_shutdown;
@@ -529,7 +542,11 @@ public:
 			socket.close();
 		TCPSocket *was_owner = owner;
 		if (pending_write || pending_read || pending_connect) {
+			//			if(socket.lowest_layer().is_open())
 			owner = nullptr;
+			//			std::cout << std::hex << "Socket close this=" << (size_t)this << " owner=" << (size_t)owner << "
+			// was_owner=" << (size_t)was_owner << std::dec << " flags" << pending_write << pending_read <<
+			// pending_connect << std::endl;
 			if (was_owner)  // error can happen on detached impl
 				was_owner->impl = std::make_shared<Impl>(was_owner);
 		} else {
@@ -562,6 +579,8 @@ public:
 
 	void handle_connect(const boost::system::error_code &e) {
 		if (!e) {
+//			std::cout << std::hex << "Socket handle_connect this=" << (size_t)this << " owner=" << (size_t)owner << "
+// was_owner=" << std::dec << " flags" << pending_write << pending_read << pending_connect << std::endl;
 #if platform_USE_SSL
 			if (ssl_socket) {
 				start_handshake(ssl::stream_base::client);
@@ -597,6 +616,9 @@ public:
 	}
 
 	void handle_read(const boost::system::error_code &e, std::size_t bytes_transferred) {
+		//		std::cout << std::hex << "Socket handle_read this=" << (size_t)this << " owner=" << (size_t)owner << "
+		// e="
+		//<< !!e << std::dec << " flags" << pending_write << pending_read << pending_connect << std::endl;
 		pending_read = false;
 		if (!e) {
 			if (!asked_shutdown)
@@ -751,7 +773,6 @@ public:
 	explicit Impl(TCPAcceptor *owner, bool ssl)
 	    : owner(owner)
 	    , ssl(ssl)
-	    , pending_accept(false)
 	    , acceptor(EventLoop::current()->io())
 	    , socket_being_accepted(EventLoop::current()->io())
 #if platform_USE_SSL
@@ -759,18 +780,18 @@ public:
 	    , ssl_socket_being_accepted(
 	          ssl ? std::make_unique<SSLSocket>(EventLoop::current()->io(), *ssl_context) : nullptr)
 #endif
-	    , socket_ready(false) {
+	{
 	}
 	TCPAcceptor *owner;
 	const bool ssl;
-	bool pending_accept;
+	bool pending_accept = false;
 	boost::asio::ip::tcp::acceptor acceptor;
 	boost::asio::ip::tcp::socket socket_being_accepted;
 #if platform_USE_SSL
 	std::shared_ptr<ssl::context> ssl_context;
 	std::unique_ptr<SSLSocket> ssl_socket_being_accepted;
 #endif
-	bool socket_ready;
+	bool socket_ready = false;
 
 	void close() {
 		acceptor.close();
@@ -807,8 +828,8 @@ public:
 };
 
 TCPAcceptor::TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_handler, const std::string &ssl_pem_file,
-    const std::string &ssl_certificate_password)
-    : impl(std::make_shared<Impl>(this, !ssl_pem_file.empty())), a_handler(a_handler) {
+    const std::string &ssl_certificate_password) try : impl(std::make_shared<Impl>(this, !ssl_pem_file.empty())),
+                                                       a_handler(a_handler) {
 
 #if platform_USE_SSL
 	if (impl->ssl) {
@@ -832,6 +853,9 @@ TCPAcceptor::TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_han
 	impl->acceptor.listen();
 
 	impl->start_accept();
+} catch (const boost::system::system_error &) {
+	std::throw_with_nested(AddressInUse("Failed to create TCP listening socket, probably address in use addr=" + addr +
+	                                    " port=" + common::to_string(port)));
 }
 
 TCPAcceptor::~TCPAcceptor() { impl->close(); }
@@ -874,6 +898,135 @@ bool TCPAcceptor::accept(TCPSocket &socket, std::string &accepted_addr) {
 	}
 	impl->start_accept();
 	return true;
+}
+
+std::vector<std::string> TCPAcceptor::local_addresses(bool ipv4, bool ipv6){
+	std::vector<std::string> result;
+#ifndef _WIN32 // TODO - get adapters info on Win32
+	struct ifaddrs *ifaddr = nullptr;
+	if (getifaddrs(&ifaddr) == -1)
+		return result;
+
+	for (struct ifaddrs * ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+		if (ifa->ifa_addr == NULL)
+			continue;
+		int family = ifa->ifa_addr->sa_family;;
+		if (family != AF_INET && family != AF_INET6)
+			continue;
+		char host[NI_MAXHOST]{};
+		int s = getnameinfo(ifa->ifa_addr, (family == AF_INET) ? sizeof(struct sockaddr_in) :
+						sizeof(struct sockaddr_in6), host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+		if( s == 0 && ipv4 && family == AF_INET)
+			result.push_back(host);
+		if( s == 0 && ipv6 && family == AF_INET6)
+			result.push_back(host);
+	}
+	freeifaddrs(ifaddr);
+#endif
+	return result;
+}
+
+
+class UDPMulticast::Impl {
+public:
+	explicit Impl(UDPMulticast *owner) : owner(owner), socket(EventLoop::current()->io()) {}
+	UDPMulticast *owner;
+	boost::asio::ip::udp::socket socket;
+	boost::asio::ip::udp::endpoint sender_endpoint;
+	enum { max_length = 1024 };
+	unsigned char data[max_length];
+	bool pending_read = false;
+
+	void close() {
+		socket.close();
+		UDPMulticast *was_owner = owner;
+		owner                   = nullptr;
+		if (pending_read) {
+			if (was_owner)                // error can happen on detached impl
+				was_owner->impl.reset();  // We do not reuse UDP Multicasts
+		}
+	}
+	void start_read() {
+		if (!owner)
+			return;
+		pending_read = true;
+		socket.async_receive_from(
+		    boost::asio::buffer(data, max_length), sender_endpoint, std::bind(&Impl::handle_read, owner->impl, _1, _2));
+	}
+	void handle_read(const boost::system::error_code &e, size_t bytes_recvd) {
+		pending_read = false;
+		if (!e) {
+			std::string sender_addr = sender_endpoint.address().to_string();
+			std::vector<unsigned char> data_copy(data, data + bytes_recvd);
+			if (owner) {
+				start_read();  // Can modify sender_endpoint and data here
+				owner->p_handler(sender_addr, data_copy.data(), data_copy.size());
+			}
+		}
+		if (e != boost::asio::error::operation_aborted) {
+			// some nasty problem with socket, say so to the client
+		}
+	}
+};
+
+UDPMulticast::UDPMulticast(const std::string &addr, uint16_t port, P_handler p_handler)
+    : impl(std::make_shared<Impl>(this)), p_handler(p_handler) {
+	try {
+		// Multiple processes can only bind to multicast socket if listen_ad is multicast addr
+		boost::asio::ip::address listen_ad = boost::asio::ip::address::from_string(addr);
+		boost::asio::ip::address group_ad  = boost::asio::ip::address::from_string(addr);
+		boost::asio::ip::udp::endpoint listen_endpoint(listen_ad, port);
+		impl->socket.open(listen_endpoint.protocol());
+		impl->socket.set_option(boost::asio::ip::udp::socket::reuse_address(true));
+
+		//		boost::asio::ip::multicast::enable_loopback option;
+		//		impl->socket.get_option(option);
+		//		bool is_set = option.value();
+
+		//		impl->socket.set_option(boost::asio::ip::multicast::enable_loopback(false));
+
+		impl->socket.bind(listen_endpoint);
+
+		impl->socket.set_option(boost::asio::ip::multicast::join_group(group_ad));
+		impl->start_read();
+
+		auto local_addresses = TCPAcceptor::local_addresses(true, false);
+		for(const auto & la : local_addresses)
+			std::cout << "UDPMulticast::UDPMulticast listening on local address " << la << std::endl;
+	} catch (const std::exception & ex) {
+		std::cout << "UDPMulticast::UDPMulticast exception " << common::what(ex) << std::endl;
+	}
+}
+UDPMulticast::~UDPMulticast() { impl->close(); }
+void UDPMulticast::send(const std::string &addr, uint16_t port, const void *data, size_t size) {
+	try {
+		// Multicast will not work on loopback
+		{
+		    //			boost::asio::ip::address local_ad = boost::asio::ip::address::from_string("127.0.0.1");
+		    //			boost::asio::ip::udp::endpoint local_ep(local_ad, port);
+		    //			boost::asio::ip::udp::socket local_socket(EventLoop::current()->io(), local_ep.protocol());
+		    //			local_socket.send_to(boost::asio::buffer(data, size), local_ep);
+		}
+		{
+			boost::asio::ip::address ad = boost::asio::ip::address::from_string(addr);
+			boost::asio::ip::udp::endpoint ep(ad, port);
+			boost::asio::ip::udp::socket socket(EventLoop::current()->io(), ep.protocol());
+
+//			socket.set_option(boost::asio::ip::multicast::enable_loopback(true));
+//			socket.set_option(boost::asio::ip::multicast::hops(2));
+			auto local_addresses = TCPAcceptor::local_addresses(true, false);
+			for(const auto & la : local_addresses){
+				boost::asio::ip::address_v4 local_interface =
+						boost::asio::ip::address_v4::from_string(la);
+				socket.set_option(boost::asio::ip::multicast::outbound_interface(local_interface));
+				socket.send_to(boost::asio::buffer(data, size), ep);
+			}
+			if(local_addresses.empty()) // Send on default gateway
+				socket.send_to(boost::asio::buffer(data, size), ep);
+		}
+	} catch (const std::exception & ex) {
+		std::cout << "UDPMulticast::send exception to addr=" << addr << " port=" << port << " error=" << common::what(ex) << std::endl;
+	}
 }
 
 #endif  // #if TARGET_OS_IPHONE

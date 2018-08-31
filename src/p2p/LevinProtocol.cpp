@@ -49,6 +49,8 @@ BinaryArray LevinProtocol::send_message(uint32_t command, const BinaryArray &out
 
 size_t LevinProtocol::HEADER_SIZE() { return sizeof(bucket_head2); }
 
+unsigned char LevinProtocol::FIRST_BYTE() { return static_cast<unsigned char>(LEVIN_SIGNATURE & 0xff); }
+
 size_t LevinProtocol::read_command_header(const BinaryArray &raw_header, Command &cmd, std::string &ban_reason) {
 	bucket_head2 head = {};
 	if (raw_header.size() != sizeof(head)) {

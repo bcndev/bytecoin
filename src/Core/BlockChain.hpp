@@ -38,10 +38,12 @@ struct PreparedBlock {
 	Hash base_transaction_hash;
 	size_t coinbase_tx_size  = 0;
 	size_t parent_block_size = 0;
-	Hash long_block_hash;  // only if context != nullptr
+	Hash long_block_hash;    // only if context != nullptr
+	std::string error_text;  // empty when no error
 
-	explicit PreparedBlock(BinaryArray &&ba, crypto::CryptoNightContext *context);
-	explicit PreparedBlock(RawBlock &&rba, crypto::CryptoNightContext *context);  // we get raw blocks from p2p
+	explicit PreparedBlock(BinaryArray &&ba, const Currency &currency, crypto::CryptoNightContext *context);
+	explicit PreparedBlock(
+	    RawBlock &&rba, const Currency &currency, crypto::CryptoNightContext *context);  // we get raw blocks from p2p
 	PreparedBlock() = default;
 };
 
@@ -52,10 +54,12 @@ public:
 	explicit BlockChain(logging::ILogger &, const Config &config, const Currency &, bool read_only);
 	virtual ~BlockChain() = default;
 
+	const Currency &get_currency() const { return m_currency; }
 	const Hash &get_genesis_bid() const { return m_genesis_bid; }
 	// Read blockchain state
 	Hash get_tip_bid() const { return m_tip_bid; }
 	Height get_tip_height() const { return m_tip_height; }
+	CumulativeDifficulty get_tip_cumulative_difficulty() const { return m_tip_cumulative_difficulty; }
 	const api::BlockHeader &get_tip() const;
 	template<typename T>
 	void get_tips(Height, Height, T &) const;
@@ -68,49 +72,50 @@ public:
 	bool read_chain(Height height, Hash *bid) const;
 	bool in_chain(Height height, Hash bid) const;
 	bool read_block(const Hash &bid, RawBlock *rb) const;
-	bool read_block(const Hash &bid, BinaryArray *block_data, RawBlock *rb) const; // rb can be null here
+	bool read_block(const Hash &bid, BinaryArray *block_data, RawBlock *rb) const;  // rb can be null here
 	bool has_block(const Hash &bid) const;
 	bool read_header(const Hash &bid, api::BlockHeader *info, Height hint = 0) const;
-	bool read_transaction(const Hash &tid, Transaction *tx, Height *block_height, Hash *block_hash,
-	    size_t *index_in_block, uint32_t *binary_size) const;
-
+	void fix_block_sizes(api::BlockHeader *info) const;  // TODO - remove after correct sizes are in DB
+	bool read_transaction(
+	    const Hash &tid, BinaryArray *binary_tx, Height *block_height, Hash *block_hash, size_t *index_in_block) const;
 	// Modify blockchain state. bytecoin header does not contain enough info for consensus calcs, so we cannot have
 	// header chain without block chain
 	BroadcastAction add_block(const PreparedBlock &pb, api::BlockHeader *info, const std::string &source_address);
 
 	// Facilitate sync and download
 	std::vector<Hash> get_sparse_chain() const;
+	std::vector<SWCheckpoint> get_sparse_chain(Hash start, Hash end) const;
 	std::vector<api::BlockHeader> get_sync_headers(const std::vector<Hash> &sparse_chain, size_t max_count) const;
 	std::vector<Hash> get_sync_headers_chain(
 	    const std::vector<Hash> &sparse_chain, Height *start_height, size_t max_count) const;
 
 	Height find_blockchain_supplement(const std::vector<Hash> &remote_block_ids) const;
-	Height get_timestamp_lower_bound_block_index(Timestamp) const;
+	Height get_timestamp_lower_bound_height(Timestamp) const;
 
 	void test_undo_everything(Height new_tip_height);
 	void test_print_structure(Height n_confirmations) const;
-
-	void test_prune_oldest();
+	void test_print_tips() const;
+	bool test_prune_oldest();
 
 	void db_commit();
 
 	bool internal_import();  // import some existing blocks from inside DB
 	Height internal_import_known_height() const { return static_cast<Height>(m_internal_import_chain.size()); }
 
-	std::vector<SignedCheckPoint> get_latest_checkpoints() const;
-	std::vector<SignedCheckPoint> get_stable_checkpoints() const;
-	bool add_checkpoint(const SignedCheckPoint &checkpoint, const std::string &source_address);
+	std::vector<SignedCheckpoint> get_latest_checkpoints() const;
+	std::vector<SignedCheckpoint> get_stable_checkpoints() const;
+	bool add_checkpoint(const SignedCheckpoint &checkpoint, const std::string &source_address);
 
 	void read_archive(api::bytecoind::GetArchive::Request &&req, api::bytecoind::GetArchive::Response &resp) {
 		m_archive.read_archive(std::move(req), resp);
 	}
+	virtual void fill_statistics(api::bytecoind::GetStatistics::Response &res) const;
 
-	typedef std::array<Height, 7> CheckPointDifficulty;  // size must be == m_currency.get_checkpoint_keys_count()
+	typedef std::array<Height, 7> CheckpointDifficulty;  // size must be == m_currency.get_checkpoint_keys_count()
 protected:
-	CumulativeDifficulty get_tip_cumulative_difficulty() const { return m_tip_cumulative_difficulty; }
-
 	std::vector<Hash> m_internal_import_chain;
 	void start_internal_import();
+	void upgrade_5_to_6();  // We will perform it on next version change
 
 	virtual std::string check_standalone_consensus(
 	    const PreparedBlock &pb, api::BlockHeader *info, const api::BlockHeader &prev_info, bool check_pow) const = 0;
@@ -167,22 +172,29 @@ private:
 	void for_each_tip(std::function<bool(CumulativeDifficulty cd, Hash bid)> fun) const;
 
 	static int compare(
-	    const CheckPointDifficulty &a, CumulativeDifficulty ca, const CheckPointDifficulty &b, CumulativeDifficulty cb);
+	    const CheckpointDifficulty &a, CumulativeDifficulty ca, const CheckpointDifficulty &b, CumulativeDifficulty cb);
 	struct Blod {
 		Hash hash;
 		Height height = 0;
 		Blod *parent  = nullptr;
 		std::vector<Blod *> children;
 		std::bitset<64> checkpoint_key_ids;
-		CheckPointDifficulty checkpoint_difficulty;  // (key_count-1)->max_height
+		CheckpointDifficulty checkpoint_difficulty;  // (key_count-1)->max_height
+
+		uint8_t vote_for_upgrade = 0;
+		std::deque<uint8_t> votes_for_upgrade_in_voting_window;
+		Height upgrade_decided_height = 0;
 	};
 	std::map<Hash, Blod> blods;
 	void update_key_count_max_heights();
+	bool add_blod_impl(const api::BlockHeader &header);
 	bool add_blod(const api::BlockHeader &header);
-	CheckPointDifficulty get_checkpoint_difficulty(Hash hash) const;
+	CheckpointDifficulty get_checkpoint_difficulty(Hash hash) const;
 
 protected:
 	void build_blods();
+	bool fill_next_block_versions(
+	    const api::BlockHeader &prev_info, bool cooperative, uint8_t *major, uint8_t *minor) const;
 };
 
 }  // namespace bytecoin

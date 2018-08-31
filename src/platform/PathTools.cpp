@@ -3,9 +3,9 @@
 
 #include "PathTools.hpp"
 #include <algorithm>
-#include <boost/lexical_cast.hpp>
 #include <cstdio>
 #include "Files.hpp"
+#include "common/Math.hpp"
 
 #ifdef __APPLE__
 #include "TargetConditionals.h"
@@ -440,7 +440,7 @@ bool load_file(const std::string &filepath, std::string &buf) {
 		FileStream fs;  // Allowed because we are friends
 		if (!fs.try_open(filepath, FileStream::READ_EXISTING))
 			return false;
-		size_t file_size = boost::lexical_cast<size_t>(fs.seek(0, SEEK_END));
+		size_t file_size = common::integer_cast<size_t>(fs.seek(0, SEEK_END));
 		fs.seek(0, SEEK_SET);
 		buf.resize(file_size);
 		fs.read(&buf[0], buf.size());
@@ -455,7 +455,7 @@ bool load_file(const std::string &filepath, common::BinaryArray &buf) {
 		FileStream fs;  // Allowed because we are friends
 		if (!fs.try_open(filepath, FileStream::READ_EXISTING))
 			return false;
-		size_t file_size = boost::lexical_cast<size_t>(fs.seek(0, SEEK_END));
+		size_t file_size = common::integer_cast<size_t>(fs.seek(0, SEEK_END));
 		fs.seek(0, SEEK_SET);
 		buf.resize(file_size);
 		fs.read(buf.data(), buf.size());

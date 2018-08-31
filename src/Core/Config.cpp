@@ -10,81 +10,86 @@
 #include "platform/PathTools.hpp"
 #include "platform/Time.hpp"
 
-static void parse_peer_and_add_to_container(const std::string &str, std::vector<bytecoin::NetworkAddress> &container) {
-	bytecoin::NetworkAddress na{};
+using namespace common;
+using namespace bytecoin;
+
+static void parse_peer_and_add_to_container(const std::string &str, std::vector<NetworkAddress> &container) {
+	NetworkAddress na{};
 	if (!common::parse_ip_address_and_port(str, &na.ip, &na.port))
 		throw std::runtime_error("Wrong address format " + str + ", should be ip:port");
 	container.push_back(na);
 }
 
-static void parse_net(const std::string &str, bool* is_testnet, bool* is_stagenet) {
-	if (str == "main") {
-		*is_stagenet = false;
-		*is_testnet = false;
-		return;
+static std::string get_net(common::CommandLine &cmd) {
+	std::string net;
+	if (const char *pa = cmd.get("--net")) {
+		net = pa;
+		if (net == "main" || net == "stage" || net == "test")
+			return net;
+		throw std::runtime_error("Wrong net value " + net + ", should be 'test', 'stage', or 'main'");
 	}
-	if (str == "stage") {
-		*is_stagenet = true;
-		*is_testnet = false;
-		return;
-	}
-	if (str == "test") {
-		*is_stagenet = false;
-		*is_testnet = true;
-		return;
-	}
-	throw std::runtime_error("Wrong net value " + str + ", should be test, or stage, or main");
+	if (cmd.get_bool("--testnet", "use --net=test instead"))
+		return "test";
+	return "main";
 }
-
-using namespace common;
-using namespace bytecoin;
 
 const static UUID BYTECOIN_NETWORK{{0x11, 0x10, 0x01, 0x11, 0x11, 0x00, 0x01, 0x01, 0x10, 0x11, 0x00, 0x12, 0x10, 0x11,
     0x01, 0x10}};  // Bender's nightmare
 
 Config::Config(common::CommandLine &cmd)
-    : is_testnet(false)
-    , is_stagenet(false)
+    : net(get_net(cmd))
     , is_archive(cmd.get_bool("--archive"))
-//    , mempool_tx_live_time(parameters::CRYPTONOTE_MEMPOOL_TX_LIVETIME)
-    , blocks_file_name(parameters::CRYPTONOTE_BLOCKS_FILENAME)
-    , block_indexes_file_name(parameters::CRYPTONOTE_BLOCKINDEXES_FILENAME)
+    , blocks_file_name(parameters::BLOCKS_FILENAME)
+    , block_indexes_file_name(parameters::BLOCKINDEXES_FILENAME)
     , crypto_note_name(CRYPTONOTE_NAME)
     , network_id(BYTECOIN_NETWORK)
     , p2p_bind_port(P2P_DEFAULT_PORT)
     , p2p_external_port(P2P_DEFAULT_PORT)
     , p2p_bind_ip("0.0.0.0")
+    , multicast_address("239.195.17.131")
+    , multicast_port(P2P_DEFAULT_PORT)
+    , multicast_period(net == "main" ? 0 : 60.0f)  // No multicast in mainnet due to anonymity
     , bytecoind_bind_port(RPC_DEFAULT_PORT)
     , bytecoind_bind_ip("127.0.0.1")  // Less attack vectors from outside for ordinary uses
     , bytecoind_remote_port(0)
     , bytecoind_remote_ip("127.0.0.1")
+    , db_commit_period_wallet_cache(290)
+    , db_commit_period_blockchain(310)
     , walletd_bind_port(WALLET_RPC_DEFAULT_PORT)
     , walletd_bind_ip("127.0.0.1")  // Connection to wallet allows spending
-    , p2p_local_white_list_limit(P2P_LOCAL_WHITE_PEERLIST_LIMIT)
-    , p2p_local_gray_list_limit(P2P_LOCAL_GRAY_PEERLIST_LIMIT)
+    , p2p_local_white_list_limit(1000)
+    , p2p_local_gray_list_limit(5000)
     , p2p_default_peers_in_handshake(P2P_DEFAULT_PEERS_IN_HANDSHAKE)
-    , p2p_default_connections_count(P2P_DEFAULT_CONNECTIONS_COUNT)
-	, p2p_allow_local_ip(false)
-    , p2p_whitelist_connections_percent(P2P_DEFAULT_WHITELIST_CONNECTIONS_PERCENT)
+    , p2p_max_outgoing_connections(8)
+    , p2p_max_incoming_connections(100)
+    , p2p_whitelist_connections_percent(70)
     , p2p_block_ids_sync_default_count(BLOCKS_IDS_SYNCHRONIZING_DEFAULT_COUNT)
     , p2p_blocks_sync_default_count(BLOCKS_SYNCHRONIZING_DEFAULT_COUNT)
-    , rpc_get_blocks_fast_max_count(COMMAND_RPC_GET_BLOCKS_FAST_MAX_COUNT) {
-	common::pod_from_hex(P2P_STAT_TRUSTED_PUBLIC_KEY, trusted_public_key);
-
-	if (const char *pa = cmd.get("--net"))
-		parse_net(pa, &is_testnet, &is_stagenet);
-	if (is_testnet) {
+    , rpc_get_blocks_fast_max_count(COMMAND_RPC_GET_BLOCKS_FAST_MAX_COUNT)
+    , paranoid_checks(cmd.get_bool("--paranoid-checks"))
+    , trusted_public_key(P2P_STAT_TRUSTED_PUBLIC_KEY) {
+	if (net == "test") {
 		network_id.data[0] += 1;
 		p2p_bind_port += 1000;
 		p2p_external_port += 1000;
 		bytecoind_bind_port += 1000;
-		p2p_allow_local_ip = true;
+		walletd_bind_port += 1000;
+		multicast_port += 1000;
 		if (const char *pa = cmd.get("--time-multiplier"))
 			platform::set_time_multiplier_for_tests(boost::lexical_cast<int>(pa));
+	}
+	if (net == "stage") {
+		network_id.data[0] += 2;
+		p2p_bind_port += 2000;
+		p2p_external_port += 2000;
+		bytecoind_bind_port += 2000;
+		walletd_bind_port += 2000;
+		multicast_port += 2000;
 	}
 	if (const char *pa = cmd.get("--p2p-bind-address")) {
 		if (!common::parse_ip_address_and_port(pa, &p2p_bind_ip, &p2p_bind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
+		p2p_external_port = p2p_bind_port;
 	}
 	if (const char *pa = cmd.get("--p2p-external-port"))
 		p2p_external_port = boost::lexical_cast<uint16_t>(pa);
@@ -107,7 +112,11 @@ Config::Config(common::CommandLine &cmd)
 #endif
 	}
 	if (const char *pa = cmd.get("--bytecoind-authorization")) {
-		bytecoind_authorization = common::base64::encode(BinaryArray(pa, pa + strlen(pa)));
+		bytecoind_authorization         = common::base64::encode(BinaryArray(pa, pa + strlen(pa)));
+		bytecoind_authorization_private = bytecoind_authorization;
+	}
+	if (const char *pa = cmd.get("--bytecoind-authorization-private")) {
+		bytecoind_authorization_private = common::base64::encode(BinaryArray(pa, pa + strlen(pa)));
 	}
 	if (const char *pa = cmd.get("--bytecoind-bind-address")) {
 		if (!common::parse_ip_address_and_port(pa, &bytecoind_bind_ip, &bytecoind_bind_port))
@@ -136,8 +145,7 @@ Config::Config(common::CommandLine &cmd)
 				throw std::runtime_error("Wrong address format " + addr + ", should be ip:port");
 		}
 	}
-	if (cmd.get_bool("--allow-local-ip", "Local IPs are automatically allowed for peers from the same private network"))
-		p2p_allow_local_ip = true;
+	cmd.get_bool("--allow-local-ip", "Local IPs are automatically allowed for peers from the same private network");
 	for (auto &&pa : cmd.get_array("--seed-node-address"))
 		parse_peer_and_add_to_container(pa, seed_nodes);
 	for (auto &&pa : cmd.get_array("--seed-node", "Use --seed-node-address instead"))
@@ -146,26 +154,35 @@ Config::Config(common::CommandLine &cmd)
 		parse_peer_and_add_to_container(pa, priority_nodes);
 	for (auto &&pa : cmd.get_array("--add-priority-node", "Use --priority-node-address instead"))
 		parse_peer_and_add_to_container(pa, priority_nodes);
+	std::vector<NetworkAddress> exclusive_nodes_list;
 	for (auto &&pa : cmd.get_array("--exclusive-node-address"))
-		parse_peer_and_add_to_container(pa, exclusive_nodes);
+		parse_peer_and_add_to_container(pa, exclusive_nodes_list);
 	for (auto &&pa : cmd.get_array("--add-exclusive-node", "Use --exclusive-node-address instead"))
-		parse_peer_and_add_to_container(pa, exclusive_nodes);
-
-	if (seed_nodes.empty() && !is_testnet)
-		for (auto &&sn : bytecoin::SEED_NODES) {
+		parse_peer_and_add_to_container(pa, exclusive_nodes_list);
+	if (!priority_nodes.empty() && !exclusive_nodes_list.empty())
+		throw std::runtime_error("Priority nodes and exclusive nodes cannot be used together");
+	if (!exclusive_nodes_list.empty()) {
+		exclusive_nodes = true;
+		priority_nodes  = exclusive_nodes_list;
+	}
+	if (seed_nodes.empty() && net != "test")
+		for (auto &&sn : net == "stage" ? SEED_NODES_STAGENET : SEED_NODES) {
 			NetworkAddress addr;
 			if (!common::parse_ip_address_and_port(sn, &addr.ip, &addr.port))
 				continue;
 			seed_nodes.push_back(addr);
 		}
-
 	std::sort(seed_nodes.begin(), seed_nodes.end());
-	std::sort(exclusive_nodes.begin(), exclusive_nodes.end());
 	std::sort(priority_nodes.begin(), priority_nodes.end());
 
+	if (const char *pa = cmd.get("--mineproof-secret")) {
+		if (!common::pod_from_hex(pa, mineproof_secret))
+			throw std::runtime_error("--mineproof-secret must be 64 hex characters");
+	}
+
 	data_folder = platform::get_app_data_folder(crypto_note_name);
-	if (is_testnet)
-		data_folder += "_testnet";
+	if (net != "main")
+		data_folder += "_" + net + "net";
 	if (const char *pa = cmd.get("--data-folder")) {
 		data_folder = pa;
 		if (!platform::folder_exists(data_folder))

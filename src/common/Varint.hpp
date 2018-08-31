@@ -70,4 +70,46 @@ inline uint64_t read_varint_sqlite4(const char *&begin, const char *end) {
 
 uint64_t read_varint_sqlite4(const std::string &str);
 std::string write_varint_sqlite4(uint64_t val);
+
+template<class T>
+T uint_be_from_bytes(const unsigned char *buf, size_t si) {
+	static_assert(std::is_unsigned<T>::value, "works only with unsigned types");
+	T result = 0;
+	for (size_t i = 0; i != si; ++i)
+		result = (result << 8) + buf[i];
+	return result;
+}
+
+template<class T>
+void uint_be_to_bytes(unsigned char *buf, size_t si, T val) {
+	static_assert(std::is_unsigned<T>::value, "works only with unsigned types");
+	for (size_t i = si; i-- > 0;) {
+		buf[i] = static_cast<unsigned char>(val);
+		val >>= 8;
+	}
+}
+
+template<class T>
+T uint_le_from_bytes(const unsigned char *buf, size_t si) {
+	static_assert(std::is_unsigned<T>::value, "works only with unsigned types");
+	T result = 0;
+	for (size_t i = si; i-- > 0;)
+		result = (result << 8) + buf[i];
+	return result;
+}
+
+template<class T>
+void uint_le_to_bytes(unsigned char *buf, size_t si, T val) {
+	static_assert(std::is_unsigned<T>::value, "works only with unsigned types");
+	for (size_t i = 0; i != si; ++i) {
+		buf[i] = static_cast<unsigned char>(val);
+		val >>= 8;
+	}
+}
+inline void uint_le_to_bytes(unsigned char *buf, size_t si, unsigned char val) {
+	for (size_t i = 0; i != si; ++i) {
+		buf[i] = static_cast<unsigned char>(val);
+		val    = 0;
+	}
+}
 }

@@ -102,7 +102,7 @@ void generate_key_image(const PublicKey &pub, const SecretKey &sec, KeyImage &im
 bool generate_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey *const pubs[],
     std::size_t pubs_count, const SecretKey &sec, std::size_t sec_index, Signature sigs[]);
 bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey *const pubs[],
-    size_t pubs_count, const Signature sigs[], bool check_key_image, bool *key_corrupted = nullptr);
+    size_t pubs_count, const Signature sigs[], bool key_image_subgroup_check, bool *key_corrupted = nullptr);
 // TODO - remove one pair of funs
 // returns false if keys are corrupted/invalid
 inline bool generate_ring_signature(const Hash &prefix_hash, const KeyImage &image,
@@ -110,9 +110,10 @@ inline bool generate_ring_signature(const Hash &prefix_hash, const KeyImage &ima
 	return generate_ring_signature(prefix_hash, image, pubs.data(), pubs.size(), sec, sec_index, sigs);
 }
 inline bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image,
-    const std::vector<const PublicKey *> &pubs, const Signature sigs[], bool check_key_image,
+    const std::vector<const PublicKey *> &pubs, const Signature sigs[], bool key_image_subgroup_check,
     bool *key_corrupted = nullptr) {
-	return check_ring_signature(prefix_hash, image, pubs.data(), pubs.size(), sigs, check_key_image, key_corrupted);
+	return check_ring_signature(
+	    prefix_hash, image, pubs.data(), pubs.size(), sigs, key_image_subgroup_check, key_corrupted);
 }
 
 bool generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_sec, const PublicKey &receiver_view_key_pub,
