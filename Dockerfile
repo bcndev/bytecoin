@@ -6,7 +6,14 @@ FROM fedora:28 as builder
 # correct the previous line, it should be the
 # FROM fedora
 
-RUN dnf -y update && dnf -y install make  gcc-c++ cmake git wget libzip bzip2 which openssl-devel
+RUN set -ex \
+    && dnf update -y \
+    && dnf install libstdc++ -y \
+    && dnf clean all
+
+RUN set -ex \
+    && dnf update -y \
+    && dnf -y install make  gcc-c++ cmake git wget libzip bzip2 which openssl-devel
 
 WORKDIR /app
 
