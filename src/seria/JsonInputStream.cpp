@@ -64,7 +64,7 @@ bool JsonInputStreamValue::object_key(common::StringView name, bool optional) {
 void JsonInputStreamValue::begin_map(size_t &size) {
 	begin_object();
 	size = chain.back() ? chain.back()->get_object().size() : 0;
-	if (chain.back()) // TODO - better map logic handling
+	if (chain.back())  // TODO - better map logic handling
 		remaining_object_keys.back().clear();
 }
 

@@ -66,8 +66,8 @@ Currency::Currency(const std::string &net)
     , minimum_size_median(parameters::MINIMUM_SIZE_MEDIAN)
     , miner_tx_blob_reserved_size(parameters::COINBASE_BLOB_RESERVED_SIZE)
     , number_of_decimal_places(parameters::DISPLAY_DECIMAL_POINT)
-    , minimum_fee(parameters::MINIMUM_FEE)
     , default_dust_threshold(parameters::DEFAULT_DUST_THRESHOLD)
+    , self_dust_threshold(parameters::SELF_DUST_THRESHOLD)
     , difficulty_target(std::max<Timestamp>(1,
           parameters::DIFFICULTY_TARGET /
               platform::get_time_multiplier_for_tests()))  // multiplier can be != 1 only in testnet
@@ -75,16 +75,16 @@ Currency::Currency(const std::string &net)
     , difficulty_window(expected_blocks_per_day())
     , difficulty_lag(parameters::DIFFICULTY_LAG)
     , difficulty_cut(parameters::DIFFICULTY_CUT)
-    , max_block_size_initial(net != "main" ? 1024*1024 : parameters::MAX_BLOCK_SIZE_INITIAL)
+    , max_block_size_initial(net != "main" ? 1024 * 1024 : parameters::MAX_BLOCK_SIZE_INITIAL)
     , max_block_size_growth_per_year(net != "main" ? 0 : parameters::MAX_BLOCK_SIZE_GROWTH_PER_YEAR)
     , locked_tx_allowed_delta_seconds(parameters::LOCKED_TX_ALLOWED_DELTA_SECONDS(difficulty_target))
     , locked_tx_allowed_delta_blocks(parameters::LOCKED_TX_ALLOWED_DELTA_BLOCKS)
     , upgrade_height_v2(parameters::UPGRADE_HEIGHT_V2)
     , upgrade_height_v3(parameters::UPGRADE_HEIGHT_V3)
     , key_image_subgroup_checking_height(parameters::KEY_IMAGE_SUBGROUP_CHECKING_HEIGHT)
-	, upgrade_from_major_version(3)
-	, upgrade_indicator_minor_version(3)
-	, upgrade_desired_major_version(0)
+    , upgrade_from_major_version(3)
+    , upgrade_indicator_minor_version(4)
+    , upgrade_desired_major_version(0)
     , upgrade_voting_window(expected_blocks_per_day())
     , upgrade_votes_required(upgrade_voting_window * 9 / 10)
     , upgrade_blocks_after_voting(expected_blocks_per_day() * 14)
@@ -117,10 +117,12 @@ Currency::Currency(const std::string &net)
 	genesis_block_template.base_transaction.inputs.push_back(CoinbaseInput{0});
 	genesis_block_template.base_transaction.outputs.push_back(
 	    TransactionOutput{money_supply >> emission_speed_factor, KeyOutput{genesis_output_key}});
-    extra_add_transaction_public_key(genesis_block_template.base_transaction.extra, genesis_tx_public_key);
+	extra_add_transaction_public_key(genesis_block_template.base_transaction.extra, genesis_tx_public_key);
 
-	if (net == "test")
+	if (net == "test") {
 		genesis_block_template.nonce += 1;
+		genesis_block_template.timestamp = platform::get_time_multiplier_for_tests() - 1;
+	}
 	if (net == "stage")
 		genesis_block_template.nonce += 2;
 	auto body_proxy    = get_body_proxy_from_template(genesis_block_template);
@@ -206,8 +208,8 @@ uint32_t Currency::get_minimum_size_median(uint8_t block_major_version) const {
 
 void Currency::get_block_reward(uint8_t block_major_version, size_t effective_median_size, size_t current_block_size,
     Amount already_generated_coins, Amount fee, Amount *reward, SignedAmount *emission_change) const {
-	assert(already_generated_coins <= money_supply);
-	assert(emission_speed_factor > 0 && emission_speed_factor <= 8 * sizeof(Amount));
+	invariant(already_generated_coins <= money_supply, "");
+	invariant(emission_speed_factor > 0 && emission_speed_factor <= 8 * sizeof(Amount), "");
 
 	Amount base_reward = (money_supply - already_generated_coins) >> emission_speed_factor;
 
@@ -224,24 +226,27 @@ Height Currency::largest_window() const {
 }
 
 uint32_t Currency::max_block_cumulative_size(Height height) const {
-	if( max_block_size_growth_per_year == 0)
+	if (max_block_size_growth_per_year == 0)
 		return max_block_size_initial;
-	assert(height <= std::numeric_limits<uint64_t>::max() / max_block_size_growth_per_year);
+	invariant(height <= std::numeric_limits<uint64_t>::max() / max_block_size_growth_per_year, "");
 	uint64_t max_size =
 	    max_block_size_initial + (uint64_t(height) * max_block_size_growth_per_year) / expected_blocks_per_year();
-	assert(max_size < std::numeric_limits<uint32_t>::max());
+	invariant(max_size < std::numeric_limits<uint32_t>::max(), "");
 	return static_cast<uint32_t>(max_size);
 }
 
 uint32_t Currency::max_transaction_allowed_size(uint32_t effective_block_size_median) const {
-	assert(effective_block_size_median * 2 > miner_tx_blob_reserved_size);
+	invariant(effective_block_size_median * 2 > miner_tx_blob_reserved_size, "");
 
 	return std::min(max_tx_size, effective_block_size_median * 2 - miner_tx_blob_reserved_size);
 }
 
-bool Currency::construct_miner_tx(uint8_t block_major_version, Height height, size_t effective_median_size,
+void Currency::construct_miner_tx(uint8_t block_major_version, Height height, size_t effective_median_size,
     Amount already_generated_coins, size_t current_block_size, Amount fee, Hash mineproof_seed,
-    const AccountPublicAddress &miner_address, Transaction *tx, const BinaryArray &extra_nonce, size_t max_outs) const {
+    const AccountPublicAddress &miner_address, Transaction *tx, const BinaryArray &extra_nonce) const {
+	const size_t max_outs = get_max_amount_outputs();
+	// If we wish to limit number of outputs, it makes sense to round miner reward to some arbitrary number
+	// Though this solution will reduce number of coins to mix
 	tx->inputs.clear();
 	tx->outputs.clear();
 	tx->extra.clear();
@@ -258,13 +263,11 @@ bool Currency::construct_miner_tx(uint8_t block_major_version, Height height, si
 	Amount block_reward;
 	SignedAmount emission_change;
 	get_block_reward(block_major_version, effective_median_size, current_block_size, already_generated_coins, fee,
-	        &block_reward, &emission_change);
+	    &block_reward, &emission_change);
 
 	std::vector<Amount> out_amounts;
 	decompose_amount(block_reward, default_dust_threshold, &out_amounts);
 
-	if (max_outs == 0)
-		max_outs = 1;  // :)
 	while (out_amounts.size() > max_outs) {
 		out_amounts[out_amounts.size() - 2] += out_amounts.back();
 		out_amounts.pop_back();
@@ -275,21 +278,13 @@ bool Currency::construct_miner_tx(uint8_t block_major_version, Height height, si
 		KeyDerivation derivation{};
 		PublicKey out_ephemeral_pub_key{};
 
-		if (!crypto::generate_key_derivation(miner_address.view_public_key, txkey.secret_key, derivation)) {
-			//      logger(ERROR, BrightRed)
-			//        << "while creating outs: failed to generate_key_derivation("
-			//        << miner_address.view_public_key << ", " << txkey.secret_key <<
-			//        ")";
-			return false;
-		}
+		if (!crypto::generate_key_derivation(miner_address.view_public_key, txkey.secret_key, derivation))
+			throw json_rpc::Error{json_rpc::INVALID_PARAMS,
+			    "Miner address has invalid public key " + common::pod_to_hex(miner_address.view_public_key)};
 
-		if (!crypto::derive_public_key(derivation, no, miner_address.spend_public_key, out_ephemeral_pub_key)) {
-			//      logger(ERROR, BrightRed)
-			//        << "while creating outs: failed to derive_public_key("
-			//        << derivation << ", " << no << ", "
-			//        << miner_address.spend_public_key << ")";
-			return false;
-		}
+		if (!crypto::derive_public_key(derivation, no, miner_address.spend_public_key, out_ephemeral_pub_key))
+			throw json_rpc::Error{json_rpc::INVALID_PARAMS,
+			    "Miner address has invalid public key " + common::pod_to_hex(miner_address.view_public_key)};
 
 		KeyOutput tk;
 		tk.public_key = out_ephemeral_pub_key;
@@ -301,20 +296,19 @@ bool Currency::construct_miner_tx(uint8_t block_major_version, Height height, si
 	}
 
 	invariant(summary_amounts == block_reward, "");
-		//    logger(ERROR, BrightRed) << "Failed to construct miner tx,
-		//    summary_amounts = " << summary_amounts << " not
-		//    equal block_reward = " << block_reward;
+	//    logger(ERROR, BrightRed) << "Failed to construct miner tx,
+	//    summary_amounts = " << summary_amounts << " not
+	//    equal block_reward = " << block_reward;
 
-	tx->version = current_transaction_version;
+	tx->version                   = current_transaction_version;
 	tx->unlock_block_or_timestamp = height + mined_money_unlock_window;
-	return true;
 }
 
 uint64_t Currency::get_penalized_amount(uint64_t amount, size_t median_size, size_t current_block_size) {
 	static_assert(sizeof(size_t) >= sizeof(uint32_t), "size_t is too small");
-	assert(current_block_size <= 2 * median_size);
-	assert(median_size <= std::numeric_limits<uint32_t>::max());
-	assert(current_block_size <= std::numeric_limits<uint32_t>::max());
+	invariant(current_block_size <= 2 * median_size, "");
+	invariant(median_size <= std::numeric_limits<uint32_t>::max(), "");
+	invariant(current_block_size <= std::numeric_limits<uint32_t>::max(), "");
 
 	if (amount == 0)
 		return 0;
@@ -331,8 +325,8 @@ uint64_t Currency::get_penalized_amount(uint64_t amount, size_t median_size, siz
 	div128_32(penalized_amount_hi, penalized_amount_lo, static_cast<uint32_t>(median_size), &penalized_amount_hi,
 	    &penalized_amount_lo);
 
-	assert(0 == penalized_amount_hi);
-	assert(penalized_amount_lo < amount);
+	invariant(0 == penalized_amount_hi, "");
+	invariant(penalized_amount_lo < amount, "");
 
 	return penalized_amount_lo;
 }
@@ -481,16 +475,15 @@ Difficulty Currency::next_difficulty(
 
 	uint64_t low, high;
 	low = mul128(total_work.lo, difficulty_target, &high);
-	if (high != 0 || std::numeric_limits<uint64_t>::max() - low < (time_span - 1)) {
-		return 0;
-	}
+	if (high != 0 || std::numeric_limits<uint64_t>::max() - low < (time_span - 1))
+		throw std::runtime_error("Difficulty overlap");
 	return (low + time_span - 1) / time_span;
 }
 
 Difficulty Currency::next_effective_difficulty(uint8_t block_major_version, std::vector<Timestamp> timestamps,
     std::vector<CumulativeDifficulty> cumulative_difficulties) const {
 	Difficulty difficulty = next_difficulty(&timestamps, &cumulative_difficulties);
-	if (difficulty != 0 && difficulty < get_minimum_difficulty(block_major_version))
+	if (difficulty < get_minimum_difficulty(block_major_version))  // even when it is 0
 		difficulty = get_minimum_difficulty(block_major_version);
 	return difficulty;
 }
@@ -502,12 +495,9 @@ BinaryArray Currency::get_block_long_hashing_data(const BlockHeader &bh, const B
 	ba.begin_object();
 	ser_members(const_cast<BlockHeader &>(bh), ba, BlockSeriaType::LONG_BLOCKHASH, body_proxy);
 	ba.end_object();
-	//	std::cout << "ba: " << common::to_hex(result.data(), result.size()) << std::endl;
-	switch (bh.major_version) {
-	case 1:
+	if (bh.major_version == 1)
 		return result;
-	case 2:
-	case 3: {
+	if (bh.is_merge_mined()) {
 		TransactionExtraMergeMiningTag mm_tag;
 		if (!extra_get_merge_mining_tag(bh.parent_block.base_transaction.extra, mm_tag)) {
 			//    logger(ERROR) << "merge mining tag wasn't found in extra of the parent
@@ -530,25 +520,32 @@ BinaryArray Currency::get_block_long_hashing_data(const BlockHeader &bh, const B
 		return result;
 	}
 #if bytecoin_ALLOW_CM
-	case 104: {
+	if (bh.is_cm_mined()) {
 		Hash merkle_root_hash = crypto::tree_hash_from_branch(bh.cm_merkle_branch.data(),
 		    bh.cm_merkle_branch.size(),
 		    get_auxiliary_block_header_hash(bh, body_proxy),
-		    genesis_block_hash.data);
-		BinaryArray long_hashing_array(sizeof(Hash) + 8);
-		memcpy(long_hashing_array.data(), merkle_root_hash.data, sizeof(Hash));
-		common::uint_le_to_bytes(long_hashing_array.data() + sizeof(Hash), 8, bh.nonce);
+		    &genesis_block_hash);
+		// We should not allow adding merkle_root_hash twice to the long_hashing_array, so more
+		// flexible "pre_nonce" | root | "post_nonce" would be bad (allow mining of sidechains)
+		BinaryArray long_hashing_array = bh.cm_nonce;
+		common::append(long_hashing_array, std::begin(merkle_root_hash.data), std::end(merkle_root_hash.data));
 		return long_hashing_array;
 	}
 #endif
-	}
 	throw std::runtime_error("Unknown block major version.");
 }
 
-bool Currency::is_dust(Amount amount) {
+bool Currency::is_dust(Amount amount) const {
 	auto pretty_it = std::lower_bound(std::begin(PRETTY_AMOUNTS), std::end(PRETTY_AMOUNTS), amount);
-	return pretty_it == std::end(Currency::PRETTY_AMOUNTS) || *pretty_it != amount ||
-	       amount < 1000000;  // After fork, dust definition will change
+	if (pretty_it != std::end(Currency::PRETTY_AMOUNTS) && *pretty_it == amount)
+		return amount >= 30000000000000000;  // We have just a couple of large coins
+	return amount < 1000000;
+	//	if (amount > 1000000)
+	//		return true;
+	//	if (net == "main")  // Enough dust particles in mainnet already
+	//		return amount > 1000 && amount % 1000 != 0;
+	//	return true;
+	// We changed dust definition - rebuilding wallets will rearrange spendable and spendable_dust balances
 }
 
 Hash bytecoin::get_transaction_inputs_hash(const TransactionPrefix &tx) {
@@ -567,24 +564,24 @@ Hash bytecoin::get_transaction_hash(const Transaction &tx) {
 }
 
 Hash bytecoin::get_block_hash(const BlockHeader &bh, const BlockBodyProxy &body_proxy) {
-//	common::BinaryArray result;
-//	common::VectorOutputStream stream(result);
-//	seria::BinaryOutputStream ba(stream);
-//	ba.begin_object();
-//	ser_members(const_cast<BlockHeader &>(bh), ba, BlockSeriaType::BLOCKHASH, body_proxy);
-//	ba.end_object();
+	//	common::BinaryArray result;
+	//	common::VectorOutputStream stream(result);
+	//	seria::BinaryOutputStream ba(stream);
+	//	ba.begin_object();
+	//	ser_members(const_cast<BlockHeader &>(bh), ba, BlockSeriaType::BLOCKHASH, body_proxy);
+	//	ba.end_object();
 	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::BLOCKHASH, body_proxy));
 	//	std::cout << "ha: " << ha2 << " ba: " << common::to_hex(result.data(), result.size()) << std::endl;
 	return ha2;
 }
 
 Hash bytecoin::get_auxiliary_block_header_hash(const BlockHeader &bh, const BlockBodyProxy &body_proxy) {
-//	common::BinaryArray result;
-//	common::VectorOutputStream stream(result);
-//	seria::BinaryOutputStream ba(stream);
-//	ba.begin_object();
-//	ser(const_cast<BlockHeader &>(bh), ba, BlockSeriaType::PREHASH, body_proxy);
-//	ba.end_object();
+	//	common::BinaryArray result;
+	//	common::VectorOutputStream stream(result);
+	//	seria::BinaryOutputStream ba(stream);
+	//	ba.begin_object();
+	//	ser(const_cast<BlockHeader &>(bh), ba, BlockSeriaType::PREHASH, body_proxy);
+	//	ba.end_object();
 	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::PREHASH, body_proxy));
 	//	std::cout << "ha: " << ha2 << " ba: " << common::to_hex(result.data(), result.size()) << std::endl;
 	return ha2;

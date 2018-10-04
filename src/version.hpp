@@ -4,8 +4,8 @@
 #pragma once
 
 // defines are for Windows resource compiler
-#define bytecoin_VERSION_WINDOWS_COMMA 3, 18, 8, 31
-#define bytecoin_VERSION_STRING "3.3.0"
+#define bytecoin_VERSION_WINDOWS_COMMA 3, 18, 10, 3
+#define bytecoin_VERSION_STRING "3.3.1"
 
 #ifndef RC_INVOKED  // Windows resource compiler
 

@@ -288,19 +288,45 @@ void ser_members(BlockHeader &v, ISeria &s, BlockSeriaType seria_type, BlockBody
 		seria_kv("major_version", v.major_version, s);
 		seria_kv("minor_version", v.minor_version, s);
 	}
-#if bytecoin_ALLOW_CM
-	if (v.major_version == 104) {  // CM, experimental
+	if (v.major_version == 1) {
 		seria_kv("timestamp", v.timestamp, s);
 		seria_kv("previous_block_hash", v.previous_block_hash, s);
-		unsigned char nonce_data[8];
-		common::uint_le_to_bytes(nonce_data, 8, v.nonce);
+		unsigned char nonce_data[4];
+		common::uint_le_to_bytes(nonce_data, 4, v.nonce);
 		s.object_key("nonce");
-		s.binary(nonce_data, 8);
+		s.binary(nonce_data, 4);
 		if (s.is_input())
-			v.nonce = common::uint_le_from_bytes<uint64_t>(nonce_data, 4);
+			v.nonce = common::uint_le_from_bytes<uint32_t>(nonce_data, 4);
 		if (seria_type != BlockSeriaType::NORMAL)
 			seria_kv("body_proxy", body_proxy, s);
+		return;
+	}
+	if (v.is_merge_mined()) {
+		if (seria_type != BlockSeriaType::LONG_BLOCKHASH) {
+			seria_kv("previous_block_hash", v.previous_block_hash, s);
+			if (seria_type != BlockSeriaType::NORMAL)
+				seria_kv("body_proxy", body_proxy, s);
+		}
+		//		auto parent_block_serializer = make_parent_block_serializer(v, false, false);
 		if (seria_type != BlockSeriaType::PREHASH) {
+			s.object_key("parent_block");
+			s.begin_object();
+			ser_members(v.parent_block, s, seria_type);
+			s.end_object();
+			if (s.is_input()) {
+				v.nonce     = v.parent_block.nonce;
+				v.timestamp = v.parent_block.timestamp;
+			}
+		}
+		//		seria_kv("parent_block", parent_block_serializer, s);
+		return;
+	}
+#if bytecoin_ALLOW_CM
+	if (v.is_cm_mined()) {
+		seria_kv("timestamp", v.timestamp, s);
+		seria_kv("previous_block_hash", v.previous_block_hash, s);
+		if (seria_type != BlockSeriaType::PREHASH && seria_type != BlockSeriaType::LONG_BLOCKHASH) {
+			seria_kv("cm_nonce", v.cm_nonce, s);
 			size_t length = v.cm_merkle_branch.size();
 			seria_kv("cm_merkle_branch_length", length, s);
 			std::vector<unsigned char> mask((length + 7) / 8);
@@ -338,44 +364,12 @@ void ser_members(BlockHeader &v, ISeria &s, BlockSeriaType seria_type, BlockBody
 				}
 				s.end_array();
 			}
-			//			seria_kv("cm_merkle_branch", v.cm_merkle_branch, s);
 		}
-		return;
-	}
-#endif
-	if (v.major_version == 1) {
-		seria_kv("timestamp", v.timestamp, s);
-		seria_kv("previous_block_hash", v.previous_block_hash, s);
-		unsigned char nonce_data[4];
-		common::uint_le_to_bytes(nonce_data, 4, v.nonce);
-		s.object_key("nonce");
-		s.binary(nonce_data, 4);
-		if (s.is_input())
-			v.nonce = common::uint_le_from_bytes<uint64_t>(nonce_data, 4);
 		if (seria_type != BlockSeriaType::NORMAL)
 			seria_kv("body_proxy", body_proxy, s);
 		return;
 	}
-	if (v.major_version == 2 || v.major_version == 3) {
-		if (seria_type != BlockSeriaType::LONG_BLOCKHASH) {
-			seria_kv("previous_block_hash", v.previous_block_hash, s);
-			if (seria_type != BlockSeriaType::NORMAL)
-				seria_kv("body_proxy", body_proxy, s);
-		}
-		//		auto parent_block_serializer = make_parent_block_serializer(v, false, false);
-		if (seria_type != BlockSeriaType::PREHASH) {
-			s.object_key("parent_block");
-			s.begin_object();
-			ser_members(v.parent_block, s, seria_type);
-			s.end_object();
-			if (s.is_input()) {
-				v.nonce     = v.parent_block.nonce;
-				v.timestamp = v.parent_block.timestamp;
-			}
-		}
-		//		seria_kv("parent_block", parent_block_serializer, s);
-		return;
-	}
+#endif
 	throw std::runtime_error("Unknown block major version " + common::to_string(v.major_version));
 }
 void ser_members(BlockBodyProxy &v, ISeria &s) {
@@ -383,16 +377,7 @@ void ser_members(BlockBodyProxy &v, ISeria &s) {
 	seria_kv("transaction_count", v.transaction_count, s);
 }
 void ser_members(BlockTemplate &v, ISeria &s) {
-	//	BlockBodyProxy body_proxy;
-	//	if(seria_type != BlockSeriaType::NORMAL)
-	//		body_proxy = get_body_proxy_from_template(v);
 	ser_members(static_cast<BlockHeader &>(v), s);
-	//	if(v.major_version == 104) { // CM, experimental
-	//		seria_kv("transaction_hashes", v.transaction_hashes, s);
-	//		return;
-	//	}
-	//	if(seria_type != BlockSeriaType::NORMAL)
-	//		return;
 	seria_kv("coinbase_transaction", v.base_transaction, s);
 	seria_kv("transaction_hashes", v.transaction_hashes, s);
 }

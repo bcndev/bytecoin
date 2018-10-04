@@ -11,3 +11,5 @@ Difference is in the way data is returned from keccak function.
 With our parameters standard Keccak returns up to 136 bytes as is, then performs additional permutation per 136 bytes
 
 Our Keccak returns up to 200 bytes as is, and cannot return more
+
+We added #define LITTLE_ENDIAN to the code, because this increases speed 3x

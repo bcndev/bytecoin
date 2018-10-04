@@ -210,4 +210,37 @@ void test_crypto(const std::string &test_vectors_filename) {
 			throw std::ios_base::failure("Unknown function: " + cmd);
 		}
 	}
+	crypto::KeyPair test_keypair1 = crypto::random_keypair();
+	crypto::KeyPair test_keypair2 = crypto::random_keypair();
+	crypto::SecretKey actual;
+	int COUNT       = 1000;
+	auto idea_start = std::chrono::high_resolution_clock::now();
+	for (int count = 0; count != COUNT; ++count) {
+		crypto::KeyDerivation der;
+		crypto::generate_key_derivation(test_keypair1.public_key, test_keypair2.secret_key, der);
+		derive_secret_key(der, 0, test_keypair1.secret_key, test_keypair2.secret_key);
+	}
+	auto idea_ms =
+	    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - idea_start);
+	if (idea_ms.count() != 0)
+		std::cout << "Benchmart generate_derivation+derive_secret_key result=" << test_keypair2.secret_key
+		          << " ops/sec=" << COUNT * 1000 / idea_ms.count() << std::endl;
+	else
+		std::cout << "Benchmart generate_derivation+derive_secret_key result=" << test_keypair2.secret_key
+		          << " ops/sec=inf" << std::endl;
+	crypto::Signature test_sig;
+	test_keypair1 = crypto::random_keypair();
+	COUNT         = 1000;
+	idea_start    = std::chrono::high_resolution_clock::now();
+	for (int count = 0; count != COUNT; ++count) {
+		crypto::generate_signature(
+		    *(const crypto::Hash *)(&test_sig.c), test_keypair1.public_key, test_keypair1.secret_key, test_sig);
+	}
+	idea_ms =
+	    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - idea_start);
+	if (idea_ms.count() != 0)
+		std::cout << "Benchmart generate_signature result=" << test_sig.c
+		          << " ops/sec=" << COUNT * 1000 / idea_ms.count() << std::endl;
+	else
+		std::cout << "Benchmart generate_signature result=" << test_sig.r << " ops/sec=inf" << std::endl;
 }

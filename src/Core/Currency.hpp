@@ -46,8 +46,10 @@ public:
 	size_t number_of_decimal_places;
 	Amount coin() const { return DECIMAL_PLACES.at(number_of_decimal_places); }
 
-	Amount minimum_fee;
+	size_t get_max_amount_outputs() const { return 14; }  // 2 groups of 3 digits + 12 single digits
+
 	Amount default_dust_threshold;
+	Amount self_dust_threshold;
 
 	Timestamp difficulty_target;
 	Difficulty minimum_difficulty;
@@ -92,10 +94,10 @@ public:
 	    Amount already_generated_coins, Amount fee, Amount *reward, SignedAmount *emission_change) const;
 	uint32_t max_block_cumulative_size(Height height) const;
 	uint32_t max_transaction_allowed_size(uint32_t effective_block_size_median) const;
-	bool construct_miner_tx(uint8_t block_major_version, Height height, size_t effective_median_size,
+	void construct_miner_tx(uint8_t block_major_version, Height height, size_t effective_median_size,
 	    Amount already_generated_coins, size_t current_block_size, Amount fee, Hash mineproof_seed,
-	    const AccountPublicAddress &miner_address, Transaction *tx, const BinaryArray &extra_nonce = BinaryArray(),
-	    size_t max_outs = 1) const;
+	    const AccountPublicAddress &miner_address, Transaction *tx,
+	    const BinaryArray &extra_nonce = BinaryArray()) const;
 
 	std::string account_address_as_string(const AccountPublicAddress &account_public_address) const;
 	bool parse_account_address_string(const std::string &str, AccountPublicAddress *addr) const;
@@ -122,7 +124,7 @@ public:
 		}  // else interpret as time
 		return block_time + locked_tx_allowed_delta_seconds >= unlock_time;
 	}
-	static bool is_dust(Amount am);
+	bool is_dust(Amount am) const;
 	static uint64_t get_penalized_amount(uint64_t amount, size_t median_size, size_t current_block_size);
 	static std::string get_account_address_as_str(uint64_t prefix, const AccountPublicAddress &adr);
 	static bool parse_account_address_string(uint64_t *prefix, AccountPublicAddress *adr, const std::string &str);

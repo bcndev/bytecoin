@@ -37,8 +37,8 @@ const size_t MINIMUM_SIZE_MEDIAN_V2      = 20000;
 const size_t MINIMUM_SIZE_MEDIAN_V1      = 10000;
 const size_t COINBASE_BLOB_RESERVED_SIZE = 600;
 const size_t DISPLAY_DECIMAL_POINT       = 8;
-const Amount MINIMUM_FEE                 = 1000000;  // pow(10, 6)
 const Amount DEFAULT_DUST_THRESHOLD      = 1000000;  // pow(10, 6)
+const Amount SELF_DUST_THRESHOLD         = 1000;     // pow(10, 3)
 
 const Timestamp DIFFICULTY_TARGET = 120;
 
@@ -184,8 +184,9 @@ constexpr const SWCheckpoint CHECKPOINTS[] = {
     {1510000, common::pfh<Hash>("fcdc93636c47266f6d71606456d5767b7bc4567adbe8055b6d72b56401b48ece")},
     {1540000, common::pfh<Hash>("8014ee1613e13aea282f95b343cf46c376cf8050f801a145665ae80e33a867a1")},
     {1560000, common::pfh<Hash>("1a28c09c74b4b1ad97e4d65b99f97e62aa4f225be5b33017efc07c5c708b83ef")},
-    {1579000, common::pfh<Hash>("debfa79d14ff49dc7e8c24e5e27a22f9a67819124a7dcd187c67493a969044be")}};
-//    {1605000, common::pfh<Hash>("a34a41f2b5091f28f234b55a6255a9727fed355ca41233d59f779b2f87d1a359")}};
+    {1579000, common::pfh<Hash>("debfa79d14ff49dc7e8c24e5e27a22f9a67819124a7dcd187c67493a969044be")},
+    {1605000, common::pfh<Hash>("a34a41f2b5091f28f234b55a6255a9727fed355ca41233d59f779b2f87d1a359")},
+    {1628000, common::pfh<Hash>("4e7b55e53402c71c45cb97f8ed78ed3f128c802008c83b0153aa52c30b740c68")}};
 
 constexpr const SWCheckpoint CHECKPOINTS_STAGENET[] = {
     {450, common::pfh<Hash>("c69823a6b3e0c1f724411e697219a9d31a2df900cb49bb0488b1a91a9989a805")}};

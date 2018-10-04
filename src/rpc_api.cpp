@@ -21,7 +21,7 @@ Height api::ErrorWrongHeight::fix_height_or_depth(
 	if (ha < 0) {
 		ha = static_cast<HeightOrDepth>(tip_height) + 1 + ha;
 		if (ha < 0) {
-			if(throw_on_too_big_depth)
+			if (throw_on_too_big_depth)
 				throw ErrorWrongHeight("height_or_depth cannot be deeper than genesis block", ha, tip_height);
 			ha = 0;
 		}
@@ -44,6 +44,15 @@ void api::ErrorWrongHeight::seria_data_members(seria::ISeria &s) {
 api::ErrorHashNotFound::ErrorHashNotFound(const std::string &msg, const Hash &hash)
     : json_rpc::Error(HASH_NOT_FOUND, msg + " request_hasht=" + common::pod_to_hex(hash)), hash(hash) {}
 void api::ErrorHashNotFound::seria_data_members(seria::ISeria &s) { seria_kv("hash", hash, s); }
+
+api::walletd::CreateTransaction::ErrorTransactionTooBig::ErrorTransactionTooBig(
+    const std::string &msg, Amount a, Amount a_zero)
+    : json_rpc::Error(TRANSACTION_DOES_NOT_FIT_IN_BLOCK, msg), max_amount(a), max_zero_anonymity_amount(a_zero) {}
+
+void api::walletd::CreateTransaction::ErrorTransactionTooBig::seria_data_members(seria::ISeria &s) {
+	seria_kv("max_amount", max_amount, s);
+	seria_kv("max_zero_anonymity_amount", max_zero_anonymity_amount, s);
+}
 
 void api::ErrorAddress::seria_data_members(seria::ISeria &s) { seria_kv("address", address, s); }
 void api::walletd::SendTransaction::Error::seria_data_members(seria::ISeria &s) {
@@ -74,15 +83,15 @@ void ser_members(api::Output &v, ISeria &s) {
 	seria_kv("public_key", v.public_key, s);
 	seria_kv("index", v.index, s);
 	if (dynamic_cast<seria::JsonOutputStream *>(&s))
-		seria_kv("global_index", v.index, s); // deprecated
+		seria_kv("global_index", v.index, s);  // deprecated
 	if (dynamic_cast<seria::JsonInputStream *>(&s))
-		seria_kv("global_index", v.index, s); // deprecated
+		seria_kv("global_index", v.index, s);  // deprecated
 	seria_kv("amount", v.amount, s);
 	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
 	if (dynamic_cast<seria::JsonOutputStream *>(&s))
-		seria_kv("unlock_time", v.unlock_block_or_timestamp, s); // deprecated
+		seria_kv("unlock_time", v.unlock_block_or_timestamp, s);  // deprecated
 	if (dynamic_cast<seria::JsonInputStream *>(&s))
-		seria_kv("unlock_time", v.unlock_block_or_timestamp, s); // deprecated
+		seria_kv("unlock_time", v.unlock_block_or_timestamp, s);  // deprecated
 	seria_kv("index_in_transaction", v.index_in_transaction, s);
 	seria_kv("height", v.height, s);
 	seria_kv("key_image", v.key_image, s);
@@ -133,9 +142,9 @@ void ser_members(api::Transfer &v, ISeria &s) {
 void ser_members(api::Transaction &v, ISeria &s) {
 	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
 	if (dynamic_cast<seria::JsonOutputStream *>(&s))
-		seria_kv("unlock_time", v.unlock_block_or_timestamp, s); // deprecated
+		seria_kv("unlock_time", v.unlock_block_or_timestamp, s);  // deprecated
 	if (dynamic_cast<seria::JsonInputStream *>(&s))
-		seria_kv("unlock_time", v.unlock_block_or_timestamp, s); // deprecated
+		seria_kv("unlock_time", v.unlock_block_or_timestamp, s);  // deprecated
 	seria_kv("amount", v.amount, s);
 	seria_kv("fee", v.fee, s);
 	seria_kv("public_key", v.public_key, s);
@@ -150,9 +159,9 @@ void ser_members(api::Transaction &v, ISeria &s) {
 	seria_kv("timestamp", v.timestamp, s);
 	seria_kv("size", v.size, s);
 	if (dynamic_cast<seria::JsonOutputStream *>(&s))
-		seria_kv("binary_size", v.size, s); // deprecated
+		seria_kv("binary_size", v.size, s);  // deprecated
 	if (dynamic_cast<seria::JsonInputStream *>(&s))
-		seria_kv("binary_size", v.size, s); // deprecated
+		seria_kv("binary_size", v.size, s);  // deprecated
 }
 void ser_members(api::Block &v, ISeria &s) {
 	seria_kv("header", v.header, s);
@@ -231,7 +240,7 @@ void ser_members(api::walletd::GetTransfers::Request &v, ISeria &s) {
 	seria_kv("to_height", v.to_height, s);
 	seria_kv("desired_transaction_count", v.desired_transaction_count, s);
 	if (s.is_input())
-		seria_kv("desired_transactions_count", v.desired_transaction_count, s); // deprecated
+		seria_kv("desired_transactions_count", v.desired_transaction_count, s);  // deprecated
 	seria_kv("forward", v.forward, s);
 }
 void ser_members(api::walletd::GetTransfers::Response &v, ISeria &s) {
@@ -249,6 +258,7 @@ void ser_members(api::walletd::CreateTransaction::Request &v, ISeria &s) {
 	seria_kv("fee_per_byte", v.fee_per_byte, s);
 	seria_kv("optimization", v.optimization, s);
 	seria_kv("save_history", v.save_history, s);
+	seria_kv("subtract_fee_from_amount", v.subtract_fee_from_amount, s);
 	seria_kv("prevent_conflict_with_transactions", v.prevent_conflict_with_transactions, s);
 }
 void ser_members(api::walletd::CreateTransaction::Response &v, ISeria &s) {
@@ -334,7 +344,8 @@ void ser_members(api::bytecoind::SyncMemPool::Request &v, ISeria &s) {
 		std::sort(v.known_hashes.begin(), v.known_hashes.end());
 	seria_kv("known_hashes", v.known_hashes, s);
 	if (s.is_input() && !std::is_sorted(v.known_hashes.begin(), v.known_hashes.end()))
-		throw std::runtime_error("SyncMemPool::Request known_hashes must be sorted in increasing order (from [0000..] to [ffff..])");
+		throw std::runtime_error(
+		    "SyncMemPool::Request known_hashes must be sorted in increasing order (from [0000..] to [ffff..])");
 	seria_kv("need_signatures", v.need_signatures, s);
 	seria_kv("need_redundant_data", v.need_redundant_data, s);
 }
@@ -348,7 +359,7 @@ void ser_members(api::bytecoind::GetRandomOutputs::Request &v, ISeria &s) {
 	seria_kv("amounts", v.amounts, s);
 	seria_kv("output_count", v.output_count, s);
 	if (s.is_input())
-		seria_kv("outs_count", v.output_count, s); // deprecated
+		seria_kv("outs_count", v.output_count, s);  // deprecated
 	seria_kv("confirmed_height_or_depth", v.confirmed_height_or_depth, s);
 }
 void ser_members(api::bytecoind::GetRandomOutputs::Response &v, ISeria &s) { seria_kv("outputs", v.outputs, s); }

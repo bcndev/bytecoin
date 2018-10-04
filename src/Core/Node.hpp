@@ -163,41 +163,6 @@ protected:
 	std::unique_ptr<P2PProtocol> client_factory(P2PClient *client) {
 		return std::make_unique<P2PProtocolBytecoin>(this, client);
 	}
-	class P2PProtocolBytecoinNew : public P2PProtocolNew {
-		Node *const m_node;
-		void after_handshake();
-
-	protected:
-		void on_disconnect(const std::string &ban_reason) override;
-
-		void on_msg_bytes(size_t, size_t) override;
-
-		void on_msg_handshake(np::Handshake::Request &&req) override;
-		void on_msg_handshake(np::Handshake::Response &&req) override;
-		void on_msg_find_diff(np::FindDiff::Request &&) override;
-		void on_msg_find_diff(np::FindDiff::Response &&) override;
-		void on_msg_sync_headers(np::SyncHeaders::Request &&) override;
-		void on_msg_sync_headers(np::SyncHeaders::Response &&) override;
-		void on_msg_get_transactions(np::GetTransactions::Request &&) override;
-		void on_msg_get_transactions(np::GetTransactions::Response &&) override;
-		void on_msg_get_pool_hashes(np::GetPoolHashes::Request &&) override;
-		void on_msg_get_pool_hashes(np::GetPoolHashes::Response &&) override;
-		void on_msg_relay_block_header(np::RelayBlockHeader &&) override;
-		void on_msg_relay_transaction_desc(np::RelayTransactionDescs &&) override;
-#if bytecoin_ALLOW_DEBUG_COMMANDS
-		void on_msg_get_peer_statistics(np::GetPeerStatistics::Request &&) override;
-#endif
-		void on_first_message_after_handshake() override;
-		np::TopBlockDesc get_top_block_desc() const override;
-		std::vector<NetworkAddress> get_peers_to_share() const override;
-
-	public:
-		explicit P2PProtocolBytecoinNew(Node *node, P2PClient *client)
-		    : P2PProtocolNew(
-		          node->m_config, node->m_block_chain.get_currency(), node->m_p2p.get_unique_number(), client)
-		    , m_node(node) {}
-		Node *get_node() const { return m_node; }
-	};
 	class DownloaderV11 {  // torrent-style sync&download from legacy v1 clients
 		Node *const m_node;
 		BlockChainState &m_block_chain;
@@ -263,9 +228,53 @@ protected:
 		void on_msg_notify_request_objects(P2PProtocolBytecoin *, const NOTIFY_RESPONSE_GET_OBJECTS::request &);
 		void on_msg_timed_sync(const CORE_SYNC_DATA &payload_data);
 	};
+	class P2PProtocolBytecoinNew : public P2PProtocolNew {
+		Node *const m_node;
+		void after_handshake();
+
+		void on_download_timer();
+
+	protected:
+		void on_disconnect(const std::string &ban_reason) override;
+
+		void on_msg_bytes(size_t, size_t) override;
+
+		void on_msg_handshake(np::Handshake::Request &&req) override;
+		void on_msg_handshake(np::Handshake::Response &&req) override;
+		void on_msg_find_diff(np::FindDiff::Request &&) override;
+		void on_msg_find_diff(np::FindDiff::Response &&) override;
+		void on_msg_sync_headers(np::SyncHeaders::Request &&) override;
+		void on_msg_sync_headers(np::SyncHeaders::Response &&) override;
+		void on_msg_get_transactions(np::GetTransactions::Request &&) override;
+		void on_msg_get_transactions(np::GetTransactions::Response &&) override;
+		void on_msg_get_pool_hashes(np::GetPoolHashes::Request &&) override;
+		void on_msg_get_pool_hashes(np::GetPoolHashes::Response &&) override;
+		void on_msg_relay_block_header(np::RelayBlockHeader &&) override;
+		void on_msg_relay_transaction_desc(np::RelayTransactionDescs &&) override;
+#if bytecoin_ALLOW_DEBUG_COMMANDS
+		void on_msg_get_peer_statistics(np::GetPeerStatistics::Request &&) override;
+#endif
+		void on_first_message_after_handshake() override;
+		np::TopBlockDesc get_top_block_desc() const override;
+		std::vector<NetworkAddress> get_peers_to_share() const override;
+
+	public:
+		explicit P2PProtocolBytecoinNew(Node *node, P2PClient *client)
+		    : P2PProtocolNew(
+		          node->m_config, node->m_block_chain.get_currency(), node->m_p2p.get_unique_number(), client)
+		    , m_node(node)
+		    , m_download_timer(std::bind(&P2PProtocolBytecoinNew::on_download_timer, this)) {}
+		Node *get_node() const { return m_node; }
+
+		std::set<std::pair<Height, Hash>> can_download_blocks;
+		std::set<Hash> downloading_blocks;
+		platform::Timer m_download_timer;  // Reset when start download or receive block
+	};
 	class DownloaderV3 {  // torrent-style sync&download from new v3 clients
 		Node *const m_node;
 		BlockChainState &m_block_chain;
+
+		//		std::set<std::pair<Height, Hash>> fill_can_download(Hash hash)const;
 
 		std::map<P2PProtocolBytecoinNew *, size_t> m_good_clients;  // -> # of downloading blocks
 		size_t total_downloading_blocks = 0;

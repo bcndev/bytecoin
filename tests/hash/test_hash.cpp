@@ -123,4 +123,30 @@ void test_hashes(const std::string &test_vectors_folder) {
 			invariant(root == root2, "");
 		}
 	}
+	crypto::Hash test_hash;
+	int COUNT       = 100000;
+	auto idea_start = std::chrono::high_resolution_clock::now();
+	for (int count = 0; count != COUNT; ++count) {
+		test_hash = crypto::cn_fast_hash(test_hash.data, sizeof(test_hash.data));
+	}
+	auto idea_ms =
+	    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - idea_start);
+	if (idea_ms.count() != 0)
+		std::cout << "Benchmart cn_fast_hash result=" << test_hash << " hashes/sec=" << COUNT * 1000 / idea_ms.count()
+		          << std::endl;
+	else
+		std::cout << "Benchmart cn_fast_hash result=" << test_hash << " hashes/sec=inf" << std::endl;
+	test_hash  = crypto::Hash{};
+	COUNT      = 100;
+	idea_start = std::chrono::high_resolution_clock::now();
+	for (int count = 0; count != COUNT; ++count) {
+		test_hash = context.cn_slow_hash(test_hash.data, sizeof(test_hash.data));
+	}
+	idea_ms =
+	    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - idea_start);
+	if (idea_ms.count() != 0)
+		std::cout << "Benchmart cn_slow_hash result=" << test_hash << " hashes/sec=" << COUNT * 1000 / idea_ms.count()
+		          << std::endl;
+	else
+		std::cout << "Benchmart cn_slow_hash result=" << test_hash << " hashes/sec=inf" << std::endl;
 }

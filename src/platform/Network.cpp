@@ -900,32 +900,33 @@ bool TCPAcceptor::accept(TCPSocket &socket, std::string &accepted_addr) {
 	return true;
 }
 
-std::vector<std::string> TCPAcceptor::local_addresses(bool ipv4, bool ipv6){
+std::vector<std::string> TCPAcceptor::local_addresses(bool ipv4, bool ipv6) {
 	std::vector<std::string> result;
-#ifndef _WIN32 // TODO - get adapters info on Win32
+#ifndef _WIN32  // TODO - get adapters info on Win32
 	struct ifaddrs *ifaddr = nullptr;
 	if (getifaddrs(&ifaddr) == -1)
 		return result;
 
-	for (struct ifaddrs * ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+	for (struct ifaddrs *ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
 		if (ifa->ifa_addr == NULL)
 			continue;
-		int family = ifa->ifa_addr->sa_family;;
+		int family = ifa->ifa_addr->sa_family;
+		;
 		if (family != AF_INET && family != AF_INET6)
 			continue;
 		char host[NI_MAXHOST]{};
-		int s = getnameinfo(ifa->ifa_addr, (family == AF_INET) ? sizeof(struct sockaddr_in) :
-						sizeof(struct sockaddr_in6), host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
-		if( s == 0 && ipv4 && family == AF_INET)
+		int s =
+		    getnameinfo(ifa->ifa_addr, (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6),
+		        host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+		if (s == 0 && ipv4 && family == AF_INET)
 			result.push_back(host);
-		if( s == 0 && ipv6 && family == AF_INET6)
+		if (s == 0 && ipv6 && family == AF_INET6)
 			result.push_back(host);
 	}
 	freeifaddrs(ifaddr);
 #endif
 	return result;
 }
-
 
 class UDPMulticast::Impl {
 public:
@@ -991,9 +992,9 @@ UDPMulticast::UDPMulticast(const std::string &addr, uint16_t port, P_handler p_h
 		impl->start_read();
 
 		auto local_addresses = TCPAcceptor::local_addresses(true, false);
-		for(const auto & la : local_addresses)
+		for (const auto &la : local_addresses)
 			std::cout << "UDPMulticast::UDPMulticast listening on local address " << la << std::endl;
-	} catch (const std::exception & ex) {
+	} catch (const std::exception &ex) {
 		std::cout << "UDPMulticast::UDPMulticast exception " << common::what(ex) << std::endl;
 	}
 }
@@ -1006,26 +1007,25 @@ void UDPMulticast::send(const std::string &addr, uint16_t port, const void *data
 		    //			boost::asio::ip::udp::endpoint local_ep(local_ad, port);
 		    //			boost::asio::ip::udp::socket local_socket(EventLoop::current()->io(), local_ep.protocol());
 		    //			local_socket.send_to(boost::asio::buffer(data, size), local_ep);
-		}
-		{
+		} {
 			boost::asio::ip::address ad = boost::asio::ip::address::from_string(addr);
 			boost::asio::ip::udp::endpoint ep(ad, port);
 			boost::asio::ip::udp::socket socket(EventLoop::current()->io(), ep.protocol());
 
-//			socket.set_option(boost::asio::ip::multicast::enable_loopback(true));
-//			socket.set_option(boost::asio::ip::multicast::hops(2));
+			//			socket.set_option(boost::asio::ip::multicast::enable_loopback(true));
+			//			socket.set_option(boost::asio::ip::multicast::hops(2));
 			auto local_addresses = TCPAcceptor::local_addresses(true, false);
-			for(const auto & la : local_addresses){
-				boost::asio::ip::address_v4 local_interface =
-						boost::asio::ip::address_v4::from_string(la);
+			for (const auto &la : local_addresses) {
+				boost::asio::ip::address_v4 local_interface = boost::asio::ip::address_v4::from_string(la);
 				socket.set_option(boost::asio::ip::multicast::outbound_interface(local_interface));
 				socket.send_to(boost::asio::buffer(data, size), ep);
 			}
-			if(local_addresses.empty()) // Send on default gateway
+			if (local_addresses.empty())  // Send on default gateway
 				socket.send_to(boost::asio::buffer(data, size), ep);
 		}
-	} catch (const std::exception & ex) {
-		std::cout << "UDPMulticast::send exception to addr=" << addr << " port=" << port << " error=" << common::what(ex) << std::endl;
+	} catch (const std::exception &ex) {
+		std::cout << "UDPMulticast::send exception to addr=" << addr << " port=" << port
+		          << " error=" << common::what(ex) << std::endl;
 	}
 }
 

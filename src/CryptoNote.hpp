@@ -94,12 +94,16 @@ struct ParentBlock {  // or Merge Mining Root, not to be confused with previous 
 
 struct BlockHeader {
 	uint8_t major_version = 0;
-	uint8_t minor_version = 0;  // Used for hard fork voting
-	uint64_t nonce        = 0;  // only 32-bit is used in blocks without CM
+	uint8_t minor_version = 0;  // Not version at all, used for hard fork voting
+	uint32_t nonce        = 0;
 	Timestamp timestamp   = 0;
 	Hash previous_block_hash;
-	ParentBlock parent_block;            // For block with MM (V2, V3)
+	ParentBlock parent_block;            // For block with is_merge_mined() true
+	BinaryArray cm_nonce;                // For blocks with CM (V104)
 	std::vector<Hash> cm_merkle_branch;  // For blocks with CM (V104)
+
+	bool is_merge_mined() const { return major_version == 2 || major_version == 3; }
+	bool is_cm_mined() const { return major_version == 104; }
 };
 
 struct BlockBodyProxy {

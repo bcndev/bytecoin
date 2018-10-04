@@ -17,7 +17,7 @@ static const std::string ADDRESSES_PREFIX = "a";  // this is not undone
 using namespace bytecoin;
 using namespace platform;
 
-Amount WalletState::DeltaState::add_incoming_output(const api::Output &output, const Hash & tid) {
+Amount WalletState::DeltaState::add_incoming_output(const api::Output &output, const Hash &tid) {
 	m_unspents[output.public_key].push_back(output);
 	return output.amount;
 }
@@ -468,7 +468,7 @@ bool WalletState::parse_raw_transaction(api::Transaction *ptx, std::vector<api::
 						api::Output out;
 						out.amount               = output.amount;
 						out.index                = global_indices.at(out_index);
-						out.dust                 = Currency::is_dust(output.amount);
+						out.dust                 = m_currency.is_dust(output.amount);
 						out.height               = block_height;
 						out.index_in_transaction = out_index;
 						if (record.spend_secret_key != SecretKey{})
@@ -500,7 +500,7 @@ bool WalletState::parse_raw_transaction(api::Transaction *ptx, std::vector<api::
 						api::Output out;
 						out.amount = output.amount;
 						out.index  = global_indices.at(out_index);
-						out.dust   = Currency::is_dust(output.amount);
+						out.dust   = m_currency.is_dust(output.amount);
 						out.height = block_height;
 						// We cannot generate key_image for others addresses
 						out.index_in_transaction      = out_index;
@@ -522,8 +522,8 @@ bool WalletState::parse_raw_transaction(api::Transaction *ptx, std::vector<api::
 	}
 	for (bool ours : {false, true})
 		for (auto &&tm : transfer_map_outputs[ours]) {
-			tm.second.locked = ptx->unlock_block_or_timestamp != 0;
-			tm.second.ours   = ours;
+			tm.second.locked           = ptx->unlock_block_or_timestamp != 0;
+			tm.second.ours             = ours;
 			tm.second.transaction_hash = tid;
 			if (tm.second.amount != 0)  // We use map as a map of addresses
 				ptx->transfers.push_back(std::move(tm.second));
@@ -548,7 +548,7 @@ bool WalletState::parse_raw_transaction(api::Transaction *ptx, std::vector<api::
 		}
 	}
 	for (auto &&tm : transfer_map_inputs) {
-		tm.second.address = tm.first;
+		tm.second.address          = tm.first;
 		tm.second.transaction_hash = tid;
 		input_transfers->push_back(tm.second);
 	}
@@ -580,7 +580,10 @@ bool WalletState::parse_raw_transaction(api::Transaction &ptx, const Transaction
 
 const std::map<KeyImage, int> &WalletState::get_used_key_images() const { return m_memory_state.get_used_key_images(); }
 
-void WalletState::on_first_transaction_found(Timestamp ts) { m_wallet.on_first_output_found(ts); }
+void WalletState::on_first_transaction_found(Timestamp ts) {
+	if (m_currency.net == "main")  // TODO - per net first timestamp in future wallet format
+		m_wallet.on_first_output_found(ts);
+}
 
 bool WalletState::redo_transaction(const PreparedWalletTransaction &pwtx, const std::vector<uint32_t> &global_indices,
     IWalletState *delta_state, bool is_base, Hash tid, Height block_height, Hash bid, Timestamp tx_timestamp) {
@@ -689,17 +692,17 @@ api::Block WalletState::api_get_pool_as_history(const std::string &address) cons
 	api::Block current_block;
 	current_block.header.height = get_tip_height() + 1;
 	for (const auto &hit : m_memory_state.get_transactions()) {
-		auto tx = hit.second.second;
+		auto tx         = hit.second.second;
 		tx.block_height = get_tip_height() + 1;
-//		for(auto & tr : tx.transfers) // TODO - remove after DB version switch
-//			tr.transaction_hash = hit.second.second.hash;
+		//		for(auto & tr : tx.transfers) // TODO - remove after DB version switch
+		//			tr.transaction_hash = hit.second.second.hash;
 		if (!address.empty()) {
 			for (auto tit = tx.transfers.begin(); tit != tx.transfers.end();)
 				if (tit->address == address)
 					++tit;
 				else
 					tit = tx.transfers.erase(tit);
-			if(tx.transfers.empty())
+			if (tx.transfers.empty())
 				continue;
 		}
 		current_block.transactions.push_back(std::move(tx));

@@ -47,10 +47,8 @@ This file uses UTF-8 encoding, as some comments use Greek letters.
 ================================================================
 */
 
-// TODO - fix problems with endiannes
-#ifdef _WIN32
+// TODO - some endianness definition
 #define LITTLE_ENDIAN
-#endif
 
 /**
   * Function to compute the Keccak[r, c] sponge function over a given input.
@@ -158,7 +156,7 @@ static void store64(UINT8 *x, UINT64 u)
     unsigned int i;
 
     for(i=0; i<8; ++i) {
-        x[i] = u;
+        x[i] = (UINT8)u;
         u >>= 8;
     }
 }

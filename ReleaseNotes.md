@@ -1,11 +1,20 @@
 ## Release Notes
 
+### v3.3.1
+
+- The `create_transaction` method can now create transactions with fee < 0.01 BCN iff both `fee_per_byte` and transaction size are small enough.
+- In the `create_transaction` method, if `any_spend_address` is set to true, leaving `change_address` empty now sets it to first wallet address.
+- Added amounts to the message of the `TRANSACTION_TOO_BIG` error so that you see how much you can actually send (with desired or zero anonymity).
+- Added a new new flag `subtract_fee_from_amount` to the `create_transaction` method to indicate subtracting fee from receivers.
+- Tweaked the distribution of mix-in outputs returned by the `get_random_outputs` method to make it .
+- Fixed error in the `getblocktemplate` and `get_block_template` methods which returned wrong reserved_offset.
+
 ### v3.3.0
 
 *Consensus update (hard fork)*
 
 - Voting starts immediately, once 90% of mined blocks contain votes for update, the update height will be automatically selected so that consensus update will happen approximately 2 weeks after that.
-- Market fees - any transaction fee including 0 is now legal for all transactions. Miners will increase block size only if it is profitable for them in a short run.
+- Market fees - any transaction fee including `0` is now legal for all transactions. Miners will increase block size only if it is profitable for them in a short run.
 
 *General improvements*
 

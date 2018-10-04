@@ -67,7 +67,7 @@ void Node::on_multicast(const std::string &addr, const unsigned char *data, size
 	if (!na.port)
 		return;
 	if (common::parse_ip_address(addr, &na.ip)) {
-		std::cout << "* good on_multicast from=" << na << " size=" << size << std::endl;  // TODO - remove
+		//		std::cout << "* good on_multicast from=" << na << " size=" << size << std::endl;  // TODO - remove
 		if (m_peer_db.add_incoming_peer(na, m_p2p.get_local_time()))
 			m_log(logging::INFO) << "Adding peer from multicast announce addr=" << na << std::endl;
 	}
@@ -590,8 +590,8 @@ bool Node::on_get_block_header(http::Client *, http::RequestData &&, json_rpc::R
 		if (!m_block_chain.read_header(request.hash, &response.block_header))
 			throw api::ErrorHashNotFound("Block not found in either main or side chains", request.hash);
 	} else {
-		Height height_or_depth =
-		    api::ErrorWrongHeight::fix_height_or_depth(request.height_or_depth, m_block_chain.get_tip_height(), true, true);
+		Height height_or_depth = api::ErrorWrongHeight::fix_height_or_depth(
+		    request.height_or_depth, m_block_chain.get_tip_height(), true, true);
 		invariant(
 		    m_block_chain.read_chain(height_or_depth, &request.hash), "");  // after fix_height it must always succeed
 		invariant(m_block_chain.read_header(request.hash, &response.block_header), "");
@@ -611,8 +611,8 @@ bool Node::on_get_raw_block(http::Client *, http::RequestData &&, json_rpc::Requ
 		if (!m_block_chain.read_header(request.hash, &response.block.header))
 			throw api::ErrorHashNotFound("Block not found in either main or side chains", request.hash);
 	} else {
-		Height height_or_depth =
-		    api::ErrorWrongHeight::fix_height_or_depth(request.height_or_depth, m_block_chain.get_tip_height(), true, true);
+		Height height_or_depth = api::ErrorWrongHeight::fix_height_or_depth(
+		    request.height_or_depth, m_block_chain.get_tip_height(), true, true);
 		invariant(
 		    m_block_chain.read_chain(height_or_depth, &request.hash), "");  // after fix_height it must always succeed
 		invariant(m_block_chain.read_header(request.hash, &response.block.header), "");
@@ -739,10 +739,10 @@ bool Node::handle_check_sendproof(http::Client *, http::RequestData &&, json_rpc
 	SendProof sp;
 	try {
 		seria::from_json_value(sp, common::JsonValue::from_string(request.sendproof), m_block_chain.get_currency());
-//		seria::JsonInputStreamValue s();
-//		s.begin_object();
-//		ser_members(sp, s, );
-//		s.end_object();
+		//		seria::JsonInputStreamValue s();
+		//		s.begin_object();
+		//		ser_members(sp, s, );
+		//		s.end_object();
 	} catch (const std::exception &ex) {
 		std::throw_with_nested(api::bytecoind::CheckSendproof::Error(api::bytecoind::CheckSendproof::FAILED_TO_PARSE,
 		    "Failed to parse proof object ex.what=" + common::what(ex)));
