@@ -522,7 +522,7 @@ bool UnspentSelector::select_optimal_outputs(HaveCoins *have_coins, DustCoins *d
 	select_max_outputs(have_coins, dust_coins, total_amount, anonymity, std::numeric_limits<size_t>::max());
 	if (small_optimizations)
 		optimize_amounts(have_coins, max_digit, total_amount);
-	return true;
+	return m_used_total >= total_amount;
 }
 
 void UnspentSelector::select_max_outputs(

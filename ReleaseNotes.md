@@ -1,5 +1,9 @@
 ## Release Notes
 
+### v3.3.2
+
+- Fixed bug when an invalid transaction may persist in the payment queue.
+
 ### v3.3.1
 
 - The `create_transaction` method can now create transactions with fee < 0.01 BCN iff both `fee_per_byte` and transaction size are small enough.
