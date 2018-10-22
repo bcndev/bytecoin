@@ -41,7 +41,7 @@ class WalletState : public WalletStateBasic {
 
 		void undo_transaction(const Hash &tid);  // For mem pool
 
-		virtual Amount add_incoming_output(const api::Output &, const Hash & tid) override;  // added amount may be lower
+		virtual Amount add_incoming_output(const api::Output &, const Hash &tid) override;  // added amount may be lower
 		virtual Amount add_incoming_keyimage(Height, const KeyImage &) override;
 		virtual void add_transaction(
 		    Height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override;

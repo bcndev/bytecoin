@@ -17,6 +17,8 @@
 
 using namespace bytecoin;
 
+void Node::P2PProtocolBytecoinNew::on_download_timer() { disconnect(std::string()); }
+
 np::TopBlockDesc Node::P2PProtocolBytecoinNew::get_top_block_desc() const {
 	np::TopBlockDesc result;
 	result.cd     = m_node->m_block_chain.get_tip_cumulative_difficulty();
@@ -143,6 +145,8 @@ void Node::P2PProtocolBytecoinNew::on_msg_get_pool_hashes(np::GetPoolHashes::Req
 void Node::P2PProtocolBytecoinNew::on_msg_get_pool_hashes(np::GetPoolHashes::Response &&resp) {}
 void Node::P2PProtocolBytecoinNew::on_msg_relay_block_header(np::RelayBlockHeader &&req) {}
 void Node::P2PProtocolBytecoinNew::on_msg_relay_transaction_desc(np::RelayTransactionDescs &&req) {}
+
+#if bytecoin_ALLOW_DEBUG_COMMANDS
 void Node::P2PProtocolBytecoinNew::on_msg_get_peer_statistics(np::GetPeerStatistics::Request &&req) {
 	if (!m_node->check_trust(req.tr))
 		return disconnect(std::string());
@@ -152,3 +156,4 @@ void Node::P2PProtocolBytecoinNew::on_msg_get_peer_statistics(np::GetPeerStatist
 	send(create_header(np::GetPeerStatistics::Response::ID, msg.size()));
 	send(std::move(msg));
 }
+#endif

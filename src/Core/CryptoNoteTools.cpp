@@ -23,7 +23,7 @@ Hash bytecoin::get_base_transaction_hash(const BaseTransaction &tx) {
 }
 
 void bytecoin::set_solo_mining_tag(BlockTemplate &block) {
-	if (block.major_version >= 2) {
+	if (block.is_merge_mined()) {
 		TransactionExtraMergeMiningTag mmTag;
 		mmTag.depth = 0;
 		block.parent_block.base_transaction.extra.clear();
@@ -81,28 +81,32 @@ void bytecoin::decompose_amount(Amount amount, Amount dust_threshold, std::vecto
 		});
 }
 
-size_t bytecoin::get_maximum_tx_size(size_t input_count, size_t output_count, size_t mixin_count) {
-	const size_t KEY_IMAGE_SIZE                    = sizeof(KeyImage);
-	const size_t OUTPUT_KEY_SIZE                   = sizeof(PublicKey);
-	const size_t AMOUNT_SIZE                       = sizeof(uint64_t) + 2;  // varint
-	const size_t GLOBAL_INDEXES_VECTOR_SIZE_SIZE   = sizeof(uint8_t);       // varint
-	const size_t GLOBAL_INDEXES_INITIAL_VALUE_SIZE = sizeof(uint32_t);      // varint
-	const size_t GLOBAL_INDEXES_DIFFERENCE_SIZE    = sizeof(uint32_t);      // varint
-	const size_t SIGNATURE_SIZE                    = sizeof(Signature);
-	const size_t EXTRA_TAG_SIZE                    = sizeof(uint8_t);
-	const size_t INPUT_TAG_SIZE                    = sizeof(uint8_t);
-	const size_t OUTPUT_TAG_SIZE                   = sizeof(uint8_t);
-	const size_t PUBLIC_KEY_SIZE                   = sizeof(PublicKey);
-	const size_t TRANSACTION_VERSION_SIZE          = sizeof(uint8_t);
-	const size_t TRANSACTION_UNLOCK_TIME_SIZE      = sizeof(uint64_t);
+const size_t KEY_IMAGE_SIZE                    = sizeof(KeyImage);
+const size_t OUTPUT_KEY_SIZE                   = sizeof(PublicKey);
+const size_t AMOUNT_SIZE                       = sizeof(uint64_t) + 2;  // varint
+const size_t IO_COUNT_SIZE                     = 3;                     // varint
+const size_t GLOBAL_INDEXES_VECTOR_SIZE_SIZE   = 1;                     // varint
+const size_t GLOBAL_INDEXES_INITIAL_VALUE_SIZE = sizeof(uint32_t);      // varint
+const size_t GLOBAL_INDEXES_DIFFERENCE_SIZE    = sizeof(uint32_t);      // varint
+const size_t SIGNATURE_SIZE                    = sizeof(Signature);
+const size_t EXTRA_TAG_SIZE                    = 1;
+const size_t INPUT_TAG_SIZE                    = 1;
+const size_t OUTPUT_TAG_SIZE                   = 1;
+const size_t PUBLIC_KEY_SIZE                   = sizeof(PublicKey);
+const size_t TRANSACTION_VERSION_SIZE          = 1;
+const size_t TRANSACTION_UNLOCK_TIME_SIZE      = sizeof(uint64_t);
 
-	const size_t outputs_size = output_count * (OUTPUT_TAG_SIZE + OUTPUT_KEY_SIZE + AMOUNT_SIZE);
-	const size_t header_size =
-	    TRANSACTION_VERSION_SIZE + TRANSACTION_UNLOCK_TIME_SIZE + EXTRA_TAG_SIZE + PUBLIC_KEY_SIZE;
-	const size_t input_size = INPUT_TAG_SIZE + AMOUNT_SIZE + KEY_IMAGE_SIZE + SIGNATURE_SIZE +
-	                          GLOBAL_INDEXES_VECTOR_SIZE_SIZE + GLOBAL_INDEXES_INITIAL_VALUE_SIZE +
-	                          mixin_count * (GLOBAL_INDEXES_DIFFERENCE_SIZE + SIGNATURE_SIZE);
-	return header_size + outputs_size + input_size * input_count;
+const size_t header_size = TRANSACTION_VERSION_SIZE + TRANSACTION_UNLOCK_TIME_SIZE + EXTRA_TAG_SIZE + PUBLIC_KEY_SIZE;
+
+size_t bytecoin::get_maximum_tx_input_size(size_t anonymity) {
+	return INPUT_TAG_SIZE + AMOUNT_SIZE + KEY_IMAGE_SIZE + SIGNATURE_SIZE + GLOBAL_INDEXES_VECTOR_SIZE_SIZE +
+	       GLOBAL_INDEXES_INITIAL_VALUE_SIZE + anonymity * (GLOBAL_INDEXES_DIFFERENCE_SIZE + SIGNATURE_SIZE);
+}
+
+size_t bytecoin::get_maximum_tx_size(size_t input_count, size_t output_count, size_t anonymity) {
+	const size_t outputs_size = IO_COUNT_SIZE + output_count * (OUTPUT_TAG_SIZE + OUTPUT_KEY_SIZE + AMOUNT_SIZE);
+	const size_t inputs_size  = IO_COUNT_SIZE + input_count * get_maximum_tx_input_size(anonymity);
+	return header_size + outputs_size + inputs_size;
 }
 
 bool bytecoin::get_tx_fee(const TransactionPrefix &tx, uint64_t *fee) {

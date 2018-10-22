@@ -16,7 +16,7 @@ public:
 	std::map<KeyImage, int> memory_spent;
 	explicit WalletStateTest(logging::ILogger &log, const Config &config, const Currency &currency)
 	    : WalletStateBasic(log, config, currency, "test_wallet_state") {}
-	Amount add_incoming_output(const api::Output &output, const Hash & tid) override {
+	Amount add_incoming_output(const api::Output &output, const Hash &tid) override {
 		return WalletStateBasic::add_incoming_output(output, tid);
 	}
 	Amount add_incoming_keyimage(Height block_height, const KeyImage &ki) override {
@@ -112,7 +112,7 @@ public:
 	}
 
 public:
-	virtual Amount add_incoming_output(const api::Output &output, const Hash & tid) override {
+	virtual Amount add_incoming_output(const api::Output &output, const Hash &tid) override {
 		return add_incoming_output(output.height, output, false);
 	}
 	std::map<KeyImage, int> memory_spent;

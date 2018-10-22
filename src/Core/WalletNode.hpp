@@ -19,9 +19,9 @@ public:
 	bool handle_get_status(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::walletd::GetStatus::Request &&, api::walletd::GetStatus::Response &);
 	bool handle_get_addresses(http::Client *, http::RequestData &&, json_rpc::Request &&,
-							  api::walletd::GetAddresses::Request &&, api::walletd::GetAddresses::Response &);
+	    api::walletd::GetAddresses::Request &&, api::walletd::GetAddresses::Response &);
 	bool handle_get_wallet_info(http::Client *, http::RequestData &&, json_rpc::Request &&,
-							  api::walletd::GetWalletInfo::Request &&, api::walletd::GetWalletInfo::Response &);
+	    api::walletd::GetWalletInfo::Request &&, api::walletd::GetWalletInfo::Response &);
 	bool handle_create_address_list(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::walletd::CreateAddresses::Request &&, api::walletd::CreateAddresses::Response &);
 	bool handle_get_view_key(http::Client *, http::RequestData &&, json_rpc::Request &&,
@@ -41,6 +41,9 @@ public:
 	    api::bytecoind::SendTransaction::Response &);  // We lock spent outputs until next pool sync
 	bool handle_get_transaction(http::Client *, http::RequestData &&, json_rpc::Request &&,
 	    api::walletd::GetTransaction::Request &&, api::walletd::GetTransaction::Response &);
+
+	typedef std::unordered_map<std::string, JSONRPCHandlerFunction> HandlersMap;
+	static const HandlersMap m_jsonrpc_handlers;
 
 private:
 	Node *m_inproc_node;
@@ -72,9 +75,6 @@ private:
 	};
 	std::list<LongPollClient> m_long_poll_http_clients;
 	void advance_long_poll();
-
-	typedef std::unordered_map<std::string, JSONRPCHandlerFunction> HandlersMap;
-	static const HandlersMap m_jsonrpc_handlers;
 
 	api::walletd::GetStatus::Response create_status_response() const;
 

@@ -69,7 +69,7 @@ void Node::P2PProtocolBytecoin::after_handshake() {
 
 void Node::P2PProtocolBytecoin::on_msg_handshake(COMMAND_HANDSHAKE::request &&req) {
 #if bytecoin_NEWP2P
-	if (get_version() == P2PProtocolVersion::V3_NEW && P2PProtocolVersion::V3_NEW == P2PProtocolVersion::CURRENT) {
+	if (get_version() == P2PProtocolVersion::V3_NEW) {
 		get_client()->set_protocol(std::make_unique<P2PProtocolBytecoinNew>(m_node, get_client()));
 		return;
 	}
@@ -80,7 +80,7 @@ void Node::P2PProtocolBytecoin::on_msg_handshake(COMMAND_HANDSHAKE::request &&re
 
 void Node::P2PProtocolBytecoin::on_msg_handshake(COMMAND_HANDSHAKE::response &&req) {
 #if bytecoin_NEWP2P
-	if (get_version() == P2PProtocolVersion::V3_NEW && P2PProtocolVersion::V3_NEW == P2PProtocolVersion::CURRENT) {
+	if (get_version() == P2PProtocolVersion::V3_NEW) {
 		get_client()->set_protocol(std::make_unique<P2PProtocolBytecoinNew>(m_node, get_client()));
 		return;
 	}

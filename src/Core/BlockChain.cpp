@@ -86,7 +86,7 @@ PreparedBlock::PreparedBlock(BinaryArray &&ba, const Currency &currency, crypto:
 		}
 		auto body_proxy = get_body_proxy_from_template(block.header);
 		bid             = bytecoin::get_block_hash(block.header, body_proxy);
-		if (block.header.major_version >= 2)
+		if (block.header.is_merge_mined())
 			parent_block_size = seria::binary_size(block.header.parent_block);
 		coinbase_tx_size      = seria::binary_size(block.header.base_transaction);
 		base_transaction_hash = get_transaction_hash(block.header.base_transaction);
@@ -109,7 +109,7 @@ PreparedBlock::PreparedBlock(RawBlock &&rba, const Currency &currency, crypto::C
 		}
 		auto body_proxy = get_body_proxy_from_template(block.header);
 		bid             = bytecoin::get_block_hash(block.header, body_proxy);
-		if (block.header.major_version >= 2)
+		if (block.header.is_merge_mined())
 			parent_block_size = seria::binary_size(block.header.parent_block);
 		coinbase_tx_size      = seria::binary_size(block.header.base_transaction);
 		base_transaction_hash = get_transaction_hash(block.header.base_transaction);
@@ -1083,7 +1083,7 @@ void BlockChain::test_undo_everything(Height new_tip_height) {
 			continue;
 		if (cur.get_suffix().find(HEADER_PREFIX) == 0)
 			continue;
-		if (cur.get_suffix().find("f") == 0)
+		if (cur.get_suffix().find("f") == 0)  // TODO - we have no index starting with "f"
 			continue;
 		std::cout << DB::clean_key(cur.get_suffix()) << std::endl;
 		if (counter++ > 1000)
@@ -1182,15 +1182,16 @@ bool BlockChain::add_blod_impl(const api::BlockHeader &header) {
 	bit = blods.find(header.previous_block_hash);
 	if (bit == blods.end())
 		return false;
-	Blod &blod         = blods[header.hash];
-	blod.height        = header.height;
-	blod.hash          = header.hash;
-	blod.parent        = &bit->second;
+	Blod &blod  = blods[header.hash];
+	blod.height = header.height;
+	blod.hash   = header.hash;
+	blod.parent = &bit->second;
 	bit->second.children.push_back(&blod);
 	blod.checkpoint_difficulty = blod.parent->checkpoint_difficulty;
 
 	if (m_currency.upgrade_from_major_version) {
-		blod.vote_for_upgrade = (header.major_version == m_currency.upgrade_from_major_version && header.minor_version == m_currency.upgrade_indicator_minor_version);
+		blod.vote_for_upgrade = uint8_t(header.major_version == m_currency.upgrade_from_major_version &&
+		                                header.minor_version == m_currency.upgrade_indicator_minor_version);
 		blod.upgrade_decided_height = blod.parent->upgrade_decided_height;
 		if (!blod.upgrade_decided_height) {
 			blod.votes_for_upgrade_in_voting_window = blod.parent->votes_for_upgrade_in_voting_window;
@@ -1198,8 +1199,8 @@ bool BlockChain::add_blod_impl(const api::BlockHeader &header) {
 			if (blod.votes_for_upgrade_in_voting_window.size() > m_currency.upgrade_voting_window)
 				blod.votes_for_upgrade_in_voting_window.pop_front();
 			invariant(blod.votes_for_upgrade_in_voting_window.size() <= m_currency.upgrade_voting_window, "");
-			size_t count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
-			    blod.votes_for_upgrade_in_voting_window.end(), 1);
+			auto count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
+			    blod.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
 			//			if(count != 0)
 			//				std::cout << "Votes for version=" << int(m_currency.upgrade_desired_major_version) << "
 			// height="
@@ -1283,24 +1284,27 @@ void BlockChain::build_blods() {
 	for (auto &&ha : good_headers) {  // They are conveniently sorted parent to child and can be applied sequentially
 		if (!add_blod_impl(ha)) {
 			invariant(ha.hash == m_currency.last_sw_checkpoint().hash, "");
-			Blod &blod         = blods[ha.hash];
-			blod.height        = ha.height;
-			blod.hash          = ha.hash;
+			Blod &blod  = blods[ha.hash];
+			blod.height = ha.height;
+			blod.hash   = ha.hash;
 			if (m_currency.upgrade_from_major_version) {
-				blod.vote_for_upgrade = (ha.major_version == m_currency.upgrade_from_major_version && ha.minor_version == m_currency.upgrade_indicator_minor_version);
+				blod.vote_for_upgrade = uint8_t(ha.major_version == m_currency.upgrade_from_major_version &&
+				                                ha.minor_version == m_currency.upgrade_indicator_minor_version);
 				Height first_height =
 				    m_currency.last_sw_checkpoint().height < m_currency.upgrade_voting_window - 1
 				        ? 0
 				        : m_currency.last_sw_checkpoint().height - (m_currency.upgrade_voting_window - 1);
 				for (Height h = first_height; h != m_currency.last_sw_checkpoint().height; ++h) {
 					auto header = read_header(read_chain(h), h);
-					uint8_t vote = (header.major_version == m_currency.upgrade_from_major_version && header.minor_version == m_currency.upgrade_indicator_minor_version);
+					auto vote   = uint8_t(header.major_version == m_currency.upgrade_from_major_version &&
+					                    header.minor_version == m_currency.upgrade_indicator_minor_version);
 					blod.votes_for_upgrade_in_voting_window.push_back(vote);
 				}
 				blod.votes_for_upgrade_in_voting_window.push_back(blod.vote_for_upgrade);
-				size_t count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
-				    blod.votes_for_upgrade_in_voting_window.end(), 1);
-				invariant(count < m_currency.upgrade_votes_required, "Upgrade happened before or on last SW checkpoint");
+				auto count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
+				    blod.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
+				invariant(
+				    count < m_currency.upgrade_votes_required, "Upgrade happened before or on last SW checkpoint");
 			}
 		}
 	}
@@ -1308,7 +1312,7 @@ void BlockChain::build_blods() {
 }
 
 void BlockChain::fill_statistics(api::bytecoind::GetStatistics::Response &res) const {
-	res.checkpoints                   = get_latest_checkpoints();
+	res.checkpoints = get_latest_checkpoints();
 
 	if (!m_currency.upgrade_from_major_version)
 		return;
@@ -1316,15 +1320,15 @@ void BlockChain::fill_statistics(api::bytecoind::GetStatistics::Response &res) c
 	if (bit == blods.end())
 		return;
 	res.upgrade_decided_height = bit->second.upgrade_decided_height;
-	size_t count               = std::count(bit->second.votes_for_upgrade_in_voting_window.begin(),
-	    bit->second.votes_for_upgrade_in_voting_window.end(), 1);
+	auto count                 = std::count(bit->second.votes_for_upgrade_in_voting_window.begin(),
+	    bit->second.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
 	res.upgrade_votes_in_top_block = static_cast<Height>(count);
 }
 
 bool BlockChain::fill_next_block_versions(
     const api::BlockHeader &prev_info, bool cooperative, uint8_t *major, uint8_t *minor) const {
 	*major = m_currency.get_block_major_version_for_height(prev_info.height + 1);
-	if( *major == m_currency.upgrade_from_major_version)
+	if (*major == m_currency.upgrade_from_major_version)
 		*minor = m_currency.upgrade_indicator_minor_version;
 	else
 		*minor = 0;
@@ -1350,13 +1354,13 @@ void BlockChain::update_key_count_max_heights() {
 		bit.second.checkpoint_difficulty = CheckpointDifficulty{};
 	}
 	auto checkpoints = get_stable_checkpoints();
-	for (auto cit = checkpoints.begin(); cit != checkpoints.end(); ++cit)
-		if (cit->is_enabled()) {
-			auto bit = blods.find(cit->hash);
+	for (const auto &cit : checkpoints)
+		if (cit.is_enabled()) {
+			auto bit = blods.find(cit.hash);
 			if (bit == blods.end())
 				continue;
 			for (Blod *b = &bit->second; b; b = b->parent)
-				b->checkpoint_key_ids.set(cit->key_id);
+				b->checkpoint_key_ids.set(cit.key_id);
 		}
 	std::vector<Blod *> to_visit;
 	auto bit = blods.find(m_currency.last_sw_checkpoint().hash);

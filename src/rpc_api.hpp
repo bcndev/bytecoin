@@ -63,7 +63,7 @@ struct Transfer {
 	bool locked = false;  // locked transfers should not be added to balance immediately. They will be unlocked later
 	                      // and sent via GetTransfers.Response.unlocked_transfers
 	std::vector<api::Output> outputs;  // Outputs corresponding to this transfer
-	Hash transaction_hash; // TODO - requires changing DB format... For now will be available only on Json seria
+	Hash transaction_hash;  // TODO - requires changing DB format... For now will be available only on Json seria
 };
 
 struct Transaction {
@@ -208,7 +208,7 @@ struct ErrorWrongHeight : public json_rpc::Error {
 	void seria_data_members(seria::ISeria &s) override;
 	enum { INVALID_HEIGHT_OR_DEPTH = -2 };
 	static Height fix_height_or_depth(api::HeightOrDepth ha, Height tip_height, bool throw_on_too_big_height,
-									  bool throw_on_too_big_depth, Height max_depth = std::numeric_limits<Height>::max());
+	    bool throw_on_too_big_depth, Height max_depth = std::numeric_limits<Height>::max());
 };
 
 namespace walletd {
@@ -260,14 +260,14 @@ struct GetAddresses {  // For simple GUI client, display addresses[0] as main on
 	static std::string method() { return "get_addresses"; }
 
 	struct Request {
-		bool need_secret_spend_keys  = false;
-		uint32_t from_address        = 0;  // We can now iterate through addresses
-		uint32_t max_count           = std::numeric_limits<uint32_t>::max();
+		bool need_secret_spend_keys = false;
+		uint32_t from_address       = 0;  // We can now iterate through addresses
+		uint32_t max_count          = std::numeric_limits<uint32_t>::max();
 	};
 	struct Response {
 		std::vector<std::string> addresses;        // starting from from_address up to max_count
 		std::vector<SecretKey> secret_spend_keys;  // not empty only if need_secret_spend_keys specified
-		uint32_t total_address_count = 0;  // Usefull when when iterating
+		uint32_t total_address_count = 0;          // Usefull when when iterating
 	};
 };
 
@@ -280,13 +280,13 @@ struct GetWalletInfo {
 		bool view_only                      = false;
 		Timestamp wallet_creation_timestamp = 0;  // O if not known (restored form keys and did not sync yet)
 		std::string first_address;
-		uint32_t total_address_count        = 0;  // Usefull when when iterating
-		std::string net; // Now - network walletd is launch on. Future - network for which the wallet is generated
-		Hash mineproof_secret;                    // Highly experimental
+		uint32_t total_address_count = 0;  // Usefull when when iterating
+		std::string net;  // Now - network walletd is launch on. Future - network for which the wallet is generated
+		Hash mineproof_secret;  // Highly experimental
 	};
 };
 
-struct GetViewKeyPair { // Will be deprecated or heavily changed in Future
+struct GetViewKeyPair {  // Will be deprecated or heavily changed in Future
 	static std::string method() { return "get_view_key_pair"; }
 
 	typedef EmptyStruct Request;
@@ -400,8 +400,9 @@ struct CreateTransaction {
 		HeightOrDepth confirmed_height_or_depth = -DEFAULT_CONFIRMATIONS - 1;
 		// Mix-ins will be selected from the [0..confirmed_height] window.
 		// Reorganizations larger than confirmations may change mix-in global indices, making transaction invalid.
-		SignedAmount fee_per_byte = 0;  // Fee of created transaction will be close to the size of tx * fee_per_byte.
-		                                // You can check it in response.transaction.fee before sending, if you wish
+		Amount fee_per_byte = std::numeric_limits<Amount>::max();  // Fee of created transaction will be close to the
+		                                                           // size of tx * fee_per_byte.
+		// You can check it in response.transaction.fee before sending, if you wish
 		std::string optimization;  // Wallet outputs optimization (fusion). Leave empty to use normal optimization, good
 		                           // for wallets with balanced sends to receives count. You can save on a few percent
 		                           // of fee (on average) by specifying "minimal" for wallet receiving far less
@@ -413,6 +414,8 @@ struct CreateTransaction {
 		bool save_history = true;  // If true, wallet will save encrypted transaction data (~100 bytes per used address)
 		                           // in <wallet_file>.history/. With this data it is possible to generate
 		                           // public-checkable proofs of sending funds to specific addresses.
+		bool subtract_fee_from_amount = false;
+		// If true, fee wil be subtracted from transfers in their respective order
 		std::vector<Hash> prevent_conflict_with_transactions;
 		// Experimental API for guaranteed payouts under any circumstances
 	};
@@ -426,13 +429,22 @@ struct CreateTransaction {
 		// conflicts
 	};
 	enum {
-		NOT_ENOUGH_FUNDS                  = -301,
-		TRANSACTION_DOES_NOT_FIT_IN_BLOCK = -302,  // Sender will have to split funds into several transactions
-		NOT_ENOUGH_ANONYMITY              = -303,
-		VIEW_ONLY_WALLET                  = -304,
-		ADDRESS_FAILED_TO_PARSE           = -4,    // returns ErrorAddress
-		INVALID_HEIGHT_OR_DEPTH           = -2,    // height_or_depth too low or too high
-		ADDRESS_NOT_IN_WALLET             = -1002  // returns ErrorAddress
+		NOT_ENOUGH_FUNDS        = -301,
+		NOT_ENOUGH_ANONYMITY    = -303,
+		VIEW_ONLY_WALLET        = -304,
+		ADDRESS_FAILED_TO_PARSE = -4,    // returns ErrorAddress
+		INVALID_HEIGHT_OR_DEPTH = -2,    // height_or_depth too low or too high
+		ADDRESS_NOT_IN_WALLET   = -1002  // returns ErrorAddress
+	};
+	struct ErrorTransactionTooBig : public json_rpc::Error {
+		Amount max_amount                = 0;
+		Amount max_zero_anonymity_amount = 0;
+		ErrorTransactionTooBig() {}
+		ErrorTransactionTooBig(const std::string &msg, Amount a, Amount a_zero);
+		void seria_data_members(seria::ISeria &s) override;
+		enum {
+			TRANSACTION_DOES_NOT_FIT_IN_BLOCK = -302  // Sender will have to split funds into several transactions
+		};
 	};
 };
 

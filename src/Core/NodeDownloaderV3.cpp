@@ -41,6 +41,10 @@ Node::DownloaderV3::~DownloaderV3() {
 		th.join();
 }
 
+// std::set<std::pair<Height, Hash>> Node::DownloaderV3::fill_can_download(Hash hash)const{
+//
+//}
+
 void Node::DownloaderV3::add_work(std::tuple<Hash, bool, RawBlock> &&wo) {
 	std::unique_lock<std::mutex> lock(mu);
 	work.push_back(std::move(wo));
@@ -92,6 +96,7 @@ void Node::DownloaderV3::on_connect(P2PProtocolBytecoinNew *who) {
 		m_node->sync_transactions(who);
 		// If we at same height, sync tx now, otherwise will sync after we reach same height
 	}
+	//	who->can_download_blocks = m_block_chain.fill_can_download(who->get_other_top_block_desc().hash);
 	advance_download();
 }
 
@@ -234,11 +239,12 @@ void Node::DownloaderV3::on_msg_sync_headers(P2PProtocolBytecoinNew *who, np::Sy
 		m_sync_headers_previous_block_hash = info.previous_block_hash;
 	}
 	// TODO - increase probability if reply takes too long
-	size_t barrier = crypto::rand<size_t>() % (np::SyncHeaders::Request::GOOD_COUNT * 110 / 100);
-	if (resp.binary_headers.size() <= barrier) {  // switch
+	const size_t barrier = crypto::rand<size_t>() % (np::SyncHeaders::Request::GOOD_COUNT * 110 / 100);
+	const bool finished  = m_sync_headers_previous_block_hash == m_sync_headers_client->get_other_top_block_desc().hash;
+	if (resp.binary_headers.size() <= barrier || finished) {
 		m_node->m_log(logging::INFO) << "DownloaderV3::on_msg_sync_headers probability switch "
-		                             << m_sync_headers_client->get_address() << " size=" << resp.binary_headers.size()
-		                             << " barrier=" << barrier
+		                             << m_sync_headers_client->get_address() << " count=" << resp.binary_headers.size()
+		                             << " barrier=" << barrier << " finished=" << int(finished)
 		                             << " remote height=" << m_sync_headers_client->get_other_top_block_desc().height
 		                             << " our height=" << m_block_chain.get_tip_height() << std::endl;
 		m_sync_headers_client = nullptr;

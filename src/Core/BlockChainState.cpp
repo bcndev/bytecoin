@@ -301,7 +301,7 @@ std::string BlockChainState::check_standalone_consensus(
 	if (block.header.major_version != should_be_major)
 		return "WRONG_VERSION";
 
-	if (block.header.major_version >= 2) {
+	if (block.header.is_merge_mined()) {
 		if (block.header.major_version == 2 && block.header.parent_block.major_version > 1)
 			return "PARENT_BLOCK_WRONG_VERSION";
 		size_t pasi = pb.parent_block_size;
@@ -358,8 +358,8 @@ std::string BlockChainState::check_standalone_consensus(
 		info->cumulative_difficulty = prev_info.cumulative_difficulty + info->difficulty;
 	}
 
-	if (info->difficulty == 0)
-		return "DIFFICULTY_OVERHEAD";
+	//	if (info->difficulty == 0)
+	//		return "DIFFICULTY_OVERHEAD";
 
 	Amount transactions_fee = 0;
 	for (const auto &tx : block.transactions) {
@@ -372,14 +372,14 @@ std::string BlockChainState::check_standalone_consensus(
 	int64_t emission_change      = 0;
 	auto already_generated_coins = prev_info.already_generated_coins;
 
-	if(info->block_size > info->effective_size_median * 2)
+	if (info->block_size > info->effective_size_median * 2)
 		return "CUMULATIVE_BLOCK_SIZE_TOO_BIG";
 
-	m_currency.get_block_reward(block.header.major_version, info->effective_size_median, 0,
-	        already_generated_coins, 0, &info->base_reward, &emission_change);
+	m_currency.get_block_reward(block.header.major_version, info->effective_size_median, 0, already_generated_coins, 0,
+	    &info->base_reward, &emission_change);
 
 	m_currency.get_block_reward(block.header.major_version, info->effective_size_median, info->block_size,
-	        already_generated_coins, transactions_fee, &info->reward, &emission_change);
+	    already_generated_coins, transactions_fee, &info->reward, &emission_change);
 
 	if (miner_reward != info->reward) {
 		//        log(Logging::WARNING) << "Block reward mismatch for block " <<
@@ -457,18 +457,18 @@ void BlockChainState::tip_changed() {
 	calculate_consensus_values(get_tip(), &m_next_median_size, &m_next_median_timestamp);
 }
 
-bool BlockChainState::create_mining_block_template(const AccountPublicAddress &adr,
-													const BinaryArray &extra_nonce, BlockTemplate *b, Difficulty *difficulty, Height *height) const {
-	return create_mining_block_template(adr, extra_nonce, b, difficulty, height, get_tip_bid());
+void BlockChainState::create_mining_block_template(const AccountPublicAddress &adr, const BinaryArray &extra_nonce,
+    BlockTemplate *b, Difficulty *difficulty, Height *height) const {
+	create_mining_block_template(adr, extra_nonce, b, difficulty, height, get_tip_bid());
 }
 
-bool BlockChainState::create_mining_block_template(const AccountPublicAddress &adr,
-    const BinaryArray &extra_nonce, BlockTemplate *b, Difficulty *difficulty, Height * height, Hash parent_bid) const {
+void BlockChainState::create_mining_block_template(const AccountPublicAddress &adr, const BinaryArray &extra_nonce,
+    BlockTemplate *b, Difficulty *difficulty, Height *height, Hash parent_bid) const {
 	api::BlockHeader parent_info;
 	if (!read_header(parent_bid, &parent_info))
 		throw std::runtime_error("Attempt to mine from block we do not have");
 	*height = parent_info.height + 1;
-	*b = BlockTemplate{};
+	*b      = BlockTemplate{};
 	if (!fill_next_block_versions(parent_info, false, &b->major_version, &b->minor_version))
 		throw std::runtime_error(
 		    "Mining of block in chain not passing through last SW checkpoint is not possible (will not be accepted by network anyway)");
@@ -490,12 +490,7 @@ bool BlockChainState::create_mining_block_template(const AccountPublicAddress &a
 		}
 		*difficulty = m_currency.next_effective_difficulty(b->major_version, timestamps, difficulties);
 	}
-	if (*difficulty == 0) {
-		m_log(logging::ERROR) << "difficulty overhead in create_mining_block_template." << std::endl;
-		return false;
-	}
-
-	if (b->major_version >= 2) {
+	if (b->is_merge_mined()) {
 		b->parent_block.major_version     = 1;
 		b->parent_block.minor_version     = 0;
 		b->parent_block.transaction_count = 1;
@@ -503,17 +498,18 @@ bool BlockChainState::create_mining_block_template(const AccountPublicAddress &a
 		extra_add_merge_mining_tag(b->parent_block.base_transaction.extra, TransactionExtraMergeMiningTag{});
 	}
 
-	b->previous_block_hash = parent_bid;
+	b->previous_block_hash    = parent_bid;
 	b->parent_block.timestamp = std::max(platform::now_unix_timestamp(), next_median_timestamp);
-	b->timestamp           = b->parent_block.timestamp;
+	b->timestamp              = b->parent_block.timestamp;
 
 	auto next_minimum_size_median  = m_currency.get_minimum_size_median(b->major_version);
 	auto effective_size_median     = std::max(next_median_size, next_minimum_size_median);
 	Amount already_generated_coins = parent_info.already_generated_coins;
 
-//	auto max_total_size      = (150 * effective_size_median) / 100;
-	const auto max_consensus_block_size = std::min(m_currency.max_block_cumulative_size(*height), 2 * effective_size_median);
-	const auto max_txs_size           = max_consensus_block_size - m_currency.miner_tx_blob_reserved_size;
+	//	auto max_total_size      = (150 * effective_size_median) / 100;
+	const auto max_consensus_block_size =
+	    std::min(m_currency.max_block_cumulative_size(*height), 2 * effective_size_median);
+	const auto max_txs_size = max_consensus_block_size - m_currency.miner_tx_blob_reserved_size;
 
 	std::vector<Hash> pool_hashes;
 	for (auto &&msf : m_memory_state_fee_tx)
@@ -524,10 +520,10 @@ bool BlockChainState::create_mining_block_template(const AccountPublicAddress &a
 	DeltaState memory_state(*height, b->timestamp, this);  // will be get_tip().timestamp_unlock after fork
 	// TODO - technically we should give unlock timestamp of next block, but more
 	// conservative also works
-	Amount base_reward = 0;
+	Amount base_reward           = 0;
 	SignedAmount emission_change = 0;
-	m_currency.get_block_reward(b->major_version, effective_size_median, 0,
-									 already_generated_coins, 0, &base_reward, &emission_change);
+	m_currency.get_block_reward(
+	    b->major_version, effective_size_median, 0, already_generated_coins, 0, &base_reward, &emission_change);
 
 	for (; !pool_hashes.empty(); pool_hashes.pop_back()) {
 		auto tit = m_memory_state_tx.find(pool_hashes.back());
@@ -537,8 +533,8 @@ bool BlockChainState::create_mining_block_template(const AccountPublicAddress &a
 			continue;
 		}
 		const size_t tx_size = tit->second.binary_tx.size();
-		const Amount tx_fee = tit->second.fee;
-		if( txs_size + tx_size > max_txs_size)
+		const Amount tx_fee  = tit->second.fee;
+		if (txs_size + tx_size > max_txs_size)
 			continue;
 		BlockGlobalIndices global_indices;
 		Height conflict_height = 0;
@@ -550,17 +546,17 @@ bool BlockChainState::create_mining_block_template(const AccountPublicAddress &a
 			                      << " Conflict height=" << conflict_height << std::endl;
 			continue;
 		}
-		if (txs_size + tx_size > effective_size_median){
+		if (txs_size + tx_size > effective_size_median) {
 			Amount reward;
 			m_currency.get_block_reward(b->major_version, effective_size_median, txs_size + tx_size,
-										already_generated_coins, txs_fee + tx_fee, &reward, &emission_change);
-			if(reward < base_reward)
+			    already_generated_coins, txs_fee + tx_fee, &reward, &emission_change);
+			if (reward < base_reward)
 				continue;
 		}
 		txs_size += tx_size;
 		txs_fee += tx_fee;
 		b->transaction_hashes.emplace_back(tit->first);
-		m_mining_transactions.erase(tit->first); // We want ot update height to most recent
+		m_mining_transactions.erase(tit->first);  // We want ot update height to most recent
 		m_mining_transactions.insert(std::make_pair(tit->first, std::make_pair(tit->second.binary_tx, *height)));
 		m_log(logging::TRACE) << "Transaction " << tit->first << " included to block template";
 	}
@@ -574,27 +570,24 @@ bool BlockChainState::create_mining_block_template(const AccountPublicAddress &a
 	// make blocks coin-base tx looks close to real coinbase tx to get truthful
 	// blob size
 
-//	bool r = m_currency.construct_miner_tx(b->major_version, *height, effective_size_median, already_generated_coins,
-//	    txs_size, txs_fee, m_config.mineproof_secret, adr, &b->base_transaction, extra_nonce, 11);
-//	if (!r) {
-//		m_log(logging::ERROR) << logging::BrightRed << "Failed to construct miner tx, first chance";
-//		return false;
-//	}
+	//	bool r = m_currency.construct_miner_tx(b->major_version, *height, effective_size_median,
+	// already_generated_coins,
+	//	    txs_size, txs_fee, m_config.mineproof_secret, adr, &b->base_transaction, extra_nonce, 11);
+	//	if (!r) {
+	//		m_log(logging::ERROR) << logging::BrightRed << "Failed to construct miner tx, first chance";
+	//		return false;
+	//	}
 
 	size_t cumulative_size   = txs_size;
 	const size_t TRIES_COUNT = 11;
 	for (size_t try_count = 0; try_count < TRIES_COUNT; ++try_count) {
-		if (!m_currency.construct_miner_tx(b->major_version, *height, effective_size_median, already_generated_coins,
-		    cumulative_size, txs_fee, m_config.mineproof_secret, adr, &b->base_transaction, extra_nonce, 11)) {
-			m_log(logging::ERROR) << logging::BrightRed << "Failed to construct miner tx, second chance";
-			return false;
-		}
+		m_currency.construct_miner_tx(b->major_version, *height, effective_size_median, already_generated_coins,
+		    cumulative_size, txs_fee, m_config.mineproof_secret, adr, &b->base_transaction, extra_nonce);
 		size_t coinbase_blob_size = seria::binary_size(b->base_transaction);
 		if (coinbase_blob_size + txs_size > cumulative_size) {
 			cumulative_size = txs_size + coinbase_blob_size;
 			continue;
 		}
-
 		if (coinbase_blob_size + txs_size < cumulative_size) {
 			size_t delta = cumulative_size - (coinbase_blob_size + txs_size);
 			common::append(b->base_transaction.extra, delta, 0);
@@ -602,14 +595,7 @@ bool BlockChainState::create_mining_block_template(const AccountPublicAddress &a
 			// varint, and it can become from
 			// 1-byte len to 2-bytes len.
 			if (cumulative_size != txs_size + seria::binary_size(b->base_transaction)) {
-				if (cumulative_size + 1 != txs_size + seria::binary_size(b->base_transaction)) {
-					m_log(logging::ERROR)
-					    << logging::BrightRed << "unexpected case: cumulative_size=" << cumulative_size
-					    << " + 1 is not equal txs_cumulative_size=" << txs_size
-					    << " + get_object_blobsize(b.base_transaction)=" << seria::binary_size(b->base_transaction);
-					return false;
-				}
-
+				invariant(cumulative_size + 1 == txs_size + seria::binary_size(b->base_transaction), "miner_tx case 1");
 				b->base_transaction.extra.resize(b->base_transaction.extra.size() - 1);
 				if (cumulative_size != txs_size + seria::binary_size(b->base_transaction)) {
 					// ooh, not lucky, -1 makes varint-counter size smaller, in that case
@@ -620,21 +606,15 @@ bool BlockChainState::create_mining_block_template(const AccountPublicAddress &a
 					cumulative_size += delta - 1;
 					continue;
 				}
-				m_log(logging::TRACE) << logging::BrightGreen << "Setting extra for block: " <<
-				    b->base_transaction.extra.size() << ", try_count=" << try_count;
+				m_log(logging::TRACE) << logging::BrightGreen
+				                      << "Setting extra for block: " << b->base_transaction.extra.size()
+				                      << ", try_count=" << try_count;
 			}
 		}
-		if (cumulative_size != txs_size + seria::binary_size(b->base_transaction)) {
-			m_log(logging::ERROR) << logging::BrightRed << "unexpected case: cumulative_size=" << cumulative_size
-			                      << " is not equal txs_cumulative_size=" << txs_size
-			                      << " + get_object_blobsize(b.base_transaction)="
-			                      << seria::binary_size(b->base_transaction);
-			return false;
-		}
-		return true;
+		invariant(cumulative_size == txs_size + seria::binary_size(b->base_transaction), "miner_tx case 2");
+		return;
 	}
-	m_log(logging::ERROR) << logging::BrightRed << "Failed to create_block_template with " << TRIES_COUNT << " tries";
-	return false;
+	throw std::runtime_error("Failed to create_block_template with " + common::to_string(TRIES_COUNT) + " attempts");
 }
 
 uint32_t BlockChainState::get_next_effective_median_size() const {
@@ -1123,16 +1103,23 @@ std::vector<api::Output> BlockChainState::get_random_outputs(
 	}
 	std::set<uint32_t> tried_or_added;
 	crypto::random_engine<uint64_t> generator;
-	std::lognormal_distribution<double> distribution(1.9, 1.0);
-	size_t attempts = 0;
+	std::lognormal_distribution<double> distribution(1.9, 1.0);  // Magic params here
+	const uint32_t linear_part = 150;                            // Magic params here
+	size_t attempts            = 0;
 	for (; result.size() < output_count && attempts < output_count * 20; ++attempts) {  // TODO - 20
-		//		uint32_t num = crypto::rand<uint32_t>();
-		//		num %= total_count;  // 0 handled in if above
-		double sample = distribution(generator);
-		int d_num     = static_cast<int>(std::floor(total_count * (1 - std::pow(10, -sample / 10))));
-		if (d_num < 0 || d_num >= int(total_count))
-			continue;
-		uint32_t num = static_cast<uint32_t>(d_num);
+		uint32_t num = 0;
+		if (result.size() % 2 == 0) {  // Half of outputs linear
+			if (total_count <= linear_part)
+				num = crypto::rand<uint32_t>() % total_count;  // 0 handled above
+			else
+				num = total_count - 1 - crypto::rand<uint32_t>() % linear_part;
+		} else {
+			double sample = distribution(generator);
+			int d_num     = static_cast<int>(std::floor(total_count * (1 - std::pow(10, -sample / 10))));
+			if (d_num < 0 || d_num >= int(total_count))
+				continue;
+			num = static_cast<uint32_t>(d_num);
+		}
 		if (!tried_or_added.insert(num).second)
 			continue;
 		api::Output item;

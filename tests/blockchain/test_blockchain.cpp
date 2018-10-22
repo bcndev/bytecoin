@@ -58,14 +58,14 @@ public:
 
 		BlockTemplate block;
 		Difficulty difficulty = 0;
-		Height height = 0;
-		invariant(block_chain.create_mining_block_template(address, BinaryArray{}, &block, &difficulty, &height, bid), "");
+		Height height         = 0;
+		block_chain.create_mining_block_template(address, BinaryArray{}, &block, &difficulty, &height, bid);
 		set_solo_mining_tag(block);
 		block.parent_block.timestamp = parent.timestamp + currency.difficulty_target;
-		block.timestamp = block.parent_block.timestamp;
-		block.parent_block.nonce = crypto::rand<uint32_t>();
-		block.nonce     = block.parent_block.nonce;
-		auto body_proxy = get_body_proxy_from_template(block);
+		block.timestamp              = block.parent_block.timestamp;
+		block.parent_block.nonce     = crypto::rand<uint32_t>();
+		block.nonce                  = block.parent_block.nonce;
+		auto body_proxy              = get_body_proxy_from_template(block);
 		while (true) {
 			BinaryArray ba = currency.get_block_long_hashing_data(block, body_proxy);
 			Hash hash      = cryptoContext.cn_slow_hash(ba.data(), ba.size());

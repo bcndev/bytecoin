@@ -56,7 +56,7 @@ static const std::string LOCKED_INDEX_HEIGHT_AM_GI_to_OUTPUT = "lh";  // key con
 static const std::string LOCKED_INDEX_TIMESTAMP_AM_GI_to_OUTPUT =
     "lt";  // key contain clamped unlock_block_or_timestamp
 
-static const std::string LOCKED_INDEX_AM_GI_to_TID = "Y"; // Remove on next DB upgrade
+static const std::string LOCKED_INDEX_AM_GI_to_TID = "Y";  // Remove on next DB upgrade
 // Index is simply overwritten and not undone.
 
 using namespace bytecoin;
@@ -99,7 +99,7 @@ WalletStateBasic::WalletStateBasic(
 	m_db.get("$version", version);
 	m_db.get("$genesis_bid", other_genesis_bid);
 	m_db.get("$cache_name", other_cache_name);
-	if( version == "3"){
+	if (version == "3") {
 		version_3_to_4();
 		m_db.get("$version", version);
 	}
@@ -134,48 +134,50 @@ WalletStateBasic::WalletStateBasic(
 	}
 }
 
-void WalletStateBasic::version_3_to_4(){
-//	size_t total_items = m_db.get_approximate_items_count();
-	m_log(logging::INFO) << "Updating locked transactions index. This will take a minute or two depending on your wallet size and computer speed..." << std::endl;
+void WalletStateBasic::version_3_to_4() {
+	//	size_t total_items = m_db.get_approximate_items_count();
+	m_log(logging::INFO)
+	    << "Updating locked transactions index. This will take a minute or two depending on your wallet size and computer speed..."
+	    << std::endl;
 	int transaction_counter = 0;
-	int upgrade_counter = 0;
-	int last_hash_byte = -1;
+	int upgrade_counter     = 0;
+	int last_hash_byte      = -1;
 	for (DB::Cursor cur = m_db.begin(INDEX_TID_to_TRANSACTIONS); !cur.end(); cur.next()) {
 		const std::string &suf = cur.get_suffix();
-		const char *be = suf.data();
-		const char *en = be + suf.size();
+		const char *be         = suf.data();
+		const char *en         = be + suf.size();
 		Hash tid;
 		invariant(en - be == sizeof(tid.data), "INDEX_TID_to_TRANSACTIONS corrupted");
 		DB::from_binary_key(cur.get_suffix(), 0, tid.data, sizeof(tid.data));
-		if( tid.data[0] != last_hash_byte ){
+		if (tid.data[0] != last_hash_byte) {
 			last_hash_byte = tid.data[0];
-			m_log(logging::INFO) << "Transactions processed " << transaction_counter << " (" << (last_hash_byte * 100 / 256) << "%)" << std::endl;
+			m_log(logging::INFO) << "Transactions processed " << transaction_counter << " ("
+			                     << (last_hash_byte * 100 / 256) << "%)" << std::endl;
 		}
 		std::pair<TransactionPrefix, api::Transaction> pa;
 		seria::from_binary(pa, cur.get_value_array());
 		transaction_counter += 1;
 		if (pa.second.unlock_block_or_timestamp == 0)
 			continue;
-		for(const auto & tr : pa.second.transfers)
-			for(const auto & output : tr.outputs){
+		for (const auto &tr : pa.second.transfers)
+			for (const auto &output : tr.outputs) {
 				put_am_gi_tid(output.amount, output.index, tid);
 				upgrade_counter += 1;
 			}
 	}
 	m_db.put("$version", "4", false);
-	m_log(logging::INFO) << "Updating locked transactions index finished. " << transaction_counter << " transactions processed, " << upgrade_counter << " DB records modified." << std::endl;
+	m_log(logging::INFO) << "Updating locked transactions index finished. " << transaction_counter
+	                     << " transactions processed, " << upgrade_counter << " DB records modified." << std::endl;
 }
-void WalletStateBasic::put_am_gi_tid(Amount am, uint32_t gi, Hash tid){
-	std::string unkey = LOCKED_INDEX_AM_GI_to_TID + common::write_varint_sqlite4(am) +
-						common::write_varint_sqlite4(gi);
-	BinaryArray ba = seria::to_binary(tid);
+void WalletStateBasic::put_am_gi_tid(Amount am, uint32_t gi, Hash tid) {
+	std::string unkey = LOCKED_INDEX_AM_GI_to_TID + common::write_varint_sqlite4(am) + common::write_varint_sqlite4(gi);
+	BinaryArray ba    = seria::to_binary(tid);
 	m_db.put(unkey, ba, false);
 }
-Hash WalletStateBasic::get_am_gi_tid(Amount am, uint32_t gi)const{
-	std::string unkey = LOCKED_INDEX_AM_GI_to_TID + common::write_varint_sqlite4(am) +
-						common::write_varint_sqlite4(gi);
+Hash WalletStateBasic::get_am_gi_tid(Amount am, uint32_t gi) const {
+	std::string unkey = LOCKED_INDEX_AM_GI_to_TID + common::write_varint_sqlite4(am) + common::write_varint_sqlite4(gi);
 	BinaryArray ba;
-	if(!m_db.get(unkey, ba))
+	if (!m_db.get(unkey, ba))
 		return Hash{};
 	Hash tid;
 	seria::from_binary(tid, ba);
@@ -288,19 +290,19 @@ WalletStateBasic::UndoMap::iterator WalletStateBasic::record_undo(UndoMap &undo_
 }
 
 void WalletStateBasic::put_with_undo(const std::string &key, const common::BinaryArray &value, bool nooverwrite) {
-//	UndoMap::iterator kit =
+	//	UndoMap::iterator kit =
 	record_undo(current_undo_map, key);
 	m_db.put(key, value, nooverwrite);
-//	if(kit->second.exists && kit->second.value == value) - TODO - test before next release
-//		current_undo_map.erase(kit);
+	//	if(kit->second.exists && kit->second.value == value) - TODO - test before next release
+	//		current_undo_map.erase(kit);
 }
 
 void WalletStateBasic::del_with_undo(const std::string &key, bool mustexist) {
-//	UndoMap::iterator kit =
+	//	UndoMap::iterator kit =
 	record_undo(current_undo_map, key);
 	m_db.del(key, mustexist);
-//	if(!kit->second.exists) - TODO - test before next release
-//		current_undo_map.erase(kit);
+	//	if(!kit->second.exists) - TODO - test before next release
+	//		current_undo_map.erase(kit);
 }
 
 void WalletStateBasic::save_db_state(uint32_t state, const UndoMap &undo_map) {
@@ -340,15 +342,17 @@ bool WalletStateBasic::try_add_incoming_output(const api::Output &output, Amount
 	}
 	*confirmed_balance_delta = output.amount;
 	if (ki_exists) {  // implies is_existing_unspent
-		if (output.amount <= heamgi.amount ||
-		    output.address != existing_output.address)  // We cannot replace coins if different addresses
-			return false;
-		*confirmed_balance_delta = output.amount - heamgi.amount;
+		//		Replacement of coins in the same KI group cannot be done safely, see explanation in fun below..
+		//		if (output.amount <= heamgi.amount ||
+		//		    output.address != existing_output.address)  // We cannot replace coins if different addresses
+		//			return false;
+		//		*confirmed_balance_delta = output.amount - heamgi.amount;
+		return false;
 	}
 	return true;
 }
 
-Amount WalletStateBasic::add_incoming_output(const api::Output &output, const Hash & tid, bool just_unlocked) {
+Amount WalletStateBasic::add_incoming_output(const api::Output &output, const Hash &tid, bool just_unlocked) {
 	HeightAmounGi heamgi;
 	bool ki_exists = read_by_keyimage(output.key_image, &heamgi);
 	api::Output existing_output;
@@ -363,17 +367,21 @@ Amount WalletStateBasic::add_incoming_output(const api::Output &output, const Ha
 	}
 	Amount added_amount = output.amount;
 	if (ki_exists) {  // implies is_existing_unspent
-		if (output.amount <= heamgi.amount || output.address != existing_output.address) {
-			m_log(logging::WARNING)
-			    << "  Duplicate key_output attack, ignoring output because have another one unspent with same or larger amount or different address, "
-			    << format_output(existing_output) << std::endl;
-			return 0;
-		}
-		added_amount = output.amount - heamgi.amount;
+		              //		Replacement of coins in the same KI group cannot be done safely
+		              //		Because replacement can occur while transaction to spend first coin is in mempool
+		              //		This will lead to crediting attacker's account first, then substracting from exchange account.
+		              //		if (output.amount <= heamgi.amount || output.address != existing_output.address) {
 		m_log(logging::WARNING)
-		    << "  Duplicate key_output attack, reducing amount because have another one unspent with smaller amount, "
+		    << "  Duplicate key_output attack, ignoring output because have another one unspent with same or larger amount or different address, "
 		    << format_output(existing_output) << std::endl;
-		remove_from_unspent_index(existing_output);
+		return 0;
+		//		}
+		//		added_amount = output.amount - heamgi.amount;
+		//		m_log(logging::WARNING)
+		//		    << "  Duplicate key_output attack, reducing amount because have another one unspent with smaller
+		// amount, "
+		//		    << format_output(existing_output) << std::endl;
+		//		remove_from_unspent_index(existing_output);
 	}
 	add_to_unspent_index(output);
 	heamgi.height       = output.height;
@@ -383,7 +391,7 @@ Amount WalletStateBasic::add_incoming_output(const api::Output &output, const Ha
 	return added_amount;
 }
 
-Amount WalletStateBasic::add_incoming_output(const api::Output &output, const Hash & tid) {
+Amount WalletStateBasic::add_incoming_output(const api::Output &output, const Hash &tid) {
 	m_log(LEVEL) << "Incoming output " << format_output(output) << std::endl;
 	return add_incoming_output(output, tid, false);
 }
@@ -530,7 +538,7 @@ std::vector<api::Block> WalletStateBasic::api_get_transfers(
 					++tit;
 				else
 					tit = tx.transfers.erase(tit);
-			if(tx.transfers.empty())
+			if (tx.transfers.empty())
 				continue;
 		}
 		if (current_block.header.height != height && !current_block.transactions.empty()) {
@@ -654,10 +662,10 @@ bool WalletStateBasic::get_transaction(Hash tid, TransactionPrefix *tx, api::Tra
 		return false;
 	std::pair<TransactionPrefix, api::Transaction> pa;
 	seria::from_binary(pa, data);
-	for(auto & tr : pa.second.transfers) // TODO - remove after DB version switch
+	for (auto &tr : pa.second.transfers)  // TODO - remove after DB version switch
 		tr.transaction_hash = pa.second.hash;
-	*tx  = std::move(pa.first);
-	*ptx = std::move(pa.second);
+	*tx                     = std::move(pa.first);
+	*ptx                    = std::move(pa.second);
 	return true;
 }
 
@@ -696,10 +704,9 @@ void WalletStateBasic::read_unlock_index(std::map<std::pair<Amount, uint32_t>, a
 	}
 }
 
-std::map<std::pair<Amount, uint32_t>, api::Output> WalletStateBasic::get_unlocked_outputs(
-		const std::string &address,
-		Height from_height,
-		Height to_height) const {
+std::map<std::pair<Amount, uint32_t>, api::Output> WalletStateBasic::get_unlocked_outputs(const std::string &address,
+    Height from_height,
+    Height to_height) const {
 	std::map<std::pair<Amount, uint32_t>, api::Output> unlocked;
 	read_unlock_index(&unlocked, UNLOCKED_INDEX_REALHE_AM_GI_to_OUTPUT, address, from_height, to_height);
 	return unlocked;
@@ -709,18 +716,18 @@ std::vector<api::Transfer> WalletStateBasic::api_get_unlocked_transfers(
     const std::string &address, Height from_height, Height to_height) const {
 	auto unlocked = get_unlocked_outputs(address, from_height, to_height);
 	std::map<std::pair<Hash, std::string>, api::Transfer> transfers;
-	for(auto & unl : unlocked){
-		Hash tid = get_am_gi_tid(unl.second.amount, unl.second.index);
-		api::Transfer & tr = transfers[std::make_pair(tid, unl.second.address)];
-		tr.ours    = true;
-		tr.amount  += unl.second.amount;
-		tr.address = unl.second.address;
+	for (auto &unl : unlocked) {
+		Hash tid          = get_am_gi_tid(unl.second.amount, unl.second.index);
+		api::Transfer &tr = transfers[std::make_pair(tid, unl.second.address)];
+		tr.ours           = true;
+		tr.amount += unl.second.amount;
+		tr.address          = unl.second.address;
 		tr.transaction_hash = tid;
 		tr.outputs.push_back(std::move(unl.second));
 	}
 	std::vector<api::Transfer> result;
 	result.reserve(transfers.size());
-	for(auto & tra : transfers){
+	for (auto &tra : transfers) {
 		result.push_back(std::move(tra.second));
 	}
 	return result;
@@ -766,7 +773,7 @@ void WalletStateBasic::unlock(Height now_height, api::Output &&output) {
 	put_with_undo(unkey, ba, true);
 }
 
-void WalletStateBasic::add_to_lock_index(const api::Output &output, const Hash & tid) {
+void WalletStateBasic::add_to_lock_index(const api::Output &output, const Hash &tid) {
 	m_log(LEVEL) << "  Adding output to lock index, " << format_output(output) << std::endl;
 	put_am_gi_tid(output.amount, output.index, tid);
 

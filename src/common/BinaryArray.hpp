@@ -6,8 +6,8 @@
 #include <string.h>
 #include <cstddef>
 #include <initializer_list>
-#include <utility>
 #include <stdexcept>
+#include <utility>
 namespace common {
 
 class BinaryArrayImpl {
@@ -63,8 +63,16 @@ public:
 	iterator end() { return m_data + m_size; }
 	value_type &operator[](size_t i) { return m_data[i]; }
 	const value_type &operator[](size_t i) const { return m_data[i]; }
-	value_type &at(size_t i) { if( i >= m_size) throw std::out_of_range("BinaryArray subscript out of range"); return m_data[i]; }
-	const value_type &at(size_t i) const { if( i >= m_size) throw std::out_of_range("BinaryArray subscript out of range"); return m_data[i]; }
+	value_type &at(size_t i) {
+		if (i >= m_size)
+			throw std::out_of_range("BinaryArray subscript out of range");
+		return m_data[i];
+	}
+	const value_type &at(size_t i) const {
+		if (i >= m_size)
+			throw std::out_of_range("BinaryArray subscript out of range");
+		return m_data[i];
+	}
 	void clear() { resize(0); }
 	void resize(size_t si);
 	void resize(size_t si, value_type va);

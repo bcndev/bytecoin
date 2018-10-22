@@ -3449,7 +3449,6 @@ int sc_isvalid_vartime(const struct EllipticCurveScalar *s) {
   int64_t s6 = load_4(s->data + 24);
   int64_t s7 = load_4(s->data + 28);
   return (int) ((signum(1559614444 - s0) + (signum(1477600026 - s1) << 1) + (signum(2734136534 - s2) << 2) + (signum(350157278 - s3) << 3) + (signum(-s4) << 4) + (signum(-s5) << 5) + (signum(-s6) << 6) + (signum(268435456 - s7) << 7)) >> 8) == 0;
-	// TODO - remove compariosn
 }
 
 int sc_iszero(const struct EllipticCurveScalar *ss) {

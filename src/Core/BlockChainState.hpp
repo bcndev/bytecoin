@@ -62,10 +62,10 @@ public:
 	typedef std::map<Hash, PoolTransaction> PoolTransMap;
 	const PoolTransMap &get_memory_state_transactions() const { return m_memory_state_tx; }
 
-	bool create_mining_block_template(
-			const AccountPublicAddress &, const BinaryArray &extra_nonce, BlockTemplate *, Difficulty *, Height *) const;
-	bool create_mining_block_template(
-	    const AccountPublicAddress &, const BinaryArray &extra_nonce, BlockTemplate *, Difficulty *, Height *, Hash) const;
+	void create_mining_block_template(
+	    const AccountPublicAddress &, const BinaryArray &extra_nonce, BlockTemplate *, Difficulty *, Height *) const;
+	void create_mining_block_template(const AccountPublicAddress &, const BinaryArray &extra_nonce, BlockTemplate *,
+	    Difficulty *, Height *, Hash) const;
 	BroadcastAction add_mined_block(const BinaryArray &raw_block_template, RawBlock *, api::BlockHeader *);
 
 	static api::BlockHeader fill_genesis(Hash genesis_bid, const BlockTemplate &);
