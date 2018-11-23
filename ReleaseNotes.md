@@ -1,5 +1,9 @@
 ## Release Notes
 
+### v3.3.3
+
+- Fixed bug when `walletd` fails to create transactions for certain coins.
+
 ### v3.3.2
 
 - Fixed bug when an invalid transaction may persist in the payment queue.
