@@ -461,30 +461,28 @@ bool WalletNode::handle_create_transaction(http::Client *who, http::RequestData 
 	    request.transaction.anonymity + 1;  // Ask excess output for the case of collision with our output
 	ra_request.amounts = selector.get_ra_amounts();
 	api::bytecoind::GetRandomOutputs::Response ra_response;
-	if (m_inproc_node) {
-		m_inproc_node->on_get_random_outputs(
-		    nullptr, http::RequestData(raw_request), json_rpc::Request(), std::move(ra_request), ra_response);
+	if (m_inproc_node || request.transaction.anonymity == 0) {
+		if(request.transaction.anonymity != 0)
+			m_inproc_node->on_get_random_outputs(
+		    	nullptr, http::RequestData(raw_request), json_rpc::Request(), std::move(ra_request), ra_response);
 		selector.add_mixed_inputs(m_wallet_state.get_wallet().get_view_secret_key(),
 		    request.any_spend_address ? &m_wallet_state.get_wallet() : nullptr, only_records, &builder,
 		    request.transaction.anonymity, std::move(ra_response));
 		Transaction tx              = builder.sign(m_wallet_state.get_wallet().get_tx_derivation_seed());
 		response.binary_transaction = seria::to_binary(tx);
-		Hash transaction_hash       = get_transaction_hash(tx);
-		if (request.save_history && !m_wallet_state.get_wallet().save_history(transaction_hash, history)) {
+		const Hash tx_hash = get_transaction_hash(tx);
+		if (request.save_history && !m_wallet_state.get_wallet().save_history(tx_hash, history)) {
 			m_log(logging::ERROR)
 			    << "Saving transaction history failed, you will need to pass list of destination addresses to generate sending proof for tx="
-			    << transaction_hash << std::endl;
+			    << tx_hash << std::endl;
 			response.save_history_error = true;
 		}
-
 		api::Transaction ptx{};
-		if (!m_wallet_state.parse_raw_transaction(ptx, tx, transaction_hash)) {
-			// TODO - process error
-		}
+		if (!m_wallet_state.parse_raw_transaction(ptx, tx, tx_hash))
+			throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "Created trsnsaction cannot be parsed");
 		response.transaction = ptx;
 		return true;
 	}
-
 	api::walletd::CreateTransaction::Request request_copy = request;  // TODO ???
 	http::RequestData new_request =
 	    json_rpc::create_request(api::bytecoind::url(), api::bytecoind::GetRandomOutputs::method(), ra_request);
@@ -499,7 +497,6 @@ bool WalletNode::handle_create_transaction(http::Client *who, http::RequestData 
 		    }
 		    Transaction tx{};
 		    api::walletd::CreateTransaction::Response last_response;
-		    Hash tx_hash{};
 		    json_rpc::Response json_resp(random_response.body);
 		    api::bytecoind::GetRandomOutputs::Response ra_response;
 		    json_resp.get_result(ra_response);
@@ -508,7 +505,7 @@ bool WalletNode::handle_create_transaction(http::Client *who, http::RequestData 
 		        request.transaction.anonymity, std::move(ra_response));
 		    tx                               = builder.sign(m_wallet_state.get_wallet().get_tx_derivation_seed());
 		    last_response.binary_transaction = seria::to_binary(tx);
-		    tx_hash                          = get_transaction_hash(tx);
+			const Hash tx_hash                     = get_transaction_hash(tx);
 		    if (request.save_history && !m_wallet_state.get_wallet().save_history(tx_hash, history)) {
 			    m_log(logging::ERROR)
 			        << "Saving transaction history failed, you will need to pass list of destination addresses to generate sending proof for tx="

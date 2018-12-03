@@ -177,28 +177,30 @@ void UnspentSelector::add_mixed_inputs(const SecretKey &view_secret_key, const W
     api::bytecoind::GetRandomOutputs::Response &&ra_response) {
 	for (const auto &uu : m_used_unspents) {
 		std::vector<api::Output> mix_outputs;
-		auto &our_ra_outputs = ra_response.outputs[uu.amount];
-		while (mix_outputs.size() < anonymity + 1) {
-			if (our_ra_outputs.empty())
-				throw json_rpc::Error(api::walletd::CreateTransaction::NOT_ENOUGH_ANONYMITY,
-				    "Requested anonymity too high for amount " + common::to_string(uu.amount));
-			mix_outputs.push_back(std::move(our_ra_outputs.back()));
-			our_ra_outputs.pop_back();
-		}
-		std::sort(mix_outputs.begin(), mix_outputs.end(), APIOutputLessGlobalIndex);
-		mix_outputs.erase(
-		    std::unique(mix_outputs.begin(), mix_outputs.end(), APIOutputEqualGlobalIndex), mix_outputs.end());
-		int best_distance = 0;
-		size_t best_index = mix_outputs.size();
-		for (size_t i = 0; i != mix_outputs.size(); ++i) {
-			int distance = abs(int(uu.index) - int(mix_outputs[i].index));
-			if (best_index == mix_outputs.size() || distance < best_distance) {
-				best_index    = i;
-				best_distance = distance;
+		if(anonymity != 0){
+			auto &our_ra_outputs = ra_response.outputs[uu.amount];
+			while (mix_outputs.size() < anonymity + 1) {
+				if (our_ra_outputs.empty())
+					throw json_rpc::Error(api::walletd::CreateTransaction::NOT_ENOUGH_ANONYMITY,
+						"Requested anonymity too high for amount " + common::to_string(uu.amount));
+				mix_outputs.push_back(std::move(our_ra_outputs.back()));
+				our_ra_outputs.pop_back();
 			}
+			std::sort(mix_outputs.begin(), mix_outputs.end(), APIOutputLessGlobalIndex);
+			mix_outputs.erase(
+				std::unique(mix_outputs.begin(), mix_outputs.end(), APIOutputEqualGlobalIndex), mix_outputs.end());
+			int best_distance = 0;
+			size_t best_index = mix_outputs.size();
+			for (size_t i = 0; i != mix_outputs.size(); ++i) {
+				int distance = abs(int(uu.index) - int(mix_outputs[i].index));
+				if (best_index == mix_outputs.size() || distance < best_distance) {
+					best_index    = i;
+					best_distance = distance;
+				}
+			}
+			invariant(best_index != mix_outputs.size(), "");
+			mix_outputs.erase(mix_outputs.begin() + best_index);
 		}
-		invariant(best_index != mix_outputs.size(), "");
-		mix_outputs.erase(mix_outputs.begin() + best_index);
 		AccountKeys sender_keys;
 		sender_keys.view_secret_key = view_secret_key;
 		if (!m_currency.parse_account_address_string(uu.address, &sender_keys.address))

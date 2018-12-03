@@ -1083,24 +1083,6 @@ std::vector<api::Output> BlockChainState::get_random_outputs(
 	std::vector<api::Output> result;
 	uint32_t total_count = next_global_index_for_amount(amount);
 	// We might need better algorithm if we have lots of locked amounts
-	if (total_count <= output_count) {
-		for (uint32_t i = 0; i != total_count; ++i) {
-			api::Output item;
-			UnlockTimePublickKeyHeightSpent unp;
-			item.amount = amount;
-			item.index  = i;
-			invariant(read_amount_output(amount, i, &unp), "global amount < total_count not found");
-			item.unlock_block_or_timestamp = unp.unlock_block_or_timestamp;
-			item.public_key                = unp.public_key;
-			item.height                    = unp.height;
-			if (unp.spent || unp.height > confirmed_height)
-				continue;
-			if (!m_currency.is_transaction_spend_time_unlocked(item.unlock_block_or_timestamp, confirmed_height, time))
-				continue;
-			result.push_back(item);
-		}
-		return result;
-	}
 	std::set<uint32_t> tried_or_added;
 	crypto::random_engine<uint64_t> generator;
 	std::lognormal_distribution<double> distribution(1.9, 1.0);  // Magic params here
@@ -1122,14 +1104,8 @@ std::vector<api::Output> BlockChainState::get_random_outputs(
 		}
 		if (!tried_or_added.insert(num).second)
 			continue;
-		api::Output item;
 		UnlockTimePublickKeyHeightSpent unp;
-		item.amount = amount;
-		item.index  = num;
 		invariant(read_amount_output(amount, num, &unp), "num < total_count not found");
-		item.unlock_block_or_timestamp = unp.unlock_block_or_timestamp;
-		item.public_key                = unp.public_key;
-		item.height                    = unp.height;
 		if (unp.height > confirmed_height) {
 			if (confirmed_height + 128 < get_tip_height())
 				total_count = num;
@@ -1140,9 +1116,39 @@ std::vector<api::Output> BlockChainState::get_random_outputs(
 		}
 		if (unp.spent)
 			continue;
-		if (!m_currency.is_transaction_spend_time_unlocked(item.unlock_block_or_timestamp, confirmed_height, time))
+		if (!m_currency.is_transaction_spend_time_unlocked(unp.unlock_block_or_timestamp, confirmed_height, time))
 			continue;
+		api::Output item;
+		item.amount = amount;
+		item.index  = num;
+		item.unlock_block_or_timestamp = unp.unlock_block_or_timestamp;
+		item.public_key                = unp.public_key;
+		item.height                    = unp.height;
 		result.push_back(item);
+	}
+	if(result.size() < output_count){
+		// Read the whole index.
+		size_t attempts            = 0;
+		for (DB::Cursor cur = m_db.rbegin(AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount)); result.size() < output_count && attempts < 10000 && !cur.end(); cur.next(), ++attempts) { // TODO - 10000
+			const char *be        = cur.get_suffix().data();
+			const char *en        = be + cur.get_suffix().size();
+			uint32_t global_index = common::integer_cast<uint32_t>(common::read_varint_sqlite4(be, en));
+			if (tried_or_added.count(global_index) != 0)
+				continue;
+			UnlockTimePublickKeyHeightSpent unp;
+			seria::from_binary(unp, cur.get_value_array());
+			if (unp.spent || unp.height > confirmed_height)
+				continue;
+			if (!m_currency.is_transaction_spend_time_unlocked(unp.unlock_block_or_timestamp, confirmed_height, time))
+				continue;
+			api::Output item;
+			item.amount = amount;
+			item.index  = global_index;
+			item.unlock_block_or_timestamp = unp.unlock_block_or_timestamp;
+			item.public_key                = unp.public_key;
+			item.height                    = unp.height;
+			result.push_back(item);
+		}
 	}
 	return result;
 }
