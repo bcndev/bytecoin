@@ -28,9 +28,6 @@ uint32_t platform::now_unix_timestamp(uint32_t *usec) {
 	gettimeofday(&tv, nullptr);
 	if (usec)
 		*usec = tv.tv_usec;
-	//	auto was_time = uint32_t(std::time(nullptr));
-	//	if (abs(int(tv.tv_sec) - int(was_time)) > 1)
-	//		std::cout << "bad time" << std::endl;  // TODO - remove after checking on Mac
 	return static_cast<uint32_t>(tv.tv_sec);
 }
 

@@ -2,7 +2,6 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "DBlmdb.hpp"
-#include <boost/lexical_cast.hpp>
 #include <iostream>
 #include "PathTools.hpp"
 #include "common/Math.hpp"
@@ -79,13 +78,14 @@ platform::lmdb::Cur::~Cur() {
 	handle = nullptr;
 }
 
-DBlmdb::DBlmdb(bool read_only, const std::string &full_path, uint64_t max_db_size)
-    : full_path(full_path), db_env(read_only) {
+DBlmdb::DBlmdb(OpenMode open_mode, const std::string &full_path, uint64_t max_db_size)
+    : full_path(full_path), db_env(open_mode == O_READ_EXISTING) {
 	//	std::cout << "lmdb libversion=" << mdb_version(nullptr, nullptr, nullptr) << std::endl;
 	lmdb_check(::mdb_env_set_mapsize(db_env.handle, max_db_size), "mdb_env_set_mapsize ");
 	// VALGRIND is limited to 32GB, modify line above to use (max_db_size > 28000000000 ? 28000000000 : max_db_size)
 	create_folders_if_necessary(full_path);
-	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(), MDB_NOMETASYNC | (read_only ? MDB_RDONLY : 0), 0644),
+	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(),
+	               MDB_NOMETASYNC | (open_mode == O_READ_EXISTING ? MDB_RDONLY : 0), 0644),
 	    "Failed to open database " + full_path + " in mdb_env_open ");
 	// MDB_NOMETASYNC - We agree to trade chance of losing 1 last transaction for 2x performance boost
 	db_txn.reset(new lmdb::Txn(db_env));
@@ -240,7 +240,7 @@ std::string DBlmdb::clean_key(const std::string &key) {
 			uch = 'F';
 		if (uch < 32)
 			uch = '0' + uch;
-		ch      = uch;
+		ch = uch;
 	}
 	return result;
 }
@@ -262,7 +262,7 @@ void DBlmdb::backup_db(const std::string &full_path, const std::string &dst_path
 void DBlmdb::run_tests() {
 	delete_db("temp_db");
 	{
-		DBlmdb db(false, "temp_db");
+		DBlmdb db(platform::O_CREATE_NEW, "temp_db");
 		db.put("history/ha", "ua", false);
 		db.put("history/hb", "ub", false);
 		db.put("history/hc", "uc", false);

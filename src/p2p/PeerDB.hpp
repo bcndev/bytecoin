@@ -20,7 +20,7 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index_container.hpp>
 
-namespace bytecoin {
+namespace cn {
 class Config;
 class PeerDB {
 public:
@@ -80,7 +80,8 @@ public:
 	size_t get_gray_size() const;
 	size_t get_white_size() const;
 
-	void test();
+	std::vector<PeerlistEntry> get_peer_list_white() const;
+	std::vector<PeerlistEntry> get_peer_list_gray() const;
 
 private:
 	bool add_incoming_peer_impl(const NetworkAddress &addr, Timestamp now);
@@ -95,6 +96,7 @@ private:
 	platform::Timer commit_timer;
 	void db_commit();
 
+	std::vector<PeerlistEntry> get_peer_list(const peers_indexed &list) const;
 	void read_db(const std::string &prefix, peers_indexed &list);
 	void update_db(const std::string &prefix, const Entry &entry);
 	void del_db(const std::string &prefix, const NetworkAddress &addr);
@@ -104,4 +106,4 @@ private:
 	void unban(const std::string &prefix, Timestamp now, peers_indexed &list);
 	void print();
 };
-}
+}  // namespace cn

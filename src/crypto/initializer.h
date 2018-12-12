@@ -14,9 +14,9 @@
 // http://stackoverflow.com/questions/1113409/attribute-constructor-equivalent-in-vc
 // http://msdn.microsoft.com/en-us/library/bb918180.aspx
 #pragma section(".CRT$XCT", read)
-#define INITIALIZER(name)                                                         \
-	static void __cdecl name(void);                                               \
-	__declspec(allocate(".CRT$XCT")) void(__cdecl * const _##name)(void) = &name; \
+#define INITIALIZER(name)                                                        \
+	static void __cdecl name(void);                                              \
+	__declspec(allocate(".CRT$XCT")) void(__cdecl *const _##name)(void) = &name; \
 	static void __cdecl name(void)
 #define FINALIZER(name) static void __cdecl name(void)
 #define REGISTER_FINALIZER(name) \

@@ -49,7 +49,7 @@ struct UnlockTransactionJobDto {
 /*struct WalletTransactionDto {
         WalletTransactionDto() {}
 
-        WalletTransactionDto(const bytecoin::WalletTransaction &wallet) {
+        WalletTransactionDto(const cn::WalletTransaction &wallet) {
                 state         = wallet.state;
                 timestamp     = wallet.timestamp;
                 block_height  = wallet.block_height;
@@ -61,7 +61,7 @@ struct UnlockTransactionJobDto {
                 extra         = wallet.extra;
         }
 
-        bytecoin::WalletTransactionState state;
+        cn::WalletTransactionState state;
         uint64_t timestamp;
         uint32_t block_height;
         Hash hash;
@@ -76,7 +76,7 @@ struct UnlockTransactionJobDto {
 struct WalletTransferDto {
         explicit WalletTransferDto(uint32_t version) : amount(0), type(0),
 version(version) {}
-        WalletTransferDto(const bytecoin::WalletTransfer &tr, uint32_t version)
+        WalletTransferDto(const cn::WalletTransfer &tr, uint32_t version)
 : WalletTransferDto(version) {
                 address = tr.address;
                 amount  = tr.amount;
@@ -88,9 +88,9 @@ version(version) {}
         uint8_t type;
 
         uint32_t version;
-};*/
+};
 
-/*void serialize(WalletRecordDto &v, bytecoin::ISerializer &s) {
+void serialize(WalletRecordDto &v, cn::ISerializer &s) {
         s(v.spend_public_key, "spend_public_key");
         s(v.spend_secret_key, "spend_secret_key");
         s(v.pending_balance, "pending_balance");
@@ -110,14 +110,14 @@ struct KeysStorage {
 
 std::string read_cipher(common::IInputStream &source, const std::string &name) {
 	std::string cipher;
-	//	bytecoin::BinaryInputStreamSerializer s(source);
+	//	cn::BinaryInputStreamSerializer s(source);
 	seria::BinaryInputStream s(source);
 	ser(cipher, s);  // , name
 
 	return cipher;
 }
 
-std::string decrypt(const std::string &cipher, bytecoin::WalletSerializerV1::CryptoContext &crypto_ctx) {
+std::string decrypt(const std::string &cipher, cn::WalletSerializerV1::CryptoContext &crypto_ctx) {
 	std::string plain;
 	plain.resize(cipher.size());
 
@@ -133,8 +133,8 @@ void deserialize(Object &obj, const std::string &name, const std::string &plain)
 }
 
 template<typename Object>
-void deserialize_encrypted(Object &obj, const std::string &name,
-    bytecoin::WalletSerializerV1::CryptoContext &crypto_ctx, common::IInputStream &source) {
+void deserialize_encrypted(Object &obj, const std::string &name, cn::WalletSerializerV1::CryptoContext &crypto_ctx,
+    common::IInputStream &source) {
 	std::string cipher = read_cipher(source, name);
 	std::string plain  = decrypt(cipher, crypto_ctx);
 
@@ -144,7 +144,7 @@ void deserialize_encrypted(Object &obj, const std::string &name,
 }  // anonymous namespace
 
 namespace seria {
-void ser(crypto::chacha8_iv &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
+void ser(crypto::chacha_iv &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
 void ser_members(WalletRecordDto &v, ISeria &s) {
 	seria_kv("spend_public_key", v.spend_public_key, s);
 	seria_kv("spend_secret_key", v.spend_secret_key, s);
@@ -159,9 +159,9 @@ void ser_members(KeysStorage &v, ISeria &s) {
 	seria_kv("view_public_key", v.view_public_key, s);
 	seria_kv("view_secret_key", v.view_secret_key, s);
 }
-}
+}  // namespace seria
 
-namespace bytecoin {
+namespace cn {
 
 const uint32_t WalletSerializerV1::SERIALIZATION_VERSION = 5;
 
@@ -174,7 +174,7 @@ WalletSerializerV1::WalletSerializerV1(crypto::PublicKey &view_public_key, crypt
     std::vector<WalletRecord> &wallets_container)
     : m_view_public_key(view_public_key), m_view_secret_key(view_secret_key), m_wallets_container(wallets_container) {}
 
-void WalletSerializerV1::load(const crypto::chacha8_key &key, common::IInputStream &source) {
+void WalletSerializerV1::load(const crypto::chacha_key &key, common::IInputStream &source) {
 	seria::BinaryInputStream s(source);
 	s.begin_object();
 
@@ -191,7 +191,7 @@ void WalletSerializerV1::load(const crypto::chacha8_key &key, common::IInputStre
 	s.end_object();
 }
 
-void WalletSerializerV1::load_wallet(common::IInputStream &source, const crypto::chacha8_key &key, uint32_t version) {
+void WalletSerializerV1::load_wallet(common::IInputStream &source, const crypto::chacha_key &key, uint32_t version) {
 	CryptoContext crypto_ctx;
 
 	load_iv(source, crypto_ctx.iv);
@@ -203,7 +203,7 @@ void WalletSerializerV1::load_wallet(common::IInputStream &source, const crypto:
 	load_wallets(source, crypto_ctx);
 }
 
-void WalletSerializerV1::load_wallet_v1(common::IInputStream &source, const crypto::chacha8_key &key) {
+void WalletSerializerV1::load_wallet_v1(common::IInputStream &source, const crypto::chacha_key &key) {
 	CryptoContext crypto_ctx;
 
 	seria::BinaryInputStream encrypted(source);
@@ -255,7 +255,7 @@ uint32_t WalletSerializerV1::load_version(common::IInputStream &source) {
 	return version;
 }
 
-void WalletSerializerV1::load_iv(common::IInputStream &source, crypto::chacha8_iv &iv) {
+void WalletSerializerV1::load_iv(common::IInputStream &source, crypto::chacha_iv &iv) {
 	seria::BinaryInputStream s(source);
 
 	s.binary(static_cast<void *>(&iv.data), sizeof(iv.data));  // , "chacha_iv"
@@ -333,4 +333,4 @@ void WalletSerializerV1::load_wallets(common::IInputStream &source, CryptoContex
 	}
 }
 
-}  // namespace bytecoin
+}  // namespace cn

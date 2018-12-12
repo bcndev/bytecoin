@@ -5,21 +5,21 @@
 
 #include "Core/Wallet.hpp"  // for WalletRecord
 #include "common/Streams.hpp"
-#include "crypto/chacha8.hpp"
+#include "crypto/chacha.hpp"
 #include "seria/ISeria.hpp"
 
-namespace bytecoin {
+namespace cn {
 
 class WalletSerializerV1 {
 public:
 	WalletSerializerV1(
 	    PublicKey &view_public_key, SecretKey &view_secret_key, std::vector<WalletRecord> &wallets_container);
 
-	void load(const crypto::chacha8_key &key, common::IInputStream &source);
+	void load(const crypto::chacha_key &key, common::IInputStream &source);
 
 	struct CryptoContext {
-		crypto::chacha8_key key;
-		crypto::chacha8_iv iv;
+		crypto::chacha_key key;
+		crypto::chacha_iv iv;
 
 		void inc_iv();
 	};
@@ -27,11 +27,11 @@ public:
 private:
 	static const uint32_t SERIALIZATION_VERSION;
 
-	void load_wallet(common::IInputStream &source, const crypto::chacha8_key &key, uint32_t version);
-	void load_wallet_v1(common::IInputStream &source, const crypto::chacha8_key &key);
+	void load_wallet(common::IInputStream &source, const crypto::chacha_key &key, uint32_t version);
+	void load_wallet_v1(common::IInputStream &source, const crypto::chacha_key &key);
 
 	uint32_t load_version(common::IInputStream &source);
-	void load_iv(common::IInputStream &source, crypto::chacha8_iv &iv);
+	void load_iv(common::IInputStream &source, crypto::chacha_iv &iv);
 	void load_keys(common::IInputStream &source, CryptoContext &);
 	void load_public_key(common::IInputStream &source, CryptoContext &);
 	void load_secret_key(common::IInputStream &source, CryptoContext &);
@@ -47,4 +47,4 @@ private:
 	std::vector<WalletRecord> &m_wallets_container;
 };
 
-}  // namespace bytecoin
+}  // namespace cn

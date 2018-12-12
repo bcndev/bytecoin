@@ -2,8 +2,8 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "CommandLine.hpp"
-#include <stdio.h>
 #include <algorithm>
+#include <cstdio>
 
 // no std::string - no std::cout, printf is synced with it anyway
 
@@ -23,7 +23,7 @@ CommandLine::CommandLine(int argc, const char *const argv[]) {
 		return;
 	bool positional_only = false;
 	std::vector<Option> flat_options;  // first gather all options
-	flat_options.reserve(argc - 1);
+	flat_options.reserve(static_cast<size_t>(argc) - 1);
 	for (int i = 1; i != argc; ++i) {
 		if (argv[i][0] != '-' || positional_only) {
 			positional.push_back(argv[i]);
@@ -68,7 +68,7 @@ const char *CommandLine::get(const char *key, const char *deprecation_text) {
 	if (!op->values.front() && !op->wrong_type_message)
 		op->wrong_type_message = "is not flag and should have value (use --<option>=<value>)";
 	if (deprecation_text)
-		printf("Command line option %s is deprecated. %s\n", key, deprecation_text);
+		printf("Command line option '%s' is deprecated. %s\n", key, deprecation_text);
 	return op->values.front() ? op->values.front() : nullptr;
 }
 
@@ -82,7 +82,7 @@ bool CommandLine::get_bool(const char *key, const char *deprecation_text) {
 	if (op->values.front() && !op->wrong_type_message)
 		op->wrong_type_message = "is flag and should not have value (use --<option>, not --<option>=<value>)";
 	if (deprecation_text)
-		printf("Command line option %s is deprecated. %s\n", key, deprecation_text);
+		printf("Command line option '%s' is deprecated. %s\n", key, deprecation_text);
 	return !op->values.front();  // if value set, bool flag is not specified
 }
 
@@ -110,7 +110,7 @@ const std::vector<const char *> &CommandLine::get_array(const char *key, const c
 		} else
 			++vit;
 	if (deprecation_text)
-		printf("Command line option %s is deprecated. %s\n", key, deprecation_text);
+		printf("Command line option '%s' is deprecated. %s\n", key, deprecation_text);
 	return op->values;
 }
 const std::vector<const char *> &CommandLine::get_positional(const char *deprecation_text) {
@@ -141,11 +141,11 @@ bool CommandLine::should_quit(const char *help_text, const char *version_text) {
 		}
 	for (auto &&op : options) {
 		if (!op.used) {
-			printf("Command line option %s has no meaning (typo?)\n", op.key.data);
+			printf("Command line option '%s' has no meaning (typo?)\n", op.key.data);
 			quit = true;
 		}
 		if (op.wrong_type_message) {
-			printf("Command line option %s %s\n", op.key.data, op.wrong_type_message);
+			printf("Command line option '%s' %s\n", op.key.data, op.wrong_type_message);
 			quit = true;
 		}
 	}

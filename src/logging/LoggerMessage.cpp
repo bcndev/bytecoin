@@ -35,4 +35,4 @@ int LoggerMessage::sync() {
 	str(std::string());
 	return 0;
 }
-}
+}  // namespace logging

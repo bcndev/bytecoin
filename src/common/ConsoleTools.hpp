@@ -6,8 +6,7 @@
 #include <cstdint>
 #include <sstream>
 
-namespace common {
-namespace console {
+namespace common { namespace console {
 
 enum Color : char {
 	Default,
@@ -41,9 +40,8 @@ protected:
 
 public:
 	UnicodeConsoleSetup();
-	~UnicodeConsoleSetup();
+	~UnicodeConsoleSetup() override;
 
 	bool getline(std::string &line, bool hide_input = false);
 };
-}
-}
+}}  // namespace common::console

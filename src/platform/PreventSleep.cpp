@@ -66,7 +66,7 @@ platform::PreventSleep::PreventSleep(const char *reason) {
 	if (++counter == 1) {
 		CFStringRef reason_for_activity = CFStringCreateWithCString(kCFAllocatorDefault, reason, kCFStringEncodingUTF8);
 		IOReturn success                = IOPMAssertionCreateWithName(
-		    kIOPMAssertionTypeNoDisplaySleep, kIOPMAssertionLevelOn, reason_for_activity, &assertionID);
+            kIOPMAssertionTypeNoDisplaySleep, kIOPMAssertionLevelOn, reason_for_activity, &assertionID);
 		CFRelease(reason_for_activity);
 		std::cout << "Preventing sleep " << reason << " success=" << success << std::endl;
 	}

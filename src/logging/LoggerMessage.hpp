@@ -35,4 +35,4 @@ private:
 	ILogger *logger;
 	std::string category;
 };
-}
+}  // namespace logging

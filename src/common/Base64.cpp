@@ -3,11 +3,9 @@
 
 #include "Base64.hpp"
 
-#include <assert.h>
 #include <vector>
 
-namespace common {
-namespace base64 {
+namespace common { namespace base64 {
 
 static const uint8_t from_base64[128] = {
     // 8 rows of 16 = 128
@@ -43,9 +41,9 @@ std::string encode(const BinaryArray &data) {
 	for (size_t i = 0; i < ret_size / 4; ++i) {
 		// Read a group of three bytes (avoid buffer overrun by replacing with 0)
 		const size_t index = i * 3;
-		const uint8_t b3_0 = (index + 0 < buf_len) ? buf[index + 0] : 0;
-		const uint8_t b3_1 = (index + 1 < buf_len) ? buf[index + 1] : 0;
-		const uint8_t b3_2 = (index + 2 < buf_len) ? buf[index + 2] : 0;
+		const uint8_t b3_0 = (index + 0 < buf_len) ? buf[index + 0] : uint8_t(0);
+		const uint8_t b3_1 = (index + 1 < buf_len) ? buf[index + 1] : uint8_t(0);
+		const uint8_t b3_2 = (index + 2 < buf_len) ? buf[index + 2] : uint8_t(0);
 
 		// Transform into four base 64 characters
 		const uint8_t b4_0 = ((b3_0 & 0xfc) >> 2);
@@ -61,7 +59,7 @@ std::string encode(const BinaryArray &data) {
 	}
 
 	// Replace data that is invalid (always as many as there are missing bytes)
-	for (size_t i             = 0; i != missing; ++i)
+	for (size_t i = 0; i != missing; ++i)
 		ret[ret_size - i - 1] = '=';
 	return ret;
 }
@@ -80,13 +78,16 @@ bool decode(const std::string &in, BinaryArray *ret) {
 	for (size_t i = 0; i < encoded_size; i += 4) {
 		// Get values for each group of four base 64 characters
 		const uint8_t b4_0 =
-		    (static_cast<uint8_t>(in[i + 0]) <= 'z') ? from_base64[static_cast<uint8_t>(in[i + 0])] : 0xff;
-		const uint8_t b4_1 =
-		    (i + 1 < N && static_cast<uint8_t>(in[i + 1]) <= 'z') ? from_base64[static_cast<uint8_t>(in[i + 1])] : 0xff;
-		const uint8_t b4_2 =
-		    (i + 2 < N && static_cast<uint8_t>(in[i + 2]) <= 'z') ? from_base64[static_cast<uint8_t>(in[i + 2])] : 0xff;
-		const uint8_t b4_3 =
-		    (i + 3 < N && static_cast<uint8_t>(in[i + 3]) <= 'z') ? from_base64[static_cast<uint8_t>(in[i + 3])] : 0xff;
+		    (static_cast<uint8_t>(in[i + 0]) <= 'z') ? from_base64[static_cast<uint8_t>(in[i + 0])] : uint8_t(0xff);
+		const uint8_t b4_1 = (i + 1 < N && static_cast<uint8_t>(in[i + 1]) <= 'z')
+		                         ? from_base64[static_cast<uint8_t>(in[i + 1])]
+		                         : uint8_t(0xff);
+		const uint8_t b4_2 = (i + 2 < N && static_cast<uint8_t>(in[i + 2]) <= 'z')
+		                         ? from_base64[static_cast<uint8_t>(in[i + 2])]
+		                         : uint8_t(0xff);
+		const uint8_t b4_3 = (i + 3 < N && static_cast<uint8_t>(in[i + 3]) <= 'z')
+		                         ? from_base64[static_cast<uint8_t>(in[i + 3])]
+		                         : uint8_t(0xff);
 
 		// Transform into a group of three bytes
 		const uint8_t b3_0 = ((b4_0 & 0x3f) << 2) + ((b4_1 & 0x30) >> 4);
@@ -103,5 +104,4 @@ bool decode(const std::string &in, BinaryArray *ret) {
 	}
 	return true;  // TODO - find decoder which returns false on invalid data
 }
-}
-}
+}}  // namespace common::base64

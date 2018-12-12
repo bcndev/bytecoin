@@ -62,13 +62,17 @@ void JsonOutputStreamValue::seria_v(int32_t &value) {
 
 void JsonOutputStreamValue::seria_v(int64_t &value) { insert_or_push(JsonValue(value), value == 0); }
 
-void JsonOutputStreamValue::seria_v(double &value) { insert_or_push(JsonValue(value), value == 0); }
+// void JsonOutputStreamValue::seria_v(double &value) { insert_or_push(JsonValue(value), value == 0); }
 
-void JsonOutputStreamValue::seria_v(std::string &value) { insert_or_push(JsonValue(value), value.empty()); }
+bool JsonOutputStreamValue::seria_v(std::string &value) {
+	insert_or_push(JsonValue(value), value.empty());
+	return true;
+}
 
-void JsonOutputStreamValue::seria_v(common::BinaryArray &value) {
+bool JsonOutputStreamValue::seria_v(common::BinaryArray &value) {
 	std::string hex = common::to_hex(value);
 	seria_v(hex);
+	return true;
 }
 
 void JsonOutputStreamValue::seria_v(uint8_t &value) {
@@ -77,10 +81,11 @@ void JsonOutputStreamValue::seria_v(uint8_t &value) {
 
 void JsonOutputStreamValue::seria_v(bool &value) { insert_or_push(JsonValue(value), !value); }
 
-void JsonOutputStreamValue::binary(void *value, size_t size) {
+bool JsonOutputStreamValue::binary(void *value, size_t size) {
 	std::string hex = common::to_hex(value, size);
 	bool all_zeroes = hex.find_first_not_of('0') == std::string::npos;
 	insert_or_push(all_zeroes ? std::string() : hex, all_zeroes);
+	return true;
 }
 
 common::JsonValue *JsonOutputStreamValue::insert_or_push(const common::JsonValue &value, bool skip_if_optional) {
@@ -99,7 +104,7 @@ common::JsonValue *JsonOutputStreamValue::insert_or_push(const common::JsonValue
 		next_key               = common::StringView("");
 		if (skip_if_optional && next_optional)
 			return nullptr;
-		return &js->insert((std::string)key, value);
+		return &js->insert(static_cast<std::string>(key), value);
 	}
 	throw std::logic_error("can only insert into object array or root");
 }
@@ -184,29 +189,31 @@ void JsonOutputStreamText::seria_v(int32_t &value) { append_prefix(common::to_st
 
 void JsonOutputStreamText::seria_v(int64_t &value) { append_prefix(common::to_string(value), value == 0); }
 
-void JsonOutputStreamText::seria_v(double &value) { append_prefix(common::to_string(value), value == 0); }
+// void JsonOutputStreamText::seria_v(double &value) { append_prefix(common::to_string(value), value == 0); }
 
-void JsonOutputStreamText::seria_v(std::string &value) {
+bool JsonOutputStreamText::seria_v(std::string &value) {
 	if (!append_prefix("\"", value.empty()))
-		return;
+		return false;
 	text += JsonValue::escape_string(value);
 	text += "\"";
+	return true;
 }
 
-void JsonOutputStreamText::seria_v(common::BinaryArray &value) {
+bool JsonOutputStreamText::seria_v(common::BinaryArray &value) {
 	std::string hex = common::to_hex(value);
-	seria_v(hex);
+	return seria_v(hex);
 }
 
 void JsonOutputStreamText::seria_v(uint8_t &value) { append_prefix(common::to_string(value), value == 0); }
 
 void JsonOutputStreamText::seria_v(bool &value) { append_prefix(value ? "true" : "false", !value); }
 
-void JsonOutputStreamText::binary(void *value, size_t size) {
+bool JsonOutputStreamText::binary(void *value, size_t size) {
 	std::string hex = common::to_hex(value, size);
 	bool all_zeroes = hex.find_first_not_of('0') == std::string::npos;
 	if (!append_prefix("\"", all_zeroes))
-		return;
+		return false;
 	text += all_zeroes ? std::string() : hex;
 	text += "\"";
+	return true;
 }

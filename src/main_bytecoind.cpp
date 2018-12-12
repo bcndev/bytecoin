@@ -2,6 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include <boost/algorithm/string.hpp>
+#include "Core/BlockChainFileFormat.hpp"
 #include "Core/Config.hpp"
 #include "Core/Node.hpp"
 #include "common/CommandLine.hpp"
@@ -13,10 +14,9 @@
 #include "platform/PathTools.hpp"
 #include "version.hpp"
 
-using namespace bytecoin;
+using namespace cn;
 
-static const char USAGE[] =
-    R"(bytecoind )" bytecoin_VERSION_STRING R"(.
+static const char USAGE[] = R"(bytecoind )" bytecoin_VERSION_STRING R"(.
 
 Usage:
   bytecoind [options]
@@ -30,16 +30,17 @@ Options:
   --seed-node-address=<ip:port>          Specify list (one or more) of nodes to start connecting to.
   --priority-node-address=<ip:port>      Specify list (one or more) of nodes to connect to and attempt to keep the connection open.
   --exclusive-node-address=<ip:port>     Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.
+  --import-blocks=<folder-path>          Perform import of blockchain from specified folder as blocks.bin and blockindexes.bin, then exit.
   --export-blocks=<folder-path>          Perform hot export of blockchain into specified folder as blocks.bin and blockindexes.bin, then exit. This overwrites existing files.
   --backup-blockchain=<folder-path>      Perform hot backup of blockchain into specified backup data folder, then exit.
   --net=<main|stage|test>                Configure for mainnet or testnet [default: main].
   --archive                              Work as an archive node [default: off].
   --data-folder=<folder-path>            Folder for blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
-    R"(bytecoin].
+                            R"(bytecoin].
   --bytecoind-authorization=<usr:pass>   HTTP basic authentication credentials for RPC API.
   --bytecoind-authorization-private=<usr:pass>   HTTP basic authentication credentials for get_statistics and get_archive methods.)"
 #if platform_USE_SSL
-    R"(
+                            R"(
   --ssl-certificate-pem-file=<file-path> Full path to file containing both server SSL certificate and private key in PEM format.
   --ssl-certificate-password=<pass>      DEPRECATED. Will read password from stdin if not specified.)"
 #endif
@@ -50,22 +51,23 @@ int main(int argc, const char *argv[]) try {
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	common::CommandLine cmd(argc, argv);
 
-	const bool import_blocks =
-	    cmd.get_bool("--import-blocks");  // Undocumented for now - import from blocks.bin before starting daemon
+	std::string import_blocks;
+	if (const char *pa = cmd.get("--import-blocks"))
+		import_blocks = platform::normalize_folder(pa);
 	std::string export_blocks;
 	if (const char *pa = cmd.get("--export-blocks"))
-		export_blocks = pa;
+		export_blocks = platform::normalize_folder(pa);
 	std::string backup_blockchain;
 	if (const char *pa = cmd.get("--backup-blockchain"))
-		backup_blockchain = pa;
+		backup_blockchain = platform::normalize_folder(pa);
 	Config config(cmd);
 	Currency currency(config.net);
 
 	Height print_structure = Height(-1);
 	if (const char *pa = cmd.get("--print-structure"))
-		print_structure      = std::stoi(pa);
+		print_structure = std::stoi(pa);
 	const bool print_outputs = cmd.get_bool("--print-outputs");
-	if (cmd.should_quit(USAGE, bytecoin::app_version()))
+	if (cmd.should_quit(Config::prepare_usage(USAGE).c_str(), cn::app_version()))
 		return 0;
 
 	const std::string coin_folder = config.get_data_folder();
@@ -94,7 +96,8 @@ int main(int argc, const char *argv[]) try {
 		BlockChainState block_chain_read_only(log_console, config, currency, true);
 
 		if (!export_blocks.empty()) {
-			if (!LegacyBlockChainWriter::export_blockchain2(export_blocks, block_chain_read_only))
+			if (!LegacyBlockChainWriter::export_blockchain2(export_blocks + "/" + config.block_indexes_file_name,
+			        export_blocks + "/" + config.blocks_file_name, block_chain_read_only))
 				return 1;
 			return 0;
 		}
@@ -114,17 +117,17 @@ int main(int argc, const char *argv[]) try {
 		config.ssl_certificate_password = ssl_certificate_password;
 	}
 
-	platform::ExclusiveLock coin_lock(coin_folder, "bytecoind.lock");
+	platform::ExclusiveLock coin_lock(coin_folder, CRYPTONOTE_NAME "d.lock");
 
 	logging::LoggerManager log_manager;
-	log_manager.configure_default(config.get_data_folder("logs"), "bytecoind-", bytecoin::app_version());
+	log_manager.configure_default(config.get_data_folder("logs"), CRYPTONOTE_NAME "d-", cn::app_version());
 
 	BlockChainState block_chain(log_manager, config, currency, false);
 	//	block_chain.test_undo_everything(0);
-	if (import_blocks) {
-		//		const std::string old_path = platform::get_default_data_directory(config.crypto_note_name);
-		//		LegacyBlockChainReader::import_blockchain2(old_path, &block_chain, 300000);
-		LegacyBlockChainReader::import_blockchain2(coin_folder, &block_chain, 300000);
+	//	return 0;
+	if (!import_blocks.empty()) {
+		LegacyBlockChainReader::import_blockchain2(import_blocks + "/" + config.block_indexes_file_name,
+		    import_blocks + "/" + config.blocks_file_name, &block_chain);
 		return 0;
 	}
 	//	block_chain.test_undo_everything(0);

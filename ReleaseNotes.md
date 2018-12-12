@@ -1,12 +1,57 @@
 ## Release Notes
 
+### v3.4.0-beta-20181212
+
+*Consensus update (hard fork)*
+- The release starts immediate voting in the stagenet. Voting in the mainnet will start when v3.4.0 is released.
+- Introduce new unlinkable addresses, stored in new HD wallet. Single mnemonic is enough to restore all wallet addresses.
+- Destination addresses can now be derived from blockchain with wallet secrets, so saving history is now unnecessary.
+- Greatly simplified maximum block size calculations. Miners will now explicitly vote for maximum block size (up to hard limit of 2 MB), depending on how many expensive transactions are in memory pool. Reward penalties are removed and most other unnecessary checks on block/transactions sizes are also removed from consensus.
+- New HD wallet is encrypted with chacha20 with salt (major improvement to previous wallet format)
+- New auditable addresses, guaranteed to always have balance exactly equal to what view-only version of the same wallet shows (useful for public deposits).
+- Signatures are now half size.
+- The requirement that coinbase transactions are locked for 10 blocks is removed from consensus.
+- Creating dust (or other not round output amounts) are now prohibited by consensus rules.
+- Minimum anonymity is now 3 (4 output references per input). This does not apply to dust or not round outputs.
+- `bytecoind` now calculates output obfuscation value, and does not use less-than-ideal outputs for mix-in
+
+*Command line changes/additions*
+- New walletd command-line parameter to set creation time when importing keys or mnemonic (which have no inherent timestamp)
+- New walletd command-line parameter to generate mnemonics
+- New walletd command-line parameter to create unlinkable wallet from mnemonics
+- New walletd command-line parameter to enable getting secrets bia JSON RPC API
+
+*Specific API improvements*
+- By default, getting secrets via JSON RPC API is disabled. 
+- New walletd method 'get_wallet_records' with optional 'create' parameter can be used to get (creating if needed) wallet records from linkable wallet
+- New walletd method `set_address_label` to set labels for addresses (labels are returned by `get_wallet_records`)
+- New error code `TOO_MUCH_ANONYMITY` (`-305`) can be returned from `create_transaction`.
+
+*API deprecations (will be removed in version 3.5.0)*
+- `walletd` method `get_addresses` is marked as deprecated, use `get_wallet_records` instead.
+- `walletd` method `get_view_key_pair` is marked as deprecated, use `get_wallet_info` with `need_secrets` set to true instead.
+- `walletd` method 'create_transaction' has 'save_history' and 'save_history_error' deprecated, because history is now always implicitly saved to blockchain.
+- `next_block_effective_median_size` renamed to `recommended_max_transaction_size` with `next_block_effective_median_size` deprecated.
+
+*Incompatible API changes*
+- `parent_block` is renamed to `root_block` in all contexts without deprecation, due to widespread confusion.
+
+*Improvements to P2P protocol to handle large network load*
+- Header relay instead of block body relay. In most cases receiver will reasemble block from memory pool. In rare case when this is not possible, the block body will be requested.
+- Transaction description relay instead of transactions body relay. Only new transactions will be requested. Transaction descriptions contain most recent referenced block hash, so that receiver can easily distinguish between "wrong signatures due to malicious intent" and "wrong signatures due to chain reorganisations"
+- Incremental memory pool sync with cut-off limit by fee/byte. Allows pools with huge assymetry in size to quickly get into stable state. 
+
+*Other changes*
+- Memory pool size increased to 4 MB.
+- `walletd` will automatically rebuild wallet cache after upgrade to this version. This can take long time for large wallets.
+
 ### v3.3.3
 
 - Fixed bug when `walletd` fails to create transactions for certain coins.
 
 ### v3.3.2
 
-- Fixed bug when an invalid transaction may persist in the payment queue.
+- Now all folders we get from user/system are normalized by removing excess slashes from the tail
 
 ### v3.3.1
 

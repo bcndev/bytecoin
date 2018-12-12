@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSE for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for
+// details.
 
 #pragma once
 
@@ -8,6 +9,7 @@
 
 namespace common {
 
+// TODO - we do not use it, remove?
 class ScopeExit : private Nocopy {
 public:
 	explicit ScopeExit(std::function<void()> &&handler) : m_handler(std::move(handler)) {}
@@ -23,4 +25,4 @@ private:
 	std::function<void()> m_handler;
 	bool m_cancelled = false;
 };
-}
+}  // namespace common

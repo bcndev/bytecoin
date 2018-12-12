@@ -4,6 +4,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <set>
@@ -20,12 +21,12 @@ class Agent {
 	public:
 		typedef std::function<void()> handler;
 
-		explicit Connection(handler r_handler, handler d_handler);
+		explicit Connection(handler &&r_handler, handler &&d_handler);
 
 		bool connect(const std::string &address, uint16_t port);
 		bool is_open() const { return sock.is_open(); }
-		bool read_next(ResponseData &request);
-		void write(RequestData &&response);
+		bool read_next(ResponseBody &request);
+		void write(RequestBody &&response);
 
 		void disconnect();
 
@@ -33,7 +34,7 @@ class Agent {
 		common::CircularBuffer buffer;
 		std::deque<common::StringStream> responses;
 
-		response request;
+		ResponseHeader request;
 		ResponseParser parser;
 		bool receiving_body;
 		common::StringStream receiving_body_stream;
@@ -75,17 +76,17 @@ public:
 
 class Request {
 public:
-	typedef std::function<void(ResponseData &&resp)> R_handler;
+	typedef std::function<void(ResponseBody &&resp)> R_handler;
 	typedef std::function<void(std::string err)> E_handler;
 
-	Request(Agent &agent, RequestData &&req, R_handler r_handler, E_handler e_handler);
+	Request(Agent &agent, RequestBody &&req, R_handler &&r_handler, E_handler &&e_handler);
 	~Request();
 
 private:
 	friend class Agent;
 	Agent &agent;
-	RequestData req;
+	RequestBody req;
 	R_handler r_handler;
 	E_handler e_handler;
 };
-}
+}  // namespace http

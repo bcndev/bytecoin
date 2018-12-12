@@ -17,6 +17,10 @@
 
 using namespace platform;
 
+static const char *open_mode_texts[] = {"open file for reading ", "create or truncate file for writing ",
+    "create new file (will not overwrite existing) ", "create or open file for reading or writing ",
+    "open file for reading or writing "};
+
 FileStream::FileStream() {
 #ifdef _WIN32
 	handle = INVALID_HANDLE_VALUE;
@@ -29,11 +33,7 @@ FileStream::FileStream(const std::string &filename, OpenMode mode) {
 #endif
 	if (!try_open(filename, mode))
 		throw common::StreamError(
-		    std::string("Failed to ") +
-		    (mode == READ_EXISTING
-		            ? "open file for reading "
-		            : mode == READ_WRITE_EXISTING ? "open file for reading/writing " : "truncate file for writing ") +
-		    filename);
+		    std::string("Failed to ") + open_mode_texts[mode] + std::string("'") + filename + std::string("'"));
 }
 
 FileStream::~FileStream() {
@@ -52,18 +52,22 @@ bool FileStream::try_open(const std::string &filename, OpenMode mode) {
 	handle = INVALID_HANDLE_VALUE;
 
 	auto wfilename = utf8_to_utf16(filename);
-	handle         = CreateFileW(wfilename.c_str(), GENERIC_READ | (mode == READ_EXISTING ? 0 : GENERIC_WRITE),
-	    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-	    (mode == TRUNCATE_READ_WRITE) ? CREATE_ALWAYS : (mode == READ_WRITE_EXISTING) ? OPEN_EXISTING : OPEN_EXISTING,
-	    FILE_ATTRIBUTE_NORMAL, nullptr);
-	DWORD err = GetLastError();
+	handle         = CreateFileW(wfilename.c_str(), GENERIC_READ | (mode == O_READ_EXISTING ? 0 : GENERIC_WRITE),
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        mode == O_CREATE_ALWAYS
+            ? CREATE_ALWAYS
+            : mode == O_CREATE_NEW ? CREATE_NEW : mode == O_OPEN_ALWAYS ? OPEN_ALWAYS : OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
+	DWORD err      = GetLastError();
 	return handle != INVALID_HANDLE_VALUE;
 #else
 	close(fd);
 	fd = -1;
 
-	int m1 = (mode == TRUNCATE_READ_WRITE) ? (O_CREAT | O_TRUNC) : (mode == READ_WRITE_EXISTING) ? 0 : 0;
-	fd     = open(filename.c_str(), m1 | (mode == READ_EXISTING ? O_RDONLY : O_RDWR), 0600);
+	int m1 = (mode == O_CREATE_ALWAYS)
+	             ? (O_CREAT | O_TRUNC)
+	             : (mode == O_CREATE_NEW) ? (O_CREAT | O_EXCL) : (mode == O_OPEN_ALWAYS) ? O_CREAT : 0;
+	fd = open(filename.c_str(), m1 | (mode == O_READ_EXISTING ? O_RDONLY : O_RDWR), 0600);
 	return fd != -1;
 #endif
 }
@@ -107,10 +111,10 @@ size_t FileStream::read_some(void *data, size_t size) {
 		throw common::StreamError("Error reading file, GetLastError()=" + common::to_string(GetLastError()));
 	return si;
 #else
-	size_t si = ::read(fd, data, size);
-	if (si == (size_t)-1)
+	ssize_t si = ::read(fd, data, size);
+	if (si == -1)
 		throw common::StreamError("Error reading file, errno=" + common::to_string(errno));
-	return si;
+	return (size_t)si;
 #endif
 }
 

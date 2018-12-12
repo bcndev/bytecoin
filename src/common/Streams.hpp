@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include "BinaryArray.hpp"
+#include "Math.hpp"
 
 namespace common {
 // read_some and write_some are allowed to read/write as many bytes as convenient, returning bytes read/written
@@ -15,61 +16,33 @@ namespace common {
 
 class IInputStream {
 public:
-	virtual ~IInputStream() {}
+	virtual ~IInputStream()                           = default;
 	virtual size_t read_some(void *data, size_t size) = 0;
 	void read(void *data, size_t size);
+	void read(BinaryArray &data, size_t size);
+	void read(std::string &data, size_t size);
+	uint8_t read_byte();
+	uint64_t read_varint64();
+	template<class T>
+	T read_varint() {
+		static_assert(std::is_integral<T>::value && std::is_unsigned<T>::value,
+		    "reading signed values in varint format has to be done carefully (no canonical way)");
+		return integer_cast<T>(read_varint64());
+	}
 };
 
 class IOutputStream {
 public:
-	virtual ~IOutputStream() {}
+	virtual ~IOutputStream()                                 = default;
 	virtual size_t write_some(const void *data, size_t size) = 0;
 	void write(const void *data, size_t size);
+	void write(const BinaryArray &data);
+	void write(const std::string &data);
+	void write_varint(uint64_t value);
 };
 
 class StreamError : public std::runtime_error {
 public:
 	explicit StreamError(const std::string &str) : std::runtime_error(str) {}
 };
-
-void read(IInputStream &in, int8_t &value);
-void read(IInputStream &in, int16_t &value);
-void read(IInputStream &in, int32_t &value);
-void read(IInputStream &in, int64_t &value);
-void read(IInputStream &in, uint8_t &value);
-void read(IInputStream &in, uint16_t &value);
-void read(IInputStream &in, uint32_t &value);
-void read(IInputStream &in, uint64_t &value);
-void read(IInputStream &in, BinaryArray &data, size_t size);
-void read(IInputStream &in, std::string &data, size_t size);
-void read_varint(IInputStream &in, uint8_t &value);
-void read_varint(IInputStream &in, uint16_t &value);
-void read_varint(IInputStream &in, uint32_t &value);
-void read_varint(IInputStream &in, uint64_t &value);
-
-void write(IOutputStream &out, int8_t value);
-void write(IOutputStream &out, int16_t value);
-void write(IOutputStream &out, int32_t value);
-void write(IOutputStream &out, int64_t value);
-void write(IOutputStream &out, uint8_t value);
-void write(IOutputStream &out, uint16_t value);
-void write(IOutputStream &out, uint32_t value);
-void write(IOutputStream &out, uint64_t value);
-void write(IOutputStream &out, const BinaryArray &data);
-void write(IOutputStream &out, const std::string &data);
-void write_varint(IOutputStream &out, uint64_t value);
-
-template<typename T>
-T read(IInputStream &in) {
-	T value;
-	read(in, value);
-	return value;
-}
-
-template<typename T>
-T read_varint(IInputStream &in) {
-	T value;
-	read_varint(in, value);
-	return value;
-}
-}
+}  // namespace common

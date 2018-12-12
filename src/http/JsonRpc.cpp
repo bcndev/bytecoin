@@ -3,9 +3,7 @@
 
 #include "http/JsonRpc.hpp"
 
-namespace bytecoin {
-
-namespace json_rpc {
+namespace cn { namespace json_rpc {
 
 // throw it directly, without error_code or other complications
 Error::Error() : code(0) {}
@@ -137,35 +135,20 @@ std::string create_binary_response_error_body(const Error &error, const common::
 	return json_body;
 }
 
-/*std::string Response::get_body() {
-    common::JsonValue ps_req(common::JsonValue::OBJECT);
-    ps_req.set("jsonrpc", std::string("2.0"));
-    invariant(bool(result) ^ bool(error), "");
-    if (error)
-        ps_req.set("error", std::move(error.get()));
-    else
-        ps_req.set("result", std::move(result.get()));
-    if (jid)
-        ps_req.set("id", std::move(jid.get()));
-    common::JsonValue test_value = common::JsonValue::from_string(result_body);
-    auto str1 = test_value.to_string();
-    auto str2 = ps_req.to_string();
-    if(str1 != str2){
-        std::cout << str1 << std::endl;
-        std::cout << str2 << std::endl;
-    }
-    return str2;
-}
-void Response::prepare_result_body(){
-    result_body = "{";
-    result_body += "\"id\":" + jid.to_string() + ",";
-    result_body += "\"jsonrpc\":\"2.0\",\"result\":";
-}*/
 std::string prepare_result_prefix(const common::JsonValue &jid) {
 	std::string result = "{";
 	result += "\"id\":" + jid.to_string() + ",";
 	result += "\"jsonrpc\":\"2.0\",\"result\":";
 	return result;
 }
+
+}}  // namespace cn::json_rpc
+
+namespace seria {
+void ser_members(cn::json_rpc::Error &v, ISeria &s) {
+	seria_kv("code", v.code, s);
+	seria_kv("message", v.message, s);
+	s.object_key("data");
+	v.seria_data(s);
 }
-}
+}  // namespace seria

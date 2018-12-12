@@ -39,7 +39,7 @@ public:
 
 	JsonValue();
 	JsonValue(const JsonValue &other);
-	JsonValue(JsonValue &&other);
+	JsonValue(JsonValue &&other) noexcept;
 	JsonValue(Type value_type);
 	JsonValue(const Array &value);
 	JsonValue(Array &&value);
@@ -61,7 +61,7 @@ public:
 	~JsonValue();
 
 	JsonValue &operator=(const JsonValue &other);
-	JsonValue &operator=(JsonValue &&other);
+	JsonValue &operator=(JsonValue &&other) noexcept;
 	JsonValue &operator=(const Array &value);
 	JsonValue &operator=(Array &&value);
 	JsonValue &operator=(Bool value);
@@ -172,4 +172,4 @@ private:
 	void read_object(StreamContext &ctx);
 	void read_string(StreamContext &ctx);
 };
-}
+}  // namespace common

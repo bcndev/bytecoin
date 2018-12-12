@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <deque>
 #include <list>
 #include <map>
@@ -13,7 +14,7 @@
 #include "logging/LoggerMessage.hpp"
 #include "platform/Network.hpp"
 
-namespace bytecoin {
+namespace cn {
 
 class Config;
 class P2P;
@@ -22,10 +23,10 @@ class P2PClient;
 class P2PProtocol {
 public:
 	explicit P2PProtocol(P2PClient *client) : m_client(client) {}
-	virtual ~P2PProtocol() {}
-	virtual void on_connect() = 0;
-	virtual size_t on_parse_header(common::CircularBuffer &buffer, BinaryArray &request, std::string &ban_reason) = 0;
-	virtual void on_request_ready(BinaryArray &&header, BinaryArray &&body) = 0;
+	virtual ~P2PProtocol()                                                               = default;
+	virtual void on_connect()                                                            = 0;
+	virtual size_t on_parse_header(common::CircularBuffer &buffer, BinaryArray &request) = 0;
+	virtual void on_request_ready(BinaryArray &&header, BinaryArray &&body)              = 0;
 	virtual void on_disconnect(const std::string &ban_reason);
 	virtual bool handshake_ok() const = 0;  // if true, will be used for broadcast and find_client
 	const NetworkAddress &get_address() const;
@@ -48,7 +49,7 @@ public:
 
 	typedef std::function<void(std::string ban_reason)> D_handler;
 
-	explicit P2PClient(bool incoming, D_handler d_handler);
+	explicit P2PClient(bool incoming, D_handler &&d_handler);
 	void set_protocol(std::unique_ptr<P2PProtocol> &&protocol);
 
 	const NetworkAddress &get_address() const { return address; }
@@ -58,7 +59,7 @@ public:
 	void disconnect(const std::string &ban_reason);  // empty for no ban
 	bool test_connect(const NetworkAddress &addr);   // for single connects without p2p
 	bool is_connected() const;
-	virtual ~P2PClient() {}
+	virtual ~P2PClient() = default;
 	P2PProtocol *get_protocol() const { return m_protocol.get(); }
 	void update_my_port(uint16_t port) { address.port = port; }
 
@@ -94,7 +95,7 @@ class P2P {
 public:
 	typedef std::function<std::unique_ptr<P2PProtocol>(P2PClient *client)> client_factory;
 
-	explicit P2P(logging::ILogger &log, const Config &config, PeerDB &peers, client_factory c_factory);
+	explicit P2P(logging::ILogger &log, const Config &config, PeerDB &peers, client_factory &&c_factory);
 
 	//	void broadcast(
 	//	    P2PProtocol *exclude_who, const BinaryArray &data, bool incoming, bool outgoing);  // to all, except who
@@ -102,16 +103,17 @@ public:
 	//	P2PClient *find_client(const NetworkAddress &address, bool incoming);
 	//	P2PClient *find_connecting_client(const NetworkAddress &address);
 	//	std::vector<NetworkAddress> good_clients(bool incoming) const;
-	uint32_t get_p2p_time() const;
-	uint32_t get_local_time() const;
+	Timestamp get_p2p_time() const;
+	Timestamp get_local_time() const;
 	uint64_t get_unique_number() const { return unique_number; }
 
 	void peers_updated();
 
 private:
-	const Config &config;
+	const Config &m_config;
 	logging::LoggerRef log;
 	PeerDB &peers;
+	std::chrono::steady_clock::time_point m_log_banned_timestamp;
 
 	std::unique_ptr<platform::TCPAcceptor> la_socket;
 
@@ -123,7 +125,7 @@ private:
 
 	platform::Timer reconnect_timer;
 	unsigned failed_connection_attempts_counter = 0;
-	platform::Timer free_diconnected_timer;  // lacking autorelease
+	platform::Timer free_disconnected_timer;  // lacking autorelease
 
 	friend class P2PClient;
 	void on_client_disconnected(P2PClient *who, std::string ban_reason);
@@ -137,4 +139,4 @@ private:
 
 	const uint64_t unique_number;  // random number to detect self-connects
 };
-}
+}  // namespace cn

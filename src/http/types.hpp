@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -18,7 +19,7 @@ struct Header {
 	std::string value;
 };
 
-struct request {
+struct RequestHeader {
 	std::string method;
 	std::string uri;
 	int http_version_major = 0;
@@ -29,7 +30,7 @@ struct request {
 	std::string host;
 
 	bool keep_alive       = true;
-	size_t content_length = -1;
+	size_t content_length = std::numeric_limits<size_t>::max();
 
 	void set_firstline(
 	    const std::string &method, const std::string &uri, int http_version_major, int http_version_minor) {
@@ -42,7 +43,7 @@ struct request {
 	std::string to_string() const;
 };
 
-struct response {
+struct ResponseHeader {
 	int http_version_major = 0;
 	int http_version_minor = 0;
 
@@ -51,14 +52,14 @@ struct response {
 	std::vector<Header> headers;
 
 	bool keep_alive       = true;
-	size_t content_length = -1;
+	size_t content_length = std::numeric_limits<size_t>::max();
 
 	bool has_content_length() const { return content_length != size_t(-1); }
 
 	std::string to_string() const;
 
-	response() {}
-	explicit response(const request &req)
+	ResponseHeader() = default;
+	explicit ResponseHeader(const RequestHeader &req)
 	    : http_version_major(req.http_version_major)
 	    , http_version_minor(req.http_version_minor)
 	    , keep_alive(req.keep_alive) {}
@@ -68,8 +69,8 @@ struct response {
 	}
 };
 
-struct RequestData {
-	http::request r;
+struct RequestBody {
+	http::RequestHeader r;
 	std::string body;
 
 	void set_body(std::string &&body) {
@@ -78,12 +79,12 @@ struct RequestData {
 	}
 };
 
-struct ResponseData {
-	http::response r;
+struct ResponseBody {
+	http::ResponseHeader r;
 	std::string body;
 
-	ResponseData() {}
-	explicit ResponseData(const http::request &r) : r(r) {}
+	ResponseBody() = default;
+	explicit ResponseBody(const http::RequestHeader &r) : r(r) {}
 	void set_body(std::string &&body) {
 		this->body       = std::move(body);
 		r.content_length = this->body.size();

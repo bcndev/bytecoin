@@ -42,7 +42,7 @@ std::string format_pattern(
 
 	return s.str();
 }
-}
+}  // namespace
 
 void CommonLogger::write(
     const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) {
@@ -71,4 +71,4 @@ void CommonLogger::set_max_level(Level level) { log_level = level; }
 CommonLogger::CommonLogger(Level level) : log_level(level), pattern("%D %T %L [%C] ") {}
 
 void CommonLogger::do_log_string(const std::string &message) {}
-}
+}  // namespace logging

@@ -15,33 +15,33 @@ class JsonOutputStreamValue : public JsonOutputStream {
 public:
 	JsonOutputStreamValue();
 
-	virtual bool is_input() const override { return false; }
+	bool is_input() const override { return false; }
 
-	virtual void begin_object() override;
-	virtual bool object_key(common::StringView name, bool optional = false) override;
-	virtual void end_object() override;
+	void begin_object() override;
+	bool object_key(common::StringView name, bool optional) override;
+	void end_object() override;
 
-	virtual void begin_map(size_t &) override { begin_object(); }
-	virtual void next_map_key(std::string &name) override;
-	virtual void end_map() override { end_object(); }
+	void begin_map(size_t &) override { begin_object(); }
+	void next_map_key(std::string &name) override;
+	void end_map() override { end_object(); }
 
-	virtual void begin_array(size_t &size, bool fixed_size = false) override;
-	virtual void end_array() override;
+	void begin_array(size_t &size, bool fixed_size) override;
+	void end_array() override;
 
-	virtual void seria_v(uint8_t &value) override;
-	virtual void seria_v(int16_t &value) override;
-	virtual void seria_v(uint16_t &value) override;
-	virtual void seria_v(int32_t &value) override;
-	virtual void seria_v(uint32_t &value) override;
-	virtual void seria_v(int64_t &value) override;
-	virtual void seria_v(uint64_t &value) override;
-	virtual void seria_v(double &value) override;
-	virtual void seria_v(bool &value) override;
-	virtual void seria_v(std::string &value) override;
-	virtual void seria_v(common::BinaryArray &value) override;
-	virtual void binary(void *value, size_t size) override;
+	void seria_v(uint8_t &value) override;
+	void seria_v(int16_t &value) override;
+	void seria_v(uint16_t &value) override;
+	void seria_v(int32_t &value) override;
+	void seria_v(uint32_t &value) override;
+	void seria_v(int64_t &value) override;
+	void seria_v(uint64_t &value) override;
+	// void seria_v(double &value) override;
+	void seria_v(bool &value) override;
+	bool seria_v(std::string &value) override;
+	bool seria_v(common::BinaryArray &value) override;
+	bool binary(void *value, size_t size) override;
 
-	common::JsonValue move_value() const { return std::move(root); }
+	common::JsonValue move_value() { return std::move(root); }
 
 private:
 	bool expecting_root = true;
@@ -57,31 +57,31 @@ class JsonOutputStreamText : public JsonOutputStream {
 public:
 	explicit JsonOutputStreamText(std::string &text) : text(text) {}
 
-	virtual bool is_input() const override { return false; }
+	bool is_input() const override { return false; }
 
-	virtual void begin_object() override;
-	virtual bool object_key(common::StringView name, bool optional = false) override;
-	virtual void end_object() override;
+	void begin_object() override;
+	bool object_key(common::StringView name, bool optional) override;
+	void end_object() override;
 
-	virtual void begin_map(size_t &) override { begin_object(); }
-	virtual void next_map_key(std::string &name) override;
-	virtual void end_map() override { end_object(); }
+	void begin_map(size_t &) override { begin_object(); }
+	void next_map_key(std::string &name) override;
+	void end_map() override { end_object(); }
 
-	virtual void begin_array(size_t &size, bool fixed_size = false) override;
-	virtual void end_array() override;
+	void begin_array(size_t &size, bool fixed_size) override;
+	void end_array() override;
 
-	virtual void seria_v(uint8_t &value) override;
-	virtual void seria_v(int16_t &value) override;
-	virtual void seria_v(uint16_t &value) override;
-	virtual void seria_v(int32_t &value) override;
-	virtual void seria_v(uint32_t &value) override;
-	virtual void seria_v(int64_t &value) override;
-	virtual void seria_v(uint64_t &value) override;
-	virtual void seria_v(double &value) override;
-	virtual void seria_v(bool &value) override;
-	virtual void seria_v(std::string &value) override;
-	virtual void seria_v(common::BinaryArray &value) override;
-	virtual void binary(void *value, size_t size) override;
+	void seria_v(uint8_t &value) override;
+	void seria_v(int16_t &value) override;
+	void seria_v(uint16_t &value) override;
+	void seria_v(int32_t &value) override;
+	void seria_v(uint32_t &value) override;
+	void seria_v(int64_t &value) override;
+	void seria_v(uint64_t &value) override;
+	//	void seria_v(double &value) override;
+	void seria_v(bool &value) override;
+	bool seria_v(std::string &value) override;
+	bool seria_v(common::BinaryArray &value) override;
+	bool binary(void *value, size_t size) override;
 
 private:
 	bool expecting_root = true;
@@ -100,4 +100,4 @@ common::JsonValue to_json_value(const T &v, Context... context) {
 	ser(const_cast<T &>(v), s, context...);
 	return s.move_value();
 }
-}
+}  // namespace seria

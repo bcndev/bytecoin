@@ -6,18 +6,15 @@
 #include "hash.h"
 
 #if defined(__cplusplus)
-namespace crypto {
 extern "C" {
 #endif
 
-void tree_hash(const struct CHash hashes[], size_t count, struct CHash *root_hash);
-size_t coinbase_tree_depth(size_t count);
-void coinbase_tree_branch(const struct CHash hashes[], size_t count, struct CHash branch[]);
-void tree_hash_from_branch(const struct CHash branch[], size_t depth, const struct CHash *leaf,
-    const struct CHash *path, struct CHash *root_hash);
+void crypto_tree_hash(const struct cryptoHash hashes[], size_t count, struct cryptoHash *root_hash);
+size_t crypto_coinbase_tree_depth(size_t count);
+void crypto_coinbase_tree_branch(const struct cryptoHash hashes[], size_t count, struct cryptoHash branch[]);
+void crypto_tree_hash_from_branch(const struct cryptoHash branch[], size_t depth, const struct cryptoHash *leaf,
+    const struct cryptoHash *path, struct cryptoHash *root_hash);
 
 #if defined(__cplusplus)
 }
-}
-
 #endif

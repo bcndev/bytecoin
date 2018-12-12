@@ -6,7 +6,6 @@
 #include <boost/foreach.hpp>
 #include <boost/optional.hpp>
 #include <functional>
-#include <unordered_map>
 
 #include "common/Invariant.hpp"
 #include "common/JsonValue.hpp"
@@ -14,8 +13,7 @@
 #include "seria/JsonOutputStream.hpp"
 #include "types.hpp"
 
-namespace bytecoin {
-namespace json_rpc {
+namespace cn { namespace json_rpc {
 
 const int PARSE_ERROR      = -32700;
 const int INVALID_REQUEST  = -32600;
@@ -29,7 +27,7 @@ public:
 	explicit Error(int c);
 	Error(int c, const std::string &msg);
 
-	virtual const char *what() const throw() override { return message.c_str(); }
+	const char *what() const noexcept override { return message.c_str(); }
 	static std::string get_message(int code);
 
 	int code;
@@ -43,7 +41,7 @@ typedef boost::optional<common::JsonValue> OptionalJsonValue;
 
 class Request {
 public:
-	Request() {}
+	Request() = default;
 	explicit Request(const std::string &request_body, bool allow_empty_id = false) {
 		parse(request_body, allow_empty_id);
 	}
@@ -95,15 +93,15 @@ std::string prepare_result_prefix(const common::JsonValue &jid);
 
 // Always POST HTTP/1.1
 template<typename ParamsType>
-http::RequestData create_request(const std::string &uri, const std::string &method, const ParamsType &params,
+http::RequestBody create_request(const std::string &uri, const std::string &method, const ParamsType &params,
     const OptionalJsonValue &jid = common::JsonValue(nullptr)) {
 	common::JsonValue ps_req(common::JsonValue::OBJECT);
 	ps_req.set("jsonrpc", std::string("2.0"));
 	ps_req.set("method", method);
 	ps_req.set("params", seria::to_json_value(params));
 	if (jid)
-		ps_req.set("id", std::move(jid.get()));
-	http::RequestData http_request;
+		ps_req.set("id", jid.get());
+	http::RequestBody http_request;
 	http_request.r.set_firstline("POST", uri, 1, 1);
 	http_request.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 	http_request.set_body(ps_req.to_string());
@@ -139,7 +137,7 @@ bool parse_response(const std::string &body, ResultType &result, Error &error, O
 
 template<typename Agent, typename ParamsType, typename ResultType, typename Handler>
 bool invoke_method(
-    Agent *agent, http::RequestData &&http_request, Request &&json_req, std::string &raw_response, Handler handler) {
+    Agent *agent, http::RequestBody &&http_request, Request &&json_req, std::string &raw_response, Handler handler) {
 	ParamsType params{};
 	ResultType result{};
 	json_req.load_params(params);
@@ -153,23 +151,18 @@ bool invoke_method(
 }
 
 template<typename Owner, typename Agent, typename ParamsType, typename ResultType>
-std::function<bool(Owner *, Agent *, http::RequestData &&raw_request, Request &&, std::string &)> make_member_method(
-    bool (Owner::*handler)(Agent *, http::RequestData &&, json_rpc::Request &&, ParamsType &&, ResultType &)) {
-	return [handler](Owner *obj, Agent *agent, http::RequestData &&raw_request, Request &&req,
+std::function<bool(Owner *, Agent *, http::RequestBody &&raw_request, Request &&, std::string &)> make_member_method(
+    bool (Owner::*handler)(Agent *, http::RequestBody &&, json_rpc::Request &&, ParamsType &&, ResultType &)) {
+	return [handler](Owner *obj, Agent *agent, http::RequestBody &&raw_request, Request &&req,
 	           std::string &raw_response) -> bool {
 		return json_rpc::invoke_method<Agent, ParamsType, ResultType>(agent, std::move(raw_request), std::move(req),
-		    raw_response, std::bind(handler, obj, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3,
-		                      std::placeholders::_4, std::placeholders::_5));
+		    raw_response,
+		    std::bind(handler, obj, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3,
+		        std::placeholders::_4, std::placeholders::_5));
 	};
 }
-}
-}
+}}  // namespace cn::json_rpc
 
 namespace seria {
-inline void ser_members(bytecoin::json_rpc::Error &v, ISeria &s) {
-	seria_kv("code", v.code, s);
-	seria_kv("message", v.message, s);
-	s.object_key("data");
-	v.seria_data(s);
-}
-}
+void ser_members(cn::json_rpc::Error &v, ISeria &s);
+}  // namespace seria

@@ -1165,7 +1165,7 @@ and b = b[0]+256*b[1]+...+256^31 b[31].
 B is the Ed25519 base point (x,4/5) with x positive.
 */
 
-void ge_double_scalarmult_base_vartime(ge_p2 *r, const struct EllipticCurveScalar *aa, const ge_p3 *A, const struct EllipticCurveScalar *bb) {
+void ge_double_scalarmult_base_vartime(ge_p2 *r, const struct cryptoEllipticCurveScalar *aa, const ge_p3 *A, const struct cryptoEllipticCurveScalar *bb) {
 	const unsigned char * a = aa->data;
 	const unsigned char * b = bb->data;
   signed char aslide[256];
@@ -1210,7 +1210,7 @@ void ge_double_scalarmult_base_vartime(ge_p2 *r, const struct EllipticCurveScala
 
 /* From ge_frombytes.c, modified */
 
-int ge_frombytes_vartime(ge_p3 *h, const struct EllipticCurvePoint *ss) {
+int ge_frombytes_vartime(ge_p3 *h, const struct cryptoEllipticCurvePoint *ss) {
 	const unsigned char * s = ss->data;
   fe u;
   fe v;
@@ -1443,7 +1443,7 @@ void ge_p3_to_p2(ge_p2 *r, const ge_p3 *p) {
 
 /* From ge_p3_tobytes.c */
 
-void ge_p3_tobytes(struct EllipticCurvePoint * ss, const ge_p3 *h) {
+void ge_p3_tobytes(struct cryptoEllipticCurvePoint * ss, const ge_p3 *h) {
 	unsigned char * s = ss->data;
   fe recip;
   fe x;
@@ -1517,7 +1517,7 @@ Preconditions:
   a[31] <= 127
 */
 
-void ge_scalarmult_base(ge_p3 *h, const struct EllipticCurveScalar *aa) {
+void ge_scalarmult_base(ge_p3 *h, const struct cryptoEllipticCurveScalar *aa) {
     const unsigned char * a = aa->data;
   signed char e[64];
   signed char carry;
@@ -1583,7 +1583,7 @@ void ge_sub(ge_p1p1 *r, const ge_p3 *p, const ge_cached *q) {
 
 /* From ge_tobytes.c */
 
-void ge_tobytes(struct EllipticCurvePoint *ss, const ge_p2 *h) {
+void ge_tobytes(struct cryptoEllipticCurvePoint *ss, const ge_p2 *h) {
     unsigned char * s = ss->data;
   fe recip;
   fe x;
@@ -1607,7 +1607,7 @@ Output:
   where l = 2^252 + 27742317777372353535851937790883648493.
   Overwrites s in place.
 */
-void sc_reduce(struct EllipticCurveScalar * aa, const unsigned char s[64]) {
+void sc_reduce(struct cryptoEllipticCurveScalar * aa, const unsigned char s[64]) {
   int64_t s0 = 2097151 & load_3(s);
   int64_t s1 = 2097151 & (load_4(s + 2) >> 5);
   int64_t s2 = 2097151 & (load_3(s + 5) >> 2);
@@ -1917,7 +1917,7 @@ static void ge_cached_cmov(ge_cached *t, const ge_cached *u, unsigned char b) {
 }
 
 /* Assumes that a[31] <= 127 */
-void ge_scalarmult(ge_p2 *r, const struct EllipticCurveScalar *a, const ge_p3 *A) {
+void ge_scalarmult(ge_p2 *r, const struct cryptoEllipticCurveScalar *a, const ge_p3 *A) {
   signed char e[64];
   int carry, carry2, i;
   ge_cached Ai[8]; /* 1 * A, 2 * A, ..., 8 * A */
@@ -1977,7 +1977,7 @@ void ge_scalarmult(ge_p2 *r, const struct EllipticCurveScalar *a, const ge_p3 *A
   }
 }
 
-void ge_double_scalarmult_precomp_vartime(ge_p2 *r, const struct EllipticCurveScalar *aa, const ge_p3 *A, const struct EllipticCurveScalar *bb, const ge_dsmp Bi) {
+void ge_double_scalarmult_precomp_vartime(ge_p2 *r, const struct cryptoEllipticCurveScalar *aa, const ge_p3 *A, const struct cryptoEllipticCurveScalar *bb, const ge_dsmp Bi) {
 	const unsigned char * a = aa->data;
 	const unsigned char * b = bb->data;
   signed char aslide[256];
@@ -2697,14 +2697,23 @@ setsign:
 #endif
 }
 
-void sc_0(struct EllipticCurveScalar *s) {
+void sc_0(struct cryptoEllipticCurveScalar *s) {
   int i;
   for (i = 0; i < 32; i++) {
     s->data[i] = 0;
   }
 }
 
-void sc_reduce32(struct EllipticCurveScalar * aa, const unsigned char s[32]) {
+void sc_1(struct cryptoEllipticCurveScalar *s) {
+  int i;
+  s->data[0] = 1;
+  for (i = 1; i < 32; i++) {
+    s->data[i] = 0;
+  }
+}
+
+
+void sc_reduce32(struct cryptoEllipticCurveScalar * aa, const unsigned char s[32]) {
 	unsigned char * a = aa->data;
   int64_t s0 = 2097151 & load_3(s);
   int64_t s1 = 2097151 & (load_4(s + 2) >> 5);
@@ -2820,7 +2829,7 @@ void sc_reduce32(struct EllipticCurveScalar * aa, const unsigned char s[32]) {
   a[31] = (unsigned char) (s11 >> 17);
 }
 
-void sc_add(struct EllipticCurveScalar *s, const struct EllipticCurveScalar *a, const struct EllipticCurveScalar *b) {
+void sc_add(struct cryptoEllipticCurveScalar *s, const struct cryptoEllipticCurveScalar *a, const struct cryptoEllipticCurveScalar *b) {
   int64_t a0 = 2097151 & load_3(a->data);
   int64_t a1 = 2097151 & (load_4(a->data + 2) >> 5);
   int64_t a2 = 2097151 & (load_3(a->data + 5) >> 2);
@@ -2959,7 +2968,7 @@ void sc_add(struct EllipticCurveScalar *s, const struct EllipticCurveScalar *a, 
   s->data[31] = (unsigned char) (s11 >> 17);
 }
 
-void sc_sub(struct EllipticCurveScalar *s, const struct EllipticCurveScalar *a, const struct EllipticCurveScalar *b) {
+void sc_sub(struct cryptoEllipticCurveScalar *s, const struct cryptoEllipticCurveScalar *a, const struct cryptoEllipticCurveScalar *b) {
   int64_t a0 = 2097151 & load_3(a->data);
   int64_t a1 = 2097151 & (load_4(a->data + 2) >> 5);
   int64_t a2 = 2097151 & (load_3(a->data + 5) >> 2);
@@ -3109,7 +3118,7 @@ Output:
   where l = 2^252 + 27742317777372353535851937790883648493.
 */
 
-void sc_mulsub(struct EllipticCurveScalar *ss, const struct EllipticCurveScalar *aa, const struct EllipticCurveScalar *bb, const struct EllipticCurveScalar *cc) {
+void sc_mulsub(struct cryptoEllipticCurveScalar *ss, const struct cryptoEllipticCurveScalar *aa, const struct cryptoEllipticCurveScalar *bb, const struct cryptoEllipticCurveScalar *cc) {
     unsigned char * s = ss->data;
     const unsigned char * a = aa->data;
     const unsigned char * b = bb->data;
@@ -3434,12 +3443,46 @@ void sc_mulsub(struct EllipticCurveScalar *ss, const struct EllipticCurveScalar 
   s[31] = (unsigned char) (s11 >> 17);
 }
 
+/*  where l = 2^252 + 27742317777372353535851937790883648493.
+ * last num is 0x1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed
+ * -2
+ * is
+ * 1 <124 zeros> 0x14DEF9DE 0xA2F79CD6 0x5812631A 0x5CF5D3EB
+ */
+
+void sc_mul(struct cryptoEllipticCurveScalar * rr, const struct cryptoEllipticCurveScalar * aa, const struct cryptoEllipticCurveScalar * bb) {
+	struct cryptoEllipticCurveScalar zz, minus_rr;
+	sc_0(&zz);
+	sc_mulsub(&minus_rr, aa, bb, &zz);
+	sc_sub(rr, &zz, &minus_rr);
+	// TODO - optimize
+}
+
+static void sc_invert_helper(struct cryptoEllipticCurveScalar * rr, const struct cryptoEllipticCurveScalar * xx, unsigned bits){
+  for(unsigned i = 32; i-- > 0;){
+    sc_mul(rr, rr, rr);
+    if(bits & (1U << i))
+      sc_mul(rr, rr, xx);
+  }
+}
+
+// TODO - single bit array
+void sc_invert(struct cryptoEllipticCurveScalar * rr, const struct cryptoEllipticCurveScalar * xx){
+  *rr = *xx; // first bit
+  for(int i = 0; i != 124; ++i) // 124 zeroes
+    sc_mul(rr, rr, rr);
+  sc_invert_helper(rr, xx, 0x14DEF9DEU);
+  sc_invert_helper(rr, xx, 0xA2F79CD6U);
+  sc_invert_helper(rr, xx, 0x5812631AU);
+  sc_invert_helper(rr, xx, 0x5CF5D3EBU);
+}
+
 /* Assumes that a != INT64_MIN */
 static int64_t signum(int64_t a) {
   return (a >> 63) - ((-a) >> 63);
 }
 
-int sc_isvalid_vartime(const struct EllipticCurveScalar *s) {
+int sc_isvalid_vartime(const struct cryptoEllipticCurveScalar *s) {
   int64_t s0 = load_4(s->data);
   int64_t s1 = load_4(s->data + 4);
   int64_t s2 = load_4(s->data + 8);
@@ -3451,7 +3494,7 @@ int sc_isvalid_vartime(const struct EllipticCurveScalar *s) {
   return (int) ((signum(1559614444 - s0) + (signum(1477600026 - s1) << 1) + (signum(2734136534 - s2) << 2) + (signum(350157278 - s3) << 3) + (signum(-s4) << 4) + (signum(-s5) << 5) + (signum(-s6) << 6) + (signum(268435456 - s7) << 7)) >> 8) == 0;
 }
 
-int sc_iszero(const struct EllipticCurveScalar *ss) {
+int sc_iszero(const struct cryptoEllipticCurveScalar *ss) {
   const unsigned char * s = ss->data;
   return (s[0] | s[1] | s[2] | s[3] | s[4] | s[5] | s[6] | s[7] | s[8] |
     s[9] | s[10] | s[11] | s[12] | s[13] | s[14] | s[15] | s[16] | s[17] |

@@ -3,7 +3,7 @@
 
 #include "ConsoleTools.hpp"
 
-#include <stdio.h>
+#include <cstdio>
 #include <iostream>
 #include <sstream>
 
@@ -20,8 +20,7 @@
 
 #endif
 
-namespace common {
-namespace console {
+namespace common { namespace console {
 
 bool is_console_tty() {
 #if defined(_WIN32)
@@ -154,5 +153,4 @@ bool UnicodeConsoleSetup::getline(std::string &line, bool hide_input) {
 #endif
 	return result;
 }
-}
-}
+}}  // namespace common::console

@@ -8,42 +8,37 @@
 #include <stdint.h>
 
 #if defined(__cplusplus)
-#include "generic-ops.hpp"
-namespace crypto {
 extern "C" {
 #endif
 
 #pragma pack(push, 1)
-struct CHash {
+struct cryptoHash {
 	unsigned char data[32];
 };
 #pragma pack(pop)
 
 enum { HASH_DATA_AREA = 136, SLOW_HASH_CONTEXT_SIZE = 2097552 };
 
-void cn_fast_hash(const void *data, size_t length, struct CHash *hash);
+void crypto_cn_fast_hash(const void *data, size_t length, struct cryptoHash *hash);
+void crypto_cn_fast_hash64(const void *data, size_t length, unsigned char hash[64]);
 
-void cn_slow_hash(void *scratchpad, const void *data, size_t length, struct CHash *hash);
-void cn_slow_hash_platform_independent(void *scratchpad, const void *data, size_t length, struct CHash *hash);
+void crypto_cn_slow_hash(void *scratchpad, const void *data, size_t length, struct cryptoHash *hash);
+void crypto_cn_slow_hash_platform_independent(
+    void *scratchpad, const void *data, size_t length, struct cryptoHash *hash);
 
-struct keccak_state {
+struct cryptoKeccakState {
 	uint8_t b[200];
 };
 
-static_assert(sizeof(struct keccak_state) == 200, "Invalid structure size");
+void crypto_keccak_permutation(struct cryptoKeccakState *state);
+void crypto_keccak_into_state(const uint8_t *buf, size_t count, struct cryptoKeccakState *state);
 
-void keccak_permutation(struct keccak_state *state);
-void keccak_into_state(const uint8_t *buf, size_t count, struct keccak_state *state);
-
-void hash_extra_blake(const void *data, size_t length, struct CHash *hash);
-void hash_extra_groestl(const void *data, size_t length, struct CHash *hash);
-void hash_extra_jh(const void *data, size_t length, struct CHash *hash);
-void hash_extra_skein(const void *data, size_t length, struct CHash *hash);
+void crypto_hash_extra_blake(const void *data, size_t length, struct cryptoHash *hash);
+void crypto_hash_extra_groestl(const void *data, size_t length, struct cryptoHash *hash);
+void crypto_hash_extra_jh(const void *data, size_t length, struct cryptoHash *hash);
+void crypto_hash_extra_skein(const void *data, size_t length, struct cryptoHash *hash);
 
 #if defined(__cplusplus)
 }
-}
-
-CRYPTO_MAKE_COMPARABLE(crypto, CHash, std::memcmp)
 
 #endif

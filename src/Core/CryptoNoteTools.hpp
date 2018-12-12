@@ -8,7 +8,7 @@
 #include "crypto/hash.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
-namespace bytecoin {
+namespace cn {
 
 template<class T>
 Hash get_object_hash(const T &object, size_t *size = nullptr) {
@@ -18,16 +18,29 @@ Hash get_object_hash(const T &object, size_t *size = nullptr) {
 	return crypto::cn_fast_hash(ba.data(), ba.size());
 }
 
-Hash get_base_transaction_hash(const BaseTransaction &tx);
+Hash get_root_block_base_transaction_hash(const BaseTransaction &tx);
 
-void set_solo_mining_tag(BlockTemplate &block);  // MM headers must still have valid mm_tag if solo mining
+void set_root_extra_to_solo_mining_tag(BlockTemplate &block);  // MM headers must still have valid mm_tag if solo mining
 
 void decompose_amount(Amount amount, Amount dust_threshold, std::vector<Amount> *decomposed_amounts);
 size_t get_maximum_tx_size(size_t input_count, size_t output_count, size_t anonymity);
 size_t get_maximum_tx_input_size(size_t anonymity);
 
-bool get_tx_fee(const TransactionPrefix &tx, uint64_t *fee);
-uint64_t get_tx_fee(const TransactionPrefix &tx);
+Amount get_tx_sum_outputs(const TransactionPrefix &tx);
+Amount get_tx_sum_inputs(const TransactionPrefix &tx);
+
+inline bool add_amount(Amount &sum, Amount amount) {
+	if (std::numeric_limits<Amount>::max() - amount < sum)
+		return false;
+	sum += amount;
+	return true;
+}
+
+bool get_tx_fee(const TransactionPrefix &tx, Amount *fee);
+Amount get_tx_fee(const TransactionPrefix &tx);
+
+std::vector<size_t> absolute_output_offsets_to_relative(const std::vector<size_t> &off);
+bool relative_output_offsets_to_absolute(std::vector<size_t> *result, const std::vector<size_t> &off);
 
 BlockBodyProxy get_body_proxy_from_template(const BlockTemplate &bt);
-}
+}  // namespace cn

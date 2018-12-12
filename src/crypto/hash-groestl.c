@@ -5,11 +5,12 @@
 #include <stdint.h>
 
 #include "groestl/Groestl-opt.h"
+#include "hash.h"
 
-void hash_extra_groestl(const void *data, size_t length, unsigned char *hash) {
+void crypto_hash_extra_groestl(const void *data, size_t length, struct cryptoHash *hash) {
 	hashState context;
 
 	Init(&context, 256);
 	Update(&context, data, length * 8);
-	Final(&context, hash);
+	Final(&context, hash->data);
 }

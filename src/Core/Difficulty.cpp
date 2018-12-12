@@ -14,13 +14,13 @@
 #include "crypto/int-util.h"
 #include "seria/ISeria.hpp"
 
-using namespace bytecoin;
+using namespace cn;
 
 // C99 6.2.5.9 - this is actually good working code by C standard
 // static bool cadd(uint64_t a, uint64_t b) { return a + b < a; }
 static bool cadc(uint64_t a, uint64_t b, bool c) { return a + b < a || (c && a + b == (uint64_t)-1); }
 
-bool bytecoin::check_hash(const crypto::Hash &hash, Difficulty difficulty) {
+bool cn::check_hash(const crypto::Hash &hash, Difficulty difficulty) {
 	uint64_t hash64[4];
 	for (size_t i = 0; i != 4; ++i)
 		hash64[i] = common::uint_le_from_bytes<uint64_t>(hash.data + 8 * i, 8);

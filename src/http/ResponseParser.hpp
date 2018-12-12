@@ -8,12 +8,11 @@
 
 #pragma once
 
-#include <tuple>
 #include "types.hpp"
 
 namespace http {
 
-struct response;
+struct ResponseHeader;
 
 class ResponseParser {
 	enum state {
@@ -49,7 +48,7 @@ public:
 	void reset();
 
 	template<typename InputIterator>
-	InputIterator parse(response &req, InputIterator begin, InputIterator end) {
+	InputIterator parse(ResponseHeader &req, InputIterator begin, InputIterator end) {
 		while (begin != end && state_ != good && state_ != bad)
 			state_ = consume(req, *begin++);
 		return begin;
@@ -58,9 +57,9 @@ public:
 	bool is_bad() const { return state_ == bad; }
 
 private:
-	bool process_ready_header(response &req);
+	bool process_ready_header(ResponseHeader &req);
 	Header lowcase;
-	state consume(response &req, char input);
+	state consume(ResponseHeader &req, char input);
 };
 
 }  // namespace http

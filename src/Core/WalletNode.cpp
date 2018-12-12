@@ -5,28 +5,33 @@
 #include "Config.hpp"
 #include "CryptoNoteTools.hpp"
 #include "TransactionBuilder.hpp"
+#include "TransactionExtra.hpp"
 #include "common/Math.hpp"
+#include "http/Client.hpp"
+#include "http/Server.hpp"
 #include "platform/Time.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 #include "seria/KVBinaryInputStream.hpp"
 #include "seria/KVBinaryOutputStream.hpp"
 
-using namespace bytecoin;
+using namespace cn;
 
 const WalletNode::HandlersMap WalletNode::m_jsonrpc_handlers = {
-    {api::walletd::GetStatus::method(), json_rpc::make_member_method(&WalletNode::handle_get_status)},
-    {api::walletd::GetAddresses::method(), json_rpc::make_member_method(&WalletNode::handle_get_addresses)},
-    {api::walletd::GetWalletInfo::method(), json_rpc::make_member_method(&WalletNode::handle_get_wallet_info)},
-    {api::walletd::CreateAddresses::method(), json_rpc::make_member_method(&WalletNode::handle_create_address_list)},
-    {api::walletd::GetViewKeyPair::method(), json_rpc::make_member_method(&WalletNode::handle_get_view_key)},
-    {api::walletd::GetBalance::method(), json_rpc::make_member_method(&WalletNode::handle_get_balance)},
-    {api::walletd::GetUnspents::method(), json_rpc::make_member_method(&WalletNode::handle_get_unspent)},
-    {api::walletd::GetTransfers::method(), json_rpc::make_member_method(&WalletNode::handle_get_transfers)},
-    {api::walletd::CreateTransaction::method(), json_rpc::make_member_method(&WalletNode::handle_create_transaction)},
-    {api::walletd::SendTransaction::method(), json_rpc::make_member_method(&WalletNode::handle_send_transaction)},
-    {api::walletd::CreateSendProof::method(), json_rpc::make_member_method(&WalletNode::handle_create_sendproof)},
-    {api::walletd::GetTransaction::method(), json_rpc::make_member_method(&WalletNode::handle_get_transaction)}};
+    {api::walletd::GetStatus::method(), json_rpc::make_member_method(&WalletNode::on_get_status)},
+    {api::walletd::GetAddresses::method(), json_rpc::make_member_method(&WalletNode::on_get_addresses)},
+    {api::walletd::GetWalletInfo::method(), json_rpc::make_member_method(&WalletNode::on_get_wallet_info)},
+    {api::walletd::GetWalletRecords::method(), json_rpc::make_member_method(&WalletNode::on_get_wallet_records)},
+    {api::walletd::SetAddressLabel::method(), json_rpc::make_member_method(&WalletNode::on_set_label)},
+    {api::walletd::CreateAddresses::method(), json_rpc::make_member_method(&WalletNode::on_create_addresses)},
+    {api::walletd::GetViewKeyPair::method(), json_rpc::make_member_method(&WalletNode::on_get_view_key)},
+    {api::walletd::GetBalance::method(), json_rpc::make_member_method(&WalletNode::on_get_balance)},
+    {api::walletd::GetUnspents::method(), json_rpc::make_member_method(&WalletNode::on_get_unspent)},
+    {api::walletd::GetTransfers::method(), json_rpc::make_member_method(&WalletNode::on_get_transfers)},
+    {api::walletd::CreateTransaction::method(), json_rpc::make_member_method(&WalletNode::on_create_transaction)},
+    {api::walletd::SendTransaction::method(), json_rpc::make_member_method(&WalletNode::on_send_transaction)},
+    {api::walletd::CreateSendproof::method(), json_rpc::make_member_method(&WalletNode::on_create_sendproof)},
+    {api::walletd::GetTransaction::method(), json_rpc::make_member_method(&WalletNode::on_get_transaction)}};
 
 WalletNode::WalletNode(Node *inproc_node, logging::ILogger &log, const Config &config, WalletState &wallet_state)
     : WalletSync(log, config, wallet_state, std::bind(&WalletNode::advance_long_poll, this))
@@ -37,7 +42,9 @@ WalletNode::WalletNode(Node *inproc_node, logging::ILogger &log, const Config &c
 		    std::bind(&WalletNode::on_api_http_disconnect, this, _1)));
 }
 
-bool WalletNode::on_api_http_request(http::Client *who, http::RequestData &&request, http::ResponseData &response) {
+WalletNode::~WalletNode() {}  // we have unique_ptr to incomplete type
+
+bool WalletNode::on_api_http_request(http::Client *who, http::RequestBody &&request, http::ResponseBody &response) {
 	response.r.add_headers_nocache();
 	bool method_found = false;
 	if (request.r.uri == api::walletd::url()) {
@@ -49,29 +56,28 @@ bool WalletNode::on_api_http_request(http::Client *who, http::RequestData &&requ
 		return m_inproc_node->on_json_rpc(who, std::move(request), response);
 	m_log(logging::INFO) << "http_request node tunneling url=" << request.r.uri
 	                     << " start of body=" << request.body.substr(0, 200) << std::endl;
-	http::RequestData original_request;
+	http::RequestBody original_request;
 	original_request.r            = request.r;
 	request.r.http_version_major  = 1;
 	request.r.http_version_minor  = 1;
 	request.r.keep_alive          = true;
 	request.r.basic_authorization = m_config.bytecoind_authorization;
 	add_waiting_command(who, std::move(original_request), common::JsonValue(nullptr), std::move(request),
-	    [=](const WaitingClient &wc, http::ResponseData &&send_response) mutable {
+	    [](const WaitingClient &wc, http::ResponseBody &&send_response) mutable {
 		    send_response.r.http_version_major = wc.original_request.r.http_version_major;
 		    send_response.r.http_version_minor = wc.original_request.r.http_version_minor;
 		    send_response.r.keep_alive         = wc.original_request.r.keep_alive;
-		    // bytecoind never sends connection-close, so we are safe to retain all
-		    // headers
+		    // bytecoind never sends connection-close, so we are safe to retain all headers
 		    wc.original_who->write(std::move(send_response));
-		},
-	    [=](const WaitingClient &wc, std::string err) {
-		    http::ResponseData send_response;
+	    },
+	    [](const WaitingClient &wc, std::string err) {
+		    http::ResponseBody send_response;
 		    send_response.r.http_version_major = wc.original_request.r.http_version_major;
 		    send_response.r.http_version_minor = wc.original_request.r.http_version_minor;
 		    send_response.r.keep_alive         = wc.original_request.r.keep_alive;
 		    send_response.r.status             = 504;  // TODO -test this code path
 		    wc.original_who->write(std::move(send_response));
-		});
+	    });
 	return false;
 }
 
@@ -88,7 +94,7 @@ void WalletNode::on_api_http_disconnect(http::Client *who) {
 }
 
 bool WalletNode::on_json_rpc(
-    http::Client *who, http::RequestData &&request, http::ResponseData &response, bool &method_found) {
+    http::Client *who, http::RequestBody &&request, http::ResponseBody &response, bool &method_found) {
 	method_found = false;
 	response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 
@@ -101,10 +107,6 @@ bool WalletNode::on_json_rpc(
 		auto it = m_jsonrpc_handlers.find(json_req.get_method());
 		if (it == m_jsonrpc_handlers.end()) {
 			return false;
-			//			m_log(logging::INFO) << "json request method not
-			// found - " << json_req.get_method() << std::endl;
-			//			throw
-			// json_rpc::Error(json_rpc::METHOD_NOT_FOUND);
 		}
 		method_found = true;
 		if (!m_config.walletd_authorization.empty() &&
@@ -113,9 +115,6 @@ bool WalletNode::on_json_rpc(
 			response.r.status = 401;
 			return true;
 		}
-		//		m_log(logging::INFO) << "json request method=" <<
-		// json_req.get_method()
-		//<< std::endl;
 		std::string response_body;
 		if (!it->second(this, who, std::move(request), std::move(json_req), response_body))
 			return false;
@@ -147,14 +146,12 @@ api::walletd::GetStatus::Response WalletNode::create_status_response() const {
 	return response;
 }
 
-bool WalletNode::handle_get_status(http::Client *who, http::RequestData &&raw_request,
-    json_rpc::Request &&raw_js_request, api::walletd::GetStatus::Request &&request,
-    api::walletd::GetStatus::Response &response) {
+bool WalletNode::on_get_status(http::Client *who, http::RequestBody &&raw_request, json_rpc::Request &&raw_js_request,
+    api::walletd::GetStatus::Request &&request, api::walletd::GetStatus::Response &response) {
 	response = create_status_response();
 	if (!response.ready_for_longpoll(request)) {
-		//		m_log(logging::INFO) << "handle_get_status will long poll, json="
-		//<<
-		// raw_request.body << std::endl;
+		//		m_log(logging::INFO) << "on_get_status will long poll, json="
+		// << raw_request.body << std::endl;
 		LongPollClient lpc;
 		lpc.original_who        = who;
 		lpc.original_request    = raw_request;
@@ -166,18 +163,21 @@ bool WalletNode::handle_get_status(http::Client *who, http::RequestData &&raw_re
 	return true;
 }
 
-bool WalletNode::handle_get_addresses(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool WalletNode::on_get_addresses(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::GetAddresses::Request &&request, api::walletd::GetAddresses::Response &response) {
-	// TODO - from_address, max_count
 	const Wallet &wa             = m_wallet_state.get_wallet();
-	response.total_address_count = common::integer_cast<uint32_t>(wa.get_records().size());
-	response.addresses.reserve(wa.get_records().size());
-	if (request.need_secret_spend_keys)
-		response.secret_spend_keys.reserve(wa.get_records().size());
-	for (size_t i = request.from_address; i < wa.get_records().size(); ++i) {
+	response.total_address_count = wa.get_actual_records_count();
+	response.addresses.reserve(response.total_address_count);
+	if (request.need_secret_spend_keys) {
+		if (!m_config.secrets_via_api)
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS,
+			    "To allow getting secrets via API, walletd must be launched with '--secrets-via-api' argument.");
+		response.secret_spend_keys.reserve(response.total_address_count);
+	}
+	for (size_t i = request.from_address; i < response.total_address_count; ++i) {
 		if (response.addresses.size() >= request.max_count)
 			break;
-		AccountPublicAddress addr{wa.get_records().at(i).spend_public_key, wa.get_view_public_key()};
+		AccountAddress addr = wa.record_to_address(wa.get_records().at(i));
 		response.addresses.push_back(m_wallet_state.get_currency().account_address_as_string(addr));
 		if (request.need_secret_spend_keys)
 			response.secret_spend_keys.push_back(wa.get_records().at(i).spend_secret_key);
@@ -185,38 +185,91 @@ bool WalletNode::handle_get_addresses(http::Client *, http::RequestData &&, json
 	return true;
 }
 
-bool WalletNode::handle_get_wallet_info(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool WalletNode::on_get_wallet_info(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::GetWalletInfo::Request &&request, api::walletd::GetWalletInfo::Response &response) {
 	const Wallet &wa                   = m_wallet_state.get_wallet();
 	response.view_only                 = wa.is_view_only();
-	response.mineproof_secret          = wa.get_coinbase_tx_derivation_seed();
-	response.total_address_count       = common::integer_cast<uint32_t>(wa.get_records().size());
+	response.deterministic             = wa.is_deterministic();
+	response.auditable                 = wa.is_auditable();
+	response.total_address_count       = wa.get_actual_records_count();
 	response.wallet_creation_timestamp = wa.get_oldest_timestamp();
 	response.first_address = m_wallet_state.get_currency().account_address_as_string(wa.get_first_address());
 	response.net           = m_config.net;
+	if (request.need_secrets) {
+		if (!m_config.secrets_via_api)
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS,
+			    "To allow getting secrets via API, walletd must be launched with '--secrets-via-api' argument.");
+		if (wa.is_deterministic())
+			response.mnemonic = m_wallet_state.get_wallet().export_keys();
+		else
+			response.import_keys = m_wallet_state.get_wallet().export_keys();
+		response.secret_view_key = wa.get_view_secret_key();
+		response.public_view_key = wa.get_view_public_key();
+	}
+	return true;
+}
+bool WalletNode::on_get_wallet_records(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+    api::walletd::GetWalletRecords::Request &&request, api::walletd::GetWalletRecords::Response &response) {
+	const Wallet &wa = m_wallet_state.get_wallet();
+	if (request.create) {
+		if (!wa.is_deterministic())
+			throw json_rpc::Error(
+			    json_rpc::INVALID_PARAMS, "wallet is not deterministic, impossible to create addresses by index");
+		if (request.count == std::numeric_limits<size_t>::max())
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "If 'create' set to true, you must also set 'max_count'");
+		if (request.count > std::numeric_limits<size_t>::max() - request.index)
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "You asked to create too many addresses.");
+		m_wallet_state.create_addresses(request.index + request.count);
+	}
+	response.total_count = wa.get_actual_records_count();
+	response.records.reserve(response.total_count);
+	for (size_t i = request.index; i < response.total_count; ++i) {
+		if (response.records.size() >= request.count)
+			break;
+		const WalletRecord &record = wa.get_records().at(i);
+		AccountAddress addr        = wa.record_to_address(record);
+		api::walletd::GetWalletRecords::Record wr;
+		wr.index   = i;
+		wr.address = m_wallet_state.get_currency().account_address_as_string(addr);
+		wr.label   = wa.get_label(wr.address);
+		if (request.need_secrets) {
+			wr.public_spend_key = record.spend_public_key;
+			wr.secret_spend_key = record.spend_secret_key;
+		}
+		response.records.push_back(std::move(wr));
+	}
 	return true;
 }
 
-bool WalletNode::handle_get_view_key(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool WalletNode::on_set_label(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+    api::walletd::SetAddressLabel::Request &&request, api::walletd::SetAddressLabel::Response &) {
+	m_wallet_state.get_wallet().set_label(request.address, request.label);
+	return true;
+}
+
+bool WalletNode::on_get_view_key(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::GetViewKeyPair::Request &&, api::walletd::GetViewKeyPair::Response &response) {
+	if (!m_config.secrets_via_api)
+		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
+		    "To allow getting secrets via API, walletd must be launched with '--secrets-via-api' argument.");
 	response.public_view_key = m_wallet_state.get_wallet().get_view_public_key();
 	response.secret_view_key = m_wallet_state.get_wallet().get_view_secret_key();
 	response.import_keys     = m_wallet_state.get_wallet().export_keys();
 	return true;
 }
 
-bool WalletNode::handle_create_address_list(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool WalletNode::on_create_addresses(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::CreateAddresses::Request &&request, api::walletd::CreateAddresses::Response &response) {
-	if (request.secret_spend_keys.empty())
-		return true;
 	if (m_wallet_state.get_wallet().is_view_only())
 		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "wallet is view-only, impossible to create addresses");
+	if (request.secret_spend_keys.empty())
+		return true;
 	auto records = m_wallet_state.generate_new_addresses(
 	    request.secret_spend_keys, request.creation_timestamp, platform::now_unix_timestamp());
 	response.addresses.reserve(records.size());
 	response.secret_spend_keys.reserve(records.size());
 	for (auto &&rec : records) {
-		AccountPublicAddress addr{rec.spend_public_key, m_wallet_state.get_wallet().get_view_public_key()};
+		AccountAddress addr = m_wallet_state.get_wallet().record_to_address(rec);
 		response.addresses.push_back(m_wallet_state.get_currency().account_address_as_string(addr));
 		response.secret_spend_keys.push_back(rec.spend_secret_key);
 	}
@@ -226,14 +279,14 @@ bool WalletNode::handle_create_address_list(http::Client *, http::RequestData &&
 void WalletNode::check_address_in_wallet_or_throw(const std::string &addr) const {
 	if (addr.empty())
 		return;
-	AccountPublicAddress address;
+	AccountAddress address;
 	if (!m_wallet_state.get_currency().parse_account_address_string(addr, &address))
 		throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse address", addr);
 	if (!m_wallet_state.get_wallet().is_our_address(address))
 		throw api::ErrorAddress(api::ErrorAddress::ADDRESS_NOT_IN_WALLET, "Address not in wallet", addr);
 }
 
-bool WalletNode::handle_get_balance(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool WalletNode::on_get_balance(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::GetBalance::Request &&request, api::walletd::GetBalance::Response &response) {
 	check_address_in_wallet_or_throw(request.address);
 	Height height_or_depth = api::ErrorWrongHeight::fix_height_or_depth(
@@ -242,7 +295,7 @@ bool WalletNode::handle_get_balance(http::Client *, http::RequestData &&, json_r
 	return true;
 }
 
-bool WalletNode::handle_get_unspent(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool WalletNode::on_get_unspent(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::GetUnspents::Request &&request, api::walletd::GetUnspents::Response &response) {
 	check_address_in_wallet_or_throw(request.address);
 	Height height_or_depth = api::ErrorWrongHeight::fix_height_or_depth(
@@ -254,12 +307,19 @@ bool WalletNode::handle_get_unspent(http::Client *, http::RequestData &&, json_r
 	return true;
 }
 
-bool WalletNode::handle_get_transfers(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool WalletNode::on_get_transfers(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::GetTransfers::Request &&request, api::walletd::GetTransfers::Response &response) {
 	check_address_in_wallet_or_throw(request.address);
-	response.next_to_height   = request.to_height;
 	response.next_from_height = request.from_height;
-	response.blocks           = m_wallet_state.api_get_transfers(
+	response.next_to_height   = request.to_height;
+	// GetTransfers API is documented to accept (from..to] range,
+	// but code works with traditional [from..to) range
+	// This is design error in API. We now have to do clumsy recalculations for iteration.
+	if (request.from_height != std::numeric_limits<Height>::max())
+		request.from_height += 1;
+	if (request.to_height != std::numeric_limits<Height>::max())
+		request.to_height += 1;
+	response.blocks = m_wallet_state.api_get_transfers(
 	    request.address, &request.from_height, &request.to_height, request.forward, request.desired_transaction_count);
 	if (request.from_height < m_wallet_state.get_tip_height() && request.to_height >= m_wallet_state.get_tip_height()) {
 		api::Block pool_block = m_wallet_state.api_get_pool_as_history(request.address);
@@ -272,25 +332,17 @@ bool WalletNode::handle_get_transfers(http::Client *, http::RequestData &&, json
 	}
 	response.unlocked_transfers =
 	    m_wallet_state.api_get_unlocked_transfers(request.address, request.from_height, request.to_height);
-	//	auto unlocked_outputs =
-	//	    m_wallet_state.api_get_unlocked_outputs(request.address, request.from_height, request.to_height);
-	//	response.unlocked_transfers.reserve(unlocked_outputs.size());
-	//	for (auto &&lou : unlocked_outputs) {
-	//		api::Transfer tr;
-	//		tr.ours    = true;
-	//		tr.amount  = lou.second.amount;
-	//		tr.address = lou.second.address;
-	//		tr.outputs.push_back(lou.second);
-	//		response.unlocked_transfers.push_back(std::move(tr));
-	//	}
-	if (request.forward)
-		response.next_from_height = request.to_height;
-	else
-		response.next_to_height = request.from_height;
+	if (request.forward) {
+		if (request.to_height != std::numeric_limits<Height>::max())
+			response.next_from_height = request.to_height - 1;
+		else
+			response.next_from_height = request.to_height;
+	} else
+		response.next_to_height = request.from_height - 1;
 	return true;
 }
 
-bool WalletNode::handle_create_transaction(http::Client *who, http::RequestData &&raw_request,
+bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&raw_request,
     json_rpc::Request &&raw_js_request, api::walletd::CreateTransaction::Request &&request,
     api::walletd::CreateTransaction::Response &response) {
 	m_log(logging::TRACE) << "create_transaction request tip_height=" << m_wallet_state.get_tip_height()
@@ -302,24 +354,38 @@ bool WalletNode::handle_create_transaction(http::Client *who, http::RequestData 
 	}
 	if (!response.transactions_required.empty())
 		return true;
-	if (m_last_node_status.next_block_effective_median_size == 0)
-		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Next block median size unknown, need to sync to bytecoind");
 	if (request.transaction.anonymity > 100)  // Arbitrary value
-		throw json_rpc::Error(api::walletd::CreateTransaction::NOT_ENOUGH_ANONYMITY,
+		throw json_rpc::Error(api::walletd::CreateTransaction::TOO_MUCH_ANONYMITY,
 		    "Wallet will not create transactions with anonymity > 100 because large anonymity values actually reduce anonymity due to tiny number of similar transactions");
-	Height confirmed_height_or_depth = api::ErrorWrongHeight::fix_height_or_depth(
-	    request.confirmed_height_or_depth, m_wallet_state.get_tip_height(), true, false);
+	if (request.transaction.anonymity != 0 && m_wallet_state.get_wallet().is_auditable())
+		request.transaction.anonymity = 0;
+	//		throw json_rpc::Error(api::walletd::CreateTransaction::TOO_MUCH_ANONYMITY,
+	//		    "Auditable wallet requires 0 anonymity when sending (checked and enforced by consensus)");
+	const auto min_anonymity =
+	    m_wallet_state.get_wallet().is_auditable()
+	        ? 0
+	        : m_wallet_state.get_currency().minimum_anonymity(m_wallet_state.get_tip().major_version);
+	const auto good_anonymity = std::max(min_anonymity, request.transaction.anonymity);
+	Height confirmed_height   = api::ErrorWrongHeight::fix_height_or_depth(
+        request.confirmed_height_or_depth, m_wallet_state.get_tip_height(), true, false);
+	bool is_amethyst = false;
+	{
+		api::BlockHeader confirmed_header;
+		if (m_wallet_state.read_chain(confirmed_height, confirmed_header) &&
+		    confirmed_header.major_version >= m_wallet_state.get_currency().amethyst_block_version)
+			is_amethyst = true;
+	}
 	if (request.fee_per_byte == std::numeric_limits<Amount>::max()) {
 		if (m_last_node_status.recommended_fee_per_byte == 0)
 			throw json_rpc::Error(json_rpc::INVALID_PARAMS,
 			    "'fee_per_byte' set to 0, and it is impossible to set it to 'status.recommended_fee_per_byte', "
-			    "because walletd never connected to bytecoind after it was restarted");
+			    "because walletd never connected to " CRYPTONOTE_NAME "d after it was restarted");
 		request.fee_per_byte = m_last_node_status.recommended_fee_per_byte;
 	}
 	if (m_wallet_state.get_wallet().is_view_only())
 		throw json_rpc::Error(api::walletd::CreateTransaction::VIEW_ONLY_WALLET,
 		    "Unable to create transaction - view-only wallet contains no spend keys");
-	AccountPublicAddress change_addr;
+	AccountAddress change_addr;
 	if (request.any_spend_address && request.change_address.empty())
 		change_addr = m_wallet_state.get_wallet().get_first_address();
 	else {
@@ -331,49 +397,54 @@ bool WalletNode::handle_create_transaction(http::Client *who, http::RequestData 
 	// We do not require that change_addr should be in our wallet
 	if (request.spend_addresses.empty() && !request.any_spend_address)
 		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
-		    "Empty spend addresses requires setting "
-		    "'any_spend_address':true for additional protection");
+		    "Empty spend addresses requires setting 'any_spend_address':true for additional protection");
 	if (!request.spend_addresses.empty() && request.any_spend_address)
 		throw json_rpc::Error(json_rpc::INVALID_PARAMS,
-		    "Non-empty spend addresses requires setting "
-		    "'any_spend_address':false for additional protection");
-	std::unordered_map<PublicKey, WalletRecord> only_records;
-	// We protect against our programming errors by fetching spend keys in only_records
-	// and passing only_records to transaction builder, so that it cannot accidentally
-	// spend funds from unintended addresses
+		    "Non-empty spend addresses requires setting 'any_spend_address':false for additional protection");
+	std::set<AccountAddress> only_records;
+	// We protect against our programming errors by filling only_records and then checking against them during signing
 	for (const auto &ad : request.spend_addresses) {
-		AccountPublicAddress addr;
+		AccountAddress addr;
 		if (!m_wallet_state.get_currency().parse_account_address_string(ad, &addr))
 			throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse spend address", ad);
 		WalletRecord record;
 		if (!m_wallet_state.get_wallet().get_record(record, addr))
 			throw api::ErrorAddress(api::ErrorAddress::ADDRESS_NOT_IN_WALLET, "Address not in wallet", ad);
-		only_records[addr.spend_public_key] = record;
+		only_records.insert(addr);
 	}
-	TransactionBuilder builder(m_wallet_state.get_currency(), request.transaction.unlock_block_or_timestamp);
 	Wallet::History history;
+	TransactionBuilder builder;
+	builder.m_transaction.version =
+	    is_amethyst ? m_wallet_state.get_currency().amethyst_transaction_version : uint8_t(1);
+	builder.m_transaction.unlock_block_or_timestamp = request.transaction.unlock_block_or_timestamp;
 	if (request.transaction.payment_id != Hash{})
-		builder.set_payment_id(request.transaction.payment_id);
+		extra_add_payment_id(builder.m_transaction.extra, request.transaction.payment_id);
 
 	Amount sum_positive_transfers = 0;
-	std::map<AccountPublicAddress, Amount> combined_outputs;
+	std::map<AccountAddress, Amount> combined_outputs;
 
 	for (const auto &tr : request.transaction.transfers) {
 		if (tr.amount <= 0)  // Not an output
 			throw json_rpc::Error(json_rpc::INVALID_PARAMS,
-			    "Negative transfer amount " + common::to_string(tr.amount) + " for address " + tr.address);
-		AccountPublicAddress addr;
+			    "Negative or zero transfer amount " + m_wallet_state.get_currency().format_amount(tr.amount) +
+			        " for address " + tr.address);
+		AccountAddress addr;
 		if (!m_wallet_state.get_currency().parse_account_address_string(tr.address, &addr))
 			throw api::ErrorAddress(
 			    api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse transfer address", tr.address);
 		combined_outputs[addr] += tr.amount;
-		history.insert(addr);  // TODO - check if unlinkable
-		sum_positive_transfers += tr.amount;
+		if (addr.type() == typeid(AccountAddressSimple))
+			history.insert(boost::get<AccountAddressSimple>(addr));
+		if (!is_amethyst && addr.type() == typeid(AccountAddressUnlinkable))
+			throw json_rpc::Error(
+			    json_rpc::INVALID_PARAMS, "You cannot send to unlinkable address before amethyst upgrade");
+		if (!add_amount(sum_positive_transfers, tr.amount))
+			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Sum of transfers overflow max amount ");
 	}
 	size_t total_outputs = 0;
 	for (const auto &aa : combined_outputs) {
 		std::vector<uint64_t> decomposed_amounts;
-		decompose_amount(aa.second, m_wallet_state.get_currency().default_dust_threshold, &decomposed_amounts);
+		decompose_amount(aa.second, m_wallet_state.get_currency().min_dust_threshold, &decomposed_amounts);
 		total_outputs += decomposed_amounts.size();
 	}
 	if (sum_positive_transfers == 0)
@@ -384,37 +455,39 @@ bool WalletNode::handle_create_transaction(http::Client *who, http::RequestData 
 	Amount change       = 0;
 	Amount receiver_fee = 0;
 	std::vector<api::Output> unspents;
-	Amount total_unspents = 0;
-	if (!request.spend_addresses.empty())
+	Amount total_unspents                  = 0;
+	const Amount sum_positive_transfers_2x = sum_positive_transfers <= std::numeric_limits<Amount>::max() / 2
+	                                             ? sum_positive_transfers * 2
+	                                             : std::numeric_limits<Amount>::max();
+	if (!request.spend_addresses.empty()) {
 		for (auto &&ad : request.spend_addresses) {
 			if (!m_wallet_state.api_add_unspent(
-			        &unspents, &total_unspents, ad, confirmed_height_or_depth, sum_positive_transfers * 2))
+			        &unspents, &total_unspents, ad, confirmed_height, sum_positive_transfers_2x))
 				break;  // found enough funds
 		}
-	else
+	} else {
 		m_wallet_state.api_add_unspent(
-		    &unspents, &total_unspents, std::string(), confirmed_height_or_depth, sum_positive_transfers * 2);
+		    &unspents, &total_unspents, std::string(), confirmed_height, sum_positive_transfers_2x);
+	}
 	UnspentSelector selector(m_log.get_logger(), m_wallet_state.get_currency(), std::move(unspents));
 	// First we select just outputs with sum = 2x requires sum
 	try {
-		selector.select_optimal_outputs(m_wallet_state.get_tip_height(), m_wallet_state.get_tip().timestamp,
-		    confirmed_height_or_depth, m_last_node_status.next_block_effective_median_size,
-		    request.transaction.anonymity, sum_positive_transfers, total_outputs, request.fee_per_byte, optimization,
+		selector.select_optimal_outputs(m_wallet_state.get_currency().get_recommended_max_transaction_size(),
+		    good_anonymity, min_anonymity, sum_positive_transfers, total_outputs, request.fee_per_byte, optimization,
 		    &change, request.subtract_fee_from_amount ? &receiver_fee : nullptr);
 	} catch (const std::exception &) {
-		// If selected outputs do not fit in next_block_effective_median_size, we try all outputs
+		// If selected outputs do not fit in recommended_max_transaction_size, we try all outputs
 		unspents.clear();
 		total_unspents = 0;
 		if (!request.spend_addresses.empty())
 			for (auto &&ad : request.spend_addresses) {
-				m_wallet_state.api_add_unspent(&unspents, &total_unspents, ad, confirmed_height_or_depth);
+				m_wallet_state.api_add_unspent(&unspents, &total_unspents, ad, confirmed_height);
 			}
 		else
-			m_wallet_state.api_add_unspent(&unspents, &total_unspents, std::string(), confirmed_height_or_depth);
+			m_wallet_state.api_add_unspent(&unspents, &total_unspents, std::string(), confirmed_height);
 		selector.reset(std::move(unspents));
-		selector.select_optimal_outputs(m_wallet_state.get_tip_height(), m_wallet_state.get_tip().timestamp,
-		    confirmed_height_or_depth, m_last_node_status.next_block_effective_median_size,
-		    request.transaction.anonymity, sum_positive_transfers, total_outputs, request.fee_per_byte, optimization,
+		selector.select_optimal_outputs(m_wallet_state.get_currency().get_recommended_max_transaction_size(),
+		    good_anonymity, min_anonymity, sum_positive_transfers, total_outputs, request.fee_per_byte, optimization,
 		    &change, request.subtract_fee_from_amount ? &receiver_fee : nullptr);
 	}
 	if (receiver_fee != 0) {
@@ -424,7 +497,8 @@ bool WalletNode::handle_create_transaction(http::Client *who, http::RequestData 
 		for (const auto &tr : request.transaction.transfers) {
 			if (tr.amount <= 0)  // Not an output
 				throw json_rpc::Error(json_rpc::INVALID_PARAMS,
-				    "Negative transfer amount " + common::to_string(tr.amount) + " for address " + tr.address);
+				    "Negative transfer amount " + m_wallet_state.get_currency().format_amount(tr.amount) +
+				        " for address " + tr.address);
 			Amount am = static_cast<Amount>(tr.amount);
 			if (am <= receiver_fee) {
 				receiver_fee -= am;
@@ -432,64 +506,67 @@ bool WalletNode::handle_create_transaction(http::Client *who, http::RequestData 
 			}
 			am -= receiver_fee;
 			receiver_fee = 0;
-			AccountPublicAddress addr;
+			AccountAddress addr;
 			if (!m_wallet_state.get_currency().parse_account_address_string(tr.address, &addr))
 				throw api::ErrorAddress(
 				    api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse transfer address", tr.address);
 			combined_outputs[addr] += am;
-			history.insert(addr);  // TODO - check if unlinkable
+			if (addr.type() == typeid(AccountAddressSimple))
+				history.insert(boost::get<AccountAddressSimple>(addr));
 		}
 		if (combined_outputs.empty())
 			throw json_rpc::Error(
 			    json_rpc::INVALID_PARAMS, "Sum of all transfers was less than fee - no transfers would be made");
 	}
 	// Selector ensures the change should be as "round" as possible
-	if (change > 0) {
+	if (change > 0)
 		combined_outputs[change_addr] += change;
-		if (!m_wallet_state.get_wallet().is_our_address(change_addr))
-			history.insert(change_addr);  // TODO - check if unlinkable
-	}
 	for (const auto &aa : combined_outputs) {
 		std::vector<uint64_t> decomposed_amounts;
-		decompose_amount(aa.second, m_wallet_state.get_currency().default_dust_threshold, &decomposed_amounts);
+		decompose_amount(aa.second, m_wallet_state.get_currency().min_dust_threshold, &decomposed_amounts);
 		for (auto &&da : decomposed_amounts)
 			builder.add_output(da, aa.first);
 	}
-	api::bytecoind::GetRandomOutputs::Request ra_request;
-	ra_request.confirmed_height_or_depth = confirmed_height_or_depth;
-	ra_request.output_count =
-	    request.transaction.anonymity + 1;  // Ask excess output for the case of collision with our output
+	api::cnd::GetRandomOutputs::Request ra_request;
+	ra_request.confirmed_height_or_depth = confirmed_height;
+	ra_request.output_count              = good_anonymity + 1;
+	// We ask excess output for the case of collision with our output
+	// We ask minimum anonymity, though less than requested might be returned
 	ra_request.amounts = selector.get_ra_amounts();
-	api::bytecoind::GetRandomOutputs::Response ra_response;
-	if (m_inproc_node || request.transaction.anonymity == 0) {
-		if(request.transaction.anonymity != 0)
-			m_inproc_node->on_get_random_outputs(
-		    	nullptr, http::RequestData(raw_request), json_rpc::Request(), std::move(ra_request), ra_response);
-		selector.add_mixed_inputs(m_wallet_state.get_wallet().get_view_secret_key(),
-		    request.any_spend_address ? &m_wallet_state.get_wallet() : nullptr, only_records, &builder,
-		    request.transaction.anonymity, std::move(ra_response));
-		Transaction tx              = builder.sign(m_wallet_state.get_wallet().get_tx_derivation_seed());
+	if (m_inproc_node) {
+		api::cnd::GetRandomOutputs::Response ra_response;
+		m_inproc_node->on_get_random_outputs(
+		    nullptr, http::RequestBody(raw_request), json_rpc::Request(), std::move(ra_request), ra_response);
+		const auto actual_anonymity = selector.add_mixed_inputs(&builder, good_anonymity, std::move(ra_response));
+		if (actual_anonymity < request.transaction.anonymity) {
+			m_log(logging::TRACE) << "Transaction anonymity is " << actual_anonymity << "/"
+			                      << request.transaction.anonymity << std::endl;
+			//			throw json_rpc::Error(api::walletd::CreateTransaction::NOT_ENOUGH_ANONYMITY,
+			//			    "Requested anonymity too high, please reduce anonymity for this transaction.");
+		}
+		Transaction tx = builder.sign(
+		    m_wallet_state, &m_wallet_state.get_wallet(), request.any_spend_address ? nullptr : &only_records);
 		response.binary_transaction = seria::to_binary(tx);
-		const Hash tx_hash = get_transaction_hash(tx);
-		if (request.save_history && !m_wallet_state.get_wallet().save_history(tx_hash, history)) {
+		const Hash tx_hash          = get_transaction_hash(tx);
+		if (!is_amethyst && request.save_history && !m_wallet_state.get_wallet().save_history(tx_hash, history)) {
 			m_log(logging::ERROR)
 			    << "Saving transaction history failed, you will need to pass list of destination addresses to generate sending proof for tx="
 			    << tx_hash << std::endl;
 			response.save_history_error = true;
 		}
 		api::Transaction ptx{};
-		if (!m_wallet_state.parse_raw_transaction(ptx, tx, tx_hash))
-			throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "Created trsnsaction cannot be parsed");
+		if (!m_wallet_state.parse_raw_transaction(false, ptx, std::move(tx), tx_hash))
+			throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "Created transaction cannot be parsed");
 		response.transaction = ptx;
 		return true;
 	}
-	api::walletd::CreateTransaction::Request request_copy = request;  // TODO ???
-	http::RequestData new_request =
-	    json_rpc::create_request(api::bytecoind::url(), api::bytecoind::GetRandomOutputs::method(), ra_request);
+
+	http::RequestBody new_request =
+	    json_rpc::create_request(api::cnd::url(), api::cnd::GetRandomOutputs::method(), ra_request);
 	new_request.r.basic_authorization = m_config.bytecoind_authorization;
 	m_log(logging::TRACE) << "sending get_random_outputs, body=" << new_request.body << std::endl;
 	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id().get(), std::move(new_request),
-	    [=](const WaitingClient &wc, http::ResponseData &&random_response) mutable {
+	    [=](const WaitingClient &wc, http::ResponseBody &&random_response) mutable {
 		    m_log(logging::TRACE) << "got response to get_random_outputs, status=" << random_response.r.status
 		                          << " body " << random_response.body << std::endl;
 		    if (random_response.r.status != 200) {
@@ -498,120 +575,125 @@ bool WalletNode::handle_create_transaction(http::Client *who, http::RequestData 
 		    Transaction tx{};
 		    api::walletd::CreateTransaction::Response last_response;
 		    json_rpc::Response json_resp(random_response.body);
-		    api::bytecoind::GetRandomOutputs::Response ra_response;
+		    api::cnd::GetRandomOutputs::Response ra_response;
 		    json_resp.get_result(ra_response);
-		    selector.add_mixed_inputs(m_wallet_state.get_wallet().get_view_secret_key(),
-		        request.any_spend_address ? &m_wallet_state.get_wallet() : nullptr, only_records, &builder,
-		        request.transaction.anonymity, std::move(ra_response));
-		    tx                               = builder.sign(m_wallet_state.get_wallet().get_tx_derivation_seed());
+		    const auto actual_anonymity = selector.add_mixed_inputs(&builder, good_anonymity, std::move(ra_response));
+		    if (actual_anonymity < request.transaction.anonymity) {
+			    m_log(logging::TRACE) << "Transaction anonymity is " << actual_anonymity << "/"
+			                          << request.transaction.anonymity << std::endl;
+			    //				throw json_rpc::Error(api::walletd::CreateTransaction::NOT_ENOUGH_ANONYMITY,
+			    //									  "Requested anonymity too high, please reduce anonymity for this
+			    // transaction.");
+		    }
+		    tx = builder.sign(
+		        m_wallet_state, &m_wallet_state.get_wallet(), request.any_spend_address ? nullptr : &only_records);
 		    last_response.binary_transaction = seria::to_binary(tx);
-			const Hash tx_hash                     = get_transaction_hash(tx);
-		    if (request.save_history && !m_wallet_state.get_wallet().save_history(tx_hash, history)) {
+		    const Hash tx_hash               = get_transaction_hash(tx);
+		    if (!is_amethyst && request.save_history && !m_wallet_state.get_wallet().save_history(tx_hash, history)) {
 			    m_log(logging::ERROR)
 			        << "Saving transaction history failed, you will need to pass list of destination addresses to generate sending proof for tx="
 			        << tx_hash << std::endl;
 			    last_response.save_history_error = true;
 		    }
-		    if (!m_wallet_state.parse_raw_transaction(last_response.transaction, tx, tx_hash))
-			    throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "Created trsnsaction cannot be parsed");
-		    http::ResponseData last_http_response(wc.original_request.r);
+		    http::ResponseBody last_http_response(wc.original_request.r);
 		    last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 		    last_http_response.r.status = 200;
-		    last_http_response.set_body(json_rpc::create_response_body(last_response, wc.original_jsonrpc_id));
+		    if (!m_wallet_state.parse_raw_transaction(false, last_response.transaction, std::move(tx), tx_hash)) {
+			    last_http_response.set_body(json_rpc::create_error_response_body(
+			        json_rpc::Error(json_rpc::INTERNAL_ERROR, "Created transaction cannot be parsed"),
+			        wc.original_jsonrpc_id));
+		    } else
+			    last_http_response.set_body(json_rpc::create_response_body(last_response, wc.original_jsonrpc_id));
 		    wc.original_who->write(std::move(last_http_response));
-		},
+	    },
 	    [=](const WaitingClient &wc, std::string err) mutable {
-		    m_log(logging::INFO) << "got error to get_random_outputs from bytecoind, " << err << std::endl;
-		    http::ResponseData last_http_response(wc.original_request.r);
+		    m_log(logging::INFO) << "got error to get_random_outputs from " CRYPTONOTE_NAME "d, " << err << std::endl;
+		    http::ResponseBody last_http_response(wc.original_request.r);
 		    last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 		    last_http_response.r.status = 200;
 		    last_http_response.set_body(json_rpc::create_error_response_body(
 		        json_rpc::Error(json_rpc::INTERNAL_ERROR, err), wc.original_jsonrpc_id));
 		    wc.original_who->write(std::move(last_http_response));
-		});
+	    });
 	return false;
 }
 
-bool WalletNode::handle_create_sendproof(http::Client *, http::RequestData &&, json_rpc::Request &&,
-    api::walletd::CreateSendProof::Request &&request, api::walletd::CreateSendProof::Response &response) {
-	std::set<AccountPublicAddress> addresses;
+bool WalletNode::on_create_sendproof(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+    api::walletd::CreateSendproof::Request &&request, api::walletd::CreateSendproof::Response &response) {
+	std::set<AccountAddress> addresses;
+	TransactionPrefix tx;
+	api::Transaction ptx;
+	if (!m_wallet_state.api_get_transaction(request.transaction_hash, true, &tx, &ptx))
+		throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "Created trsnsaction cannot be parsed");
 	if (request.addresses.empty()) {
-		Wallet::History history = m_wallet_state.get_wallet().load_history(request.transaction_hash);
-		for (auto &&address : history) {
-			if (m_wallet_state.get_wallet().get_view_public_key() == address.view_public_key)
-				continue;  // our address
-			addresses.insert(address);
-		}
+		for (const auto &tr : ptx.transfers)
+			if (tr.amount > 0 && !tr.address.empty()) {
+				AccountAddress address;
+				invariant(m_wallet_state.get_currency().parse_account_address_string(tr.address, &address), "");
+				if (!m_wallet_state.get_wallet().is_our_address(address))
+					addresses.insert(address);
+			}
 	}
 	for (auto &&addr : request.addresses) {
-		AccountPublicAddress address;
+		AccountAddress address;
 		if (!m_wallet_state.get_currency().parse_account_address_string(addr, &address))
 			throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse address", addr);
 		addresses.insert(address);
 	}
 	for (auto &&address : addresses) {
-		SendProof sp;
+		Sendproof sp;
 		sp.transaction_hash = request.transaction_hash;
 		sp.message          = request.message;
 		sp.address          = address;
-		if (m_wallet_state.api_create_proof(sp)) {
-			//			seria::JsonOutputStreamValue s;
-			//			s.begin_object();
-			//			ser_members(sp, s, m_wallet_state.get_currency());
-			//			s.end_object();
-			//			response.sendproofs.push_back(s.move_value().to_string());
-			//			return s.move_value();
+		if (m_wallet_state.api_create_proof(tx, sp)) {
 			response.sendproofs.push_back(seria::to_json_value(sp, m_wallet_state.get_currency()).to_string());
-		}
+		} else
+			response.sendproofs.push_back(std::string());  // No proof can be created for address
 	}
 	return true;
 }
 
-bool WalletNode::handle_send_transaction(http::Client *who, http::RequestData &&raw_request,
-    json_rpc::Request &&raw_js_request, api::bytecoind::SendTransaction::Request &&request,
-    api::bytecoind::SendTransaction::Response &response) {
+bool WalletNode::on_send_transaction(http::Client *who, http::RequestBody &&raw_request,
+    json_rpc::Request &&raw_js_request, api::cnd::SendTransaction::Request &&request,
+    api::cnd::SendTransaction::Response &response) {
 	m_wallet_state.add_to_payment_queue(request.binary_transaction, true);
 	advance_long_poll();
 	if (m_inproc_node) {
-		m_inproc_node->handle_send_transaction(
+		m_inproc_node->on_send_transaction(
 		    nullptr, std::move(raw_request), std::move(raw_js_request), std::move(request), response);
 		return true;
 	}
-	http::RequestData new_request;
+	http::RequestBody new_request;
 	new_request.set_body(std::move(raw_request.body));  // We save on copying body here
-	new_request.r.set_firstline("POST", api::bytecoind::url(), 1, 1);
+	new_request.r.set_firstline("POST", api::cnd::url(), 1, 1);
 	new_request.r.basic_authorization = m_config.bytecoind_authorization;
 	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id().get(), std::move(new_request),
-	    [=](const WaitingClient &wc2, http::ResponseData &&send_response) mutable {
-		    http::ResponseData resp(std::move(send_response));
+	    [](const WaitingClient &wc2, http::ResponseBody &&send_response) mutable {
+		    http::ResponseBody resp(std::move(send_response));
 		    resp.r.http_version_major = wc2.original_request.r.http_version_major;
 		    resp.r.http_version_minor = wc2.original_request.r.http_version_minor;
 		    resp.r.keep_alive         = wc2.original_request.r.keep_alive;
 		    wc2.original_who->write(std::move(resp));
-		},
-	    [=](const WaitingClient &wc2, std::string err) {
-		    //		    http::ResponseData resp = json_rpc::create_error_response(
-		    //		        wc2.original_request, json_rpc::Error(json_rpc::INTERNAL_ERROR, err),
-		    // wc2.original_jsonrpc_id);
-		    //		    wc2.original_who->write(std::move(resp));
-		    http::ResponseData resp(wc2.original_request.r);
+	    },
+	    [](const WaitingClient &wc2, std::string err) {
+		    http::ResponseBody resp(wc2.original_request.r);
 		    resp.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 		    resp.r.status = 200;
 		    resp.set_body(json_rpc::create_error_response_body(
 		        json_rpc::Error(json_rpc::INTERNAL_ERROR, err), wc2.original_jsonrpc_id));
 		    wc2.original_who->write(std::move(resp));
-		});
+	    });
 	return false;
 }
 
-bool WalletNode::handle_get_transaction(http::Client *, http::RequestData &&, json_rpc::Request &&,
+bool WalletNode::on_get_transaction(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::GetTransaction::Request &&req, api::walletd::GetTransaction::Response &res) {
 	TransactionPrefix tx;
 	m_wallet_state.api_get_transaction(req.hash, true, &tx, &res.transaction);
 	return true;
 }
 
-void WalletNode::process_waiting_command_response(http::ResponseData &&resp) {
+void WalletNode::process_waiting_command_response(http::ResponseBody &&resp) {
 	WaitingClient cli = std::move(m_waiting_command_requests.front());
 	m_waiting_command_requests.pop_front();
 	m_command_request.reset();
@@ -660,16 +742,16 @@ void WalletNode::send_next_waiting_command() {
 	    m_commands_agent, std::move(m_waiting_command_requests.front().request), fun, e_fun);
 }
 
-void WalletNode::add_waiting_command(http::Client *who, http::RequestData &&original_request,
-    const common::JsonValue &original_rpc_id, http::RequestData &&request,
-    std::function<void(const WalletNode::WaitingClient &wc, http::ResponseData &&resp)> fun,
-    std::function<void(const WalletNode::WaitingClient &wc, std::string)> err_fun) {
+void WalletNode::add_waiting_command(http::Client *who, http::RequestBody &&original_request,
+    const common::JsonValue &original_rpc_id, http::RequestBody &&request,
+    std::function<void(const WalletNode::WaitingClient &wc, http::ResponseBody &&resp)> &&fun,
+    std::function<void(const WalletNode::WaitingClient &wc, std::string)> &&err_fun) {
 	WaitingClient wc2;
 	wc2.original_who        = who;
 	wc2.original_request    = std::move(original_request);
 	wc2.original_jsonrpc_id = original_rpc_id;
-	wc2.fun                 = fun;
-	wc2.err_fun             = err_fun;
+	wc2.fun                 = std::move(fun);
+	wc2.err_fun             = std::move(err_fun);
 	wc2.request             = std::move(request);
 	m_waiting_command_requests.push_back(wc2);
 	send_next_waiting_command();
@@ -682,15 +764,13 @@ void WalletNode::advance_long_poll() {
 
 	for (auto lit = m_long_poll_http_clients.begin(); lit != m_long_poll_http_clients.end();)
 		if (resp.ready_for_longpoll(lit->original_get_status)) {
-			http::ResponseData last_http_response;
+			http::ResponseBody last_http_response;
 			last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 			last_http_response.r.status             = 200;
 			last_http_response.r.http_version_major = lit->original_request.r.http_version_major;
 			last_http_response.r.http_version_minor = lit->original_request.r.http_version_minor;
 			last_http_response.r.keep_alive         = lit->original_request.r.keep_alive;
 			last_http_response.set_body(json_rpc::create_response_body(resp, lit->original_jsonrpc_id));
-			//			m_log(logging::INFO) << "advance_long_poll will
-			// reply to long poll json=" << last_http_response.body << std::endl;
 			lit->original_who->write(std::move(last_http_response));
 			lit = m_long_poll_http_clients.erase(lit);
 		} else

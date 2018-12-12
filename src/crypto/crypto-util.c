@@ -45,14 +45,3 @@ int sodium_compare(const void *a1, const void *a2, size_t len) {
 	}
 	return (int)(gt + gt + eq) - 1;
 }
-
-int sodium_is_zero(const void *data, const size_t nlen) {
-	const unsigned char *n = data;
-	size_t i;
-	volatile unsigned char d = 0U;
-
-	for (i = 0U; i < nlen; i++) {
-		d |= n[i];
-	}
-	return 1 & ((d - 1) >> 8);
-}

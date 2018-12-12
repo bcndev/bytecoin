@@ -27,14 +27,19 @@ static inline void *padd(void *p, size_t i) { return (char *)p + i; }
 
 #if defined(_WIN32)
 #include <windows.h>
+// clangformat will switch order
 #include <wincrypt.h>
 
 static void generate_system_random_bytes(size_t n, void *result) {
 	HCRYPTPROV prov = 0;
 	if (!CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT | CRYPT_SILENT) ||
 	    !CryptGenRandom(prov, (DWORD)n, result) || !CryptReleaseContext(prov, 0)) {
-		assert(0);
-		//		std::terminate(); // TODO - exit with message on Windows
+		wchar_t message[]    = L"Failed to acquire random bytes from PROV_RSA_FULL provider";
+		DWORD dwToWrite      = (DWORD)wcslen(message);
+		DWORD dwWritten      = 0;
+		HANDLE hParentStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+		WriteConsoleW(hParentStdOut, message, dwToWrite, &dwWritten, NULL);
+		abort();
 	}
 }
 
@@ -74,19 +79,19 @@ static void generate_system_random_bytes(size_t n, void *result) {
 
 #endif
 
-static struct keccak_state state;
+static struct cryptoKeccakState state;
 static int initialized = 0;
 
-void initialize_random(void) {
+void crypto_initialize_random(void) {
 	generate_system_random_bytes(32, &state);
 	initialized = 1;
 }
 
-void unsafe_generate_random_bytes(size_t n, void *result) {
+void crypto_unsafe_generate_random_bytes(void *result, size_t n) {
 	if (!initialized)
-		initialize_random();
+		crypto_initialize_random();
 	for (;;) {
-		keccak_permutation(&state);
+		crypto_keccak_permutation(&state);
 		if (n <= HASH_DATA_AREA) {
 			memcpy(result, &state, n);
 			return;
@@ -97,11 +102,11 @@ void unsafe_generate_random_bytes(size_t n, void *result) {
 	}
 }
 
-void initialize_random_for_tests(void) {
-	memset(&state, 42, sizeof(struct keccak_state));
+void crypto_initialize_random_for_tests(void) {
+	memset(&state, 42, sizeof(struct cryptoKeccakState));
 	initialized = 1;
 }
 
 // We keep initialize@start, because generate_system_random_bytes will exit on errror
 // If INITIALIZER fails to compile on your platform, just comment out INITIALIZER below
-INITIALIZER(init_random) { initialize_random(); }
+INITIALIZER(init_random) { crypto_initialize_random(); }

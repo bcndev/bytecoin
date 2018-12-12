@@ -24,4 +24,4 @@ private:
 	const std::string fullfilenamenoext;
 	std::unique_ptr<platform::FileStream> file_stream;
 };
-}
+}  // namespace logging

@@ -8,87 +8,112 @@
 #include <limits>
 #include "CryptoNote.hpp"
 #include "common/StringTools.hpp"
+#include "p2p/P2pProtocolTypes.hpp"
+
+#ifndef CRYPTONOTE_NAME
+#error CRYPTONOTE_NAME must be defined before compiling project
+#endif
 
 // All values below should only be used in code through Currency and Config classes, never directly.
 // This approach allows unlimited customization through config file/command line parameters
 // Never include this header into other headers
-namespace bytecoin {
-namespace parameters {
+namespace cn { namespace parameters {
 
-const Height MAX_BLOCK_NUMBER               = 500000000;
-const uint32_t MAX_BLOCK_BLOB_SIZE          = 500000000;
-const uint32_t MAX_TX_SIZE                  = 1000000000;
-const uint64_t PUBLIC_ADDRESS_BASE58_PREFIX = 6;  // addresses start with "2"
-const Height MINED_MONEY_UNLOCK_WINDOW      = 10;
-const Timestamp BLOCK_FUTURE_TIME_LIMIT     = 60 * 60 * 2;
+// Magics
+const char GENESIS_COINBASE_TX_HEX[] =
+    "010a01ff0001ffffffffffff0f029b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd08807121013c086a48c15fb637a96991bc6d53caf77068b5ba6eeb3c82357228c49790584a";
+// Technically, we should not have predefined genesis block, first hard checkpoint is enough. This is bitcoin legacy.
+constexpr UUID BYTECOIN_NETWORK = common::pfh<UUID>("11100111110001011011001210110110");  // Bender's nightmare
 
-const Height BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW = 60;
+const Height UPGRADE_HEIGHT_V2                  = 546603;
+const Height UPGRADE_HEIGHT_V3                  = 985549;
+const Height KEY_IMAGE_SUBGROUP_CHECKING_HEIGHT = 1267000;
 
-// MONEY_SUPPLY - total number coins to be generated
+// Radical simplification of consensus rules starts from versions
+const uint8_t BLOCK_VERSION_AMETHYST       = 4;
+const uint8_t TRANSACTION_VERSION_AMETHYST = 4;
+
+const size_t MINIMUM_ANONYMITY_V1_3 = 0;
+const size_t MINIMUM_ANONYMITY      = 3;
+
+// Emission and formats
 const Amount MONEY_SUPPLY            = std::numeric_limits<uint64_t>::max();
 const unsigned EMISSION_SPEED_FACTOR = 18;
 static_assert(EMISSION_SPEED_FACTOR <= 8 * sizeof(uint64_t), "Bad EMISSION_SPEED_FACTOR");
 
-const Height REWARD_BLOCKS_WINDOW = 100;
+const size_t DISPLAY_DECIMAL_POINT = 8;
+const Amount MIN_DUST_THRESHOLD    = 1000000;            // Everything smaller will be split in groups of 3 digits
+const Amount MAX_DUST_THRESHOLD    = 30000000000000000;  // Everything larger is dust because very few coins
+const Amount SELF_DUST_THRESHOLD   = 1000;               // forfeit outputs smaller than this in a change
 
-// size of block (bytes) after which reward for block calculated using block size
-const size_t MINIMUM_SIZE_MEDIAN         = 100000;
-const size_t MINIMUM_SIZE_MEDIAN_V2      = 20000;
-const size_t MINIMUM_SIZE_MEDIAN_V1      = 10000;
-const size_t COINBASE_BLOB_RESERVED_SIZE = 600;
-const size_t DISPLAY_DECIMAL_POINT       = 8;
-const Amount DEFAULT_DUST_THRESHOLD      = 1000000;  // pow(10, 6)
-const Amount SELF_DUST_THRESHOLD         = 1000;     // pow(10, 3)
+const BinaryArray ADDRESS_BASE58_PREFIX{6};                                      // legacy addresses start with "2"
+const BinaryArray ADDRESS_BASE58_PREFIX_UNLINKABLE{0xce, 0xf5, 0xe2};            // addresses start with "bcn1"
+const BinaryArray ADDRESS_BASE58_PREFIX_AUDITABLE_UNLINKABLE{0xce, 0xf5, 0xe4};  // addresses start with "bcn2"
+const char BLOCKS_FILENAME[]       = "blocks.bin";
+const char BLOCKINDEXES_FILENAME[] = "blockindexes.bin";
 
-const Timestamp DIFFICULTY_TARGET = 120;
+// Difficulty and rewards
+const Timestamp DIFFICULTY_TARGET              = 120;
+const Height EXPECTED_NUMBER_OF_BLOCKS_PER_DAY = 24 * 60 * 60 / DIFFICULTY_TARGET;
 
-const Difficulty MINIMUM_DIFFICULTY_V1 = 1;
+const Difficulty MINIMUM_DIFFICULTY_V1 = 1;  // Genesis and some first blocks in main net
 const Difficulty MINIMUM_DIFFICULTY    = 100000;
 
-const Height DIFFICULTY_CUT = 60;  // out-of-family timestamps to cut after sorting
-const Height DIFFICULTY_LAG = 15;  // skip last blocks for difficulty calcs (against lowering difficulty attack)
+const Height DIFFICULTY_WINDOW = 720;
+const Height DIFFICULTY_CUT    = 60;  // out-of-family timestamps to cut after sorting
+const Height DIFFICULTY_LAG    = 15;  // skip last blocks for difficulty calcs (against lowering difficulty attack)
 
-const uint32_t MAX_BLOCK_SIZE_INITIAL         = 20 * 1024;
-const uint32_t MAX_BLOCK_SIZE_GROWTH_PER_YEAR = 100 * 1024;
+static_assert(DIFFICULTY_WINDOW >= 2, "Bad DIFFICULTY_WINDOW");
+static_assert(2 * DIFFICULTY_CUT <= DIFFICULTY_WINDOW - 2, "Bad DIFFICULTY_WINDOW or DIFFICULTY_CUT");
 
-// After next hardfork remove settings below
+// Upgrade voting
+const Height UPGRADE_VOTING_PERCENT = 90;
+const Height UPGRADE_VOTING_WINDOW  = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;
+const Height UPGRADE_WINDOW         = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY * 7;  // Delay after voting
+static_assert(60 <= UPGRADE_VOTING_PERCENT && UPGRADE_VOTING_PERCENT <= 100, "Bad UPGRADE_VOTING_PERCENT");
+static_assert(UPGRADE_VOTING_WINDOW > 1, "Bad UPGRADE_VOTING_WINDOW");
+
+// Timestamps
+const Timestamp BLOCK_FUTURE_TIME_LIMIT             = 60 * 60 * 2;
+const Height BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW_V1_3 = 60;
+const Height BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW      = 59;
+static_assert(BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW % 2 == 1,
+    "This window must be uneven for median timestamp to grow monotonically");
+
+// Locking by timestamp and by block
+const Height MAX_BLOCK_NUMBER = 500000000;
+
+// Legacy pre amethyst locking constants
 const Height LOCKED_TX_ALLOWED_DELTA_BLOCKS = 1;
+
 constexpr Timestamp LOCKED_TX_ALLOWED_DELTA_SECONDS(Timestamp difficulty_target) {
 	return difficulty_target * LOCKED_TX_ALLOWED_DELTA_BLOCKS;
 }
 
-const Height UPGRADE_HEIGHT_V2                  = 546603;
-const Height UPGRADE_HEIGHT_V3                  = 985549;
-const Height KEY_IMAGE_SUBGROUP_CHECKING_HEIGHT = 1267000;  // TODO - after fork remove, check subgroup if version >= 4
+const Height MINED_MONEY_UNLOCK_WINDOW = 10;
 
-// const uint32_t UPGRADE_VOTING_WINDOW = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;  // blocks
-// const uint32_t UPGRADE_WINDOW = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY*7;  // blocks
-// static_assert(UPGRADE_VOTING_WINDOW > 1, "Bad UPGRADE_VOTING_WINDOW");
+// Size limits
+const size_t MAX_HEADER_SIZE         = 2048;
+const size_t BLOCK_CAPACITY_VOTE_MIN = 100 * 1000;   // min block size
+const size_t BLOCK_CAPACITY_VOTE_MAX = 2000 * 1000;  // max block size
+static_assert(BLOCK_CAPACITY_VOTE_MAX >= BLOCK_CAPACITY_VOTE_MIN, "Bad TRANSACTIONS_SIZE_VOTE");
+const Height BLOCK_CAPACITY_VOTE_WINDOW = 11;
 
-const char BLOCKS_FILENAME[]       = "blocks.bin";
-const char BLOCKINDEXES_FILENAME[] = "blockindexes.bin";
-}  // parameters
+// Legacy pre amethyst size limits
+const size_t MINIMUM_SIZE_MEDIAN_V3 = 100000;
+const size_t MINIMUM_SIZE_MEDIAN_V2 = 20000;
+const size_t MINIMUM_SIZE_MEDIAN_V1 = 10000;
 
-const char CRYPTONOTE_NAME[] = "bytecoin";
+const Height MEIDAN_BLOCK_SIZE_WINDOW       = 100;
+const size_t MAX_BLOCK_SIZE_INITIAL         = 20 * 1024;   // block transactions size
+const size_t MAX_BLOCK_SIZE_GROWTH_PER_YEAR = 100 * 1024;  // block transactions size
 
-const uint8_t CURRENT_TRANSACTION_VERSION = 1;
-
-const size_t BLOCKS_IDS_SYNCHRONIZING_DEFAULT_COUNT = 10000;  // by default, blocks ids count in synchronizing
-const size_t BLOCKS_SYNCHRONIZING_DEFAULT_COUNT     = 100;    // by default, blocks count in blocks downloading
-const size_t COMMAND_RPC_GET_BLOCKS_FAST_MAX_COUNT  = 1000;
-
+// P2p ports, not strictly part of consensus
 const uint16_t P2P_DEFAULT_PORT        = 8080;
 const uint16_t RPC_DEFAULT_PORT        = 8081;
 const uint16_t WALLET_RPC_DEFAULT_PORT = 8070;
 
-// const size_t P2P_CONNECTION_MAX_WRITE_BUFFER_SIZE        = 32 * 1024 * 1024;  // 32 Mb
-// const uint32_t P2P_DEFAULT_HANDSHAKE_INTERVAL            = 60;        // seconds
-// const uint32_t P2P_DEFAULT_PACKET_MAX_SIZE               = 50000000;  // 50000000 bytes maximum packet size
-const uint32_t P2P_DEFAULT_PEERS_IN_HANDSHAKE = 250;
-// const uint32_t P2P_DEFAULT_CONNECTION_TIMEOUT            = 5000;           // 5 seconds
-// const uint32_t P2P_DEFAULT_PING_CONNECTION_TIMEOUT       = 2000;           // 2 seconds
-// const uint32_t P2P_DEFAULT_INVOKE_TIMEOUT                = 60 * 2 * 1000;  // 2 minutes
-// const uint32_t P2P_DEFAULT_HANDSHAKE_INVOKE_TIMEOUT      = 5000;           // 5 seconds
+// We do not want runtime conversion, so compile-time converter
 constexpr PublicKey P2P_STAT_TRUSTED_PUBLIC_KEY =
     common::pfh<PublicKey>("E29507CA55455F37A3B783EE2C5123B8B6A34A0C5CAAE050922C6254161480C1");
 
@@ -123,7 +148,7 @@ const char *const SEED_NODES_STAGENET[] = {
     "207.246.127.160:10080", "108.61.174.232:10080", "45.32.156.183:10080", "45.76.29.96:10080"};
 // testnet will have no seed nodes
 
-constexpr const SWCheckpoint CHECKPOINTS[] = {
+constexpr const HardCheckpoint CHECKPOINTS[] = {
     {79000, common::pfh<Hash>("cae33204e624faeb64938d80073bb7bbacc27017dc63f36c5c0f313cad455a02")},
     {140000, common::pfh<Hash>("993059fb6ab92db7d80d406c67a52d9c02d873ca34b6290a12b744c970208772")},
     {200000, common::pfh<Hash>("a5f74c7542077df6859f48b5b1f9c3741f29df38f91a47e14c94b5696e6c3073")},
@@ -186,9 +211,10 @@ constexpr const SWCheckpoint CHECKPOINTS[] = {
     {1560000, common::pfh<Hash>("1a28c09c74b4b1ad97e4d65b99f97e62aa4f225be5b33017efc07c5c708b83ef")},
     {1579000, common::pfh<Hash>("debfa79d14ff49dc7e8c24e5e27a22f9a67819124a7dcd187c67493a969044be")},
     {1605000, common::pfh<Hash>("a34a41f2b5091f28f234b55a6255a9727fed355ca41233d59f779b2f87d1a359")},
-    {1628000, common::pfh<Hash>("4e7b55e53402c71c45cb97f8ed78ed3f128c802008c83b0153aa52c30b740c68")}};
+    {1628000, common::pfh<Hash>("4e7b55e53402c71c45cb97f8ed78ed3f128c802008c83b0153aa52c30b740c68")},
+    {1670000, common::pfh<Hash>("58770b800108c72512a386783fd0a4326c74dc9f99b538337a195945b89a9a6f")}};
 
-constexpr const SWCheckpoint CHECKPOINTS_STAGENET[] = {
-    {450, common::pfh<Hash>("c69823a6b3e0c1f724411e697219a9d31a2df900cb49bb0488b1a91a9989a805")}};
-
-}  // CryptoNote
+constexpr const HardCheckpoint CHECKPOINTS_STAGENET[] = {
+    {450, common::pfh<Hash>("c69823a6b3e0c1f724411e697219a9d31a2df900cb49bb0488b1a91a9989a805")},
+    {30000, common::pfh<Hash>("4a3b02206d120bab6c3bef4a7bcbc1934b5327c27c181d790f4db407dc92c640")}};
+}}  // namespace cn::parameters

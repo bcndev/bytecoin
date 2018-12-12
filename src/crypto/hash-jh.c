@@ -9,7 +9,7 @@
 #include "hash.h"
 #include "jh/jh.h"
 
-void hash_extra_jh(const void *data, size_t length, struct CHash *hash) {
-	int r = jh_hash(sizeof(struct CHash) * 8, data, 8 * length, hash->data);
+void crypto_hash_extra_jh(const void *data, size_t length, struct cryptoHash *hash) {
+	int r = jh_hash(sizeof(struct cryptoHash) * 8, data, 8 * length, hash->data);
 	assert(SUCCESS == r);
 }

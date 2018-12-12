@@ -26,7 +26,7 @@ inline long long stoll(const std::string &key) {
 		throw std::runtime_error("stoll failed to convert key=" + key);
 	return val;
 }
-}
+}  // namespace common
 
 #else
 
@@ -37,6 +37,6 @@ inline std::string to_string(T value) {
 }
 
 inline long long stoll(const std::string &key) { return std::stoll(key); }
-}
+}  // namespace common
 
 #endif

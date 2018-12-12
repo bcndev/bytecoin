@@ -13,4 +13,4 @@ const std::array<std::string, 6> ILogger::LEVEL_NAMES = {{"FATAL", "ERROR", "WAR
 std::ostream &operator<<(std::ostream &out, common::console::Color color) {
 	return out << std::string{ILogger::COLOR_PREFIX, static_cast<char>(ILogger::COLOR_LETTER_DEFAULT + color)};
 }
-}
+}  // namespace logging

@@ -33,39 +33,38 @@ template<int bits, typename InputIt, typename T>
 typename std::enable_if<std::is_integral<T>::value && std::is_unsigned<T>::value && 0 <= bits &&
                             bits <= std::numeric_limits<T>::digits,
     int>::type
-read_varint(InputIt &&first, InputIt &&last, T &i) {
+read_varint(InputIt &&first, InputIt &&last, T *i) {
 	int read = 0;
-	i        = 0;
+	*i       = 0;
 	for (int shift = 0;; shift += 7) {
-		if (first == last) {
-			return read;  // End of input.
-		}
+		if (first == last)
+			return -3;  // End of input.
 		unsigned char byte = *first++;
 		++read;
-		if (shift + 7 >= bits && byte >= 1 << (bits - shift)) {
+		if (shift + 7 >= bits && byte >= 1 << (bits - shift))
 			return -1;  // Overflow.
-		}
-		if (byte == 0 && shift != 0) {
+		if (byte == 0 && shift != 0)
 			return -2;  // Non-canonical representation.
-		}
-		i |= static_cast<T>(byte & 0x7f) << shift;
-		if ((byte & 0x80) == 0) {
+		*i |= static_cast<T>(byte & 0x7f) << shift;
+		if ((byte & 0x80) == 0)
 			break;
-		}
 	}
 	return read;
 }
 
 template<typename InputIt, typename T>
-int read_varint(InputIt &&first, InputIt &&last, T &i) {
-	return read_varint<std::numeric_limits<T>::digits, InputIt, T>(std::move(first), std::move(last), i);
+int read_varint(InputIt &&first, InputIt &&last, T *i) {
+	return read_varint<std::numeric_limits<T>::digits, InputIt, T>(
+	    std::forward<InputIt>(first), std::forward<InputIt>(last), i);
 }
 
-// Experimental stuff to reduce integer db indexes
+// stupid default varint is mostly useless, because it breaks lexicographic sorting
+// we use sqlite4 varint where lexicographic sorting is important (e.g. DB indexes)
 size_t get_varint_sqlite4_size(uint64_t val);
 uint64_t read_varint_sqlite4(const unsigned char *&begin, const unsigned char *end);
 inline uint64_t read_varint_sqlite4(const char *&begin, const char *end) {
-	return read_varint_sqlite4((const unsigned char *&)begin, (const unsigned char *)end);
+	return read_varint_sqlite4(
+	    reinterpret_cast<const unsigned char *&>(begin), reinterpret_cast<const unsigned char *>(end));
 }
 
 uint64_t read_varint_sqlite4(const std::string &str);
@@ -108,8 +107,8 @@ void uint_le_to_bytes(unsigned char *buf, size_t si, T val) {
 }
 inline void uint_le_to_bytes(unsigned char *buf, size_t si, unsigned char val) {
 	for (size_t i = 0; i != si; ++i) {
-		buf[i] = static_cast<unsigned char>(val);
+		buf[i] = val;
 		val    = 0;
 	}
 }
-}
+}  // namespace common

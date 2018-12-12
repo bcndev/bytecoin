@@ -49,7 +49,7 @@
 
 #pragma pack(push, 1)
 union cn_slow_hash_state {
-	struct keccak_state hs;
+	struct cryptoKeccakState hs;
 	struct {
 		uint8_t k[64];
 		uint8_t init[INIT_SIZE_BYTE];
@@ -154,8 +154,8 @@ static void ExpandAESKey256(uint8_t *keybuf) {
 	keys[14] = tmp1;
 }
 
-static void (*const extra_hashes[4])(const void *, size_t, struct CHash *) = {
-    hash_extra_blake, hash_extra_groestl, hash_extra_jh, hash_extra_skein};
+static void (*const extra_hashes[4])(const void *, size_t, struct cryptoHash *) = {
+    crypto_hash_extra_blake, crypto_hash_extra_groestl, crypto_hash_extra_jh, crypto_hash_extra_skein};
 
 #include "slow-hash_x86.inl"
 #define AESNI
@@ -183,13 +183,7 @@ static void cn_slow_hash_runtime_aes_check(void *a, const void *b, size_t c, voi
 
 static void (*cn_slow_hash_fp)(void *, const void *, size_t, void *) = cn_slow_hash_runtime_aes_check;
 
-void cn_slow_hash(void *a, const void *b, size_t c, struct CHash *d) {
-	(*cn_slow_hash_fp)(a, b, c, d);
-	//  unsigned char da[HASH_SIZE];
-	//  cn_slow_hash_platform_independent(a, b, c, da);
-	//  if( memcmp(d, da, HASH_SIZE) != 0 )
-	//    cn_slow_hash_platform_independent(a, b, c, da);
-}
+void crypto_cn_slow_hash(void *a, const void *b, size_t c, struct cryptoHash *d) { (*cn_slow_hash_fp)(a, b, c, d); }
 
 // If INITIALIZER fails to compile on your platform, just comment out INITIALIZER below
 INITIALIZER(detect_aes) { cn_slow_hash_fp = cpu_has_aesni() ? &cn_slow_hash_aesni : &cn_slow_hash_noaesni; }

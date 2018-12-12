@@ -10,4 +10,4 @@ namespace platform {
 uint32_t now_unix_timestamp(uint32_t *usec = nullptr);
 int get_time_multiplier_for_tests();
 void set_time_multiplier_for_tests(int multiplier);
-}
+}  // namespace platform

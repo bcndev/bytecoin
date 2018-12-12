@@ -3,7 +3,6 @@
 
 #include "ConsoleLogger.hpp"
 #include <iostream>
-#include <unordered_map>
 #include "common/ConsoleTools.hpp"
 
 namespace logging {
@@ -35,4 +34,4 @@ void ConsoleLogger::do_log_string(const std::string &message) {
 		common::console::set_text_color(Color::Default);
 	}
 }
-}
+}  // namespace logging

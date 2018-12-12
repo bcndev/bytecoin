@@ -10,24 +10,41 @@
 #include "CryptoNote.hpp"
 #include "logging/LoggerMessage.hpp"
 #include "platform/DB.hpp"
-#include "platform/ExclusiveLock.hpp"
 #include "rpc_api.hpp"
 
 namespace crypto {
 class CryptoNightContext;
 }
-namespace bytecoin {
+namespace cn {
 class Config;
 class Currency;
 
-enum class BroadcastAction { BROADCAST_ALL, NOTHING, BAN };
-enum class AddTransactionResult {
-	BAN,
-	BROADCAST_ALL,
-	ALREADY_IN_POOL,
-	INCREASE_FEE,
-	FAILED_TO_REDO,
-	OUTPUT_ALREADY_SPENT
+class ConsensusError : public std::runtime_error {
+public:
+	ConsensusError(const std::string &str) : runtime_error(str) {}
+};
+
+class ConsensusErrorOutputDoesNotExist : public ConsensusError {
+public:
+	size_t input_index  = 0;
+	size_t output_index = 0;
+	ConsensusErrorOutputDoesNotExist(const std::string &str, size_t input_index, size_t output_index)
+	    : ConsensusError(str), input_index(input_index), output_index(output_index) {}
+};
+
+class ConsensusErrorBadOutputOrSignature : public ConsensusError {
+public:
+	Height conflict_height = 0;
+	ConsensusErrorBadOutputOrSignature(const std::string &str, Height conflict_height)
+	    : ConsensusError(str), conflict_height(conflict_height) {}
+};
+
+class ConsensusErrorOutputSpent : public ConsensusError {
+public:
+	KeyImage key_image;
+	Height conflict_height = 0;
+	ConsensusErrorOutputSpent(const std::string &str, const KeyImage &key_image, Height conflict_height)
+	    : ConsensusError(str), key_image(key_image), conflict_height(conflict_height) {}
 };
 
 struct PreparedBlock {
@@ -37,14 +54,18 @@ struct PreparedBlock {
 	Hash bid;
 	Hash base_transaction_hash;
 	size_t coinbase_tx_size  = 0;
+	size_t block_header_size = 0;
 	size_t parent_block_size = 0;
-	Hash long_block_hash;    // only if context != nullptr
-	std::string error_text;  // empty when no error
+	Hash long_block_hash;  // only if passed context != nullptr
+	boost::optional<ConsensusError> error;
 
 	explicit PreparedBlock(BinaryArray &&ba, const Currency &currency, crypto::CryptoNightContext *context);
 	explicit PreparedBlock(
 	    RawBlock &&rba, const Currency &currency, crypto::CryptoNightContext *context);  // we get raw blocks from p2p
 	PreparedBlock() = default;
+
+private:
+	void prepare(const Currency &currency, crypto::CryptoNightContext *context);
 };
 
 class BlockChain {
@@ -66,30 +87,30 @@ public:
 	template<typename T>
 	void get_txs(const std::vector<Hash> &, T &) const;
 
-	std::vector<api::BlockHeader> get_tip_segment(
-	    const api::BlockHeader &prev_info, Height window, bool add_genesis) const;
+	void for_each_reversed_tip_segment(const api::BlockHeader &prev_info, Height window, bool add_genesis,
+	    std::function<void(const api::BlockHeader &header)> &&fun) const;
 
-	bool read_chain(Height height, Hash *bid) const;
+	bool get_chain(Height height, Hash *bid) const;
 	bool in_chain(Height height, Hash bid) const;
-	bool read_block(const Hash &bid, RawBlock *rb) const;
-	bool read_block(const Hash &bid, BinaryArray *block_data, RawBlock *rb) const;  // rb can be null here
-	bool has_block(const Hash &bid) const;
-	bool read_header(const Hash &bid, api::BlockHeader *info, Height hint = 0) const;
-	void fix_block_sizes(api::BlockHeader *info) const;  // TODO - remove after correct sizes are in DB
-	bool read_transaction(
+	bool in_chain(Hash bid) const;
+	bool get_block(const Hash &bid, RawBlock *rb) const;
+	bool get_block(const Hash &bid, BinaryArray *block_data, RawBlock *rb) const;  // rb can be null here
+	bool has_header(const Hash &bid) const { return read_header_fast(bid, 0) != nullptr; }
+	bool get_header(const Hash &bid, api::BlockHeader *info, Height hint = 0) const;
+	bool get_transaction(
 	    const Hash &tid, BinaryArray *binary_tx, Height *block_height, Hash *block_hash, size_t *index_in_block) const;
+	bool has_transaction(const Hash &tid) const;
 	// Modify blockchain state. bytecoin header does not contain enough info for consensus calcs, so we cannot have
 	// header chain without block chain
-	BroadcastAction add_block(const PreparedBlock &pb, api::BlockHeader *info, const std::string &source_address);
+	bool add_block(const PreparedBlock &pb, api::BlockHeader *info, const std::string &source_address);
 
 	// Facilitate sync and download
-	std::vector<Hash> get_sparse_chain() const;
-	std::vector<SWCheckpoint> get_sparse_chain(Hash start, Hash end) const;
-	std::vector<api::BlockHeader> get_sync_headers(const std::vector<Hash> &sparse_chain, size_t max_count) const;
-	std::vector<Hash> get_sync_headers_chain(
-	    const std::vector<Hash> &sparse_chain, Height *start_height, size_t max_count) const;
+	std::vector<Hash> get_sparse_chain(Height max_jump = std::numeric_limits<Height>::max()) const;
+	std::vector<HardCheckpoint> get_sparse_chain(
+	    Hash start, Hash end, Height max_jump = std::numeric_limits<Height>::max()) const;
+	std::vector<Hash> get_sync_headers_chain(const std::vector<Hash> &sparse_chain, Height *start_height,
+	    size_t max_count) const;  // throws if no common blocks
 
-	Height find_blockchain_supplement(const std::vector<Hash> &remote_block_ids) const;
 	Height get_timestamp_lower_bound_height(Timestamp) const;
 
 	void test_undo_everything(Height new_tip_height);
@@ -106,23 +127,25 @@ public:
 	std::vector<SignedCheckpoint> get_stable_checkpoints() const;
 	bool add_checkpoint(const SignedCheckpoint &checkpoint, const std::string &source_address);
 
-	void read_archive(api::bytecoind::GetArchive::Request &&req, api::bytecoind::GetArchive::Response &resp) {
+	void read_archive(api::cnd::GetArchive::Request &&req, api::cnd::GetArchive::Response &resp) {
 		m_archive.read_archive(std::move(req), resp);
 	}
-	virtual void fill_statistics(api::bytecoind::GetStatistics::Response &res) const;
+	virtual void fill_statistics(api::cnd::GetStatistics::Response &res) const;
 
 	typedef std::array<Height, 7> CheckpointDifficulty;  // size must be == m_currency.get_checkpoint_keys_count()
 protected:
+	bool has_block(const Hash &bid) const;
+
 	std::vector<Hash> m_internal_import_chain;
 	void start_internal_import();
-	void upgrade_5_to_6();  // We will perform it on next version change
 
-	virtual std::string check_standalone_consensus(
+	virtual void check_standalone_consensus(
 	    const PreparedBlock &pb, api::BlockHeader *info, const api::BlockHeader &prev_info, bool check_pow) const = 0;
-	virtual bool redo_block(const Hash &bhash, const Block &block, const api::BlockHeader &info) = 0;
-	virtual void undo_block(const Hash &bhash, const Block &block, Height height)                = 0;
-	bool redo_block(const Hash &bhash, const BinaryArray &block_data, const RawBlock &raw_block, const Block &block,
-	    const api::BlockHeader &info, const Hash &base_transaction_hash);
+	virtual void redo_block(
+	    const Hash &bhash, const Block &block, const api::BlockHeader &info)      = 0;  // throws ConsensusError
+	virtual void undo_block(const Hash &bhash, const Block &block, Height height) = 0;
+	void redo_block(const Hash &bhash, const BinaryArray &block_data, const RawBlock &raw_block, const Block &block,
+	    const api::BlockHeader &info, const Hash &base_transaction_hash);  // throws ConsensusError
 	void debug_check_transaction_invariants(const RawBlock &raw_block, const Block &block, const api::BlockHeader &info,
 	    const Hash &base_transaction_hash) const;
 	void undo_block(const Hash &bhash, const RawBlock &raw_block, const Block &block, Height height);
@@ -146,15 +169,15 @@ protected:
 private:
 	Hash m_tip_bid;
 	CumulativeDifficulty m_tip_cumulative_difficulty{};
-	Height m_tip_height = -1;
-	void read_tip();
+	Height m_tip_height = -1;  // We use overflow to 0 to apply genesis block in constructor
 	void push_chain(const api::BlockHeader &header);
 	void pop_chain(const Hash &new_tip_bid);
 	Hash read_chain(Height height) const;
 
-	mutable std::unordered_map<Hash, api::BlockHeader> header_cache;
+	mutable std::unordered_map<Hash, api::BlockHeader> m_header_cache;
 	std::deque<api::BlockHeader> m_header_tip_window;
 	// We cache recent headers for quick calculation in block windows
+	const api::BlockHeader *read_header_fast(const Hash &bid, Height hint) const;
 	api::BlockHeader read_header(const Hash &bid, Height hint = 0) const;
 
 	void store_block(const Hash &bid, const BinaryArray &block_data);
@@ -169,7 +192,7 @@ private:
 	void modify_children_counter(CumulativeDifficulty cd, const Hash &bid, int delta);
 	bool get_oldest_tip(CumulativeDifficulty *cd, Hash *bid) const;
 	bool prune_branch(CumulativeDifficulty cd, Hash bid);
-	void for_each_tip(std::function<bool(CumulativeDifficulty cd, Hash bid)> fun) const;
+	void for_each_tip(std::function<bool(CumulativeDifficulty cd, Hash bid)> &&fun) const;
 
 	static int compare(
 	    const CheckpointDifficulty &a, CumulativeDifficulty ca, const CheckpointDifficulty &b, CumulativeDifficulty cb);
@@ -185,7 +208,7 @@ private:
 		std::deque<uint8_t> votes_for_upgrade_in_voting_window;
 		Height upgrade_decided_height = 0;
 	};
-	std::map<Hash, Blod> blods;
+	std::map<Hash, Blod> m_blods;
 	void update_key_count_max_heights();
 	bool add_blod_impl(const api::BlockHeader &header);
 	bool add_blod(const api::BlockHeader &header);
@@ -193,8 +216,8 @@ private:
 
 protected:
 	void build_blods();
-	bool fill_next_block_versions(
-	    const api::BlockHeader &prev_info, bool cooperative, uint8_t *major, uint8_t *minor) const;
+	bool fill_next_block_versions(const api::BlockHeader &prev_info, bool cooperative, uint8_t *major_mm,
+	    uint8_t *major_cm, uint8_t *minor) const;
 };
 
-}  // namespace bytecoin
+}  // namespace cn

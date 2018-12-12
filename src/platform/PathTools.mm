@@ -21,9 +21,10 @@ namespace platform {
 std::string get_os_version_string() {
 	return "iOS :)"; // TODO
 }
-
-
-std::string get_default_data_directory() {
+std::string get_platform_name() {
+	return "iOS";
+}
+std::string get_default_data_directory(const std::string &cryptonote_name) {
 	//namespace fs = boost::filesystem;
 	// Windows < Vista: C:\Documents and Settings\Username\Application Data\CRYPTONOTE_NAME
 	// Windows >= Vista: C:\Users\Username\AppData\Roaming\CRYPTONOTE_NAME
@@ -41,7 +42,7 @@ std::string get_default_data_directory() {
 }
 
 std::string get_app_data_folder(const std::string & app_name) {
-	return get_default_data_directory();
+	return get_default_data_directory(app_name);
 }
 
 }

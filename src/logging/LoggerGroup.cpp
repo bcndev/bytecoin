@@ -22,4 +22,4 @@ void LoggerGroup::write(
 		}
 	}
 }
-}
+}  // namespace logging

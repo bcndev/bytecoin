@@ -10,14 +10,8 @@ namespace logging {
 
 FileLogger::FileLogger(const std::string &fullfilenamenoext, size_t max_size, Level level)
     : CommonLogger(level), initial_max_size(max_size), max_size(max_size), fullfilenamenoext(fullfilenamenoext) {
-	try {
-		file_stream = std::make_unique<platform::FileStream>(
-		    this->fullfilenamenoext + ".log", platform::FileStream::READ_WRITE_EXISTING);
-		file_stream->seek(0, SEEK_END);
-	} catch (const std::exception &) {
-		file_stream = std::make_unique<platform::FileStream>(
-		    this->fullfilenamenoext + ".log", platform::FileStream::TRUNCATE_READ_WRITE);
-	}
+	file_stream = std::make_unique<platform::FileStream>(this->fullfilenamenoext + ".log", platform::O_OPEN_ALWAYS);
+	file_stream->seek(0, SEEK_END);
 }
 
 void FileLogger::do_log_string(const std::string &message) {
@@ -58,7 +52,7 @@ void FileLogger::do_log_string(const std::string &message) {
 			return;
 		}
 		try {
-			file_stream = std::make_unique<platform::FileStream>(cur, platform::FileStream::TRUNCATE_READ_WRITE);
+			file_stream = std::make_unique<platform::FileStream>(cur, platform::O_CREATE_ALWAYS);
 			using_prev  = false;
 			max_size    = initial_max_size;
 		} catch (const std::exception &ex) {  // Will continue using old one if new one fails to open
@@ -71,4 +65,4 @@ void FileLogger::do_log_string(const std::string &message) {
 		}
 	}
 }
-}
+}  // namespace logging

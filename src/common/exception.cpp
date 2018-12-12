@@ -5,7 +5,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/core/demangle.hpp>
 
-static std::string what_impl(const std::exception &e, int level) {
+static std::string what_impl(const std::exception &e, size_t level) {
 	std::string nested_what;
 	try {
 		std::rethrow_if_nested(e);
@@ -19,9 +19,9 @@ static std::string what_impl(const std::exception &e, int level) {
 
 std::string common::demangle(const char *name) {
 	std::string str = boost::core::demangle(name);
-	boost::replace_all(str, "bytecoin::", "");
+	boost::replace_all(str, "cn::", "");
 	boost::replace_all(str, "api::walletd::", "");
-	boost::replace_all(str, "api::bytecoind::", "");
+	boost::replace_all(str, "api::cnd::", "");
 	boost::replace_all(str, "crypto::", "");
 	return str;
 }

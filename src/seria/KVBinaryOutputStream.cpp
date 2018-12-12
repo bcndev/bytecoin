@@ -12,11 +12,11 @@
 #include "common/Varint.hpp"
 
 using namespace common;
-using namespace bytecoin;
+using namespace cn;
 using namespace seria;
 
-static bool verbose_debug  = false;
-static bool verbose_tokens = false;
+static const bool verbose_debug  = false;
+static const bool verbose_tokens = false;
 
 namespace {
 
@@ -29,19 +29,20 @@ void write_pod(IOutputStream &s, const T &value) {
 
 template<class T>
 size_t pack_varint(IOutputStream &s, uint8_t type_or, size_t pv) {
-	T v = static_cast<T>(pv << 2);
+	auto v = static_cast<T>(pv << 2U);
 	v |= type_or;
 	write_pod(s, v);
-	//	s.write(&v, sizeof(T));
 	return sizeof(T);
 }
 
 void write_element_name(IOutputStream &s, common::StringView name) {
-	if (name.size() > std::numeric_limits<uint8_t>::max()) {
+	if (name.size() > std::numeric_limits<uint8_t>::max())
 		throw std::runtime_error("Element name is too long");
-	}
-
-	uint8_t len = static_cast<uint8_t>(name.size());
+	// When this happens first time (probably inside begin_map/end_map)
+	// We will have to add new BIN_KV_SERIALIZE_TYPE_OBJECT2 format with
+	// key length written like write_array_size. Unfortunately we have
+	// no way to make this long keys compatible with old format
+	auto len = static_cast<uint8_t>(name.size());
 	s.write(&len, sizeof(len));
 	s.write(name.data(), len);
 	if (verbose_debug)
@@ -51,20 +52,18 @@ void write_element_name(IOutputStream &s, common::StringView name) {
 }
 
 size_t write_array_size(IOutputStream &s, size_t val) {
-	if (val <= 63) {
+	if (val <= 63)
 		return pack_varint<uint8_t>(s, PORTABLE_RAW_SIZE_MARK_BYTE, val);
-	} else if (val <= 16383) {
+	if (val <= 16383)
 		return pack_varint<uint16_t>(s, PORTABLE_RAW_SIZE_MARK_WORD, val);
-	} else if (val <= 1073741823) {
+	if (val <= 1073741823)
 		return pack_varint<uint32_t>(s, PORTABLE_RAW_SIZE_MARK_DWORD, val);
-	} else {
-		if (val > 4611686018427387903) {  // Warning here on 32-bit platforms
-			throw std::runtime_error("failed to pack varint - too big amount");
-		}
-		return pack_varint<uint64_t>(s, PORTABLE_RAW_SIZE_MARK_INT64, val);
-	}
+	if (val > 4611686018427387903)  // Warning here on 32-bit platforms
+		throw std::runtime_error("failed to pack varint - too big amount");
+	return pack_varint<uint64_t>(s, PORTABLE_RAW_SIZE_MARK_INT64, val);
 }
-}
+
+}  // namespace
 
 KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : m_target(target) {
 	KVBinaryStorageBlockHeader hdr{
@@ -94,7 +93,7 @@ void KVBinaryOutputStream::begin_object() {
 }
 
 void KVBinaryOutputStream::end_object() {
-	assert(m_objects_stack.size());
+	invariant(!m_objects_stack.empty(), "");
 
 	auto level = std::move(m_stack.back());
 	m_stack.pop_back();
@@ -127,8 +126,9 @@ void KVBinaryOutputStream::begin_array(size_t &size, bool fixed_size) {
 		s.write(&c, 1);
 		write_array_size(s, size);
 		m_stack.back().state = State::Array;
+		// array_type is zero, so adding any element will lead to "Array elements types are non-uniform" logic error
 		if (verbose_tokens)
-			std::cout << "ARR t=" << int(BIN_KV_SERIALIZE_TYPE_OBJECT) << " c=" << size << std::endl;
+			std::cout << "ARR t=" << int(BIN_KV_SERIALIZE_TYPE_STRING) << " c=" << size << std::endl;
 	}
 }
 
@@ -164,14 +164,17 @@ void KVBinaryOutputStream::write_element_prefix(uint8_t type) {
 		write_array_size(s, level.count);
 		if (verbose_tokens)
 			std::cout << "ARR t=" << int(type) << " c=" << level.count << std::endl;
-		level.state = State::Array;
+		level.state      = State::Array;
+		level.array_type = type;
 		if (verbose_debug)
 			std::cout << "written BIN_KV_SERIALIZE_FLAG_ARRAY | type level.count=" << int(level.count) << std::endl;
 	}
+	if (level.state == State::Array && level.array_type != type)
+		throw std::logic_error("Array elements types are non-uniform");
 }
 
 common::VectorStream &KVBinaryOutputStream::stream() {
-	assert(m_objects_stack.size());
+	invariant(!m_objects_stack.empty(), "");
 	return m_objects_stack.back();
 }
 
@@ -217,14 +220,14 @@ void KVBinaryOutputStream::seria_v(bool &value) {
 	write_pod(stream(), uint8_t(value));
 }
 
-void KVBinaryOutputStream::seria_v(double &value) {
-	assert(false);  // the method is not supported for this type of serialization
-	throw std::logic_error("double serialization is not supported in KVBinaryOutputStream");
-	//	write_element_prefix(BIN_KV_SERIALIZE_TYPE_DOUBLE);
-	//	stream().write(&value, sizeof(double)); // TODO - double in binary is bug
-}
+// void KVBinaryOutputStream::seria_v(double &value) {
+//	assert(false);  // the method is not supported for this type of serialization
+//	throw std::logic_error("double serialization is not supported in KVBinaryOutputStream");
+//	write_element_prefix(BIN_KV_SERIALIZE_TYPE_DOUBLE);
+//	stream().write(&value, sizeof(double)); // TODO - double in binary is bug
+//}
 
-void KVBinaryOutputStream::seria_v(std::string &value) {
+bool KVBinaryOutputStream::seria_v(std::string &value) {
 	write_element_prefix(BIN_KV_SERIALIZE_TYPE_STRING);
 
 	auto &out = stream();
@@ -232,18 +235,21 @@ void KVBinaryOutputStream::seria_v(std::string &value) {
 	out.write(value.data(), value.size());
 	if (verbose_tokens)
 		std::cout << "\"" << value << "\"" << std::endl;
+	return true;
 }
-void KVBinaryOutputStream::seria_v(common::BinaryArray &value) {
+bool KVBinaryOutputStream::seria_v(common::BinaryArray &value) {
 	write_element_prefix(BIN_KV_SERIALIZE_TYPE_STRING);
 
 	auto &out = stream();
 	write_array_size(out, value.size());
 	out.write(value.data(), value.size());
+	return true;
 }
 
-void KVBinaryOutputStream::binary(void *value, size_t size) {
+bool KVBinaryOutputStream::binary(void *value, size_t size) {
 	write_element_prefix(BIN_KV_SERIALIZE_TYPE_STRING);
 	auto &out = stream();
 	write_array_size(out, size);
 	out.write(value, size);
+	return true;
 }

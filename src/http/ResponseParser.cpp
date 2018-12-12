@@ -19,7 +19,7 @@ void ResponseParser::reset() {
 	lowcase = Header{};
 }
 
-ResponseParser::state ResponseParser::consume(response &req, char input) {
+ResponseParser::state ResponseParser::consume(ResponseHeader &req, char input) {
 	switch (state_) {
 	case http_version_h:
 		if (input == 'H')
@@ -166,7 +166,7 @@ ResponseParser::state ResponseParser::consume(response &req, char input) {
 	}
 }
 
-bool ResponseParser::process_ready_header(response &req) {
+bool ResponseParser::process_ready_header(ResponseHeader &req) {
 	if (lowcase.name == "content-length") {
 		try {
 			req.content_length = boost::lexical_cast<decltype(req.content_length)>(lowcase.value);  // std::stoull

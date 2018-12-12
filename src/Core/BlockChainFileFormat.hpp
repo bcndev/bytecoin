@@ -12,28 +12,27 @@
 #include "CryptoNote.hpp"
 #include "platform/Files.hpp"
 
-namespace bytecoin {
+namespace cn {
 
 class BlockChainState;
-// TODO - convert all read/writes to little endian
+// TODO - convert all read/writes to explicit little endian
 class LegacyBlockChainReader {
-	const Currency &currency;
+	const Currency &m_currency;
 	std::unique_ptr<platform::FileStream> m_items_file;
 	std::unique_ptr<platform::FileStream> m_indexes_file;
 	Height m_count = 0;
 	std::vector<uint64_t> m_offsets;  // we artifically add offset of the end of file
 	void load_offsets();
 
-	std::thread th;
-	std::mutex mu;
-	std::condition_variable have_work;
-	std::condition_variable prepared_blocks_ready;
-	bool quit = false;
+	std::thread m_th;
+	std::mutex m_mu;
+	std::condition_variable m_have_work;
+	std::condition_variable m_prepared_blocks_ready;
+	bool m_quit = false;
 
-	std::map<Height, PreparedBlock> prepared_blocks;
-	size_t total_prepared_data_size = 0;
-	Height last_load_height         = 0;
-	Height next_load_height         = 0;
+	std::map<Height, PreparedBlock> m_prepared_blocks;
+	std::set<Height> m_blocks_to_load;
+	size_t m_total_prepared_data_size = 0;
 	void thread_run();
 
 public:
@@ -47,8 +46,8 @@ public:
 
 	bool import_blocks(BlockChainState *block_chain);  // return false when no more blocks remain
 
-	static bool import_blockchain2(const std::string &coin_folder, BlockChainState *block_chain,
-	    Height max_height = std::numeric_limits<Height>::max());
+	static bool import_blockchain2(const std::string &index_file_name, const std::string &item_file_name,
+	    BlockChainState *block_chain, Height max_height = std::numeric_limits<Height>::max());
 };
 
 class LegacyBlockChainWriter {
@@ -59,7 +58,8 @@ public:
 	LegacyBlockChainWriter(const std::string &index_file_name, const std::string &item_file_name, uint64_t count);
 	void write_block(const RawBlock &raw_block);
 
-	static bool export_blockchain2(const std::string &export_folder, const BlockChainState &block_chain);
+	static bool export_blockchain2(
+	    const std::string &index_file_name, const std::string &item_file_name, const BlockChainState &block_chain);
 };
 
-}  // namespace bytecoin
+}  // namespace cn

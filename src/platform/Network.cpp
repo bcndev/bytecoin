@@ -35,7 +35,7 @@ static std::pair<bool, std::string> split_ssl_address(const std::string &addr) {
 #if defined(__ANDROID__)
 #include <QSslSocket>
 
-Timer::Timer(after_handler a_handler) : a_handler(a_handler), impl(nullptr) {
+Timer::Timer(after_handler a_handler) : a_handler(std::move(a_handler)), impl(nullptr) {
 	QObject::connect(&impl, &QTimer::timeout, [this]() { this->a_handler(); });
 	impl.setSingleShot(true);
 }
@@ -47,7 +47,8 @@ void Timer::once(float after_seconds) {
 	impl.start(static_cast<int>(after_seconds * 1000.0f / get_time_multiplier_for_tests()));
 }
 
-TCPSocket::TCPSocket(RW_handler rw_handler, D_handler d_handler) : rw_handler(rw_handler), d_handler(d_handler) {}
+TCPSocket::TCPSocket(RW_handler rw_handler, D_handler d_handler)
+    : rw_handler(std::move(rw_handler)), d_handler(std::move(d_handler)) {}
 
 void TCPSocket::close() {
 	if (impl) {
@@ -74,7 +75,7 @@ bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 			    QString str;
 			    for (const auto &error : errors)
 				    str = error.errorString();
-			});
+		    });
 		QObject::connect(s.get(), &QSslSocket::encrypted, [this]() {
 			this->ready = true;
 			this->rw_handler(true, true);
@@ -92,7 +93,7 @@ bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 			    qDebug() << this->impl->errorString();
 			    this->close();
 			    this->d_handler();
-			});
+		    });
 		s->connectToHostEncrypted(QString::fromUtf8(ssl_addr.second.data(), ssl_addr.second.size()), port);
 		impl = std::move(s);
 	} else {
@@ -113,7 +114,7 @@ bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 		    [this](QAbstractSocket::SocketError err) {
 			    this->close();
 			    this->d_handler();
-			});
+		    });
 		impl->connectToHost(QString::fromUtf8(ssl_addr.second.data(), ssl_addr.second.size()), port);
 	}
 	return true;
@@ -142,7 +143,7 @@ void TCPSocket::shutdown_both() {
 #include "common/MemoryStreams.hpp"
 
 void Timer::static_once(CFRunLoopTimerRef impl, void *info) {
-	Timer *t = (Timer *)info;
+	Timer *t = reinterpret_cast<Timer *>(info);
 	t->a_handler();
 }
 
@@ -231,7 +232,7 @@ bool TCPSocket::connect(const std::string &addr, uint16_t port) {
 size_t TCPSocket::read_some(void *val, size_t count) {
 	if (!read_stream || !CFReadStreamHasBytesAvailable(read_stream))
 		return 0;
-	CFIndex bytes_read = CFReadStreamRead(read_stream, (unsigned char *)val, count);
+	CFIndex bytes_read = CFReadStreamRead(read_stream, reinterpret_cast<unsigned char *>(val), count);
 	if (bytes_read <= 0) {  // error or end of stream
 		return 0;
 	}
@@ -241,7 +242,7 @@ size_t TCPSocket::read_some(void *val, size_t count) {
 size_t TCPSocket::write_some(const void *val, size_t count) {
 	if (!write_stream || !CFWriteStreamCanAcceptBytes(write_stream))
 		return 0;
-	CFIndex bytes_written = CFWriteStreamWrite(write_stream, (const unsigned char *)val, count);
+	CFIndex bytes_written = CFWriteStreamWrite(write_stream, reinterpret_cast<unsigned char *>(val), count);
 	if (bytes_written <= 0) {  // error or end of stream
 		return 0;
 	}
@@ -251,17 +252,17 @@ size_t TCPSocket::write_some(const void *val, size_t count) {
 void TCPSocket::shutdown_both() {
 	if (!is_open())
 		return;
-	CFDataRef da = (CFDataRef)CFWriteStreamCopyProperty(write_stream, kCFStreamPropertySocketNativeHandle);
+	CFDataRef da = static_cast<CFDataRef>(CFWriteStreamCopyProperty(write_stream, kCFStreamPropertySocketNativeHandle));
 	if (!da)
 		return;
 	CFSocketNativeHandle handle;
-	CFDataGetBytes(da, CFRangeMake(0, sizeof(CFSocketNativeHandle)), (unsigned char *)&handle);
+	CFDataGetBytes(da, CFRangeMake(0, sizeof(CFSocketNativeHandle)), reinterpret_cast<unsigned char *>(&handle));
 	CFRelease(da);
 	::shutdown(handle, SHUT_RDWR);
 }
 
 void TCPSocket::read_callback(CFReadStreamRef stream, CFStreamEventType event, void *my_ptr) {
-	TCPSocket *s = (TCPSocket *)my_ptr;
+	TCPSocket *s = reinterpret_cast<TCPSocket *>(my_ptr);
 	switch (event) {
 	case kCFStreamEventHasBytesAvailable:
 		s->rw_handler(true, true);
@@ -281,7 +282,7 @@ void TCPSocket::read_callback(CFReadStreamRef stream, CFStreamEventType event, v
 }
 
 void TCPSocket::write_callback(CFWriteStreamRef stream, CFStreamEventType event, void *my_ptr) {
-	TCPSocket *s = (TCPSocket *)my_ptr;
+	TCPSocket *s = reinterpret_cast<TCPSocket *>(my_ptr);
 	switch (event) {
 	case kCFStreamEventCanAcceptBytes:
 		s->rw_handler(true, true);
@@ -479,7 +480,7 @@ public:
 		}
 	}
 	void start_timer(float after_seconds) {
-		assert(pending_wait == false);
+		// assert(pending_wait == false);
 		pending_wait = true;
 		timer.expires_from_now(boost::posix_time::milliseconds(
 		    static_cast<int>(after_seconds * 1000)));  // int because we do not know exact type
@@ -689,8 +690,8 @@ public:
 #endif
 };
 
-TCPSocket::TCPSocket(RW_handler rw_handler, D_handler d_handler)
-    : impl(std::make_shared<Impl>(this)), rw_handler(rw_handler), d_handler(d_handler) {}
+TCPSocket::TCPSocket(RW_handler &&rw_handler, D_handler &&d_handler)
+    : impl(std::make_shared<Impl>(this)), rw_handler(std::move(rw_handler)), d_handler(std::move(d_handler)) {}
 
 TCPSocket::~TCPSocket() { close(); }
 
@@ -827,9 +828,9 @@ public:
 	}
 };
 
-TCPAcceptor::TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_handler, const std::string &ssl_pem_file,
+TCPAcceptor::TCPAcceptor(const std::string &addr, uint16_t port, A_handler &&a_handler, const std::string &ssl_pem_file,
     const std::string &ssl_certificate_password) try : impl(std::make_shared<Impl>(this, !ssl_pem_file.empty())),
-                                                       a_handler(a_handler) {
+                                                       a_handler(std::move(a_handler)) {
 
 #if platform_USE_SSL
 	if (impl->ssl) {
@@ -838,7 +839,7 @@ TCPAcceptor::TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_han
 		impl->ssl_context->set_password_callback(
 		    [ssl_certificate_password](std::size_t max_length, ssl::context::password_purpose purpose) -> std::string {
 			    return ssl_certificate_password;
-			});
+		    });
 		impl->ssl_context->use_certificate_chain_file(ssl_pem_file);
 		impl->ssl_context->use_private_key_file(ssl_pem_file, ssl::context::pem);
 		//	impl->ssl_context.use_tmp_dh_file("dh512.pem");
@@ -970,8 +971,8 @@ public:
 	}
 };
 
-UDPMulticast::UDPMulticast(const std::string &addr, uint16_t port, P_handler p_handler)
-    : impl(std::make_shared<Impl>(this)), p_handler(p_handler) {
+UDPMulticast::UDPMulticast(const std::string &addr, uint16_t port, P_handler &&p_handler)
+    : impl(std::make_shared<Impl>(this)), p_handler(std::move(p_handler)) {
 	try {
 		// Multiple processes can only bind to multicast socket if listen_ad is multicast addr
 		boost::asio::ip::address listen_ad = boost::asio::ip::address::from_string(addr);
@@ -991,11 +992,11 @@ UDPMulticast::UDPMulticast(const std::string &addr, uint16_t port, P_handler p_h
 		impl->socket.set_option(boost::asio::ip::multicast::join_group(group_ad));
 		impl->start_read();
 
-		auto local_addresses = TCPAcceptor::local_addresses(true, false);
-		for (const auto &la : local_addresses)
-			std::cout << "UDPMulticast::UDPMulticast listening on local address " << la << std::endl;
-	} catch (const std::exception &ex) {
-		std::cout << "UDPMulticast::UDPMulticast exception " << common::what(ex) << std::endl;
+		//		auto local_addresses = TCPAcceptor::local_addresses(true, false);
+		//		for (const auto &la : local_addresses)
+		//			std::cout << "UDPMulticast::UDPMulticast listening on local address " << la << std::endl;
+	} catch (const std::exception &) {
+		//		std::cout << "UDPMulticast::UDPMulticast exception " << common::what(ex) << std::endl;
 	}
 }
 UDPMulticast::~UDPMulticast() { impl->close(); }
@@ -1023,9 +1024,9 @@ void UDPMulticast::send(const std::string &addr, uint16_t port, const void *data
 			if (local_addresses.empty())  // Send on default gateway
 				socket.send_to(boost::asio::buffer(data, size), ep);
 		}
-	} catch (const std::exception &ex) {
-		std::cout << "UDPMulticast::send exception to addr=" << addr << " port=" << port
-		          << " error=" << common::what(ex) << std::endl;
+	} catch (const std::exception &) {
+		//		std::cout << "UDPMulticast::send exception to addr=" << addr << " port=" << port
+		//		          << " error=" << common::what(ex) << std::endl;
 	}
 }
 

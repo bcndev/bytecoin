@@ -13,8 +13,8 @@
 #include "TargetConditionals.h"
 #endif
 
-static void (*const extra_hashes[4])(const void *, size_t, struct CHash *) = {
-    hash_extra_blake, hash_extra_groestl, hash_extra_jh, hash_extra_skein};
+static void (*const extra_hashes[4])(const void *, size_t, struct cryptoHash *) = {
+    crypto_hash_extra_blake, crypto_hash_extra_groestl, crypto_hash_extra_jh, crypto_hash_extra_skein};
 
 #define MEMORY (1 << 21) /* 2 MiB */
 #define ITER (1 << 20)
@@ -83,7 +83,7 @@ static void xor_blocks(uint8_t *a, const uint8_t *b) {
 
 #pragma pack(push, 1)
 union cn_slow_hash_state {
-	struct keccak_state hs;
+	struct cryptoKeccakState hs;
 	struct {
 		uint8_t k[64];
 		uint8_t init[INIT_SIZE_BYTE];
@@ -91,7 +91,8 @@ union cn_slow_hash_state {
 };
 #pragma pack(pop)
 
-void cn_slow_hash_platform_independent(void *scratchpad, const void *data, size_t length, struct CHash *hash) {
+void crypto_cn_slow_hash_platform_independent(
+    void *scratchpad, const void *data, size_t length, struct cryptoHash *hash) {
 	uint8_t *long_state = (uint8_t *)scratchpad;
 	union cn_slow_hash_state state;
 	uint8_t text[INIT_SIZE_BYTE];
@@ -103,7 +104,7 @@ void cn_slow_hash_platform_independent(void *scratchpad, const void *data, size_
 	uint8_t aes_key[AES_KEY_SIZE];
 	OAES_CTX *aes_ctx;
 
-	keccak_into_state(data, length, &state.hs);
+	crypto_keccak_into_state(data, length, &state.hs);
 	memcpy(text, state.init, INIT_SIZE_BYTE);
 	memcpy(aes_key, state.hs.b, AES_KEY_SIZE);
 	aes_ctx = oaes_alloc();
@@ -156,15 +157,15 @@ void cn_slow_hash_platform_independent(void *scratchpad, const void *data, size_
 		}
 	}
 	memcpy(state.init, text, INIT_SIZE_BYTE);
-	keccak_permutation(&state.hs);
+	crypto_keccak_permutation(&state.hs);
 	extra_hashes[state.hs.b[0] & 3](&state, 200, hash);
 	oaes_free(&aes_ctx);
 }
 
 #if defined(__PPC__) || TARGET_OS_IPHONE || \
     defined(__ANDROID__)  // We need if !x86, but no portable way to express that
-void cn_slow_hash(void *scratchpad, const void *data, size_t length, void *hash) {
-	cn_slow_hash_platform_independent(scratchpad, data, length, hash);
+void crypto_cn_slow_hash(void *scratchpad, const void *data, size_t length, struct cryptoHash *hash) {
+	crypto_cn_slow_hash_platform_independent(scratchpad, data, length, hash);
 }
 
 #endif  // TARGET_OS_IPHONE

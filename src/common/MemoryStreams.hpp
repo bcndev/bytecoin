@@ -16,7 +16,7 @@ public:
 	MemoryInputStream(const void *buffer, size_t buffer_size);
 	size_t size() const { return buffer_size - in_position; }
 	bool empty() const { return size() == 0; }
-	virtual size_t read_some(void *data, size_t size) override;
+	size_t read_some(void *data, size_t size) override;
 
 private:
 	const char *buffer;
@@ -27,7 +27,7 @@ private:
 // Cannot be implemented with MemoryInputStream because string might be reallocated between reads (for rw stream)
 class StringInputStream : public IInputStream, private common::Nocopy {
 public:
-	StringInputStream(const std::string &in) : in(&in), in_position(0) {}
+	explicit StringInputStream(const std::string &in) : in(&in), in_position(0) {}
 	size_t read_some(void *data, size_t size) override;
 	size_t size() const { return in->size() - in_position; }
 	bool empty() const { return size() == 0; }
@@ -40,7 +40,7 @@ protected:
 
 class StringOutputStream : public IOutputStream {
 public:
-	StringOutputStream(std::string &out) : out(&out) {}
+	explicit StringOutputStream(std::string &out) : out(&out) {}
 	size_t write_some(const void *data, size_t size) override;
 
 protected:
@@ -82,7 +82,7 @@ private:
 // Cannot be implemented with MemoryInputStream because string might be reallocated between reads (for rw stream)
 class VectorInputStream : public IInputStream, private common::Nocopy {
 public:
-	VectorInputStream(const BinaryArray &in) : in(&in), in_position(0) {}
+	explicit VectorInputStream(const BinaryArray &in) : in(&in), in_position(0) {}
 
 	size_t read_some(void *data, size_t size) override;
 	size_t size() const { return in->size() - in_position; }
@@ -142,11 +142,11 @@ class CircularBuffer : public IInputStream, public IOutputStream {
 	size_t write_pos;  // read_pos..read_pos + impl.size
 public:
 	explicit CircularBuffer(size_t si) : impl(si), read_pos(0), write_pos(0) {}
-	virtual size_t read_some(void *data, size_t size) override;
+	size_t read_some(void *data, size_t size) override;
 	size_t size() const { return read_count() + read_count2(); }
 	bool empty() const { return size() == 0; }
 
-	virtual size_t write_some(const void *data, size_t size) override;
+	size_t write_some(const void *data, size_t size) override;
 	size_t capacity() const { return write_count() + write_count2(); }
 	bool full() const { return capacity() == 0; }
 
@@ -173,4 +173,4 @@ public:
 	void copy_from(IInputStream &in);
 	size_t copy_to(IOutputStream &out, size_t max_count = std::numeric_limits<size_t>::max());
 };
-}
+}  // namespace common

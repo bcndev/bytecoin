@@ -2,7 +2,6 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Agent.hpp"
-#include <assert.h>
 #include <algorithm>
 #include <iostream>
 #include <sstream>
@@ -13,12 +12,12 @@ using namespace http;
 
 static const int REQUEST_TIMEOUT = 30;
 
-Agent::Connection::Connection(handler r_handler, handler d_handler)
+Agent::Connection::Connection(handler &&r_handler, handler &&d_handler)
     : buffer(8192)
     , receiving_body(false)
     , waiting_write_response(false)
-    , r_handler(r_handler)
-    , d_handler(d_handler)
+    , r_handler(std::move(r_handler))
+    , d_handler(std::move(d_handler))
     , sock([this](bool, bool) { advance_state(true); }, std::bind(&Connection::on_disconnect, this))
     , keep_alive(true) {}
 
@@ -41,12 +40,12 @@ void Agent::Connection::clear() {
 	responses.clear();
 	receiving_body = false;
 	receiving_body_stream.clear();
-	request = http::response{};
+	request = http::ResponseHeader{};
 
 	sock.close();
 }
 
-bool Agent::Connection::read_next(ResponseData &req) {
+bool Agent::Connection::read_next(ResponseBody &req) {
 	if (waiting_write_response)
 		return false;
 	if (!receiving_body)
@@ -57,7 +56,7 @@ bool Agent::Connection::read_next(ResponseData &req) {
 	req.body = std::move(receiving_body_stream.buffer());
 	receiving_body_stream.clear();
 	req.r   = std::move(request);
-	request = http::response{};
+	request = http::ResponseHeader{};
 	parser.reset();
 	receiving_body         = false;
 	waiting_write_response = true;
@@ -77,7 +76,7 @@ void Agent::Connection::write() {
 	}
 }
 
-void Agent::Connection::write(RequestData &&response) {
+void Agent::Connection::write(RequestBody &&response) {
 	invariant(waiting_write_response, "Client unexpected write");
 	waiting_write_response = false;
 	invariant(response.r.http_version_major, "Someone forgot to set version, method, status or url");
@@ -130,7 +129,9 @@ Agent::Agent(const std::string &address, uint16_t port)
     , client(std::bind(&Agent::on_client_response, this), std::bind(&Agent::on_client_disconnect, this))
     , reconnect_timer(std::bind(&Agent::on_reconnect_timer, this)) {}
 
-Agent::~Agent() { assert(!sent_request); }
+Agent::~Agent() {
+	//	assert(!sent_request);
+}
 
 void Agent::set_request(Request *req) {
 	invariant(!sent_request, "Agent is busy with previous request");
@@ -140,7 +141,7 @@ void Agent::set_request(Request *req) {
 		reconnect_timer.once(10);
 		return;
 	}
-	client.write(RequestData(sent_request->req));
+	client.write(RequestBody(sent_request->req));
 }
 
 void Agent::cancel_request(Request *req) {
@@ -152,7 +153,7 @@ void Agent::cancel_request(Request *req) {
 }
 
 void Agent::on_client_response() {
-	ResponseData response;
+	ResponseBody response;
 	if (client.read_next(response)) {
 		auto was_sent_request = sent_request;
 		sent_request          = nullptr;
@@ -199,18 +200,18 @@ void Agent::on_reconnect_timer() {
 		reconnect_timer.once(10);
 		return;
 	}
-	client.write(RequestData(sent_request->req));
+	client.write(RequestBody(sent_request->req));
 }
 
-Request::Request(Agent &agent, RequestData &&req, R_handler r_handler, E_handler e_handler)
-    : agent(agent), req(std::move(req)), r_handler(r_handler), e_handler(e_handler) {
+Request::Request(Agent &agent, RequestBody &&req, R_handler &&r_handler, E_handler &&e_handler)
+    : agent(agent), req(std::move(req)), r_handler(std::move(r_handler)), e_handler(std::move(e_handler)) {
 	std::string host = agent.address;
 	const std::string prefix1("https://");
 	const std::string prefix2("ssl://");
 	if (host.find(prefix1) == 0)
 		host = host.substr(prefix1.size());
 	else if (host.find(prefix2) == 0)
-		host         = host.substr(prefix2.size());
+		host = host.substr(prefix2.size());
 	this->req.r.host = host;
 	agent.set_request(this);
 }

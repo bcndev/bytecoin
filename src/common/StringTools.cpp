@@ -30,8 +30,8 @@ BinaryArray as_binary_array(const std::string &data) {
 }
 
 uint8_t from_hex(char character) {
-	const unsigned char uc = static_cast<unsigned char>(character);
-	uint8_t value          = character_values[uc];
+	auto uc       = static_cast<unsigned char>(character);
+	uint8_t value = character_values[uc];
 	if (value > 0x0f)
 		throw std::runtime_error(
 		    "from_hex: invalid character '" + std::string({character}) + "', character code " + common::to_string(uc));
@@ -49,8 +49,8 @@ void from_hex_or_throw(const std::string &text, void *data, size_t buffer_size) 
 	if (text.size() != buffer_size * 2)
 		throw std::runtime_error("from_hex: Wrong string size (" + common::to_string(text.size()) + ") must be " +
 		                         common::to_string(buffer_size * 2));
-	for (size_t i                       = 0; i < buffer_size; ++i)
-		static_cast<uint8_t *>(data)[i] = from_hex(text[i * 2]) << 4 | from_hex(text[i * 2 + 1]);
+	for (size_t i = 0; i < buffer_size; ++i)
+		static_cast<uint8_t *>(data)[i] = (from_hex(text[i * 2]) << 4) | from_hex(text[i * 2 + 1]);
 }
 
 bool from_hex(const std::string &text, void *data, size_t buffer_size) {
@@ -70,11 +70,11 @@ BinaryArray from_hex(const std::string &text) {
 		throw std::runtime_error("from_hex: invalid string size");
 	BinaryArray data(text.size() / 2);
 	for (size_t i = 0; i < data.size(); ++i)
-		data[i]   = from_hex(text[i * 2]) << 4 | from_hex(text[i * 2 + 1]);
+		data[i] = from_hex(text[i * 2]) << 4 | from_hex(text[i * 2 + 1]);
 	return data;
 }
 
-bool from_hex(const std::string &text, BinaryArray &data) {
+bool from_hex(const std::string &text, BinaryArray *data) {
 	if (text.size() % 2 != 0)
 		return false;
 	BinaryArray result(text.size() / 2);
@@ -84,7 +84,7 @@ bool from_hex(const std::string &text, BinaryArray &data) {
 			return false;
 		result[i] = value1 << 4 | value2;
 	}
-	data = std::move(result);
+	*data = std::move(result);
 	return true;
 }
 
@@ -131,4 +131,4 @@ std::string extract(const std::string &text, char delimiter, size_t &offset) {
 		return text.substr(offset);
 	}
 }
-}
+}  // namespace common

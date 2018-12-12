@@ -2,13 +2,14 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Ipv4Address.hpp"
-#include <boost/lexical_cast.hpp>
 #include <stdexcept>
 #include "StringTools.hpp"
 
 namespace common {
 
-std::string ip_address_to_string(BinaryArray ip) {
+std::string NetworkAddress::to_string() const { return common::ip_address_and_port_to_string(ip, port); }
+
+std::string ip_address_to_string(const BinaryArray &ip) {
 	if (ip.size() != 4)
 		return "?.?.?.?";
 	char buf[16]{};
@@ -17,7 +18,7 @@ std::string ip_address_to_string(BinaryArray ip) {
 	return std::string(buf);
 }
 
-uint32_t ip_address_to_legacy(BinaryArray ip) {
+uint32_t ip_address_to_legacy(const BinaryArray &ip) {
 	if (ip.size() != 4)
 		return 0;
 	return (static_cast<uint32_t>(ip.data()[0])) | (static_cast<uint32_t>(ip.data()[1]) << 8) |
@@ -28,7 +29,7 @@ BinaryArray ip_address_from_legacy(uint32_t ip) {
 	    static_cast<uint8_t>(ip >> 24)};
 }
 
-std::string ip_address_and_port_to_string(BinaryArray ip, uint16_t port) {
+std::string ip_address_and_port_to_string(const BinaryArray &ip, uint16_t port) {
 	if (ip.size() != 4)
 		return "?.?.?.?";
 	char buf[24]{};
@@ -44,7 +45,7 @@ bool parse_ip_address(const std::string &addr, BinaryArray *ip) {
 		return false;
 	}
 
-	for (int i = 0; i < 4; ++i) {
+	for (size_t i = 0; i < 4; ++i) {
 		if (v[i] > 0xff) {
 			return false;
 		}
@@ -64,7 +65,7 @@ bool parse_ip_address_and_port(const std::string &addr, BinaryArray *ip, uint16_
 		return false;
 	}
 
-	for (int i = 0; i < 4; ++i) {
+	for (size_t i = 0; i < 4; ++i) {
 		if (v[i] > 0xff) {
 			return false;
 		}
@@ -74,7 +75,7 @@ bool parse_ip_address_and_port(const std::string &addr, BinaryArray *ip, uint16_
 	    static_cast<uint8_t>(v[0]), static_cast<uint8_t>(v[1]), static_cast<uint8_t>(v[2]), static_cast<uint8_t>(v[3])};
 	if (local_port > 65535)
 		return false;
-	*port = local_port;
+	*port = static_cast<uint16_t>(local_port);
 	return true;
 }
 
@@ -87,7 +88,7 @@ bool parse_ip_address_and_port(const std::string &addr, std::string *ip, uint16_
 	return true;
 }
 
-int get_private_network_prefix(BinaryArray ip) {
+int get_private_network_prefix(const BinaryArray &ip) {
 	if (ip.size() != 4)
 		return 6;
 	if (ip.data()[0] == 127)  // 127.x.x.x
@@ -100,4 +101,4 @@ int get_private_network_prefix(BinaryArray ip) {
 		return 172;
 	return 0;
 }
-}
+}  // namespace common

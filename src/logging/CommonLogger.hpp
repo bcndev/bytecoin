@@ -26,4 +26,4 @@ protected:
 	CommonLogger(Level level);
 	virtual void do_log_string(const std::string &message);
 };
-}
+}  // namespace logging

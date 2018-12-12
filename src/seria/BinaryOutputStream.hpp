@@ -10,34 +10,33 @@ namespace seria {
 
 class BinaryOutputStream : public ISeria {
 public:
-	BinaryOutputStream(common::IOutputStream &strm) : stream(strm) {}
-	virtual ~BinaryOutputStream() {}
+	explicit BinaryOutputStream(common::IOutputStream &strm) : stream(strm) {}
 
-	virtual bool is_input() const override { return false; }
+	bool is_input() const override { return false; }
 
-	virtual void begin_object() override {}
-	virtual bool object_key(common::StringView, bool optional = false) override { return true; }
-	virtual void end_object() override {}
+	void begin_object() override {}
+	bool object_key(common::StringView, bool optional) override { return true; }
+	void end_object() override {}
 
-	virtual void begin_array(size_t &size, bool fixed_size = false) override;
-	virtual void end_array() override {}
+	void begin_array(size_t &size, bool fixed_size) override;
+	void end_array() override {}
 
-	virtual void begin_map(size_t &size) override;
-	virtual void next_map_key(std::string &name) override;
-	virtual void end_map() override {}
+	void begin_map(size_t &size) override;
+	void next_map_key(std::string &name) override;
+	void end_map() override {}
 
-	virtual void seria_v(uint8_t &value) override;
-	virtual void seria_v(int16_t &value) override;
-	virtual void seria_v(uint16_t &value) override;
-	virtual void seria_v(int32_t &value) override;
-	virtual void seria_v(uint32_t &value) override;
-	virtual void seria_v(int64_t &value) override;
-	virtual void seria_v(uint64_t &value) override;
-	virtual void seria_v(double &value) override;
-	virtual void seria_v(bool &value) override;
-	virtual void seria_v(std::string &value) override;
-	virtual void seria_v(common::BinaryArray &value) override;
-	virtual void binary(void *value, size_t size) override;
+	void seria_v(uint8_t &value) override;
+	void seria_v(int16_t &value) override;
+	void seria_v(uint16_t &value) override;
+	void seria_v(int32_t &value) override;
+	void seria_v(uint32_t &value) override;
+	void seria_v(int64_t &value) override;
+	void seria_v(uint64_t &value) override;
+	//	void seria_v(double &value) override;
+	void seria_v(bool &value) override;
+	bool seria_v(std::string &value) override;
+	bool seria_v(common::BinaryArray &value) override;
+	bool binary(void *value, size_t size) override;
 
 private:
 	common::IOutputStream &stream;
@@ -70,4 +69,4 @@ size_t binary_size(const T &obj, Context... context) {
 	ser(const_cast<T &>(obj), ba, context...);
 	return result.size();
 }
-}
+}  // namespace seria

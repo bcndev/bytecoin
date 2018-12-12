@@ -20,7 +20,7 @@ void RequestParser::reset() {
 	lowcase = Header{};
 }
 
-RequestParser::state RequestParser::consume(request &req, char input) {
+RequestParser::state RequestParser::consume(RequestHeader &req, char input) {
 	switch (state_) {
 	case method_start:
 		if (!is_char(input) || is_ctl(input) || is_tspecial(input))
@@ -158,7 +158,7 @@ RequestParser::state RequestParser::consume(request &req, char input) {
 	}
 }
 
-bool RequestParser::process_ready_header(request &req) {
+bool RequestParser::process_ready_header(RequestHeader &req) {
 	if (lowcase.name == "content-length") {
 		try {
 			req.content_length = boost::lexical_cast<decltype(req.content_length)>(lowcase.value);  // std::stoull

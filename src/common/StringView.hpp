@@ -20,11 +20,13 @@ public:
 
 	StringView() : m_data(nullptr), m_size(0) {}
 
-	StringView(const Char *data, Size size) : m_data(data), m_size(size) { assert(m_data != nullptr || m_size == 0); }
+	StringView(const Char *data, Size size) : m_data(data), m_size(size) {
+		// assert(m_data != nullptr || m_size == 0);
+	}
 
 	template<Size size>
 	StringView(const Char (&data)[size]) : m_data(data), m_size(size - 1) {
-		assert(m_data != nullptr || m_size == 0);
+		// assert(m_data != nullptr || m_size == 0);
 	}
 
 	StringView(const std::string &string) : m_data(string.data()), m_size(string.size()) {}
@@ -36,7 +38,7 @@ public:
 	bool empty() const { return m_size == 0; }
 
 	Char operator[](Size index) const {
-		assert(index < m_size);
+		//		assert(index < m_size);
 		return *(m_data + index);
 	}
 	Char at(Size index) const;
@@ -55,4 +57,4 @@ protected:
 	const Char *m_data;
 	Size m_size;
 };
-}
+}  // namespace common

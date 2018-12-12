@@ -13,7 +13,7 @@
 #include "common/Varint.hpp"
 
 using namespace common;
-using namespace bytecoin;
+using namespace cn;
 using namespace seria;
 
 namespace {
@@ -37,8 +37,8 @@ JsonValue read_integer_json(common::IInputStream &s) {
 	return read_pod_json<T, JsonT>(s);
 }
 
-size_t read_varint(common::IInputStream &s) {
-	uint8_t b         = read<uint8_t>(s);
+size_t read_kv_varint(common::IInputStream &s) {
+	uint8_t b         = s.read_byte();
 	uint8_t size_mask = b & PORTABLE_RAW_SIZE_MARK_MASK;
 	size_t bytes_left = 0;
 
@@ -57,30 +57,29 @@ size_t read_varint(common::IInputStream &s) {
 		break;
 	}
 
-	size_t value = b;
+	uint64_t value = b;
 
 	for (size_t i = 1; i <= bytes_left; ++i) {
-		size_t n = read<uint8_t>(s);
+		size_t n = s.read_byte();
 		value |= n << (i * 8);
 	}
 
 	value >>= 2;
-	return value;
+	return integer_cast<size_t>(value);
 }
 
 std::string read_string(common::IInputStream &s) {
-	auto size = read_varint(s);
+	auto size = read_kv_varint(s);
 	std::string str;
-	common::read(s, str, size);
+	s.read(str, size);
 	return str;
 }
 
 JsonValue read_string_json(common::IInputStream &s) { return JsonValue(read_string(s)); }
 
 void read_name(common::IInputStream &s, std::string &name) {
-	uint8_t len;
-	s.read(&len, 1);
-	common::read(s, name, len);
+	uint8_t len = s.read_byte();  // TODO - what if name size >?
+	s.read(name, len);
 }
 
 JsonValue load_value(common::IInputStream &stream, uint8_t type);
@@ -90,7 +89,7 @@ JsonValue load_array(common::IInputStream &stream, uint8_t item_type);
 
 JsonValue load_object(common::IInputStream &stream) {
 	JsonValue sec(JsonValue::OBJECT);
-	size_t count = read_varint(stream);
+	size_t count = read_kv_varint(stream);
 	std::string name;
 
 	while (count--) {
@@ -120,14 +119,13 @@ JsonValue load_value(common::IInputStream &stream, uint8_t type) {
 	case BIN_KV_SERIALIZE_TYPE_UINT8:
 		return read_integer_json<uint8_t, uint64_t>(stream);
 	case BIN_KV_SERIALIZE_TYPE_DOUBLE: {
-		assert(false);  // the method is not supported for this type of serialization
-		throw std::logic_error("double serialization is not supported in KVBinaryInputStream");
+		throw std::logic_error("KVBinaryInputStream double serialization is not supported in KVBinaryInputStream");
 		//		double dv = 0; // TODO - double as binary is a BUG
 		//		stream.read(&dv, sizeof(dv));
 		//		return dv;
 	}
 	case BIN_KV_SERIALIZE_TYPE_BOOL:
-		return JsonValue(read<uint8_t>(stream) != 0);
+		return JsonValue(stream.read_byte() != 0);
 	case BIN_KV_SERIALIZE_TYPE_STRING:
 		return read_string_json(stream);
 	case BIN_KV_SERIALIZE_TYPE_OBJECT:
@@ -135,8 +133,7 @@ JsonValue load_value(common::IInputStream &stream, uint8_t type) {
 	case BIN_KV_SERIALIZE_TYPE_ARRAY:
 		return load_array(stream, type);
 	default:
-		throw std::runtime_error("Unknown data type");
-		break;
+		throw std::runtime_error("KVBinaryInputStream Unknown data type");
 	}
 }
 
@@ -154,14 +151,14 @@ JsonValue load_entry(common::IInputStream &stream) {
 
 JsonValue load_array(common::IInputStream &stream, uint8_t item_type) {
 	JsonValue arr(JsonValue::ARRAY);
-	size_t count = read_varint(stream);
+	size_t count = read_kv_varint(stream);
 
 	while (count--) {
 		if (item_type == BIN_KV_SERIALIZE_TYPE_ARRAY) {
 			uint8_t type;
 			stream.read(&type, 1);
 			if ((type & BIN_KV_SERIALIZE_FLAG_ARRAY) == 0)
-				throw std::runtime_error("Incorrect array of array encoding");
+				throw std::runtime_error("KVBinaryInputStream Incorrect array of array encoding");
 			type &= ~BIN_KV_SERIALIZE_FLAG_ARRAY;
 
 			arr.push_back(load_array(stream, type));
@@ -178,39 +175,36 @@ JsonValue parse_binary(common::IInputStream &stream) {
 	hdr.m_signature_b = read_pod<uint32_t>(stream);
 	stream.read(&hdr.m_ver, 1);
 
-	if (hdr.m_signature_a != PORTABLE_STORAGE_SIGNATUREA || hdr.m_signature_b != PORTABLE_STORAGE_SIGNATUREB) {
-		throw std::runtime_error("Invalid binary storage signature");
-	}
-
-	if (hdr.m_ver != PORTABLE_STORAGE_FORMAT_VER) {
-		throw std::runtime_error("Unknown binary storage format version");
-	}
+	if (hdr.m_signature_a != PORTABLE_STORAGE_SIGNATUREA || hdr.m_signature_b != PORTABLE_STORAGE_SIGNATUREB)
+		throw std::runtime_error("KVBinaryInputStream invalid binary storage signature");
+	if (hdr.m_ver != PORTABLE_STORAGE_FORMAT_VER)
+		throw std::runtime_error("KVBinaryInputStream unknown binary storage format version");
 
 	return load_object(stream);
 }
-}
+}  // namespace
 
-KVBinaryInputStream::KVBinaryInputStream(common::IInputStream &strm) : JsonInputStreamValue(value_storage) {
+KVBinaryInputStream::KVBinaryInputStream(common::IInputStream &strm) : JsonInputStreamValue(value_storage, true) {
 	// We init parent with & of value_storage, then set storage
 	value_storage = parse_binary(strm);
 }
 
-void KVBinaryInputStream::seria_v(common::BinaryArray &value) {
+bool KVBinaryInputStream::seria_v(common::BinaryArray &value) {
 	std::string str;
-	seria_v(str);
+	if (!seria_v(str))
+		return false;
 	value.assign(str.data(), str.data() + str.size());
+	return true;
 }
 
-void KVBinaryInputStream::binary(void *value, size_t size) {
-	if (size == 0)
-		return;
+bool KVBinaryInputStream::binary(void *value, size_t size) {
+	if (size == 0)  // This is important case, do not remove
+		return true;
 	std::string str;
-
-	ser(str, *this);
-
-	if (str.size() != size) {
-		throw std::runtime_error("Binary block size mismatch");
-	}
-
+	if (!seria_v(str))
+		return false;
+	if (str.size() != size)
+		throw std::runtime_error("KVBinaryInputStream binary value size mismatch");
 	memcpy(value, str.data(), size);
+	return true;
 }

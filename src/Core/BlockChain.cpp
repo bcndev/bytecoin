@@ -3,7 +3,6 @@
 
 #include "BlockChain.hpp"
 
-#include <boost/lexical_cast.hpp>
 #include <iostream>
 #include "Config.hpp"
 #include "CryptoNoteTools.hpp"
@@ -17,10 +16,10 @@
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
-using namespace bytecoin;
+using namespace cn;
 using namespace platform;
 
-const std::string BlockChain::version_current = "5";
+const std::string BlockChain::version_current = "6";
 // We increment when making incompatible changes to indices.
 
 // We use suffixes so all keys related to the same block are close to each other in DB
@@ -28,7 +27,7 @@ static const std::string BLOCK_PREFIX             = "b";
 static const std::string BLOCK_SUFFIX             = "b";
 static const std::string HEADER_PREFIX            = "b";
 static const std::string HEADER_SUFFIX            = "h";
-static const std::string TRANSATION_PREFIX        = "t";
+static const std::string TRANSACTION_PREFIX       = "t";
 static const std::string TIP_CHAIN_PREFIX         = "c";
 static const std::string TIMESTAMP_BLOCK_PREFIX   = "T";
 static const std::string CHECKPOINT_PREFIX_STABLE = "CS";
@@ -39,63 +38,25 @@ static const std::string CD_TIPS_PREFIX  = "x-tips/";
 // We store bid->children counter, with counter=1 default (absent from index)
 // We store cumulative_difficulty->bid for bids with no children
 
-static const size_t COMMIT_EVERY_N_BLOCKS = 50000;  // We do not want to create too large DB transactions
-
-static const std::string delete_blockchain_message = "database corrupted, please delete ";
-
-bool Block::from_raw_block(const RawBlock &raw_block) {
-	try {
-		BlockTemplate &bheader = header;
-		seria::from_binary(bheader, raw_block.block);
-		transactions.resize(0);
-		transactions.reserve(raw_block.transactions.size());
-		for (auto &&raw_transaction : raw_block.transactions) {
-			Transaction transaction;
-			seria::from_binary(transaction, raw_transaction);
-			transactions.push_back(std::move(transaction));
-		}
-	} catch (...) {
-		return false;
+Block::Block(const RawBlock &rb) {
+	BlockTemplate &bheader = header;
+	seria::from_binary(bheader, rb.block);
+	transactions.reserve(rb.transactions.size());
+	for (auto &&raw_transaction : rb.transactions) {
+		Transaction transaction;
+		seria::from_binary(transaction, raw_transaction);
+		transactions.push_back(std::move(transaction));
 	}
-	return true;
-}
-
-bool Block::to_raw_block(RawBlock &raw_block) const {
-	try {
-		const BlockTemplate &bheader = header;
-		raw_block.block              = seria::to_binary(bheader);
-		raw_block.transactions.resize(0);
-		raw_block.transactions.reserve(transactions.size());
-		for (auto &&transaction : transactions) {
-			BinaryArray raw_transaction = seria::to_binary(transaction);
-			raw_block.transactions.push_back(std::move(raw_transaction));
-		}
-	} catch (...) {
-		return false;
-	}
-	return true;
 }
 
 PreparedBlock::PreparedBlock(BinaryArray &&ba, const Currency &currency, crypto::CryptoNightContext *context)
     : block_data(std::move(ba)) {
 	try {
 		seria::from_binary(raw_block, block_data);
-		if (!block.from_raw_block(raw_block)) {
-			error_text = "from_raw_block failed";
-			return;
-		}
-		auto body_proxy = get_body_proxy_from_template(block.header);
-		bid             = bytecoin::get_block_hash(block.header, body_proxy);
-		if (block.header.is_merge_mined())
-			parent_block_size = seria::binary_size(block.header.parent_block);
-		coinbase_tx_size      = seria::binary_size(block.header.base_transaction);
-		base_transaction_hash = get_transaction_hash(block.header.base_transaction);
-		if (context) {
-			auto ba         = currency.get_block_long_hashing_data(block.header, body_proxy);
-			long_block_hash = context->cn_slow_hash(ba.data(), ba.size());
-		}
+		prepare(currency, context);
 	} catch (const std::exception &ex) {
-		error_text = common::what(ex);
+		error = ConsensusError{common::what(ex)};
+		return;
 	}
 }
 
@@ -103,28 +64,43 @@ PreparedBlock::PreparedBlock(RawBlock &&rba, const Currency &currency, crypto::C
     : raw_block(rba) {
 	try {
 		block_data = seria::to_binary(raw_block);
-		if (!block.from_raw_block(raw_block)) {
-			error_text = "from_raw_block failed";
+		prepare(currency, context);
+	} catch (const std::exception &ex) {
+		error = ConsensusError{common::what(ex)};
+		return;
+	}
+}
+
+void PreparedBlock::prepare(const Currency &currency, crypto::CryptoNightContext *context) {
+	block           = Block{raw_block};
+	auto body_proxy = get_body_proxy_from_template(block.header);
+	bid             = cn::get_block_hash(block.header, body_proxy);
+	if (block.header.is_merge_mined())
+		parent_block_size = seria::binary_size(block.header.root_block);
+	coinbase_tx_size      = seria::binary_size(block.header.base_transaction);
+	block_header_size     = seria::binary_size(static_cast<BlockHeader>(block.header));
+	base_transaction_hash = get_transaction_hash(block.header.base_transaction);
+	if (context) {
+		auto ba         = currency.get_block_long_hashing_data(block.header, body_proxy);
+		long_block_hash = context->cn_slow_hash(ba.data(), ba.size());
+	}
+	if (block.header.transaction_hashes.size() != raw_block.transactions.size()) {
+		error = ConsensusError{"Wrong transcation count in block template"};
+		return;
+	}
+	// Transactions are in block
+	for (size_t i = 0; i != block.transactions.size(); ++i) {
+		Hash tid = get_transaction_hash(block.transactions.at(i));
+		if (tid != block.header.transaction_hashes.at(i)) {
+			error = ConsensusError{"Transaction from block template absent in block"};
 			return;
 		}
-		auto body_proxy = get_body_proxy_from_template(block.header);
-		bid             = bytecoin::get_block_hash(block.header, body_proxy);
-		if (block.header.is_merge_mined())
-			parent_block_size = seria::binary_size(block.header.parent_block);
-		coinbase_tx_size      = seria::binary_size(block.header.base_transaction);
-		base_transaction_hash = get_transaction_hash(block.header.base_transaction);
-		if (context) {
-			auto ba         = currency.get_block_long_hashing_data(block.header, body_proxy);
-			long_block_hash = context->cn_slow_hash(ba.data(), ba.size());
-		}
-	} catch (const std::exception &ex) {
-		error_text = common::what(ex);
 	}
 }
 
 BlockChain::BlockChain(logging::ILogger &log, const Config &config, const Currency &currency, bool read_only)
     : m_genesis_bid(currency.genesis_block_hash)
-    , m_db(read_only, config.get_data_folder() + "/blockchain")
+    , m_db(read_only ? platform::O_READ_EXISTING : platform::O_OPEN_ALWAYS, config.get_data_folder() + "/blockchain")
     , m_archive(read_only || !config.is_archive, config.get_data_folder() + "/archive")
     , m_log(log, "BlockChainState")
     , m_config(config)
@@ -141,95 +117,103 @@ BlockChain::BlockChain(logging::ILogger &log, const Config &config, const Curren
 	if (version != version_current)
 		return;  // BlockChainState will upgrade DB, we must not continue or risk crashing
 	Hash stored_genesis_bid;
-	if (read_chain(0, &stored_genesis_bid)) {
+	if (get_chain(0, &stored_genesis_bid)) {
 		if (stored_genesis_bid != m_genesis_bid)
 			throw std::runtime_error("Database starts with different genesis_block");
-		read_tip();
+		DB::Cursor cur2 = m_db.rbegin(TIP_CHAIN_PREFIX);
+		m_tip_height = cur2.end() ? -1 : common::integer_cast<Height>(common::read_varint_sqlite4(cur2.get_suffix()));
+		seria::from_binary(m_tip_bid, cur2.get_value_array());
+		api::BlockHeader tip_header = read_header(m_tip_bid);
+		m_tip_cumulative_difficulty = tip_header.cumulative_difficulty;
+		m_header_tip_window.push_back(tip_header);
 	}
 	BinaryArray cha;
-	if (m_db.get("internal_import_chain", cha))
+	if (m_db.get("internal_import_chain", cha)) {
 		seria::from_binary(m_internal_import_chain, cha);
+		m_log(logging::INFO) << "BlockChain continue internal import of blocks, count="
+		                     << m_internal_import_chain.size() << std::endl;
+	}
 }
 
 void BlockChain::db_commit() {
 	m_log(logging::INFO) << "BlockChain::db_commit started... tip_height=" << m_tip_height
-	                     << " header_cache.size=" << header_cache.size() << std::endl;
+	                     << " m_header_cache.size=" << m_header_cache.size() << std::endl;
 	m_db.commit_db_txn();
-	header_cache.clear();  // Most simple cache policy ever
+	m_header_cache.clear();  // Most simple cache policy ever
 	m_archive.db_commit();
 	m_log(logging::INFO) << "BlockChain::db_commit finished..." << std::endl;
 }
 
-BroadcastAction BlockChain::add_block(
-    const PreparedBlock &pb, api::BlockHeader *info, const std::string &source_address) {
+bool BlockChain::add_block(const PreparedBlock &pb, api::BlockHeader *info, const std::string &source_address) {
 	*info            = api::BlockHeader();
-	bool have_header = read_header(pb.bid, info);
+	bool have_header = get_header(pb.bid, info);
 	bool have_block  = has_block(pb.bid);
 	if (have_block && have_header) {
-		if (info->height > m_currency.last_sw_checkpoint().height)
+		if (info->height > m_currency.last_hard_checkpoint().height)
 			m_archive.add(Archive::BLOCK, pb.block_data, pb.bid, source_address);
-		return BroadcastAction::NOTHING;
+		return false;
 	}
 	api::BlockHeader prev_info;
 	prev_info.height = -1;
-	if (pb.bid != m_genesis_bid && !read_header(pb.block.header.previous_block_hash, &prev_info))
-		return BroadcastAction::NOTHING;  // Not interested in orphan headers
+	if (pb.bid != m_genesis_bid && !get_header(pb.block.header.previous_block_hash, &prev_info))
+		return false;  // Not interested in orphan headers
 	info->major_version       = pb.block.header.major_version;
 	info->minor_version       = pb.block.header.minor_version;
 	info->timestamp           = pb.block.header.timestamp;
 	info->previous_block_hash = pb.block.header.previous_block_hash;
-	info->nonce               = pb.block.header.nonce;
+	info->binary_nonce        = pb.block.header.nonce;
 	info->hash                = pb.bid;
 	info->height              = prev_info.height + 1;
 	// Rest fields are filled by check_standalone_consensus
-	std::string check_error = check_standalone_consensus(pb, info, prev_info, true);
-	if (!check_error.empty())
-		return BroadcastAction::BAN;  // TODO - return check_error
-	if (!add_blod(*info)) {           // Has parent that does not pass through last SW checkpoint
-		if (info->height > m_currency.last_sw_checkpoint().height)
+	check_standalone_consensus(pb, info, prev_info, true);  // throws ConsensusError
+	if (!add_blod(*info)) {  // Has parent that does not pass through last hard checkpoint
+		if (info->height > m_currency.last_hard_checkpoint().height)
 			m_archive.add(Archive::BLOCK, pb.block_data, pb.bid, source_address);
-		return BroadcastAction::NOTHING;
+		return false;
 	}
 	try {
 		if (!have_block) {                       // have block, but not header during internal_import
 			store_block(pb.bid, pb.block_data);  // Do not commit between here and
 			// reorganize_blocks or invariant might be dead
-			if (info->height > m_currency.last_sw_checkpoint().height)
+			if (info->height > m_currency.last_hard_checkpoint().height)
 				m_archive.add(Archive::BLOCK, pb.block_data, pb.bid, source_address);
 		}
 		store_header(pb.bid, *info);
 		if (pb.bid == m_genesis_bid) {
-			invariant(redo_block(pb.bid, pb.block_data, pb.raw_block, pb.block, *info, pb.base_transaction_hash),
-			    "Failed to apply genesis block");
+			redo_block(pb.bid, pb.block_data, pb.raw_block, pb.block, *info, pb.base_transaction_hash);
 			push_chain(*info);
-			//			debug_check_transaction_invariants(pb.raw_block, pb.block, *info, pb.base_transaction_hash);
+			if (m_config.paranoid_checks)
+				debug_check_transaction_invariants(pb.raw_block, pb.block, *info, pb.base_transaction_hash);
 		} else {
 			modify_children_counter(prev_info.cumulative_difficulty, pb.block.header.previous_block_hash, 1);
 		}
 		check_children_counter(info->cumulative_difficulty, pb.bid, 1);
 		modify_children_counter(info->cumulative_difficulty, pb.bid, -1);  // -1 from default 1 gives 0
-		if (info->hash == m_currency.last_sw_checkpoint().hash)
+		if (info->hash == m_currency.last_hard_checkpoint().hash)
 			build_blods();
 		auto tip_check_cd = get_checkpoint_difficulty(get_tip_bid());
 		auto bid_check_cd = get_checkpoint_difficulty(info->hash);
 		if (compare(bid_check_cd, info->cumulative_difficulty, tip_check_cd, get_tip_cumulative_difficulty()) > 0) {
 			if (get_tip_bid() == pb.block.header.previous_block_hash) {  // most common case optimization
-				if (!redo_block(pb.bid, pb.block_data, pb.raw_block, pb.block, *info, pb.base_transaction_hash))
-					return BroadcastAction::BAN;
+				redo_block(pb.bid, pb.block_data, pb.raw_block, pb.block, *info, pb.base_transaction_hash);
 				push_chain(*info);
-				//				debug_check_transaction_invariants(pb.raw_block, pb.block, *info,
-				// pb.base_transaction_hash);
+				if (m_config.paranoid_checks)
+					debug_check_transaction_invariants(pb.raw_block, pb.block, *info, pb.base_transaction_hash);
 			} else
 				reorganize_blocks(pb.bid, pb, *info);
 		}
+	} catch (const ConsensusError &) {
+		throw;  // The only exception which is safe here
 	} catch (const std::exception &ex) {
 		m_log(logging::ERROR) << "Exception while reorganizing blockchain, probably out of disk space ex.what="
-		                      << common::what(ex) << ", " << delete_blockchain_message << m_db.get_path() << std::endl;
+		                      << common::what(ex) << ", database corrupted, please delete " << m_db.get_path()
+		                      << std::endl;
 		std::exit(api::BYTECOIND_DATABASE_ERROR);
 	}
-	if (get_tip_height() % COMMIT_EVERY_N_BLOCKS == COMMIT_EVERY_N_BLOCKS - 1)  // no commit on genesis
+	if (get_tip_height() % m_config.db_commit_every_n_blocks ==
+	    m_config.db_commit_every_n_blocks - 1)  // no commit on genesis
 		db_commit();
-	return info->hash == get_tip_bid() ? BroadcastAction::BROADCAST_ALL : BroadcastAction::NOTHING;
+	return info->hash == get_tip_bid();
 }
 
 void BlockChain::debug_check_transaction_invariants(const RawBlock &raw_block, const Block &block,
@@ -239,13 +223,13 @@ void BlockChain::debug_check_transaction_invariants(const RawBlock &raw_block, c
 	Height bhe;
 	Hash bha;
 	size_t iib;
-	invariant(read_transaction(base_transaction_hash, &binary_tx, &bhe, &bha, &iib), "tx index invariant failed 1");
+	invariant(get_transaction(base_transaction_hash, &binary_tx, &bhe, &bha, &iib), "tx index invariant failed 1");
 	seria::from_binary(rtx, binary_tx);
 	invariant(get_transaction_hash(rtx) == base_transaction_hash && bhe == info.height && bha == info.hash && iib == 0,
 	    "tx index invariant failed 2");
 	for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
 		Hash tid = block.header.transaction_hashes.at(tx_index);
-		invariant(read_transaction(tid, &binary_tx, &bhe, &bha, &iib), "tx index invariant failed 3");
+		invariant(get_transaction(tid, &binary_tx, &bhe, &bha, &iib), "tx index invariant failed 3");
 		seria::from_binary(rtx, binary_tx);
 		invariant(seria::to_binary(rtx) == raw_block.transactions.at(tx_index) && bhe == info.height &&
 		              bha == info.hash && iib == tx_index + 1 &&
@@ -265,71 +249,69 @@ bool BlockChain::reorganize_blocks(const Hash &switch_to_chain,
 			return false;  // Full new chain not yet downloaded
 	}
 	std::map<Hash, std::pair<Transaction, BinaryArray>> undone_transactions;
-	bool undone_blocks = false;
+	size_t undone_transactions_binary_size = 0;
+	bool undone_blocks                     = false;
 	while (get_tip_bid() != common) {
 		RawBlock raw_block;
-		Block block;
-		invariant(read_block(get_tip_bid(), &raw_block) && block.from_raw_block(raw_block),
+		invariant(get_block(get_tip_bid(), &raw_block),
 		    "Block to undo not found or failed to convert" + common::pod_to_hex(get_tip_bid()));
+		Block block(raw_block);
 		undone_blocks = true;
 		undo_block(get_tip_bid(), raw_block, block, m_tip_height);
-		for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
-			Hash tid = block.header.transaction_hashes.at(tx_index);
-			undone_transactions.insert(std::make_pair(tid, std::make_pair(std::move(block.transactions.at(tx_index)),
-			                                                   std::move(raw_block.transactions.at(tx_index)))));
-		}
+		if (undone_transactions_binary_size < m_config.max_undo_transactions_size)
+			for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
+				Hash tid = block.header.transaction_hashes.at(tx_index);
+				undone_transactions_binary_size += raw_block.transactions.at(tx_index).size();
+				undone_transactions.insert(
+				    std::make_pair(tid, std::make_pair(std::move(block.transactions.at(tx_index)),
+				                            std::move(raw_block.transactions.at(tx_index)))));
+			}
 		pop_chain(block.header.previous_block_hash);
 		tip_changed();
 	}
 	// Now redo all blocks we have in storage, will ask for the rest of blocks
-	bool result = true;
-	while (!chain2.empty()) {
-		Hash chha = chain2.back();
-		chain2.pop_back();
-		if (chha == recent_pb.bid) {
-			invariant(
-			    recent_pb.block.header.previous_block_hash == get_tip_bid(), "Unexpected block prev, invariant dead");
-			if (!redo_block(recent_pb.bid, recent_pb.block_data, recent_pb.raw_block, recent_pb.block, recent_info,
-			        recent_pb.base_transaction_hash)) {
-				// invalid block on longest subchain, make no attempt to download the
-				// rest
-				// we will forever stuck on this block until longer chain appears, that
-				// does not include it
-				result = false;
-				break;
+	// We catch consensus error from redo_block
+	// when invalid block on longest subchain, we should make no attempt to download the rest
+	// we will forever stuck on this block until longer chain appears, that does not include it
+	try {
+		while (!chain2.empty()) {
+			Hash chha = chain2.back();
+			chain2.pop_back();
+			if (chha == recent_pb.bid) {
+				invariant(recent_pb.block.header.previous_block_hash == get_tip_bid(),
+				    "Unexpected block prev, invariant dead");
+				redo_block(recent_pb.bid, recent_pb.block_data, recent_pb.raw_block, recent_pb.block, recent_info,
+				    recent_pb.base_transaction_hash);
+				push_chain(recent_info);
+				for (auto &&tid : recent_pb.block.header.transaction_hashes)
+					undone_transactions.erase(tid);
+				if (m_config.paranoid_checks)
+					debug_check_transaction_invariants(
+					    recent_pb.raw_block, recent_pb.block, recent_info, recent_pb.base_transaction_hash);
+			} else {
+				BinaryArray block_data;
+				RawBlock raw_block;
+				invariant(get_block(chha, &block_data, &raw_block), "");
+				Block block(raw_block);
+				invariant(block.header.previous_block_hash == get_tip_bid(), "Unexpected block prev, invariant dead");
+				api::BlockHeader info      = read_header(chha);
+				Hash base_transaction_hash = get_transaction_hash(block.header.base_transaction);
+
+				redo_block(chha, block_data, raw_block, block, info, base_transaction_hash);
+				push_chain(info);
+				for (auto &&tid : block.header.transaction_hashes)
+					undone_transactions.erase(tid);
+				if (m_config.paranoid_checks)
+					debug_check_transaction_invariants(raw_block, block, info, base_transaction_hash);
 			}
-			push_chain(recent_info);
-			for (auto &&tid : recent_pb.block.header.transaction_hashes)
-				undone_transactions.erase(tid);
-			if (m_config.paranoid_checks)
-				debug_check_transaction_invariants(
-				    recent_pb.raw_block, recent_pb.block, recent_info, recent_pb.base_transaction_hash);
-		} else {
-			BinaryArray block_data;
-			RawBlock raw_block;
-			Block block;
-			if (!read_block(chha, &block_data, &raw_block) || !block.from_raw_block(raw_block)) {
-				result = false;
-				break;  // Strange, we checked has_block, somehow "bad block" got into DB. TODO - throw?
-			}
-			invariant(block.header.previous_block_hash == get_tip_bid(), "Unexpected block prev, invariant dead");
-			api::BlockHeader info      = read_header(chha);
-			Hash base_transaction_hash = get_transaction_hash(block.header.base_transaction);
-			// if redo fails, we will forever stuck on this block until longer chain
-			// appears, that does not include it
-			if (!redo_block(chha, block_data, raw_block, block, info, base_transaction_hash)) {
-				result = false;
-				break;
-			}
-			push_chain(info);
-			for (auto &&tid : block.header.transaction_hashes)
-				undone_transactions.erase(tid);
-			if (m_config.paranoid_checks)
-				debug_check_transaction_invariants(raw_block, block, info, base_transaction_hash);
 		}
+	} catch (const ConsensusError &) {
+		// The only exception which is safe here
+		on_reorganization(undone_transactions, undone_blocks);
+		return false;
 	}
 	on_reorganization(undone_transactions, undone_blocks);
-	return result;
+	return true;
 }
 
 Hash BlockChain::get_common_block(
@@ -368,68 +350,37 @@ Hash BlockChain::get_common_block(
 	return hid1;
 }
 
-std::vector<Hash> BlockChain::get_sparse_chain() const {
+std::vector<Hash> BlockChain::get_sparse_chain(Height max_jump) const {
 	std::vector<Hash> result;
-	auto tip_path = get_sparse_chain(m_genesis_bid, m_tip_bid);
+	auto tip_path = get_sparse_chain(m_genesis_bid, m_tip_bid, max_jump);
 	for (const auto &el : tip_path)
 		result.push_back(el.hash);
 	return result;
-	//	Height jump = 0;
-	//	while (m_tip_height >= jump) {
-	//		tip_path.push_back(read_chain(m_tip_height - jump));
-	//		if (tip_path.size() <= 10)
-	//			jump += 1;
-	//		else
-	//			jump += (1 << (tip_path.size() - 10));
-	//	}
-	//	if (tip_path.back() != m_genesis_bid)
-	//		tip_path.push_back(m_genesis_bid);
-	//	return tip_path;
 }
 
-std::vector<SWCheckpoint> BlockChain::get_sparse_chain(Hash start, Hash end) const {
-	std::vector<SWCheckpoint> tip_path;
+std::vector<HardCheckpoint> BlockChain::get_sparse_chain(Hash start, Hash end, Height max_jump) const {
+	std::vector<HardCheckpoint> tip_path;
 
 	api::BlockHeader header_end;
-	if (!read_header(end, &header_end) || !in_chain(header_end.height, header_end.hash))
+	if (!get_header(end, &header_end) || !in_chain(header_end.height, header_end.hash))
 		return tip_path;
 	api::BlockHeader header_start;
-	if (!read_header(start, &header_start) || !in_chain(header_start.height, header_start.hash))
+	if (!get_header(start, &header_start) || !in_chain(header_start.height, header_start.hash))
 		return tip_path;
-	Height jump = 0;
-	while (header_end.height >= jump + header_start.height) {
-		tip_path.push_back(SWCheckpoint{header_end.height - jump, read_chain(header_end.height - jump)});
-		if (tip_path.size() <= 10)
-			jump += 1;
-		else
-			jump += (1 << (tip_path.size() - 10));
+	Height jump  = 1;
+	Height delta = 0;
+	while (header_end.height >= delta + header_start.height) {
+		tip_path.push_back(HardCheckpoint{header_end.height - delta, read_chain(header_end.height - delta)});
+		if (tip_path.size() >= 10) {
+			jump *= 2;
+			if (tip_path.back().height > m_currency.last_hard_checkpoint().height && jump > max_jump)
+				jump = max_jump;  // no big jumps above last hard checkpoint
+		}
+		delta += jump;
 	}
 	if (tip_path.back().hash != start)
-		tip_path.push_back(SWCheckpoint{header_start.height, header_start.hash});
+		tip_path.push_back(HardCheckpoint{header_start.height, header_start.hash});
 	return tip_path;
-}
-
-std::vector<api::BlockHeader> BlockChain::get_sync_headers(const std::vector<Hash> &locator, size_t max_count) const {
-	std::vector<api::BlockHeader> result;
-	Height start_height     = 0;
-	std::vector<Hash> chain = get_sync_headers_chain(locator, &start_height, max_count);
-	result.reserve(chain.size());
-	for (auto &&c : chain) {
-		result.push_back(read_header(c));
-	}
-	return result;
-}
-
-uint32_t BlockChain::find_blockchain_supplement(const std::vector<Hash> &remote_block_ids) const {
-	for (auto &&lit : remote_block_ids) {
-		api::BlockHeader header;
-		if (!read_header(lit, &header))
-			continue;
-		if (header.height > m_tip_height)
-			continue;
-		return header.height;
-	}
-	return 0;  // Not possible if genesis blocks match
 }
 
 Height BlockChain::get_timestamp_lower_bound_height(Timestamp ts) const {
@@ -443,52 +394,34 @@ Height BlockChain::get_timestamp_lower_bound_height(Timestamp ts) const {
 	return common::integer_cast<Height>(common::read_varint_sqlite4(be, en));
 }
 
-std::vector<Hash> BlockChain::get_sync_headers_chain(const std::vector<Hash> &locator,
-    Height *start_height,
-    size_t max_count) const {
+std::vector<Hash> BlockChain::get_sync_headers_chain(
+    const std::vector<Hash> &locator, Height *start_height, size_t max_count) const {
 	std::vector<Hash> result;
 	for (auto &&lit : locator) {
 		api::BlockHeader header;
-		if (!read_header(lit, &header))
+		if (!get_header(lit, &header))
 			continue;
 		while (header.height != 0) {
 			Hash ha;
-			if (read_chain(header.height, &ha) && ha == header.hash)
+			if (get_chain(header.height, &ha) && ha == header.hash)
 				break;
 			header = read_header(header.previous_block_hash);
 		}
-		uint32_t min_height = header.height;
-		*start_height       = min_height;
+		Height min_height = header.height;
+		*start_height     = min_height;
 		for (; result.size() < max_count && min_height <= m_tip_height; min_height += 1) {
 			result.push_back(read_chain(min_height));
 		}
 		return result;
 	}
-	*start_height = m_tip_height + 1;
-	return result;
+	throw std::runtime_error("No common block found in get_sync_headers_chain");
 }
-
-struct APIRawBlockHeightDifficulty {
-	RawBlock &raw_block;
-	Height &height;
-	Difficulty &cd;
-	APIRawBlockHeightDifficulty(RawBlock &raw_block, Height &height, Difficulty &cd)
-	    : raw_block(raw_block), height(height), cd(cd) {}
-};
-
-namespace seria {
-void ser_members(APIRawBlockHeightDifficulty &v, ISeria &s) {
-	seria_kv("height", v.height, s);
-	seria_kv("cd", v.cd, s);
-	seria_kv("raw_block", v.raw_block, s);
-}
-}  // namespace seria
 
 struct APITransactionPos {
-	Height height   = 0;
-	uint32_t offset = 0;
-	uint32_t size   = 0;
-	uint32_t index  = 0;
+	Height height = 0;
+	size_t offset = 0;
+	size_t size   = 0;
+	size_t index  = 0;
 };
 
 namespace seria {
@@ -500,9 +433,15 @@ void ser_members(APITransactionPos &v, ISeria &s) {
 }
 }  // namespace seria
 
-bool BlockChain::read_transaction(
+bool BlockChain::has_transaction(const Hash &tid) const {
+	DB::Value value;
+	auto txkey = TRANSACTION_PREFIX + DB::to_binary_key(tid.data, sizeof(tid.data));
+	return m_db.get(txkey, value);
+}
+
+bool BlockChain::get_transaction(
     const Hash &tid, BinaryArray *binary_tx, Height *block_height, Hash *block_hash, size_t *index_in_block) const {
-	auto txkey = TRANSATION_PREFIX + DB::to_binary_key(tid.data, sizeof(tid.data));
+	auto txkey = TRANSACTION_PREFIX + DB::to_binary_key(tid.data, sizeof(tid.data));
 	BinaryArray ba;
 	if (!m_db.get(txkey, ba))
 		return false;
@@ -520,38 +459,36 @@ bool BlockChain::read_transaction(
 	return true;
 }
 
-bool BlockChain::redo_block(const Hash &bhash, const BinaryArray &block_data, const RawBlock &raw_block,
+void BlockChain::redo_block(const Hash &bhash, const BinaryArray &block_data, const RawBlock &raw_block,
     const Block &block, const api::BlockHeader &info, const Hash &base_transaction_hash) {
-	if (!redo_block(bhash, block, info))
-		return false;
+	redo_block(bhash, block, info);
 	auto tikey = TIMESTAMP_BLOCK_PREFIX + common::write_varint_sqlite4(info.timestamp) +
 	             common::write_varint_sqlite4(info.height);
 	m_db.put(tikey, std::string(), true);
 
 	APITransactionPos tpos;
 	tpos.height = info.height;
-	auto bkey   = TRANSATION_PREFIX + DB::to_binary_key(base_transaction_hash.data, sizeof(base_transaction_hash.data));
-	tpos.index  = 0;
+	auto bkey  = TRANSACTION_PREFIX + DB::to_binary_key(base_transaction_hash.data, sizeof(base_transaction_hash.data));
+	tpos.index = 0;
 	BinaryArray coinbase_ba = seria::to_binary(block.header.base_transaction);
 	auto ptr                = common::slow_memmem(block_data.data() + tpos.offset + tpos.size,
-	    block_data.size() - tpos.offset - tpos.size, coinbase_ba.data(), coinbase_ba.size());
+        block_data.size() - tpos.offset - tpos.size, coinbase_ba.data(), coinbase_ba.size());
 	invariant(ptr, "binary coinbase tx not found in binary block");
-	tpos.offset = static_cast<uint32_t>(ptr - block_data.data());
-	tpos.size   = static_cast<uint32_t>(coinbase_ba.size());
+	tpos.offset = ptr - block_data.data();
+	tpos.size   = coinbase_ba.size();
 	m_db.put(bkey, seria::to_binary(tpos), true);
 	for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
 		Hash tid              = block.header.transaction_hashes.at(tx_index);
-		tpos.index            = static_cast<uint32_t>(tx_index + 1);
-		bkey                  = TRANSATION_PREFIX + DB::to_binary_key(tid.data, sizeof(tid.data));
+		tpos.index            = tx_index + 1;
+		bkey                  = TRANSACTION_PREFIX + DB::to_binary_key(tid.data, sizeof(tid.data));
 		const auto &binary_tx = raw_block.transactions.at(tx_index);
 		ptr                   = common::slow_memmem(block_data.data() + tpos.offset + tpos.size,
-		    block_data.size() - tpos.offset - tpos.size, binary_tx.data(), binary_tx.size());
+            block_data.size() - tpos.offset - tpos.size, binary_tx.data(), binary_tx.size());
 		invariant(ptr, "binary tx not found in binary block");
-		tpos.offset = static_cast<uint32_t>(ptr - block_data.data());
-		tpos.size   = static_cast<uint32_t>(binary_tx.size());
+		tpos.offset = ptr - block_data.data();
+		tpos.size   = binary_tx.size();
 		m_db.put(bkey, seria::to_binary(tpos), true);
 	}
-	return true;
 }
 void BlockChain::undo_block(const Hash &bhash, const RawBlock &, const Block &block, Height height) {
 	//	if (!m_tip_segment.empty())
@@ -563,11 +500,11 @@ void BlockChain::undo_block(const Hash &bhash, const RawBlock &, const Block &bl
 	m_db.del(tikey, true);
 
 	Hash tid  = get_transaction_hash(block.header.base_transaction);
-	auto bkey = TRANSATION_PREFIX + DB::to_binary_key(tid.data, sizeof(tid.data));
+	auto bkey = TRANSACTION_PREFIX + DB::to_binary_key(tid.data, sizeof(tid.data));
 	m_db.del(bkey, true);
 	for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
 		tid  = block.header.transaction_hashes.at(tx_index);
-		bkey = TRANSATION_PREFIX + DB::to_binary_key(tid.data, sizeof(tid.data));
+		bkey = TRANSACTION_PREFIX + DB::to_binary_key(tid.data, sizeof(tid.data));
 		m_db.del(bkey, true);
 	}
 }
@@ -577,7 +514,7 @@ void BlockChain::store_block(const Hash &bid, const BinaryArray &block_data) {
 	m_db.put(key, block_data, true);
 }
 
-bool BlockChain::read_block(const Hash &bid, BinaryArray *block_data, RawBlock *raw_block) const {
+bool BlockChain::get_block(const Hash &bid, BinaryArray *block_data, RawBlock *raw_block) const {
 	BinaryArray rb;
 	auto key = BLOCK_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + BLOCK_SUFFIX;
 	if (!m_db.get(key, rb))
@@ -588,9 +525,9 @@ bool BlockChain::read_block(const Hash &bid, BinaryArray *block_data, RawBlock *
 	return true;
 }
 
-bool BlockChain::read_block(const Hash &bid, RawBlock *raw_block) const {
+bool BlockChain::get_block(const Hash &bid, RawBlock *raw_block) const {
 	BinaryArray rb;
-	return read_block(bid, &rb, raw_block);
+	return get_block(bid, &rb, raw_block);
 }
 
 bool BlockChain::has_block(const Hash &bid) const {
@@ -607,50 +544,43 @@ void BlockChain::store_header(const Hash &bid, const api::BlockHeader &header) {
 	m_db.put(key, ba, true);
 }
 
-bool BlockChain::read_header(const Hash &bid, api::BlockHeader *header, Height hint) const {
+const api::BlockHeader *BlockChain::read_header_fast(const Hash &bid, Height hint) const {
 	if (get_tip_height() != Height(-1) && hint <= get_tip_height() &&
 	    hint >= get_tip_height() - m_header_tip_window.size() + 1) {
 		const auto &candidate = m_header_tip_window.at(m_header_tip_window.size() - 1 - (get_tip_height() - hint));
 		if (candidate.hash == bid) {
-			*header = candidate;  // fastest lookup is in tip window
-			return true;
+			return &candidate;  // fastest lookup is in tip window
 		}
 	}
-	auto cit = header_cache.find(bid);
-	if (cit != header_cache.end()) {
-		*header = cit->second;
-		return true;
+	auto cit = m_header_cache.find(bid);
+	if (cit != m_header_cache.end()) {
+		return &cit->second;
 	}
-	if (header_cache.size() > m_currency.largest_window() * 20) {
+	Hash bbid = bid;  // next lines can modify bid, because it can be reference to header inside cache
+	if (m_header_cache.size() > m_currency.largest_window() * 20) {
 		m_log(logging::INFO) << "BlockChain header cache reached max size and cleared" << std::endl;
-		header_cache.clear();  // very simple policy
+		m_header_cache.clear();  // very simple policy
 	}
 	BinaryArray rb;
-	auto key = HEADER_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + HEADER_SUFFIX;
+	auto key = HEADER_PREFIX + DB::to_binary_key(bbid.data, sizeof(bbid.data)) + HEADER_SUFFIX;
 	if (!m_db.get(key, rb))
-		return false;
-	Hash bbid = bid;  // next line can modify bid, because it can be reference to header.previous_block_hash
-	seria::from_binary(*header, rb);
-	header_cache.insert(std::make_pair(bbid, *header));
-	return true;
+		return nullptr;
+	api::BlockHeader header;
+	seria::from_binary(header, rb);
+	cit = m_header_cache.insert(std::make_pair(bbid, std::move(header))).first;
+	return &cit->second;
 }
 
-void BlockChain::fix_block_sizes(api::BlockHeader *info) const {
-	DB::Value binary_block;
-	auto key = BLOCK_PREFIX + DB::to_binary_key(info->hash.data, sizeof(info->hash.data)) + BLOCK_SUFFIX;
-	invariant(m_db.get(key, binary_block), "Block must be there");
-	common::MemoryInputStream stream(binary_block.data(), binary_block.size());
-	seria::BinaryInputStream ba_stream(stream);
-	uint32_t raw_block_block_size = 0;
-	ser(raw_block_block_size, ba_stream);
-	auto coinbase_size      = info->block_size - info->transactions_size;
-	info->transactions_size = info->block_size;
-	info->block_size        = info->transactions_size + raw_block_block_size - coinbase_size;
+bool BlockChain::get_header(const Hash &bid, api::BlockHeader *header, Height hint) const {
+	const api::BlockHeader *result = read_header_fast(bid, hint);
+	if (result)
+		*header = *result;
+	return result != nullptr;
 }
 
 api::BlockHeader BlockChain::read_header(const Hash &bid, Height hint) const {
 	api::BlockHeader result;
-	invariant(read_header(bid, &result, hint), "Expected header was not found" + common::pod_to_hex(bid));
+	invariant(get_header(bid, &result, hint), "Expected header was not found" + common::pod_to_hex(bid));
 	return result;
 }
 
@@ -659,34 +589,35 @@ const api::BlockHeader &BlockChain::get_tip() const {
 	return m_header_tip_window.back();
 }
 
-std::vector<api::BlockHeader> BlockChain::get_tip_segment(
-    const api::BlockHeader &prev_info, Height window, bool add_genesis) const {
-	std::vector<api::BlockHeader> result;
-	result.reserve(window);
+void BlockChain::for_each_reversed_tip_segment(const api::BlockHeader &prev_info, Height window, bool add_genesis,
+    std::function<void(const api::BlockHeader &header)> &&fun) const {
 	if (prev_info.height == Height(-1))
-		return result;
-	api::BlockHeader pi = prev_info;
-	while (result.size() < window && pi.height != 0) {
-		result.push_back(pi);
-		pi = read_header(pi.previous_block_hash, pi.height - 1);
+		return;
+	const api::BlockHeader *header = &prev_info;
+	size_t count                   = 0;
+	while (count < window && header->height != 0) {
+		fun(*header);
+		count += 1;
+		header = read_header_fast(header->previous_block_hash, header->height - 1);
+		invariant(header, "");
 	}
-	if (result.size() < window && add_genesis) {
-		invariant(pi.height == 0, "Invariant dead - window size not reached, but genesis not found in get_tip_segment");
-		result.push_back(pi);
+	if (count < window && add_genesis) {
+		invariant(
+		    header->height == 0, "Invariant dead - window size not reached, but genesis not found in get_tip_segment");
+		fun(*header);
+		count += 1;
 	}
-	std::reverse(result.begin(), result.end());
-	return result;
 }
 
-void BlockChain::read_tip() {
-	DB::Cursor cur2 = m_db.rbegin(TIP_CHAIN_PREFIX);
-	m_tip_height    = cur2.end() ? -1 : common::integer_cast<Height>(common::read_varint_sqlite4(cur2.get_suffix()));
-	seria::from_binary(m_tip_bid, cur2.get_value_array());
-	api::BlockHeader tip_header = read_header(m_tip_bid);
-	m_tip_cumulative_difficulty = tip_header.cumulative_difficulty;
-	m_header_tip_window.clear();
-	m_header_tip_window.push_back(tip_header);
-}
+// std::vector<api::BlockHeader> BlockChain::get_tip_segment(
+//    const api::BlockHeader &prev_info, Height window, bool add_genesis) const {
+//	std::vector<api::BlockHeader> result;
+//	result.reserve(window);
+//	for_each_reversed_tip_segment(
+//	    prev_info, window, add_genesis, [&](const api::BlockHeader &header) { result.push_back(header); });
+//	std::reverse(result.begin(), result.end());
+//	return result;
+//}
 
 void BlockChain::push_chain(const api::BlockHeader &header) {
 	m_tip_height += 1;
@@ -707,7 +638,7 @@ void BlockChain::pop_chain(const Hash &new_tip_bid) {
 	m_tip_height -= 1;
 	m_tip_bid = new_tip_bid;
 	invariant(read_chain(m_tip_height) == m_tip_bid,
-	    "After undo tip does not match read_chain " + common::pod_to_hex(m_tip_bid));
+	    "After undo tip does not match get_chain " + common::pod_to_hex(m_tip_bid));
 	if (m_header_tip_window.empty()) {
 		api::BlockHeader tip_header = read_header(m_tip_bid);
 		m_header_tip_window.push_back(tip_header);
@@ -716,7 +647,7 @@ void BlockChain::pop_chain(const Hash &new_tip_bid) {
 }
 
 // After upgrading to future versions, remove version from index key
-bool BlockChain::read_chain(uint32_t height, Hash *bid) const {
+bool BlockChain::get_chain(Height height, Hash *bid) const {
 	BinaryArray ba;
 	if (!m_db.get(TIP_CHAIN_PREFIX + common::write_varint_sqlite4(height), ba))
 		return false;
@@ -726,12 +657,16 @@ bool BlockChain::read_chain(uint32_t height, Hash *bid) const {
 
 bool BlockChain::in_chain(Height height, Hash bid) const {
 	Hash ha;
-	return read_chain(height, &ha) && ha == bid;
+	return get_chain(height, &ha) && ha == bid;
+}
+bool BlockChain::in_chain(Hash bid) const {
+	auto header = read_header_fast(bid, 0);
+	return header ? in_chain(header->height, bid) : false;
 }
 
-Hash BlockChain::read_chain(uint32_t height) const {
+Hash BlockChain::read_chain(Height height) const {
 	Hash ha;
-	invariant(read_chain(height, &ha), "read_header_chain failed");
+	invariant(get_chain(height, &ha), "read_header_chain failed");
 	return ha;
 }
 
@@ -752,7 +687,7 @@ void BlockChain::modify_children_counter(CumulativeDifficulty cd, const Hash &bi
 	auto key    = CHILDREN_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data));
 	auto cd_key = CD_TIPS_PREFIX + common::write_varint_sqlite4(cd.hi) + common::write_varint_sqlite4(cd.lo) +
 	              DB::to_binary_key(bid.data, sizeof(bid.data));
-	uint32_t counter = 1;  // default is 1 when not stored in db
+	size_t counter = 1;  // default is 1 when not stored in db
 	BinaryArray rb;
 	if (m_db.get(key, rb))
 		seria::from_binary(counter, rb);
@@ -784,7 +719,7 @@ bool BlockChain::get_oldest_tip(CumulativeDifficulty *cd, Hash *bid) const {
 	return true;
 }
 
-void BlockChain::for_each_tip(std::function<bool(CumulativeDifficulty cd, Hash bid)> fun) const {
+void BlockChain::for_each_tip(std::function<bool(CumulativeDifficulty cd, Hash bid)> &&fun) const {
 	for (DB::Cursor cur = m_db.rbegin(CD_TIPS_PREFIX); !cur.end(); cur.next()) {
 		const std::string &suf = cur.get_suffix();
 		const char *be         = suf.data();
@@ -809,14 +744,14 @@ bool BlockChain::prune_branch(CumulativeDifficulty cd, Hash bid) {
 	for (auto cit = checkpoints.begin(); cit != checkpoints.end(); ++cit)
 		if (cit->is_enabled() && cit->hash == bid)
 			return false;
-	auto bit = blods.find(bid);
-	if (bit != blods.end()) {
+	auto bit = m_blods.find(bid);
+	if (bit != m_blods.end()) {
 		if (!bit->second.children.empty() || !bit->second.parent)
 			return false;
 		auto rit = std::remove(bit->second.parent->children.begin(), bit->second.parent->children.end(), &bit->second);
 		invariant(rit != bit->second.parent->children.end(), "");
 		bit->second.parent->children.erase(rit, bit->second.parent->children.end());
-		blods.erase(bit);
+		m_blods.erase(bit);
 	}
 	api::BlockHeader me = read_header(bid);
 	api::BlockHeader pa = read_header(me.previous_block_hash);
@@ -829,7 +764,7 @@ bool BlockChain::prune_branch(CumulativeDifficulty cd, Hash bid) {
 	m_header_tip_window.clear();
 	api::BlockHeader tip_header = read_header(m_tip_bid);
 	m_header_tip_window.push_back(tip_header);
-	header_cache.erase(bid);
+	m_header_cache.erase(bid);
 	return true;
 }
 
@@ -849,7 +784,7 @@ void BlockChain::test_print_tips() const {
 	for (DB::Cursor cur = m_db.begin(CHILDREN_PREFIX); !cur.end(); cur.next()) {
 		Hash bid;
 		DB::from_binary_key(cur.get_suffix(), 0, bid.data, sizeof(bid.data));
-		uint32_t counter = 1;
+		size_t counter = 1;
 		seria::from_binary(counter, cur.get_value_array());
 		api::BlockHeader info = read_header(bid);
 		std::cout << "branch height=" << info.height << " bid=" << bid << " children=" << counter << std::endl;
@@ -870,7 +805,7 @@ void BlockChain::test_print_structure(Height n_confirmations) const {
 	for (DB::Cursor cur = m_db.begin(CHILDREN_PREFIX); !cur.end(); cur.next()) {
 		Hash bid;
 		DB::from_binary_key(cur.get_suffix(), 0, bid.data, sizeof(bid.data));
-		uint32_t counter = 1;
+		size_t counter = 1;
 		seria::from_binary(counter, cur.get_value_array());
 
 		std::cout << "children=" << counter << " bid=" << bid << std::endl;
@@ -893,10 +828,10 @@ void BlockChain::test_print_structure(Height n_confirmations) const {
 			std::cout << "    sideblock height=" << header.height << " depth=" << t_height - header.height
 			          << (confirmed ? " (confirmed)" : "") << " bid=" << bid << std::endl;
 			RawBlock rb;
-			Block block;
 			if (confirmed) {
 				total_forked_blocks += 1;
-				if (read_block(bid, &rb) && block.from_raw_block(rb)) {
+				if (get_block(bid, &rb)) {
+					Block block(rb);
 					for (size_t tx_pos = 0; tx_pos != block.header.transaction_hashes.size(); ++tx_pos) {
 						Hash tid = block.header.transaction_hashes.at(tx_pos);
 						total_forked_transactions += 1;
@@ -904,11 +839,11 @@ void BlockChain::test_print_structure(Height n_confirmations) const {
 						Height height = 0;
 						Hash block_hash;
 						size_t index_in_block = 0;
-						if (!read_transaction(tid, &binary_tx, &height, &block_hash, &index_in_block)) {
+						if (!get_transaction(tid, &binary_tx, &height, &block_hash, &index_in_block)) {
 							Amount input_amount = 0;
 							for (const auto &input : block.transactions.at(tx_pos).inputs)
-								if (input.type() == typeid(KeyInput)) {
-									const KeyInput &in = boost::get<KeyInput>(input);
+								if (input.type() == typeid(InputKey)) {
+									const InputKey &in = boost::get<InputKey>(input);
 									input_amount += in.amount;
 								}
 							total_possible_ds_transactions += 1;
@@ -930,42 +865,6 @@ void BlockChain::test_print_structure(Height n_confirmations) const {
 	          << std::endl;
 	std::cout << "total forked transactions=" << total_forked_transactions << ", possible ds "
 	          << total_possible_ds_transactions << " total amount=" << total_possible_ds_amount << std::endl;
-}
-
-void BlockChain::upgrade_5_to_6() {
-	m_log(logging::INFO) << "Blockchain database needs to recalculate block sizes..." << std::endl;
-	size_t processed = 0;
-	std::set<Hash> hashes;
-	DB::Cursor cur2   = m_db.rbegin(TIP_CHAIN_PREFIX);
-	Height tip_height = cur2.end() ? -1 : common::integer_cast<Height>(common::read_varint_sqlite4(cur2.get_suffix()));
-	for (DB::Cursor cur = m_db.rbegin(BLOCK_PREFIX); !cur.end(); cur.next()) {
-		if (cur.get_suffix().substr(cur.get_suffix().size() - HEADER_SUFFIX.size()) != HEADER_SUFFIX)
-			continue;
-		if (processed++ % 50000 == 0)
-			m_log(logging::INFO) << "Processed " << processed << "/" << tip_height * 11 / 10 << " blocks" << std::endl;
-		Hash bid;
-		DB::from_binary_key(cur.get_suffix(), 0, bid.data, sizeof(bid.data));
-		api::BlockHeader header;
-		seria::from_binary(header, cur.get_value_array());
-		invariant(bid == header.hash, "DB corrupted");
-		invariant(hashes.insert(bid).second, "");
-		//		RawBlock rb;
-		//		invariant(read_block(bid, &rb), "Block must be there");
-		DB::Value binary_block;
-		auto key = BLOCK_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + BLOCK_SUFFIX;
-		invariant(m_db.get(key, binary_block), "Block must be there");
-		common::MemoryInputStream stream(binary_block.data(), binary_block.size());
-		seria::BinaryInputStream ba_stream(stream);
-		uint32_t raw_block_block_size = 0;
-		ser(raw_block_block_size, ba_stream);
-		auto coinbase_size       = header.block_size - header.transactions_size;
-		header.transactions_size = header.block_size;
-		header.block_size        = header.transactions_size + raw_block_block_size - coinbase_size;
-		key                      = HEADER_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + HEADER_SUFFIX;
-		BinaryArray ba           = seria::to_binary(header);
-		m_db.put(key, ba, false);
-	}
-	m_log(logging::INFO) << "Recalulating block sizes finished" << std::endl;
 }
 
 void BlockChain::start_internal_import() {
@@ -1006,7 +905,7 @@ void BlockChain::start_internal_import() {
 				continue;  // block in main chain
 			}
 			BinaryArray block_data;
-			if (read_block(bid, &block_data, nullptr))
+			if (get_block(bid, &block_data, nullptr))
 				m_archive.add(Archive::BLOCK, block_data, bid, "start_internal_import");
 		}
 		cur.erase();
@@ -1024,19 +923,19 @@ bool BlockChain::internal_import() {
 				break;
 			const Hash bid = m_internal_import_chain.at(get_tip_height() + 1);
 			RawBlock rb;
-			if (!read_block(bid, &rb)) {
+			if (!get_block(bid, &rb)) {
 				m_log(logging::WARNING) << "Block not found during internal import for height=" << get_tip_height() + 1
 				                        << " bid=" << bid << std::endl;
 				break;
 			}
 			PreparedBlock pb(std::move(rb), m_currency, nullptr);
 			api::BlockHeader info;
-			if (add_block(pb, &info, "internal_import") != BroadcastAction::BROADCAST_ALL) {
-				m_log(logging::WARNING) << "Block corrupted  during internal import for height=" << get_tip_height() + 1
+			if (!add_block(pb, &info, "internal_import")) {
+				m_log(logging::WARNING) << "Block corrupted during internal import for height=" << get_tip_height() + 1
 				                        << " bid=" << bid << std::endl;
 				break;
 			}
-			//		if (get_tip_height() % COMMIT_EVERY_N_BLOCKS == 0)
+			//		if (get_tip_height() % m_config.db_commit_every_n_blocks == 0)
 			//			db_commit();
 			auto idea_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
 			    std::chrono::high_resolution_clock::now() - idea_start);
@@ -1055,17 +954,17 @@ bool BlockChain::internal_import() {
 }
 
 void BlockChain::test_undo_everything(Height new_tip_height) {
-	while (get_tip_height() > new_tip_height) {
+	while (true) {  // get_tip_height() > new_tip_height
 		RawBlock raw_block;
-		Block block;
-		if (!read_block(get_tip_bid(), &raw_block) || !block.from_raw_block(raw_block))
+		if (!get_block(get_tip_bid(), &raw_block))
 			break;
+		Block block(raw_block);
 		undo_block(get_tip_bid(), raw_block, block, m_tip_height);
 		if (get_tip_bid() == m_genesis_bid)
 			break;
 		pop_chain(block.header.previous_block_hash);
 		tip_changed();
-		if (get_tip_height() % COMMIT_EVERY_N_BLOCKS == 1)
+		if (get_tip_height() % m_config.db_commit_every_n_blocks == 1)
 			db_commit();
 	}
 	std::cout << "---- After undo everything ---- " << std::endl;
@@ -1082,8 +981,6 @@ void BlockChain::test_undo_everything(Height new_tip_height) {
 		if (cur.get_suffix().find(BLOCK_PREFIX) == 0)
 			continue;
 		if (cur.get_suffix().find(HEADER_PREFIX) == 0)
-			continue;
-		if (cur.get_suffix().find("f") == 0)  // TODO - we have no index starting with "f"
 			continue;
 		std::cout << DB::clean_key(cur.get_suffix()) << std::endl;
 		if (counter++ > 1000)
@@ -1110,7 +1007,7 @@ std::vector<SignedCheckpoint> BlockChain::get_stable_checkpoints() const {
 }
 
 bool BlockChain::add_checkpoint(const SignedCheckpoint &checkpoint, const std::string &source_address) {
-	if (checkpoint.height <= m_currency.last_sw_checkpoint().height && checkpoint.is_enabled())
+	if (checkpoint.height <= m_currency.last_hard_checkpoint().height && checkpoint.is_enabled())
 		return false;  // Height is ignored when disabling key_id
 	PublicKey public_key =
 	    m_currency.get_checkpoint_public_key(checkpoint.key_id);  // returns empty key if out of range
@@ -1139,8 +1036,8 @@ bool BlockChain::add_checkpoint(const SignedCheckpoint &checkpoint, const std::s
 	m_archive.add(Archive::CHECKPOINT, binary_checkpoint,
 	    crypto::cn_fast_hash(binary_checkpoint.data(), binary_checkpoint.size()), source_address);
 	if (checkpoint.is_enabled()) {
-		auto bit = blods.find(checkpoint.hash);
-		if (bit == blods.end())
+		auto bit = m_blods.find(checkpoint.hash);
+		if (bit == m_blods.end())
 			return true;  // orphan checkpoint
 	}
 	m_db.put(key_stable, binary_checkpoint, false);
@@ -1152,7 +1049,7 @@ bool BlockChain::add_checkpoint(const SignedCheckpoint &checkpoint, const std::s
 			return true;
 		api::BlockHeader header = read_header(bid);
 		RawBlock raw_block;
-		if (!read_block(bid, &raw_block))
+		if (!get_block(bid, &raw_block))
 			return true;
 		PreparedBlock pb(std::move(raw_block), m_currency, nullptr);
 		reorganize_blocks(bid, pb, header);
@@ -1176,22 +1073,21 @@ int BlockChain::compare(
 }
 
 bool BlockChain::add_blod_impl(const api::BlockHeader &header) {
-	auto bit = blods.find(header.hash);
-	if (bit != blods.end())
+	auto bit = m_blods.find(header.hash);
+	if (bit != m_blods.end())
 		return true;  // Strange, but nop
-	bit = blods.find(header.previous_block_hash);
-	if (bit == blods.end())
+	bit = m_blods.find(header.previous_block_hash);
+	if (bit == m_blods.end())
 		return false;
-	Blod &blod  = blods[header.hash];
+	Blod &blod  = m_blods[header.hash];
 	blod.height = header.height;
 	blod.hash   = header.hash;
 	blod.parent = &bit->second;
 	bit->second.children.push_back(&blod);
 	blod.checkpoint_difficulty = blod.parent->checkpoint_difficulty;
 
-	if (m_currency.upgrade_from_major_version) {
-		blod.vote_for_upgrade = uint8_t(header.major_version == m_currency.upgrade_from_major_version &&
-		                                header.minor_version == m_currency.upgrade_indicator_minor_version);
+	if (m_currency.upgrade_desired_major_version) {
+		blod.vote_for_upgrade       = uint8_t(m_currency.is_upgrade_vote(header.major_version, header.minor_version));
 		blod.upgrade_decided_height = blod.parent->upgrade_decided_height;
 		if (!blod.upgrade_decided_height) {
 			blod.votes_for_upgrade_in_voting_window = blod.parent->votes_for_upgrade_in_voting_window;
@@ -1199,14 +1095,13 @@ bool BlockChain::add_blod_impl(const api::BlockHeader &header) {
 			if (blod.votes_for_upgrade_in_voting_window.size() > m_currency.upgrade_voting_window)
 				blod.votes_for_upgrade_in_voting_window.pop_front();
 			invariant(blod.votes_for_upgrade_in_voting_window.size() <= m_currency.upgrade_voting_window, "");
-			auto count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
+			size_t count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
 			    blod.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
 			//			if(count != 0)
 			//				std::cout << "Votes for version=" << int(m_currency.upgrade_desired_major_version) << "
-			// height="
-			//<< header.height << " votes=" << count << std::endl;
-			if (count >= m_currency.upgrade_votes_required) {
-				blod.upgrade_decided_height = blod.height + m_currency.upgrade_blocks_after_voting;
+			// height=" << header.height << " votes=" << count << std::endl;
+			if (count >= m_currency.upgrade_votes_required()) {
+				blod.upgrade_decided_height = blod.height + m_currency.upgrade_window;
 				m_log(logging::INFO) << "Consensus upgrade decided on height=" << header.height
 				                     << " decided_height=" << blod.upgrade_decided_height << " bid=" << header.hash
 				                     << std::endl;
@@ -1218,7 +1113,7 @@ bool BlockChain::add_blod_impl(const api::BlockHeader &header) {
 }
 
 bool BlockChain::add_blod(const api::BlockHeader &header) {
-	if (blods.empty())  // Allow any blocks if main does not pass through last sw checkpoint yet
+	if (m_blods.empty())  // Allow any blocks if main does not pass through last sw checkpoint yet
 		return true;
 	add_blod_impl(header);
 	// We inherit from parent and rebuild only if we pass through one of checlpoints
@@ -1236,13 +1131,13 @@ bool BlockChain::add_blod(const api::BlockHeader &header) {
 }
 
 void BlockChain::build_blods() {
-	if (!blods.empty())
+	if (!m_blods.empty())
 		return;  // build only once per daemon launch
-	api::BlockHeader last_sw_checkpoint_header;
-	if (!read_header(m_currency.last_sw_checkpoint().hash, &last_sw_checkpoint_header))
+	api::BlockHeader last_hard_checkpoint_header;
+	if (!get_header(m_currency.last_hard_checkpoint().hash, &last_hard_checkpoint_header))
 		return;
-	std::set<Hash> bad_header_hashes;   // sidechains that do not pass through last SW checkpoint
-	std::set<Hash> good_header_hashes;  // sidechains that pass through last SW checkpoint
+	std::set<Hash> bad_header_hashes;   // sidechains that do not pass through last hard checkpoint
+	std::set<Hash> good_header_hashes;  // sidechains that pass through last hard checkpoint
 	std::vector<api::BlockHeader> good_headers;
 	for_each_tip([&](CumulativeDifficulty cd, Hash tip_bid) -> bool {
 		std::vector<api::BlockHeader> side_chain;
@@ -1261,11 +1156,11 @@ void BlockChain::build_blods() {
 					bad_header_hashes.insert(ha.hash);
 				break;
 			}
-			if (header.height < m_currency.last_sw_checkpoint().height)
+			if (header.height < m_currency.last_hard_checkpoint().height)
 				break;
 			side_chain.push_back(header);
-			if (header.height == m_currency.last_sw_checkpoint().height) {
-				if (header.hash == m_currency.last_sw_checkpoint().hash) {
+			if (header.height == m_currency.last_hard_checkpoint().height) {
+				if (header.hash == m_currency.last_hard_checkpoint().hash) {
 					std::reverse(side_chain.begin(), side_chain.end());
 					for (auto &&ha : side_chain) {
 						good_header_hashes.insert(ha.hash);
@@ -1283,88 +1178,88 @@ void BlockChain::build_blods() {
 	});
 	for (auto &&ha : good_headers) {  // They are conveniently sorted parent to child and can be applied sequentially
 		if (!add_blod_impl(ha)) {
-			invariant(ha.hash == m_currency.last_sw_checkpoint().hash, "");
-			Blod &blod  = blods[ha.hash];
+			invariant(ha.hash == m_currency.last_hard_checkpoint().hash, "");
+			Blod &blod  = m_blods[ha.hash];
 			blod.height = ha.height;
 			blod.hash   = ha.hash;
-			if (m_currency.upgrade_from_major_version) {
-				blod.vote_for_upgrade = uint8_t(ha.major_version == m_currency.upgrade_from_major_version &&
-				                                ha.minor_version == m_currency.upgrade_indicator_minor_version);
+			if (m_currency.upgrade_desired_major_version) {
+				blod.vote_for_upgrade = uint8_t(m_currency.is_upgrade_vote(ha.major_version, ha.minor_version));
 				Height first_height =
-				    m_currency.last_sw_checkpoint().height < m_currency.upgrade_voting_window - 1
+				    m_currency.last_hard_checkpoint().height < m_currency.upgrade_voting_window - 1
 				        ? 0
-				        : m_currency.last_sw_checkpoint().height - (m_currency.upgrade_voting_window - 1);
-				for (Height h = first_height; h != m_currency.last_sw_checkpoint().height; ++h) {
+				        : m_currency.last_hard_checkpoint().height - (m_currency.upgrade_voting_window - 1);
+				for (Height h = first_height; h != m_currency.last_hard_checkpoint().height; ++h) {
 					auto header = read_header(read_chain(h), h);
-					auto vote   = uint8_t(header.major_version == m_currency.upgrade_from_major_version &&
-					                    header.minor_version == m_currency.upgrade_indicator_minor_version);
+					auto vote   = uint8_t(m_currency.is_upgrade_vote(header.major_version, header.minor_version));
 					blod.votes_for_upgrade_in_voting_window.push_back(vote);
 				}
 				blod.votes_for_upgrade_in_voting_window.push_back(blod.vote_for_upgrade);
-				auto count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
+				size_t count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
 				    blod.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
 				invariant(
-				    count < m_currency.upgrade_votes_required, "Upgrade happened before or on last SW checkpoint");
+				    count < m_currency.upgrade_votes_required(), "Upgrade happened before or on last hard checkpoint");
 			}
 		}
 	}
 	update_key_count_max_heights();
 }
 
-void BlockChain::fill_statistics(api::bytecoind::GetStatistics::Response &res) const {
+void BlockChain::fill_statistics(api::cnd::GetStatistics::Response &res) const {
 	res.checkpoints = get_latest_checkpoints();
 
-	if (!m_currency.upgrade_from_major_version)
+	if (!m_currency.upgrade_desired_major_version)
 		return;
-	auto bit = blods.find(get_tip_bid());
-	if (bit == blods.end())
+	auto bit = m_blods.find(get_tip_bid());
+	if (bit == m_blods.end())
 		return;
-	res.upgrade_decided_height = bit->second.upgrade_decided_height;
-	auto count                 = std::count(bit->second.votes_for_upgrade_in_voting_window.begin(),
-	    bit->second.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
+	res.upgrade_decided_height     = bit->second.upgrade_decided_height;
+	auto count                     = std::count(bit->second.votes_for_upgrade_in_voting_window.begin(),
+        bit->second.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
 	res.upgrade_votes_in_top_block = static_cast<Height>(count);
 }
 
 bool BlockChain::fill_next_block_versions(
-    const api::BlockHeader &prev_info, bool cooperative, uint8_t *major, uint8_t *minor) const {
-	*major = m_currency.get_block_major_version_for_height(prev_info.height + 1);
-	if (*major == m_currency.upgrade_from_major_version)
+    const api::BlockHeader &prev_info, bool cooperative, uint8_t *major_mm, uint8_t *major_cm, uint8_t *minor) const {
+	*major_cm = *major_mm = m_currency.get_block_major_version_for_height(prev_info.height + 1);
+	if (*major_cm >= m_currency.amethyst_block_version)
+		*major_cm += 1;
+	*minor = 0;
+	if (*major_mm == m_currency.upgrade_from_major_version)
 		*minor = m_currency.upgrade_indicator_minor_version;
-	else
-		*minor = 0;
-	//	TODO - for now we only observe voting, do not create new blocks yet
-	// 	if( !m_currency.upgrade_desired_major_version )
-	// 		return true;
-	// 	if(blods.empty())
-	// 		return true;
-	//	auto bit = blods.find(prev_info.hash);
-	//	if (bit == blods.end())
-	//		return false;
-	//	if(!bit->second.upgrade_decided_height || prev_info.height + 1 < bit->second.upgrade_decided_height)
-	//		return true;
-	//	*major = m_currency.upgrade_desired_major_version;
-	//	*minor = 0;
+	if (!m_currency.upgrade_desired_major_version)
+		return true;
+	if (m_blods.empty())
+		return true;
+	auto bit = m_blods.find(prev_info.hash);
+	if (bit == m_blods.end())
+		return false;
+	if (!bit->second.upgrade_decided_height || prev_info.height + 1 < bit->second.upgrade_decided_height)
+		return true;
+	*major_cm = *major_mm = m_currency.upgrade_desired_major_version;
+	if (*major_cm >= m_currency.amethyst_block_version)
+		*major_cm += 1;
+	*minor = 0;
 	return true;
 }
 
 void BlockChain::update_key_count_max_heights() {
 	// We use simplest O(n) algo, will optimize later and use this one as a reference
-	for (auto &&bit : blods) {
+	for (auto &&bit : m_blods) {
 		bit.second.checkpoint_key_ids.reset();
 		bit.second.checkpoint_difficulty = CheckpointDifficulty{};
 	}
 	auto checkpoints = get_stable_checkpoints();
 	for (const auto &cit : checkpoints)
 		if (cit.is_enabled()) {
-			auto bit = blods.find(cit.hash);
-			if (bit == blods.end())
+			auto bit = m_blods.find(cit.hash);
+			if (bit == m_blods.end())
 				continue;
 			for (Blod *b = &bit->second; b; b = b->parent)
 				b->checkpoint_key_ids.set(cit.key_id);
 		}
 	std::vector<Blod *> to_visit;
-	auto bit = blods.find(m_currency.last_sw_checkpoint().hash);
-	if (bit != blods.end())
+	auto bit = m_blods.find(m_currency.last_hard_checkpoint().hash);
+	if (bit != m_blods.end())
 		to_visit.push_back(&bit->second);
 	while (!to_visit.empty()) {
 		Blod *blod = to_visit.back();
@@ -1379,8 +1274,8 @@ void BlockChain::update_key_count_max_heights() {
 }
 
 BlockChain::CheckpointDifficulty BlockChain::get_checkpoint_difficulty(Hash hash) const {
-	auto bit = blods.find(hash);
-	if (bit == blods.end())
+	auto bit = m_blods.find(hash);
+	if (bit == m_blods.end())
 		return CheckpointDifficulty{};
 	return bit->second.checkpoint_difficulty;
 }

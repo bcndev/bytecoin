@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include "Files.hpp"  // For OpenMode
 #include "common/BinaryArray.hpp"
 #include "common/Nocopy.hpp"
 
@@ -55,7 +56,7 @@ public:
 	explicit Error(const std::string &msg) : std::runtime_error(msg) {}
 	static void do_throw(const std::string &msg, int rc);
 };
-}
+}  // namespace lmdb
 
 class DBlmdb {
 	const std::string full_path;  // TODO - change fields to m_
@@ -64,7 +65,7 @@ class DBlmdb {
 	std::unique_ptr<lmdb::Txn> db_txn;
 
 public:
-	explicit DBlmdb(bool read_only, const std::string &full_path,
+	explicit DBlmdb(OpenMode open_mode, const std::string &full_path,
 	    uint64_t max_db_size = 0x8000000000);  // 0.5 Tb default, out of total 4 Tb on windows
 	const std::string &get_path() const { return full_path; }
 	void commit_db_txn();
@@ -123,4 +124,4 @@ public:
 	static void delete_db(const std::string &full_path);
 	static void backup_db(const std::string &full_path, const std::string &dst_path);
 };
-}
+}  // namespace platform

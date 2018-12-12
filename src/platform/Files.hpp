@@ -9,15 +9,18 @@
 
 namespace platform {
 
+enum OpenMode {
+	O_READ_EXISTING,  // will fail if file does not exist
+	O_CREATE_ALWAYS,  // will create file if needed and then truncate it
+	O_CREATE_NEW,     // will fail if file exists
+	O_OPEN_ALWAYS,    // will be created if needed
+	O_OPEN_EXISTING   // will fail if file does not exist
+};                    // to append, use O_OPEN_ALWAYS or O_OPEN_EXISTING, then seek(0, SEEK_END)
+
 class FileStream : public common::IOutputStream, public common::IInputStream, private common::Nocopy {
 public:
-	enum OpenMode {
-		READ_EXISTING,
-		READ_WRITE_EXISTING,
-		TRUNCATE_READ_WRITE
-	};  // to append, use READ_WRITE_EXISTING + seek(0, SEEK_END)
 	explicit FileStream(const std::string &filename, OpenMode mode);
-	~FileStream();
+	~FileStream() override;
 	size_t write_some(const void *data, size_t size) override;
 	size_t read_some(void *data, size_t size) override;
 
@@ -42,4 +45,4 @@ private:
 	int fd = -1;
 #endif
 };
-}
+}  // namespace platform

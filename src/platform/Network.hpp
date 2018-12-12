@@ -80,7 +80,7 @@ public:
 private:
 	A_handler a_handler;
 };
-}
+}  // namespace platform
 #elif TARGET_OS_IPHONE
 #include <CFNetwork/CFNetwork.h>
 #include <CoreFoundation/CoreFoundation.h>
@@ -89,12 +89,14 @@ namespace platform {
 class EventLoop {
 public:
 	static void cancel_current() {}
+	static EventLoop *current() { return nullptr; }
+	void wake() {}
 };
 class Timer : private common::Nocopy {
 public:
 	typedef std::function<void()> after_handler;
 
-	explicit Timer(after_handler a_handler) : a_handler(a_handler), impl(nullptr) {}
+	explicit Timer(after_handler &&a_handler) : a_handler(std::move(a_handler)), impl(nullptr) {}
 	~Timer() { cancel(); }
 
 	void once(float after_seconds);  // cancels previous once first
@@ -112,7 +114,8 @@ public:
 	typedef std::function<void(bool can_read, bool can_write)> RW_handler;
 	typedef std::function<void(void)> D_handler;
 
-	explicit TCPSocket(RW_handler rw_handler, D_handler d_handler) : rw_handler(rw_handler), d_handler(d_handler) {}
+	explicit TCPSocket(RW_handler &&rw_handler, D_handler &&d_handler)
+	    : rw_handler(std::move(rw_handler)), d_handler(std::move(d_handler)) {}
 	virtual ~TCPSocket() { close(); }
 	void close();          // after close you are guaranteed that no handlers will be called
 	bool is_open() const;  // Connecting or connected
@@ -140,10 +143,10 @@ public:
 
 	explicit TCPAcceptor(const std::string &addr,
 	    uint16_t port,
-	    A_handler a_handler,
+	    A_handler &&a_handler,
 	    const std::string &ssl_pem_file             = std::string(),
 	    const std::string &ssl_certificate_password = std::string())
-	    : a_handler(a_handler) {}
+	    : a_handler(std::move(a_handler)) {}
 	~TCPAcceptor() {}
 
 	bool accept(TCPSocket &socket, std::string &accepted_addr) { return false; }
@@ -152,7 +155,17 @@ public:
 private:
 	A_handler a_handler;
 };
-}
+class UDPMulticast : private common::Nocopy {
+public:
+	typedef std::function<void(const std::string &addr, const unsigned char *data, size_t size)> P_handler;
+	UDPMulticast(const std::string &addr, uint16_t port, P_handler &&p_handler) : p_handler(std::move(p_handler)) {}
+	~UDPMulticast() {}
+	static void send(const std::string &addr, uint16_t port, const void *data, size_t size) {}
+
+private:
+	P_handler p_handler;
+};
+}  // namespace platform
 #else
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -186,7 +199,7 @@ class Timer : private common::Nocopy {
 public:
 	typedef std::function<void()> after_handler;
 
-	explicit Timer(after_handler a_handler) : a_handler(a_handler) {}
+	explicit Timer(after_handler &&a_handler) : a_handler(std::move(a_handler)) {}
 	~Timer() { cancel(); }
 
 	void once(float after_seconds);  // cancels previous once first
@@ -204,8 +217,8 @@ public:
 	typedef std::function<void(bool can_read, bool can_write)> RW_handler;
 	typedef std::function<void(void)> D_handler;
 
-	explicit TCPSocket(RW_handler rw_handler, D_handler d_handler);
-	virtual ~TCPSocket();
+	explicit TCPSocket(RW_handler &&rw_handler, D_handler &&d_handler);
+	~TCPSocket() override;
 	void close();          // after close you are guaranteed that no handlers will be called
 	bool is_open() const;  // Connecting or connected
 	bool connect(const std::string &addr, uint16_t port);
@@ -235,7 +248,7 @@ public:
 
 	static std::vector<std::string> local_addresses(bool ipv4, bool ipv6);
 
-	explicit TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_handler,
+	explicit TCPAcceptor(const std::string &addr, uint16_t port, A_handler &&a_handler,
 	    const std::string &ssl_pem_file = std::string(), const std::string &ssl_certificate_password = std::string());
 	~TCPAcceptor();
 
@@ -256,7 +269,7 @@ private:
 class UDPMulticast : private common::Nocopy {
 public:
 	typedef std::function<void(const std::string &addr, const unsigned char *data, size_t size)> P_handler;
-	UDPMulticast(const std::string &addr, uint16_t port, P_handler p_handler);
+	UDPMulticast(const std::string &addr, uint16_t port, P_handler &&p_handler);
 	~UDPMulticast();
 	static void send(const std::string &addr, uint16_t port, const void *data, size_t size);  // simple synchronous send
 private:
@@ -264,5 +277,5 @@ private:
 	std::shared_ptr<Impl> impl;  // Owned by boost async machinery
 	P_handler p_handler;
 };
-}
+}  // namespace platform
 #endif

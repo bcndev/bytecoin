@@ -10,4 +10,4 @@
 namespace common {
 std::string demangle(const char *name);
 std::string what(const std::exception &e);
-}
+}  // namespace common

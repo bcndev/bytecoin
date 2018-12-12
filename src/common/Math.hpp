@@ -62,7 +62,7 @@ inline Target integer_cast_impl(const Source &arg, std::true_type, std::false_ty
 template<typename Target, typename Source>
 inline Target integer_cast_impl(const Source &arg, std::false_type, std::true_type) {
 	// unsigned to signed
-	typedef typename std::make_signed<Target>::type UTarget;
+	typedef typename std::make_unsigned<Target>::type UTarget;
 	if (arg > static_cast<UTarget>(std::numeric_limits<Target>::max()))
 		integer_cast_throw<Target>(arg);
 	return static_cast<Target>(arg);
@@ -123,4 +123,4 @@ inline Target integer_cast(const Source &arg) {
 //	test_convert<int16_t, int64_t>(20000);
 //	test_convert<int16_t, int64_t>(60000);
 //	test_convert<int16_t, int64_t>(2000000000);
-}
+}  // namespace common

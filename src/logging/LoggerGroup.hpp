@@ -20,4 +20,4 @@ public:
 protected:
 	std::vector<ILogger *> loggers;
 };
-}
+}  // namespace logging

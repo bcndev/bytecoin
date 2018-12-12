@@ -44,4 +44,4 @@ public:
 
 	static int toy_main(int argc, const char *argv[]);  // For testing
 };
-}
+}  // namespace common

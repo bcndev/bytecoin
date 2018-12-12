@@ -36,6 +36,7 @@ std::string get_app_data_folder(const std::string &app_name);
 
 std::string get_os_version_string();
 std::string get_platform_name();
+std::string normalize_folder(const std::string &path);
 bool folder_exists(const std::string &path);
 bool create_folder_if_necessary(const std::string &path);   // Only last element
 bool create_folders_if_necessary(const std::string &path);  // Recursively all elements
@@ -52,4 +53,4 @@ bool atomic_save_file(const std::string &filepath, const void *buf, size_t size,
 inline bool save_file(const std::string &filepath, const std::string &buf) {
 	return save_file(filepath, buf.data(), buf.size());
 }
-}
+}  // namespace platform

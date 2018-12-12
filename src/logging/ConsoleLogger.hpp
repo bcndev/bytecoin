@@ -18,4 +18,4 @@ protected:
 private:
 	static std::mutex mutex;  // we can have 2 console loggers, for WalletNode and Node
 };
-}
+}  // namespace logging

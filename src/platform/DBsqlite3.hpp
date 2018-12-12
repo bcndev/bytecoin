@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include "Files.hpp"  // For OpenMode
 #include "common/BinaryArray.hpp"
 #include "common/Nocopy.hpp"
 
@@ -15,12 +16,21 @@ namespace platform {
 namespace sqlite {
 struct Dbi : private common::Nocopy {
 	sqlite3 *handle = nullptr;
+	void open_check_create(OpenMode open_mode, const std::string &full_path, bool *created);
+	void exec(const char *statement);
+	void commit_txn();
+	void begin_txn();
 	~Dbi();
 };
 struct Stmt : private common::Nocopy {
 	sqlite3_stmt *handle = nullptr;
-	Stmt() {}
-	Stmt(Stmt &&other);
+	void prepare(const Dbi &dbi, const char *statement);
+	bool step() const;  // false when fininshed, throws if error
+	void bind_blob(int position, const void *data, size_t size) const;
+	size_t column_bytes(int column) const;
+	const uint8_t *column_blob(int column) const;
+	Stmt() = default;
+	Stmt(Stmt &&other) noexcept;
 	~Stmt();
 };
 
@@ -28,19 +38,18 @@ class Error : public std::runtime_error {
 public:
 	explicit Error(const std::string &msg) : std::runtime_error(msg) {}
 };
-}
-class DBsqlite {
+void check(int rc, const char *msg);
+
+}  // namespace sqlite
+
+class DBsqliteKV {
 	const std::string full_path;
-	sqlite::Dbi db_dbi;
-	sqlite::Stmt stmt_get;
-	sqlite::Stmt stmt_insert;
-	sqlite::Stmt stmt_update;
-	sqlite::Stmt stmt_del;
-	sqlite::Stmt stmt_select_star;
 
 public:
-	explicit DBsqlite(
-	    bool read_only, const std::string &full_path, uint64_t max_db_size = 0);  // no max size in sqlite3
+	sqlite::Dbi db_dbi;
+
+	explicit DBsqliteKV(
+	    OpenMode open_mode, const std::string &full_path, uint64_t max_db_size = 0);  // no max size in sqlite3
 	const std::string &get_path() const { return full_path; }
 
 	void commit_db_txn();
@@ -59,17 +68,16 @@ public:
 	void del(const std::string &key, bool mustexist);
 
 	class Cursor {
-		const DBsqlite *const db;
+		const DBsqliteKV *const db;
 		sqlite::Stmt stmt_get;
 		std::string suffix;
 		const char *data = nullptr;
 		size_t size      = 0;
 		bool is_end      = false;  // data, size == nullptr, 0 if value is empty
 		const std::string prefix;
-		const bool forward;
 		void step_and_check();
-		friend class DBsqlite;
-		Cursor(const DBsqlite *db, const sqlite::Dbi &db_dbi, const std::string &prefix, const std::string &middle,
+		friend class DBsqliteKV;
+		Cursor(const DBsqliteKV *db, const sqlite::Dbi &db_dbi, const std::string &prefix, const std::string &middle,
 		    bool forward);
 
 	public:
@@ -100,5 +108,12 @@ public:
 	static void run_tests();
 	static void delete_db(const std::string &path);
 	static void backup_db(const std::string &path, const std::string &dst_path);
+
+private:
+	sqlite::Stmt stmt_get;
+	sqlite::Stmt stmt_insert;
+	sqlite::Stmt stmt_update;
+	sqlite::Stmt stmt_del;
 };
-}
+
+}  // namespace platform

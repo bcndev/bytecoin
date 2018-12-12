@@ -3,101 +3,88 @@
 
 #pragma once
 
-#include <unordered_map>
 #include "CryptoNote.hpp"
-#include "TransactionExtra.hpp"
-#include "Wallet.hpp"
-#include "crypto/chacha8.hpp"
+#include "logging/LoggerMessage.hpp"
 #include "rpc_api.hpp"
 
-namespace bytecoin {
+namespace cn {
 
 class Wallet;
 class Currency;
+class WalletStateBasic;
 
 class TransactionBuilder {
+public:
 	Transaction m_transaction;
 	struct InputDesc {
 		std::vector<api::Output> outputs;
 		size_t real_output_index = 0;
-		KeyPair eph_keys;
-		KeyInput input;
-		static bool less_amount(const InputDesc &a, const InputDesc &b) { return a.input.amount < b.input.amount; }
+		//		KeyPair eph_keys;
+		//		InputKey input;
+		static bool less_amount(const InputDesc &a, const InputDesc &b) {
+			return a.outputs.at(a.real_output_index).amount < b.outputs.at(b.real_output_index).amount;
+		}
 	};
 	std::vector<InputDesc> m_input_descs;
 	struct OutputDesc {
 		Amount amount;
-		AccountPublicAddress addr;
+		AccountAddress addr;
 		static bool less_amount(const OutputDesc &a, const OutputDesc &b) { return a.amount < b.amount; }
 	};
 	std::vector<OutputDesc> m_output_descs;
-	//	TransactionExtra m_extra;
-	Amount m_outputs_amount = 0;
-	Amount m_inputs_amount  = 0;
-
-public:
-	explicit TransactionBuilder(const Currency &, BlockOrTimestamp);
-
-	void set_payment_id(const Hash &);
-	//	void set_extra_nonce(const BinaryArray &);
 
 	// before calling, make sure mix_outputs do not contain real_output...
-	size_t add_input(
-	    const AccountKeys &sender_keys, api::Output real_output, const std::vector<api::Output> &mix_outputs);
-	size_t add_output(uint64_t amount, const AccountPublicAddress &to);
+	void add_input(const std::vector<api::Output> &mix_outputs, size_t real_output_index);
+	void add_output(uint64_t amount, const AccountAddress &to);
 
-	Amount get_outputs_amount() const { return m_outputs_amount; }
-	Amount get_inputs_amount() const { return m_inputs_amount; }
+	Transaction sign(
+	    const WalletStateBasic &wallet_state, Wallet *wallet, const std::set<AccountAddress> *only_records);
 
-	Transaction sign(const Hash &tx_derivation_seed);
+	static KeyPair transaction_keys_from_seed(const Hash &tx_inputs_hash, const Hash &tx_derivation_seed);
+	static KeyPair deterministic_keys_from_seed(
+	    const Hash &tx_inputs_hash, const Hash &tx_derivation_seed, const BinaryArray &add);
+	static KeyPair deterministic_keys_from_seed(
+	    const TransactionPrefix &tx, const Hash &tx_derivation_seed, const BinaryArray &add);
 
-	BinaryArray generate_history(const crypto::chacha8_key &history_key) const;
-
-	static KeyPair deterministic_keys_from_seed(const Hash &tx_inputs_hash, const Hash &tx_derivation_seed);
-	static KeyPair deterministic_keys_from_seed(const TransactionPrefix &tx, const Hash &tx_derivation_seed);
-	static bool generate_key_image_helper(const AccountKeys &ack, const PublicKey &tx_public_key,
-	    size_t real_output_index, KeyPair &in_ephemeral, KeyImage &ki);
-	static bool derive_public_key(
-	    const AccountPublicAddress &to, const SecretKey &tx_key, size_t output_index, PublicKey &ephemeral_key);
-	static std::vector<uint32_t> absolute_output_offsets_to_relative(const std::vector<uint32_t> &off);
+	static OutputKey create_output(const AccountAddress &to, const SecretKey &tx_secret_key, const Hash &tx_inputs_hash,
+	    size_t output_index, const Hash &output_secret);
 };
 
 class UnspentSelector {
 	logging::LoggerRef m_log;
 	const Currency &m_currency;
 	typedef std::vector<api::Output> Unspents;
-	typedef std::map<size_t, std::map<size_t, std::vector<api::Output>>> HaveCoins;
-	typedef std::map<Amount, std::vector<api::Output>> DustCoins;
+	typedef std::map<size_t, std::map<size_t, std::vector<api::Output>>> PrettyCoins;
+	typedef std::map<Amount, std::vector<api::Output>> NonPrettyCoins;
 	Unspents m_unspents;
 	Unspents m_used_unspents;
 	Unspents m_optimization_unspents;
-	void create_have_coins(Height block_height, Timestamp block_time, Height confirmed_height, HaveCoins *have_coins,
-	    DustCoins *dust_coins, size_t *max_digit);
-	void unoptimize_amounts(HaveCoins *have_coins, DustCoins *dust_coins);
-	void optimize_amounts(HaveCoins *have_coins, size_t max_digit, Amount total_amount);
+	void create_coin_index(
+	    PrettyCoins *pretty_coins, NonPrettyCoins *non_pretty_coins, NonPrettyCoins *dust_coins, size_t *max_digit);
+	void return_coins_to_index(PrettyCoins *pretty_coins, NonPrettyCoins *non_pretty_coins, NonPrettyCoins *dust_coins);
+	void optimize_amounts(PrettyCoins *pretty_coins, size_t max_digit, Amount total_amount);
 	void combine_optimized_unspents();
 
 	Amount m_used_total   = 0;
 	size_t m_inputs_count = 0;
 	std::vector<Amount> m_ra_amounts;
-	bool select_optimal_outputs(HaveCoins *have_coins, DustCoins *dust_coins, size_t max_digit, Amount amount,
-	    size_t anonymity, size_t optimization_count, bool small_optimizations);
-	void select_max_outputs(
-	    HaveCoins *have_coins, DustCoins *dust_coins, Amount total_amount, size_t anonymity, size_t max_inputs_count);
+	bool select_optimal_outputs(PrettyCoins *pretty_coins, NonPrettyCoins *non_pretty_coins, NonPrettyCoins *dust_coins,
+	    size_t max_digit, Amount amount, size_t anonymity, size_t optimization_count, bool small_optimizations);
+	void select_max_outputs(PrettyCoins *pretty_coins, NonPrettyCoins *non_pretty_coins, NonPrettyCoins *dust_coins,
+	    Amount total_amount, size_t anonymity, size_t max_inputs_count);
 
 public:
 	explicit UnspentSelector(logging::ILogger &logger, const Currency &currency, Unspents &&unspents);
 	void reset(Unspents &&unspents);
-	void add_mixed_inputs(const SecretKey &view_secret_key, const Wallet *wallet,
-	    const std::unordered_map<PublicKey, WalletRecord> &wallet_records, TransactionBuilder *builder,
-	    uint32_t anonymity, api::bytecoind::GetRandomOutputs::Response &&ra_response);
+	size_t add_mixed_inputs(
+	    TransactionBuilder *builder, size_t anonymity, api::cnd::GetRandomOutputs::Response &&ra_response);
 
 	// if receiver_fee == nullptr, fee will be subtracted from change
-	void select_optimal_outputs(Height block_height, Timestamp block_time, Height confirmed_height,
-	    size_t effective_median_size, size_t anonymity, Amount total_amount, size_t total_outputs, Amount fee_per_byte,
-	    std::string optimization_level, Amount *change, Amount *receiver_fee);
+	void select_optimal_outputs(size_t max_transaction_size, size_t anonymity, size_t min_anonymity,
+	    Amount total_amount, size_t total_outputs, Amount fee_per_byte, std::string optimization_level, Amount *change,
+	    Amount *receiver_fee);
 	Amount get_used_total() const { return m_used_total; }
 	const std::vector<Amount> &get_ra_amounts() const { return m_ra_amounts; }
 };
 
-}  // namespace bytecoin
+}  // namespace cn

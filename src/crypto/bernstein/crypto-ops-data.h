@@ -5,7 +5,7 @@
 
 #include "crypto-ops.h"
 #if defined(__cplusplus)
-namespace crypto { extern "C" {
+extern "C" {
 #endif
 
 
@@ -35,5 +35,5 @@ extern const fe fe_fffb3;
 extern const fe fe_fffb4;
 
 #if defined(__cplusplus)
-}}
+}
 #endif

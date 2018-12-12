@@ -2,6 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Varint.hpp"
+#include <cstring>
 #include <stdexcept>
 
 namespace common {
@@ -59,12 +60,14 @@ uint64_t read_varint_sqlite4(const unsigned char *&begin, const unsigned char *e
 		return 2288 + 256 * buf[0] + buf[1];
 	}
 	unsigned char buf[8];
-	int bytes = 3 + a0 - 250;
+	size_t bytes = 3 + a0 - 250;
 	read(begin, end, buf, bytes);
 	return uint_be_from_bytes<uint64_t>(buf, bytes);
 }
 
-std::string str(const unsigned char *buf, size_t len) { return std::string((const char *)buf, len); }
+static std::string str(const unsigned char *buf, size_t len) {
+	return std::string(reinterpret_cast<const char *>(buf), len);
+}
 
 std::string write_varint_sqlite4(uint64_t val) {
 	unsigned char buf[9];
@@ -112,4 +115,4 @@ std::string write_varint_sqlite4(uint64_t val) {
 	uint_be_to_bytes<uint64_t>(buf + 1, 8, val);
 	return str(buf, 9);
 }
-}
+}  // namespace common

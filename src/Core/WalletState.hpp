@@ -13,38 +13,45 @@
 #include "Multicore.hpp"
 #include "Wallet.hpp"
 #include "WalletStateBasic.hpp"
-#include "crypto/chacha8.hpp"
 #include "platform/DB.hpp"
 
-namespace bytecoin {
+namespace cn {
 
 class Config;
 
 class WalletState : public WalletStateBasic {
 	class DeltaState : public IWalletState {
 		typedef std::map<PublicKey, std::vector<api::Output>> Unspents;
-		Unspents m_unspents;
-		std::map<KeyImage, int> m_used_keyimages;  // counter, because double spends are allowed in pool
-		std::map<Hash, std::pair<TransactionPrefix, api::Transaction>> m_transactions;
 
 	public:
+		struct DeltaStateTransaction {
+			TransactionPrefix tx;
+			api::Transaction atx;
+			std::set<crypto::EllipticCurvePoint> used_ki_or_pk;
+		};
 		explicit DeltaState() {}
 		void clear();
 
 		const Unspents &get_unspents() const { return m_unspents; }
-		const std::map<KeyImage, int> &get_used_key_images() const { return m_used_keyimages; }
+		const std::map<crypto::EllipticCurvePoint, int> &get_used_kis_or_pks() const { return m_used_kis_or_pks; }
 
-		const std::map<Hash, std::pair<TransactionPrefix, api::Transaction>> &get_transactions() const {
-			return m_transactions;
-		}
-		//		bool is_spent(const api::Output &) const;
+		const std::map<Hash, DeltaStateTransaction> &get_transactions() const { return m_transactions; }
 
 		void undo_transaction(const Hash &tid);  // For mem pool
 
-		virtual Amount add_incoming_output(const api::Output &, const Hash &tid) override;  // added amount may be lower
-		virtual Amount add_incoming_keyimage(Height, const KeyImage &) override;
-		virtual void add_transaction(
+		Amount add_incoming_output(const api::Output &, const Hash &tid) override;  // added amount may be lower
+		Amount add_incoming_keyimage(Height, const KeyImage &) override;
+		Amount add_incoming_deterministic_input(
+		    Height block_height, Amount am, size_t gi, const PublicKey &pk) override;
+		void add_transaction(
 		    Height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override;
+
+	private:
+		Unspents m_unspents;
+		std::map<crypto::EllipticCurvePoint, int>
+		    m_used_kis_or_pks;  // counter, because double spends are allowed in pool
+		std::map<Hash, DeltaStateTransaction> m_transactions;
+		Hash m_last_added_transaction;
 	};
 
 public:
@@ -53,44 +60,45 @@ public:
 	const Wallet &get_wallet() const { return m_wallet; }
 	Wallet &get_wallet() { return m_wallet; }
 
-	bool sync_with_blockchain(api::bytecoind::SyncBlocks::Response &);   // We move from it
-	bool sync_with_blockchain(api::bytecoind::SyncMemPool::Response &);  // We move from it
+	bool sync_with_blockchain(api::cnd::SyncBlocks::Response &);   // We move from it
+	bool sync_with_blockchain(api::cnd::SyncMemPool::Response &);  // We move from it
 
 	virtual std::vector<api::Output> api_get_locked_or_unconfirmed_unspent(
 	    const std::string &address, Height confirmed_height) const override;
 	virtual api::Balance get_balance(const std::string &address, Height confirmed_height) const override;
 
 	bool add_to_payment_queue(const BinaryArray &binary_transaction, bool save_file);
-	void process_payment_queue_send_error(Hash hash, const api::bytecoind::SendTransaction::Error &error);
+	void process_payment_queue_send_error(Hash hash, const api::cnd::SendTransaction::Error &error);
 	BinaryArray get_next_from_sending_queue(Hash *previous_hash);
 
 	bool api_has_transaction(Hash tid, bool check_pool) const;
-	bool api_get_transaction(Hash tid, bool check_pool, TransactionPrefix *tx, api::Transaction *ptx) const;
+	bool api_get_transaction(Hash tid, bool check_pool, TransactionPrefix *tx, api::Transaction *atx) const;
 
-	bool parse_raw_transaction(api::Transaction &ptx, const TransactionPrefix &tx, Hash tid) const;
+	bool parse_raw_transaction(bool is_base, api::Transaction &ptx, Transaction &&tx, Hash tid) const;
 
 	// Read state
-	bool api_create_proof(SendProof &sp) const;
+	bool api_create_proof(const TransactionPrefix &tx, Sendproof &sp) const;
 	api::Block api_get_pool_as_history(const std::string &address) const;
 
-	uint32_t get_tx_pool_version() const { return m_tx_pool_version; }
-	uint32_t get_pq_version() const { return m_pq_version; }
+	size_t get_tx_pool_version() const { return m_tx_pool_version; }
+	size_t get_pq_version() const { return m_pq_version; }
 	std::vector<Hash> get_tx_pool_hashes() const;
 
 	void wallet_addresses_updated();
 	// generating through state prevents undo of blocks within 2*block_future_time_limit from now
 	std::vector<WalletRecord> generate_new_addresses(const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now);
+	void create_addresses(size_t count);
 
 protected:
 	bool redo_block(const api::BlockHeader &header, const PreparedWalletBlock &block,
 	    const BlockChainState::BlockGlobalIndices &global_indices, Height height);
 
-	bool parse_raw_transaction(api::Transaction *ptx, std::vector<api::Transfer> *input_transfers,
-	    Amount *output_amount, const PreparedWalletTransaction &pwtx, Hash tid,
-	    const std::vector<uint32_t> &global_indices, Height block_heights) const;
-	bool redo_transaction(const PreparedWalletTransaction &pwtx, const std::vector<uint32_t> &global_indices,
+	bool parse_raw_transaction(bool is_base, api::Transaction *ptx, std::vector<api::Transfer> *input_transfers,
+	    std::vector<api::Transfer> *output_transfers, Amount *output_amount, const PreparedWalletTransaction &pwtx,
+	    Hash tid, const std::vector<size_t> &global_indices, Height block_heights) const;
+	bool redo_transaction(const PreparedWalletTransaction &pwtx, const std::vector<size_t> &global_indices,
 	    IWalletState *delta_state, bool is_base, Hash tid, Height block_height, Hash bid, Timestamp tx_timestamp);
-	const std::map<KeyImage, int> &get_used_key_images() const override;
+	const std::map<crypto::EllipticCurvePoint, int> &get_mempool_kis_or_pks() const override;
 	void on_first_transaction_found(Timestamp ts) override;
 
 	struct QueueEntry {
@@ -100,18 +108,17 @@ protected:
 		Height remove_height = 0;
 		bool in_blockchain() const { return remove_height != 0; }
 	};
-	Height get_pq_confirmations() const;
 
 private:
-	uint32_t m_tx_pool_version = 1;
-	uint32_t m_pq_version      = 1;
-	std::chrono::steady_clock::time_point log_redo_block;
+	size_t m_tx_pool_version = 1;
+	size_t m_pq_version      = 1;
+	std::chrono::steady_clock::time_point m_log_redo_block;
 
 	Wallet &m_wallet;
 	DeltaState m_memory_state;
 	std::set<Hash> m_pool_hashes;
 
-	void add_transaction_to_mempool(Hash tid, TransactionPrefix &&tx, bool from_pq);
+	void add_transaction_to_mempool(Hash tid, Transaction &&tx, bool from_pq);
 	void remove_transaction_from_mempool(Hash tid, bool from_pq);
 
 	struct by_hash {};
@@ -133,4 +140,4 @@ private:
 	WalletPreparatorMulticore preparator;
 };
 
-}  // namespace bytecoin
+}  // namespace cn

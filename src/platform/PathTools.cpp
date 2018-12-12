@@ -47,7 +47,7 @@ std::string get_os_version_string() {
 	ZeroMemory(&osvi, sizeof(OSVERSIONINFOEX));
 
 	osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-	bOsVersionInfoEx         = GetVersionExA((OSVERSIONINFO *)&osvi);
+	bOsVersionInfoEx         = GetVersionExA(reinterpret_cast<OSVERSIONINFO *>(&osvi));
 
 	if (!bOsVersionInfoEx)
 		return pszOS;
@@ -272,12 +272,12 @@ static std::string get_special_folder_path(int nfolder, bool iscreate) {
 #if !TARGET_OS_IPHONE
 std::string get_default_data_directory(const std::string &cryptonote_name) {
 #ifdef _WIN32
-	return get_special_folder_path(CSIDL_APPDATA, true) + "/" + cryptonote_name;
+	return get_special_folder_path(CSIDL_APPDATA, true) + "\\" + cryptonote_name;
 #else
 	std::string path_ret;
 	const char *psz_home = getenv("HOME");
 	if (psz_home)
-		path_ret = psz_home;
+		path_ret = normalize_folder(psz_home);
 	// Unix, including MAC_OSX
 	return path_ret + "/." + cryptonote_name;
 #endif
@@ -292,13 +292,12 @@ std::string get_app_data_folder(const std::string &app_name) {
 #elif !TARGET_OS_IPHONE
 std::string get_app_data_folder(const std::string &app_name) {
 #ifdef _WIN32
-	// Windows
 	return get_special_folder_path(CSIDL_APPDATA, true) + "\\" + app_name;
 #else
 	std::string path_ret;
 	const char *psz_home = getenv("HOME");
 	if (psz_home)
-		path_ret = psz_home;
+		path_ret = normalize_folder(psz_home);
 #if defined(__MACH__)
 	return path_ret + "/Library/Application Support/" + app_name;
 #endif
@@ -322,6 +321,18 @@ bool folder_exists(const std::string &path) {
 
 	return dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY);
 #endif
+}
+
+std::string normalize_folder(const std::string &path) {
+	std::string result = path;
+#if defined(__MACH__) || defined(__linux__)
+	while (result.size() > 0 && result.back() == '/')
+		result.pop_back();
+#elif defined(_WIN32)
+	while (result.size() > 0 && (result.back() == '/' || result.back() == '\\'))
+		result.pop_back();
+#endif
+	return result;
 }
 
 bool create_folder_if_necessary(const std::string &subpath) {
@@ -383,8 +394,8 @@ bool atomic_replace_file(const std::string &from_path, const std::string &to_pat
 	return ok;
 }
 bool copy_file(const std::string &from_path, const std::string &to_path) {
-	platform::FileStream from(from_path, platform::FileStream::READ_EXISTING);
-	platform::FileStream to(to_path, platform::FileStream::TRUNCATE_READ_WRITE);
+	platform::FileStream from(from_path, platform::O_READ_EXISTING);
+	platform::FileStream to(to_path, platform::O_CREATE_ALWAYS);
 	auto si = from.seek(0, SEEK_END);
 	from.seek(0, SEEK_SET);
 	while (si > 0) {
@@ -438,7 +449,7 @@ std::vector<std::string> get_filenames_in_folder(const std::string &path) {
 bool load_file(const std::string &filepath, std::string &buf) {
 	try {
 		FileStream fs;  // Allowed because we are friends
-		if (!fs.try_open(filepath, FileStream::READ_EXISTING))
+		if (!fs.try_open(filepath, O_READ_EXISTING))
 			return false;
 		size_t file_size = common::integer_cast<size_t>(fs.seek(0, SEEK_END));
 		fs.seek(0, SEEK_SET);
@@ -453,7 +464,7 @@ bool load_file(const std::string &filepath, std::string &buf) {
 bool load_file(const std::string &filepath, common::BinaryArray &buf) {
 	try {
 		FileStream fs;  // Allowed because we are friends
-		if (!fs.try_open(filepath, FileStream::READ_EXISTING))
+		if (!fs.try_open(filepath, O_READ_EXISTING))
 			return false;
 		size_t file_size = common::integer_cast<size_t>(fs.seek(0, SEEK_END));
 		fs.seek(0, SEEK_SET);
@@ -467,7 +478,7 @@ bool load_file(const std::string &filepath, common::BinaryArray &buf) {
 
 bool save_file(const std::string &filepath, const void *buf, size_t size) {
 	try {
-		FileStream fs(filepath, FileStream::TRUNCATE_READ_WRITE);
+		FileStream fs(filepath, platform::O_CREATE_ALWAYS);
 		fs.write(buf, size);
 	} catch (const std::exception &) {
 		return false;
@@ -476,7 +487,7 @@ bool save_file(const std::string &filepath, const void *buf, size_t size) {
 }
 bool atomic_save_file(const std::string &filepath, const void *buf, size_t size, const std::string &tmp_filepath) {
 	try {
-		FileStream fs(tmp_filepath, FileStream::TRUNCATE_READ_WRITE);
+		FileStream fs(tmp_filepath, platform::O_CREATE_ALWAYS);
 		fs.write(buf, size);
 		fs.fsync();
 	} catch (const std::exception &) {
@@ -484,4 +495,4 @@ bool atomic_save_file(const std::string &filepath, const void *buf, size_t size,
 	}
 	return atomic_replace_file(tmp_filepath, filepath);
 }
-}
+}  // namespace platform

@@ -24,4 +24,4 @@ private:
 	int fd = 0;
 #endif
 };
-}
+}  // namespace platform

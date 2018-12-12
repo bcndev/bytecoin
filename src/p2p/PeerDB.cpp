@@ -16,7 +16,7 @@
 #include "platform/Time.hpp"
 #include "seria/ISeria.hpp"
 
-using namespace bytecoin;
+using namespace cn;
 using namespace platform;
 
 namespace seria {
@@ -25,16 +25,12 @@ void ser_members(PeerDB::Entry &v, ISeria &s) {
 	seria_kv("shuffle_random", v.shuffle_random, s);
 	seria_kv("next_connection_attempt", v.next_connection_attempt, s);
 }
-}
+}  // namespace seria
 
 static const std::string GRAY_LIST("graylist/");
 static const std::string WHITE_LIST("whitelist/");
-const Timestamp BAN_PERIOD                = 600;
-const Timestamp RECONNECT_PERIOD          = 300;
-const Timestamp PRIORITY_RECONNECT_PERIOD = 30;
-const Timestamp SEED_RECONNECT_PERIOD     = 86400;
-static const float DB_COMMIT_PERIOD       = 60;  // 1 minute sounds good compromise
-static const std::string version_current  = "2";
+
+static const std::string version_current = "3";
 
 static Timestamp fix_time_delta(Timestamp delta) {
 	return std::max<Timestamp>(1, delta / platform::get_time_multiplier_for_tests());
@@ -43,7 +39,7 @@ static Timestamp fix_time_delta(Timestamp delta) {
 PeerDB::PeerDB(logging::ILogger &log, const Config &config, const std::string &db_suffix)
     : m_log(log, "PeerDB")
     , config(config)
-    , db(false, config.get_data_folder() + "/" + db_suffix, 1024 * 1024 * 128)
+    , db(platform::O_OPEN_ALWAYS, config.get_data_folder() + "/" + db_suffix, 1024 * 1024 * 128)
     ,  // make sure this DB size is enough for seed node
     commit_timer(std::bind(&PeerDB::db_commit, this)) {
 	std::string version;
@@ -58,28 +54,20 @@ PeerDB::PeerDB(logging::ILogger &log, const Config &config, const std::string &d
 	}
 	read_db(WHITE_LIST, whitelist);
 	read_db(GRAY_LIST, graylist);
-	commit_timer.once(DB_COMMIT_PERIOD);
+	commit_timer.once(float(config.db_commit_period_peers));
 }
 
 void PeerDB::db_commit() {
 	db.commit_db_txn();
-	commit_timer.once(DB_COMMIT_PERIOD);
+	commit_timer.once(float(config.db_commit_period_peers));
 }
 
 void PeerDB::read_db(const std::string &prefix, peers_indexed &list) {
-	//	std::cout << "PeerDB known peers:" << std::endl;
 	list.clear();
 	for (auto db_cur = db.begin(prefix); !db_cur.end(); db_cur.next()) {
-		//        std::cout << db_cur.get_suffix() << std::endl;
-		try {
-			Entry peer{};
-			seria::from_binary(peer, db_cur.get_value_array());
-			//            std::cout << common::ip_address_and_port_to_string(peer.adr.ip, peer.adr.port) << std::endl;
-			list.insert(peer);
-		} catch (const std::exception &) {
-			// No problem, will get everything from seed nodes
-			// TODO - log
-		}
+		Entry peer{};
+		seria::from_binary(peer, db_cur.get_value_array());
+		list.insert(peer);
 	}
 }
 
@@ -115,6 +103,18 @@ size_t PeerDB::get_white_size() const {
 	auto &by_time_index = whitelist.get<by_addr>();
 	return by_time_index.size();
 }
+
+std::vector<PeerlistEntry> PeerDB::get_peer_list(const peers_indexed &list) const {
+	std::vector<PeerlistEntry> result;
+	auto &by_nca_index = list.get<by_next_connection_attempt>();
+	for (auto it = by_nca_index.begin(); it != by_nca_index.end(); ++it) {
+		result.push_back(*it);
+	}
+	return result;
+}
+
+std::vector<PeerlistEntry> PeerDB::get_peer_list_white() const { return get_peer_list(whitelist); }
+std::vector<PeerlistEntry> PeerDB::get_peer_list_gray() const { return get_peer_list(graylist); }
 
 void PeerDB::trim(const std::string &prefix, Timestamp now, peers_indexed &list, size_t count) {
 	auto &by_ban_index = list.get<by_ban_until>();
@@ -188,7 +188,7 @@ std::vector<PeerlistEntryLegacy> PeerDB::get_peerlist_to_p2p_legacy(const Networ
 		bs_head.push_back(PeerlistEntryLegacy{});
 		bs_head.back().id        = it->peer_id;
 		bs_head.back().adr.port  = it->address.port;
-		bs_head.back().adr.ip    = ip_address_to_legacy(it->address.ip);
+		bs_head.back().adr.ip    = common::ip_address_to_legacy(it->address.ip);
 		bs_head.back().last_seen = 0;
 		if (bs_head.size() >= depth)
 			break;
@@ -325,25 +325,27 @@ void PeerDB::set_peer_just_seen(PeerIdType peer_id,
 	// do not reconnect immediately if called inside seed node or if connecting to seed node
 	if (reset_next_connection_attempt && !is_seed(addr))
 		new_entry.next_connection_attempt = 0;
-	new_entry.last_seen                   = now;
+	new_entry.last_seen = now;
 	whitelist.insert(new_entry);
 	update_db(WHITE_LIST, new_entry);
 }
 
 void PeerDB::delay_connection_attempt(const NetworkAddress &addr, Timestamp now) {
 	// Used by downloader for slackers and to advance connect attempt for seeds
-	// We delay slackers always by PRIORITY_RECONNECT_PERIOD (even if they are not priority)
+	// We delay slackers always by priority reconnect (even if they are not priority)
 	update_lists(addr, [&](Entry &entry) {
 		entry.next_connection_attempt =
-		    now + fix_time_delta(is_seed(entry.address) ? SEED_RECONNECT_PERIOD : PRIORITY_RECONNECT_PERIOD);
+		    now + fix_time_delta(
+		              is_seed(entry.address) ? config.p2p_reconnect_period_seed : config.p2p_reconnect_period_priority);
 	});
 }
 
 void PeerDB::set_peer_banned(const NetworkAddress &addr, const std::string &ban_reason, Timestamp now) {
+	m_log(logging::INFO) << "PeerDB peer " << addr << " banned, reason= " << ban_reason << std::endl;
 	update_lists(addr, [&](Entry &entry) {
 		entry.ban_reason = ban_reason;
-		entry.ban_until =
-		    now + fix_time_delta(is_priority_or_seed(entry.address) ? PRIORITY_RECONNECT_PERIOD : BAN_PERIOD);
+		entry.ban_until = now + fix_time_delta(is_priority_or_seed(entry.address) ? config.p2p_reconnect_period_priority
+		                                                                          : config.p2p_ban_period);
 		entry.next_connection_attempt = entry.ban_until;
 	});
 }
@@ -369,8 +371,9 @@ bool PeerDB::get_peer_to_connect(NetworkAddress &best_address,
 		auto ncp_sta            = ncp_by_time_index.begin();
 		auto ncp_fin            = ncp_by_time_index.lower_bound(boost::make_tuple(now, Timestamp(0), 0));
 		if (ncp_sta != ncp_fin && now >= ncp_sta->next_connection_attempt) {
-			update_lists(ncp_sta->address,
-			    [&](Entry &entry) { entry.next_connection_attempt = now + fix_time_delta(PRIORITY_RECONNECT_PERIOD); });
+			update_lists(ncp_sta->address, [&](Entry &entry) {
+				entry.next_connection_attempt = now + fix_time_delta(config.p2p_reconnect_period_priority);
+			});
 			best_address = ncp_sta->address;
 			return true;
 		}
@@ -397,8 +400,9 @@ bool PeerDB::get_peer_to_connect(NetworkAddress &best_address,
 		auto ncp_sta            = ncp_by_time_index.begin();
 		auto ncp_fin            = ncp_by_time_index.lower_bound(boost::make_tuple(now, Timestamp(0), 0));
 		if (ncp_sta != ncp_fin && now >= ncp_sta->next_connection_attempt) {
-			update_lists(ncp_sta->address,
-			    [&](Entry &entry) { entry.next_connection_attempt = now + fix_time_delta(PRIORITY_RECONNECT_PERIOD); });
+			update_lists(ncp_sta->address, [&](Entry &entry) {
+				entry.next_connection_attempt = now + fix_time_delta(config.p2p_reconnect_period_priority);
+			});
 			best_address = ncp_sta->address;
 			return true;
 		}
@@ -420,7 +424,8 @@ bool PeerDB::get_peer_to_connect(NetworkAddress &best_address,
 		Entry entry = *white_sta;
 		white_by_time_index.erase(white_sta);
 		entry.next_connection_attempt =
-		    now + fix_time_delta(is_priority_or_seed(entry.address) ? PRIORITY_RECONNECT_PERIOD : RECONNECT_PERIOD);
+		    now + fix_time_delta(is_priority_or_seed(entry.address) ? config.p2p_reconnect_period_priority
+		                                                            : config.p2p_reconnect_period);
 		whitelist.insert(entry);
 		update_db(WHITE_LIST, entry);
 		best_address = entry.address;
@@ -430,7 +435,8 @@ bool PeerDB::get_peer_to_connect(NetworkAddress &best_address,
 		Entry entry = *gray_sta;
 		gray_by_time_index.erase(gray_sta);
 		entry.next_connection_attempt =
-		    now + fix_time_delta(is_priority_or_seed(entry.address) ? PRIORITY_RECONNECT_PERIOD : RECONNECT_PERIOD);
+		    now + fix_time_delta(is_priority_or_seed(entry.address) ? config.p2p_reconnect_period_priority
+		                                                            : config.p2p_reconnect_period);
 		graylist.insert(entry);
 		update_db(GRAY_LIST, entry);
 		best_address = entry.address;
@@ -444,40 +450,4 @@ bool PeerDB::is_priority(const NetworkAddress &addr) const {
 }
 bool PeerDB::is_seed(const NetworkAddress &addr) const {
 	return std::binary_search(config.seed_nodes.begin(), config.seed_nodes.end(), addr);
-}
-
-void PeerDB::test() {
-	/*	std::vector<PeerlistEntry> list;
-	    for (int i = 11; i != 22; ++i) {
-	        PeerlistEntry e{};
-	        e.adr.ip   = i;
-	        e.adr.port = i;
-	        list.push_back(e);
-	    }
-	    merge_peerlist_from_p2p(list, 100);
-	    list = get_peerlist_to_p2p(100, 3);
-	    NetworkAddress ad1;
-	    NetworkAddress ad2;
-	    NetworkAddress ad3;
-	    NetworkAddress ad4;
-	    std::set<NetworkAddress> connected;
-	    get_peer_to_connect(ad1, connected, 101);
-	    get_peer_to_connect(ad2, connected, 101);
-	    get_peer_to_connect(ad3, connected, 101);
-	    get_peer_to_connect(ad4, connected, 101);
-
-	    set_peer_just_seen(0, ad1, 102);
-	    set_peer_just_seen(0, ad2, 103);
-	    set_peer_just_seen(0, ad3, 104);
-	    set_peer_banned(ad3, "reason", 105);
-	    set_peer_banned(ad4, "reason", 106);
-
-	    list = get_peerlist_to_p2p(200, 3);
-
-	    get_peer_to_connect(ad1, connected, 501);
-	    get_peer_to_connect(ad2, connected, 501);
-	    get_peer_to_connect(ad3, connected, 501);
-
-	    list = get_peerlist_to_p2p(900, 3);
-	    db_commit();*/
 }

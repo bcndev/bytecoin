@@ -7,7 +7,7 @@
 #include "hash.h"
 #include "skein/skein.h"
 
-void hash_extra_skein(const void *data, size_t length, struct CHash *hash) {
-	int r = skein_hash(8 * sizeof(struct CHash), data, 8 * length, hash->data);
+void crypto_hash_extra_skein(const void *data, size_t length, struct cryptoHash *hash) {
+	int r = skein_hash(8 * sizeof(struct cryptoHash), data, 8 * length, hash->data);
 	assert(SKEIN_SUCCESS == r);
 }

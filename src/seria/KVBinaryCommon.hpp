@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace bytecoin {
+namespace cn {
 
 const uint32_t PORTABLE_STORAGE_SIGNATUREA = 0x01011101;
 const uint32_t PORTABLE_STORAGE_SIGNATUREB = 0x01020101;  // bender's nightmare
@@ -44,4 +44,4 @@ struct KVBinaryStorageBlockHeader {
 	uint8_t m_ver          = 0;
 };
 #pragma pack(pop)
-}
+}  // namespace cn

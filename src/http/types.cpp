@@ -11,19 +11,6 @@
 
 namespace http {
 
-/*struct mapping {
-    const char *extension;
-    const char *mime_type;
-} const mappings[] = {
-    {"gif", "image/gif"}, {"htm", "text/html"}, {"html", "text/html"}, {"jpg", "image/jpeg"}, {"png", "image/png"}};
-
-std::string extension_to_mime_type(const std::string &extension) {
-    for (auto &&m : mappings)
-        if (m.extension == extension)
-            return m.mime_type;
-    return "text/plain";
-}*/
-
 struct smapping {
 	int code;
 	const char *text;
@@ -71,7 +58,7 @@ bool is_tspecial(int c) {
 
 bool is_digit(int c) { return c >= '0' && c <= '9'; }
 
-std::string request::to_string() const {
+std::string RequestHeader::to_string() const {
 	std::stringstream ss;
 	ss << method << " " << uri << " "
 	   << "HTTP/" << http_version_major << "." << http_version_minor << "\r\n";
@@ -91,7 +78,7 @@ std::string request::to_string() const {
 	return ss.str();
 }
 
-std::string response::to_string() const {
+std::string ResponseHeader::to_string() const {
 	std::stringstream ss;
 	ss << "HTTP/" << http_version_major << "." << http_version_minor << " " << status << " "
 	   << (status_text.empty() ? status_to_string(status) : status_text) << "\r\n";

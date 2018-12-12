@@ -7,13 +7,13 @@
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
-namespace bytecoin {
-namespace json_rpc {
+namespace cn { namespace json_rpc {
 
 // Binary Json Rpc:
 // Request: normal json request with params set to {}, followed by 0 char, followed by binary params
 // No Error Response: normal json response with result set to {}, followed by 0 char, followed by binary result
 // Error Response: normal error json response, followed by 0 char
+// Motivation - full semantic compatibility
 
 template<typename ResultType>  // , typename ErrorType
 bool parse_binary_response(
@@ -40,7 +40,7 @@ std::string create_binary_request_body(
 	ps_req.set("method", method);
 	ps_req.set("params", common::JsonValue(common::JsonValue::OBJECT));
 	if (jid)
-		ps_req.set("id", std::move(jid.get()));
+		ps_req.set("id", jid.get());
 	std::string json_body = ps_req.to_string();
 	json_body += char(0);
 	common::StringOutputStream str(json_body);  // continue writing
@@ -76,7 +76,7 @@ bool invoke_binary_method(
 	ser(params, ba);
 
 	common::JsonValue jid = binary_req.get_id().get();
-	http::RequestData empty_http_req;  // Do not move into handler call, will not compile on MSVC 2017
+	http::RequestBody empty_http_req;  // Do not move into handler call, will not compile on MSVC 2017
 	bool success = handler(agent, std::move(empty_http_req), std::move(binary_req), std::move(params), result);
 
 	if (success)
@@ -86,7 +86,7 @@ bool invoke_binary_method(
 
 template<typename Owner, typename Agent, typename ParamsType, typename ResultType>
 std::function<bool(Owner *, Agent *, common::IInputStream &, Request &&, std::string &)> make_binary_member_method(
-    bool (Owner::*handler)(Agent *, http::RequestData &&, Request &&, ParamsType &&, ResultType &)) {
+    bool (Owner::*handler)(Agent *, http::RequestBody &&, Request &&, ParamsType &&, ResultType &)) {
 	return [handler](
 	           Owner *obj, Agent *agent, common::IInputStream &body_stream, Request &&req, std::string &res) -> bool {
 		return invoke_binary_method<Agent, ParamsType, ResultType>(agent, body_stream, std::move(req), res,
@@ -94,5 +94,4 @@ std::function<bool(Owner *, Agent *, common::IInputStream &, Request &&, std::st
 		        std::placeholders::_4, std::placeholders::_5));
 	};
 }
-}
-}
+}}  // namespace cn::json_rpc

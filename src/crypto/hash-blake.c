@@ -5,5 +5,8 @@
 #include <stdint.h>
 
 #include "blake/blake256.h"
+#include "hash.h"
 
-void hash_extra_blake(const void *data, size_t length, unsigned char *hash) { blake256_hash(hash, data, length); }
+void crypto_hash_extra_blake(const void *data, size_t length, struct cryptoHash *hash) {
+	blake256_hash(hash->data, data, length);
+}

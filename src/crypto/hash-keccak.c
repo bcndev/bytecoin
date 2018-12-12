@@ -11,9 +11,9 @@ void KeccakF1600_StatePermute(void *state);  // Forward declarations from keccak
 
 // Our Non Standard variant
 static int keccak(const uint8_t *in, size_t inlen, uint8_t *md, size_t mdlen) {
-	struct keccak_state st;
+	struct cryptoKeccakState st;
 	uint8_t temp[144];
-	size_t rsiz = sizeof(struct keccak_state) == mdlen ? HASH_DATA_AREA : 200 - 2 * mdlen;
+	size_t rsiz = sizeof(struct cryptoKeccakState) == mdlen ? HASH_DATA_AREA : 200 - 2 * mdlen;
 
 	memset(st.b, 0, sizeof(st));
 
@@ -39,14 +39,20 @@ static int keccak(const uint8_t *in, size_t inlen, uint8_t *md, size_t mdlen) {
 	return 0;
 }
 
-void keccak_permutation(struct keccak_state *state) { KeccakF1600_StatePermute(state); }
+void crypto_keccak_permutation(struct cryptoKeccakState *state) { KeccakF1600_StatePermute(state); }
 
-void keccak_into_state(const uint8_t *buf, size_t count, struct keccak_state *state) {
-	keccak(buf, count, state->b, sizeof(struct keccak_state));
+void crypto_keccak_into_state(const uint8_t *buf, size_t count, struct cryptoKeccakState *state) {
+	keccak(buf, count, state->b, sizeof(struct cryptoKeccakState));
 }
 
-void cn_fast_hash(const void *data, size_t length, struct CHash *hash) {
-	struct keccak_state state;
-	keccak_into_state(data, length, &state);
-	memcpy(hash->data, &state, sizeof(struct CHash));
+void crypto_cn_fast_hash(const void *data, size_t length, struct cryptoHash *hash) {
+	struct cryptoKeccakState state;
+	crypto_keccak_into_state(data, length, &state);
+	memcpy(hash->data, &state, sizeof(struct cryptoHash));
+}
+
+void crypto_cn_fast_hash64(const void *data, size_t length, unsigned char hash[64]) {
+	struct cryptoKeccakState state;
+	crypto_keccak_into_state(data, length, &state);
+	memcpy(hash, &state, 64);
 }

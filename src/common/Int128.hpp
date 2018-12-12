@@ -5,7 +5,6 @@
 
 #include <cstdint>
 #include <iosfwd>
-#include <tuple>
 
 namespace common {
 
@@ -13,7 +12,7 @@ struct Uint128 {
 	uint64_t lo = 0;
 	uint64_t hi = 0;
 
-	Uint128() {}
+	Uint128() = default;
 	Uint128(uint64_t d) : lo(d) {}  // implicit
 
 	Uint128 &operator+=(Uint128 other) {
@@ -31,17 +30,23 @@ struct Uint128 {
 		lo -= other.lo;  // carry is PLATFORM-DEPENDENT
 		return *this;
 	}
-
-	bool operator<(const Uint128 &other) const { return std::tie(hi, lo) < std::tie(other.hi, other.lo); }
-	bool operator>(const Uint128 &other) const { return std::tie(hi, lo) > std::tie(other.hi, other.lo); }
-	bool operator<=(const Uint128 &other) const { return std::tie(hi, lo) <= std::tie(other.hi, other.lo); }
-	bool operator>=(const Uint128 &other) const { return std::tie(hi, lo) >= std::tie(other.hi, other.lo); }
-	bool operator==(const Uint128 &other) const { return std::tie(hi, lo) == std::tie(other.hi, other.lo); }
-	bool operator!=(const Uint128 &other) const { return std::tie(hi, lo) != std::tie(other.hi, other.lo); }
+	int compare(const Uint128 &other) const {
+		if (hi != other.hi)
+			return hi < other.hi ? -1 : 1;
+		if (lo != other.lo)
+			return lo < other.lo ? -1 : 1;
+		return 0;
+	}
+	bool operator<(const Uint128 &other) const { return compare(other) < 0; }
+	bool operator>(const Uint128 &other) const { return compare(other) > 0; }
+	bool operator<=(const Uint128 &other) const { return compare(other) <= 0; }
+	bool operator>=(const Uint128 &other) const { return compare(other) >= 0; }
+	bool operator==(const Uint128 &other) const { return compare(other) == 0; }
+	bool operator!=(const Uint128 &other) const { return compare(other) != 0; }
 };
 
 inline Uint128 operator+(Uint128 a, Uint128 b) { return a += b; }
 inline Uint128 operator-(Uint128 a, Uint128 b) { return a -= b; }
 
 std::ostream &operator<<(std::ostream &out, const Uint128 &v);
-}
+}  // namespace common

@@ -10,57 +10,98 @@
 
 using namespace platform;
 
-static void sqlite_check(int rc, const char *msg) {
+void sqlite::check(int rc, const char *msg) {
 	if (rc != SQLITE_OK)
-		throw platform::sqlite::Error(msg + common::to_string(rc));
+		throw Error((msg ? msg : "") + common::to_string(rc));
+}
+
+void sqlite::Dbi::open_check_create(OpenMode open_mode, const std::string &full_path, bool *created) {
+	sqlite::check(sqlite3_open_v2(full_path.c_str(),
+	                  &handle,
+	                  open_mode == OpenMode::O_READ_EXISTING
+	                      ? SQLITE_OPEN_READONLY
+	                      : open_mode == OpenMode::O_OPEN_EXISTING ? SQLITE_OPEN_READWRITE
+	                                                               : (SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE),
+	                  nullptr),
+	    "sqlite3_open ");
+	invariant(open_mode != OpenMode::O_CREATE_ALWAYS, "sqlite database does not support clearing existing data");
+	if (open_mode == OpenMode::O_READ_EXISTING)
+		exec("BEGIN TRANSACTION");
+	else
+		exec("BEGIN IMMEDIATE TRANSACTION");
+	sqlite::Stmt stmt_get_tables;
+	stmt_get_tables.prepare(*this, "SELECT name FROM sqlite_master WHERE type = 'table'");
+	*created = !stmt_get_tables.step();
+	if (open_mode == OpenMode::O_CREATE_NEW && !*created)
+		throw Error("sqlite database " + full_path + " already exists and will not be overwritten");
+	sqlite::check(sqlite3_busy_timeout(handle, 5000), "sqlite3_busy_timeout");  // ms
+}
+
+void sqlite::Dbi::exec(const char *statement) {
+	char *err_msg = nullptr;  // TODO - we leak err_msg?
+	sqlite::check(sqlite3_exec(handle, statement, nullptr, nullptr, &err_msg), err_msg);
+}
+void sqlite::Dbi::commit_txn() { exec("COMMIT TRANSACTION"); }
+void sqlite::Dbi::begin_txn() {
+	exec("BEGIN IMMEDIATE TRANSACTION");  // TODO - if readonly, will throw
 }
 
 sqlite::Dbi::~Dbi() {
 	sqlite3_close(handle);
 	handle = nullptr;
 }
-sqlite::Stmt::Stmt(Stmt &&other) { std::swap(handle, other.handle); }
+
+void sqlite::Stmt::prepare(const Dbi &dbi, const char *statement) {
+	sqlite::check(sqlite3_prepare_v2(dbi.handle, statement, -1, &handle, nullptr), statement);
+}
+void sqlite::Stmt::bind_blob(int position, const void *data, size_t size) const {
+	sqlite::check(sqlite3_bind_blob(handle, position, data == nullptr ? "" : data, static_cast<int>(size), nullptr),
+	    "sqlite3_bind_blob failed");
+	// sqlite3_bind_blob uses nullptr as a NULL indicator. Empty arrays can have nullptr as a data().
+}
+
+bool sqlite::Stmt::step() const {
+	auto rc = sqlite3_step(handle);
+	if (rc == SQLITE_DONE)
+		return false;
+	if (rc != SQLITE_ROW)
+		throw platform::sqlite::Error("Cursor step failed sqlite3_step in step_and_check " + common::to_string(rc));
+	return true;
+}
+
+size_t sqlite::Stmt::column_bytes(int column) const {
+	return static_cast<size_t>(sqlite3_column_bytes(handle, column));
+}
+const uint8_t *sqlite::Stmt::column_blob(int column) const {
+	return reinterpret_cast<const uint8_t *>(sqlite3_column_blob(handle, column));
+}
+
+sqlite::Stmt::Stmt(Stmt &&other) noexcept { std::swap(handle, other.handle); }
 sqlite::Stmt::~Stmt() {
 	sqlite3_finalize(handle);
 	handle = nullptr;
 }
 
-DBsqlite::DBsqlite(bool read_only, const std::string &full_path, uint64_t max_db_size)
+DBsqliteKV::DBsqliteKV(OpenMode open_mode, const std::string &full_path, uint64_t max_db_size)
     : full_path(full_path + ".sqlite") {
-	if (read_only)
-		throw platform::sqlite::Error("SQLite cannot be used in read-only mode for now");
+	//	if ()
+	//		throw platform::sqlite::Error("SQLite cannot be used in read-only mode for now");
 	//	lmdb_check(::mdb_env_set_mapsize(db_env.handle, max_db_size), "mdb_env_set_mapsize ");
-	std::cout << "sqlite3_libversion=" << sqlite3_libversion() << std::endl;
+	//	std::cout << "sqlite3_libversion=" << sqlite3_libversion() << std::endl;
 	//	create_directories_if_necessary(full_path);
-	sqlite_check(sqlite3_open(this->full_path.c_str(), &db_dbi.handle), "sqlite3_open ");
-	char *err_msg = nullptr;  // TODO - we leak err_msg
-	sqlite_check(
-	    sqlite3_exec(db_dbi.handle,
-	        "CREATE TABLE IF NOT EXISTS kv_table(kk BLOB PRIMARY KEY COLLATE BINARY, vv BLOB NOT NULL) WITHOUT ROWID",
-	        0, 0, &err_msg),
-	    err_msg);
-	sqlite_check(sqlite3_prepare_v2(db_dbi.handle, "SELECT kk, vv FROM kv_table WHERE kk = ?", -1, &stmt_get.handle, 0),
-	    "sqlite3_prepare_v2 stmt_get ");
-	sqlite_check(
-	    sqlite3_prepare_v2(db_dbi.handle, "INSERT INTO kv_table (kk, vv) VALUES (?, ?)", -1, &stmt_insert.handle, 0),
-	    "sqlite3_prepare_v2 stmt_insert ");
-	sqlite_check(
-	    sqlite3_prepare_v2(db_dbi.handle, "REPLACE INTO kv_table (kk, vv) VALUES (?, ?)", -1, &stmt_update.handle, 0),
-	    "sqlite3_prepare_v2 stmt_update ");
-	sqlite_check(sqlite3_prepare_v2(db_dbi.handle, "DELETE FROM kv_table WHERE kk = ?", -1, &stmt_del.handle, 0),
-	    "sqlite3_prepare_v2 stmt_del ");
-	sqlite_check(sqlite3_prepare_v2(db_dbi.handle, "SELECT count(kk) FROM kv_table", -1, &stmt_select_star.handle, 0),
-	    "sqlite3_prepare_v2 stmt_select_star ");
-
-	sqlite_check(sqlite3_exec(db_dbi.handle, "BEGIN TRANSACTION", 0, 0, &err_msg), err_msg);
-	std::cout << "SQLite applying DB journal, can take up to several minutes..." << std::endl;
-	commit_db_txn();  // We apply journal from last crash/exit immediately
-	                  //	std::cout << "rows=" << get_approximate_items_count() << std::endl;
+	bool created = false;
+	db_dbi.open_check_create(open_mode, this->full_path.c_str(), &created);
+	if (created)
+		db_dbi.exec("CREATE TABLE kv_table(kk BLOB PRIMARY KEY COLLATE BINARY, vv BLOB NOT NULL) WITHOUT ROWID");
+	stmt_get.prepare(db_dbi, "SELECT kk, vv FROM kv_table WHERE kk = ?");
+	stmt_insert.prepare(db_dbi, "INSERT INTO kv_table (kk, vv) VALUES (?, ?)");
+	stmt_update.prepare(db_dbi, "REPLACE INTO kv_table (kk, vv) VALUES (?, ?)");
+	stmt_del.prepare(db_dbi, "DELETE FROM kv_table WHERE kk = ?");
 }
 
-size_t DBsqlite::test_get_approximate_size() const { return 0; }
+size_t DBsqliteKV::test_get_approximate_size() const { return 0; }
 
-size_t DBsqlite::get_approximate_items_count() const {
+size_t DBsqliteKV::get_approximate_items_count() const {
 	return 1;  // Sqlite does full table scan on select count(*), we do not want that behavior
 	           //	sqlite3_reset(stmt_select_star.handle);
 	           //	auto rc = sqlite3_step(stmt_select_star.handle);
@@ -72,130 +113,106 @@ size_t DBsqlite::get_approximate_items_count() const {
 
 static const size_t max_key_size = 128;
 
-DBsqlite::Cursor::Cursor(
-    const DBsqlite *db, const sqlite::Dbi &db_dbi, const std::string &prefix, const std::string &middle, bool forward)
-    : db(db), prefix(prefix), forward(forward) {
+DBsqliteKV::Cursor::Cursor(const DBsqliteKV *db,
+    const sqlite::Dbi &db_dbi,
+    const std::string &prefix,
+    const std::string &middle,
+    bool forward)
+    : db(db), prefix(prefix) {
 	std::string start  = prefix + middle;
 	std::string finish = start;
 	if (finish.size() < max_key_size)
 		finish += std::string(max_key_size - finish.size(), char(0xff));  // char('~')
-	std::string sql = forward ? "SELECT kk, vv FROM kv_table WHERE kk >= ? ORDER BY kk ASC"
+	const char *sql = forward ? "SELECT kk, vv FROM kv_table WHERE kk >= ? ORDER BY kk ASC"
 	                          : "SELECT kk, vv FROM kv_table WHERE kk <= ? ORDER BY kk DESC";
-	sqlite_check(
-	    sqlite3_prepare_v2(db_dbi.handle, sql.c_str(), -1, &stmt_get.handle, 0), "sqlite3_prepare_v2 Cursor stmt_get ");
-	sqlite_check(sqlite3_bind_blob(stmt_get.handle, 1, forward ? start.data() : finish.data(),
-	                 static_cast<int>(forward ? start.size() : finish.size()), SQLITE_TRANSIENT),
-	    "DB::Cursor sqlite3_bind_blob 1 ");
+	stmt_get.prepare(db_dbi, sql);
+	stmt_get.bind_blob(1, forward ? start.data() : finish.data(), forward ? start.size() : finish.size());
 	step_and_check();
 }
 
-void DBsqlite::Cursor::next() { step_and_check(); }
+void DBsqliteKV::Cursor::next() { step_and_check(); }
 
-void DBsqlite::Cursor::erase() {
+void DBsqliteKV::Cursor::erase() {
 	if (is_end)
 		return;  // Some precaution
 	sqlite3_reset(stmt_get.handle);
-	std::string mykey = prefix + suffix;
-	const_cast<DBsqlite *>(db)->del(mykey, true);
-	sqlite_check(sqlite3_bind_blob(stmt_get.handle, 1, mykey.data(), static_cast<int>(mykey.size()), SQLITE_TRANSIENT),
-	    "DB::Cursor erase sqlite3_bind_blob 1 ");
+	std::string my_key = prefix + suffix;
+	const_cast<DBsqliteKV *>(db)->del(my_key, true);
+	stmt_get.bind_blob(1, my_key.data(), my_key.size());
 	step_and_check();
 }
 
-void DBsqlite::Cursor::step_and_check() {
-	auto rc = sqlite3_step(stmt_get.handle);
-	if (rc == SQLITE_DONE) {
+void DBsqliteKV::Cursor::step_and_check() {
+	if (!stmt_get.step()) {
 		data   = nullptr;
 		size   = 0;
 		is_end = true;
 		suffix = std::string();
 		return;
 	}
-	if (rc != SQLITE_ROW)
-		throw platform::sqlite::Error("Cursor step failed sqlite3_step in step_and_check " + common::to_string(rc));
-	size = sqlite3_column_bytes(stmt_get.handle, 0);
+	size = stmt_get.column_bytes(0);
 	data = reinterpret_cast<const char *>(sqlite3_column_blob(stmt_get.handle, 0));
-	std::string itkey(data, size);
-	size = sqlite3_column_bytes(stmt_get.handle, 1);
+	std::string it_key(data, size);
+	size = stmt_get.column_bytes(1);
 	data = reinterpret_cast<const char *>(sqlite3_column_blob(stmt_get.handle, 1));
-	if (itkey.size() < prefix.size() ||
-	    std::char_traits<char>::compare(prefix.data(), itkey.data(), prefix.size()) != 0) {
+	if (it_key.size() < prefix.size() ||
+	    std::char_traits<char>::compare(prefix.data(), it_key.data(), prefix.size()) != 0) {
 		data   = nullptr;
 		size   = 0;
 		is_end = true;
 		suffix = std::string();
 		return;
 	}
-	suffix = std::string(itkey.data() + prefix.size(), itkey.size() - prefix.size());
+	suffix = std::string(it_key.data() + prefix.size(), it_key.size() - prefix.size());
 }
 
-/*void DB::Cursor::check_prefix(const lmdb::Val &itkey) {
-    if (is_end || itkey.size() < prefix.size() ||
-        std::char_traits<char>::compare(prefix.data(), itkey.data(), prefix.size()) != 0) {
-        is_end = true;
-        suffix = std::string();
-        return;
-    }
-    suffix = std::string(itkey.data() + prefix.size(), itkey.size() - prefix.size());
-}*/
+std::string DBsqliteKV::Cursor::get_value_string() const { return std::string(data, size); }
+common::BinaryArray DBsqliteKV::Cursor::get_value_array() const { return common::BinaryArray(data, data + size); }
 
-std::string DBsqlite::Cursor::get_value_string() const { return std::string(data, size); }
-common::BinaryArray DBsqlite::Cursor::get_value_array() const { return common::BinaryArray(data, data + size); }
-
-DBsqlite::Cursor DBsqlite::begin(const std::string &prefix, const std::string &middle) const {
+DBsqliteKV::Cursor DBsqliteKV::begin(const std::string &prefix, const std::string &middle) const {
 	return Cursor(this, db_dbi, prefix, middle, true);
 }
 
-DBsqlite::Cursor DBsqlite::rbegin(const std::string &prefix, const std::string &middle) const {
+DBsqliteKV::Cursor DBsqliteKV::rbegin(const std::string &prefix, const std::string &middle) const {
 	return Cursor(this, db_dbi, prefix, middle, false);
 }
 
-void DBsqlite::commit_db_txn() {
-	char *err_msg = nullptr;  // TODO - we leak err_msg
-	sqlite_check(sqlite3_exec(db_dbi.handle, "COMMIT TRANSACTION", 0, 0, &err_msg), err_msg);
-	sqlite_check(sqlite3_exec(db_dbi.handle, "BEGIN TRANSACTION", 0, 0, &err_msg), err_msg);
+void DBsqliteKV::commit_db_txn() {
+	db_dbi.commit_txn();
+	db_dbi.begin_txn();
 }
 
 static void put(sqlite::Stmt &stmt, const std::string &key, const void *data, size_t size) {
 	invariant(data || size == 0, "");
 	sqlite3_reset(stmt.handle);
-	sqlite_check(
-	    sqlite3_bind_blob(stmt.handle, 1, key.data(), static_cast<int>(key.size()), 0), "DB::put sqlite3_bind_blob 1 ");
-	sqlite_check(
-	    sqlite3_bind_blob(stmt.handle, 2, data ? data : "", static_cast<int>(size), 0), "DB::put sqlite3_bind_blob 2 ");
-	// sqlite3_bind_blob uses nullptr as a NULL indicator. Empty arrays can have nullptr as a data().
-	auto rc = sqlite3_step(stmt.handle);
-	if (rc != SQLITE_DONE)
-		throw platform::sqlite::Error("DB::put failed sqlite3_step in put " + common::to_string(rc));
+	stmt.bind_blob(1, key.data(), key.size());
+	stmt.bind_blob(2, data, size);
+	invariant(!stmt.step(), "put returned rows");
 }
 
-void DBsqlite::put(const std::string &key, const common::BinaryArray &value, bool nooverwrite) {
+void DBsqliteKV::put(const std::string &key, const common::BinaryArray &value, bool nooverwrite) {
 	sqlite::Stmt &stmt = nooverwrite ? stmt_insert : stmt_update;
 	::put(stmt, key, value.data(), value.size());
 }
 
-void DBsqlite::put(const std::string &key, const std::string &value, bool nooverwrite) {
+void DBsqliteKV::put(const std::string &key, const std::string &value, bool nooverwrite) {
 	sqlite::Stmt &stmt = nooverwrite ? stmt_insert : stmt_update;
 	::put(stmt, key, value.data(), value.size());
 }
 
 static std::pair<const unsigned char *, size_t> get(const sqlite::Stmt &stmt, const std::string &key) {
 	sqlite3_reset(stmt.handle);
-	sqlite_check(
-	    sqlite3_bind_blob(stmt.handle, 1, key.data(), static_cast<int>(key.size()), 0), "DB::get sqlite3_bind_blob 1 ");
-	auto rc = sqlite3_step(stmt.handle);
-	if (rc == SQLITE_DONE)
+	stmt.bind_blob(1, key.data(), key.size());
+	if (!stmt.step())
 		return std::make_pair(nullptr, 0);
-	if (rc != SQLITE_ROW)
-		throw platform::sqlite::Error("DB::get failed sqlite3_step in get " + common::to_string(rc));
-	auto si = sqlite3_column_bytes(stmt.handle, 0);
-	auto da = reinterpret_cast<const unsigned char *>(sqlite3_column_blob(stmt.handle, 0));
-	si      = sqlite3_column_bytes(stmt.handle, 1);
-	da      = reinterpret_cast<const unsigned char *>(sqlite3_column_blob(stmt.handle, 1));
+	auto si = stmt.column_bytes(0);
+	auto da = stmt.column_blob(0);
+	si      = stmt.column_bytes(1);
+	da      = stmt.column_blob(1);
 	return std::make_pair(da, si);
 }
 
-bool DBsqlite::get(const std::string &key, common::BinaryArray &value) const {
+bool DBsqliteKV::get(const std::string &key, common::BinaryArray &value) const {
 	auto result = ::get(stmt_get, key);
 	if (!result.first)
 		return false;
@@ -203,7 +220,7 @@ bool DBsqlite::get(const std::string &key, common::BinaryArray &value) const {
 	return true;
 }
 
-bool DBsqlite::get(const std::string &key, std::string &value) const {
+bool DBsqliteKV::get(const std::string &key, std::string &value) const {
 	auto result = ::get(stmt_get, key);
 	if (!result.first)
 		return false;
@@ -211,33 +228,30 @@ bool DBsqlite::get(const std::string &key, std::string &value) const {
 	return true;
 }
 
-void DBsqlite::del(const std::string &key, bool mustexist) {
+void DBsqliteKV::del(const std::string &key, bool mustexist) {
 	sqlite3_reset(stmt_del.handle);
-	sqlite_check(sqlite3_bind_blob(stmt_del.handle, 1, key.data(), static_cast<int>(key.size()), 0),
-	    "DB::del sqlite3_bind_blob 1 ");
-	auto rc = sqlite3_step(stmt_del.handle);
-	if (rc != SQLITE_DONE)
-		throw platform::sqlite::Error("DB::del failed sqlite3_step in del " + common::to_string(rc));
+	stmt_del.bind_blob(1, key.data(), key.size());
+	invariant(!stmt_del.step(), "sqlite del returned rows");
 	int deleted_rows = sqlite3_changes(db_dbi.handle);
 	if (mustexist && deleted_rows != 1)
 		throw platform::sqlite::Error("DB::del row does not exits");
 }
 
-std::string DBsqlite::to_ascending_key(uint32_t key) {
+std::string DBsqliteKV::to_ascending_key(uint32_t key) {
 	char buf[32] = {};
 	sprintf(buf, "%08X", key);
 	return std::string(buf);
 }
 
-uint32_t DBsqlite::from_ascending_key(const std::string &key) {
+uint32_t DBsqliteKV::from_ascending_key(const std::string &key) {
 	long long unsigned val = 0;
 	if (sscanf(key.c_str(), "%llx", &val) != 1)
 		throw std::runtime_error("from_ascending_key failed to convert key=" + key);
-	return common::integer_cast<uint32_t>(
-	    val);  // TODO - std::stoull(key, nullptr, 16) when Google updates NDK compiler
+	// TODO - std::stoull(key, nullptr, 16) when Google updates NDK compiler
+	return common::integer_cast<uint32_t>(val);
 }
 
-std::string DBsqlite::clean_key(const std::string &key) {
+std::string DBsqliteKV::clean_key(const std::string &key) {
 	std::string result = key;
 	for (char &ch : result) {
 		unsigned char uch = ch;
@@ -247,24 +261,44 @@ std::string DBsqlite::clean_key(const std::string &key) {
 			uch = 'F';
 		if (uch < 32)
 			uch = '0' + uch;
-		ch      = uch;
+		ch = uch;
 	}
 	return result;
 }
 
-void DBsqlite::delete_db(const std::string &path) {
+void DBsqliteKV::delete_db(const std::string &path) {
 	//	std::remove((path + "/data.mdb").c_str());
 	//	std::remove((path + "/lock.mdb").c_str());
-	std::remove(path.c_str());
+	std::remove((path + ".sqlite").c_str());
+	std::remove((path + ".sqlite-journal").c_str());
 }
-void DBsqlite::backup_db(const std::string &path, const std::string &dst_path) {
+void DBsqliteKV::backup_db(const std::string &path, const std::string &dst_path) {
 	throw platform::sqlite::Error("SQlite backed does not support hot backup - stop daemons, then copy database");
+	/*	bool src_created = false;
+	    sqlite::Dbi src;
+	    src.open_check_create(platform::O_READ_EXISTING, path + ".sqlite", &src_created);
+
+	    bool dst_created = false;
+	    sqlite::Dbi dst;
+	    dst.open_check_create(platform::O_CREATE_NEW, dst_path + ".sqlite", &dst_created);
+
+	    auto ba = sqlite3_backup_init(dst.handle, "main", src.handle, "main");
+	    if(!ba)
+	        throw platform::sqlite::Error("SQlite failed to start hot backup - stop daemons, then copy database");
+	//	while(true){
+	    auto res = sqlite3_backup_step(ba, -1);
+	    sqlite3_backup_finish(ba); ba = nullptr;
+	    if(res != SQLITE_DONE)
+	        sqlite::check(res, "sqlite3_backup_step failed");
+	//		std::cout << "." << std::flush;
+	//	}
+	*/
 }
 
-void DBsqlite::run_tests() {
+void DBsqliteKV::run_tests() {
 	delete_db("temp_db");
 	{
-		DBsqlite db(false, "temp_db");
+		DBsqliteKV db(platform::O_CREATE_NEW, "temp_db");
 		std::string str;
 		bool res = db.get("history/ha", str);
 		std::cout << "res=" << res << std::endl;

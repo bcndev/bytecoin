@@ -14,4 +14,4 @@ class Nocopy {
 public:
 	Nocopy() = default;
 };
-}
+}  // namespace common

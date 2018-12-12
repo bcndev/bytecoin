@@ -6,10 +6,11 @@
 #include "CryptoNoteTools.hpp"
 #include "common/MemoryStreams.hpp"
 #include "common/StringTools.hpp"
+#include "common/Varint.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 
-using namespace bytecoin;
+using namespace cn;
 
 template<typename T, typename U>
 bool set_field_good(const T &, U &) {
@@ -28,12 +29,12 @@ bool find_field_in_extra(const BinaryArray &extra, T &field) {
 		seria::BinaryInputStream ar(iss);
 
 		while (!iss.empty()) {
-			int c = common::read<uint8_t>(iss);
+			int c = iss.read_byte();
 			switch (c) {
 			case TransactionExtraPadding::tag: {
 				size_t size = 1;  // tag is itself '0', counts towards max count
 				for (; !iss.empty() && size <= TransactionExtraPadding::MAX_COUNT; ++size) {
-					if (common::read<uint8_t>(iss) != 0)
+					if (iss.read_byte() != 0)
 						return false;  // all bytes should be zero
 				}
 				if (size > TransactionExtraPadding::MAX_COUNT)
@@ -51,7 +52,7 @@ bool find_field_in_extra(const BinaryArray &extra, T &field) {
 			}
 			case TransactionExtraNonce::tag: {
 				TransactionExtraNonce extra_nonce;
-				uint8_t size = common::read<uint8_t>(iss);
+				uint8_t size = iss.read_byte();  // TODO - turn into varint <= 127?
 				extra_nonce.nonce.resize(size);
 				iss.read(extra_nonce.nonce.data(), extra_nonce.nonce.size());
 				// We have some base transactions (like in blocks 558479, 558984)
@@ -63,10 +64,29 @@ bool find_field_in_extra(const BinaryArray &extra, T &field) {
 			}
 			case TransactionExtraMergeMiningTag::tag: {
 				TransactionExtraMergeMiningTag mm_tag;
-				ser(mm_tag, ar);
+				std::string field_data;
+				ser(field_data, ar);
+				common::MemoryInputStream stream(field_data.data(), field_data.size());
+				seria::BinaryInputStream input(stream);
+				ser(mm_tag, input);
 				if (set_field_good(mm_tag, field))
 					return true;
 				break;
+			}
+			case TransactionExtraBlockCapacityVote::tag: {
+				TransactionExtraBlockCapacityVote bsv;
+				std::string field_data;
+				ser(field_data, ar);
+				common::MemoryInputStream stream(field_data.data(), field_data.size());
+				seria::BinaryInputStream input(stream);
+				ser(bsv, input);
+				if (set_field_good(bsv, field))
+					return true;
+				break;
+			}
+			default: {  // We hope to skip unknown tags
+				std::string field_data;
+				ser(field_data, ar);
 			}
 			}
 		}
@@ -75,44 +95,60 @@ bool find_field_in_extra(const BinaryArray &extra, T &field) {
 	return false;  // Not found
 }
 
-PublicKey bytecoin::extra_get_transaction_public_key(const BinaryArray &tx_extra) {
+PublicKey cn::extra_get_transaction_public_key(const BinaryArray &tx_extra) {
 	TransactionExtraPublicKey pub_key_field;
 	if (!find_field_in_extra(tx_extra, pub_key_field))
 		return PublicKey{};
 	return pub_key_field.public_key;
 }
 
-void bytecoin::extra_add_transaction_public_key(BinaryArray &tx_extra, const PublicKey &tx_pub_key) {
+void cn::extra_add_transaction_public_key(BinaryArray &tx_extra, const PublicKey &tx_pub_key) {
 	tx_extra.push_back(TransactionExtraPublicKey::tag);
 	common::append(tx_extra, std::begin(tx_pub_key.data), std::end(tx_pub_key.data));
 }
 
-void bytecoin::extra_add_nonce(BinaryArray &tx_extra, const BinaryArray &extra_nonce) {
+void cn::extra_add_nonce(BinaryArray &tx_extra, const BinaryArray &extra_nonce) {
 	if (extra_nonce.size() > TransactionExtraNonce::MAX_COUNT)
 		throw std::runtime_error("Extra nonce cannot be > " + common::to_string(TransactionExtraNonce::MAX_COUNT));
 	tx_extra.push_back(TransactionExtraNonce::tag);
 	tx_extra.push_back(static_cast<uint8_t>(extra_nonce.size()));
-	common::append(tx_extra, extra_nonce.begin(), extra_nonce.end());
+	common::append(tx_extra, extra_nonce);
 }
 
-void bytecoin::extra_add_merge_mining_tag(BinaryArray &tx_extra, const TransactionExtraMergeMiningTag &mm_tag) {
-	BinaryArray blob = seria::to_binary(mm_tag);
+void cn::extra_add_merge_mining_tag(BinaryArray &tx_extra, const TransactionExtraMergeMiningTag &field) {
+	BinaryArray blob = seria::to_binary(field);
 	tx_extra.push_back(TransactionExtraMergeMiningTag::tag);
-	common::append(tx_extra, blob.begin(), blob.end());
+	common::append(tx_extra, common::get_varint_data(blob.size()));
+	common::append(tx_extra, blob);
 }
 
-bool bytecoin::extra_get_merge_mining_tag(const BinaryArray &tx_extra, TransactionExtraMergeMiningTag &mm_tag) {
-	return find_field_in_extra(tx_extra, mm_tag);
+bool cn::extra_get_merge_mining_tag(const BinaryArray &tx_extra, TransactionExtraMergeMiningTag &field) {
+	return find_field_in_extra(tx_extra, field);
 }
 
-void bytecoin::extra_add_payment_id(BinaryArray &tx_extra, const Hash &payment_id) {
+void cn::extra_add_block_capacity_vote(BinaryArray &tx_extra, size_t block_capacity) {
+	BinaryArray blob = seria::to_binary(block_capacity);
+	tx_extra.push_back(TransactionExtraBlockCapacityVote::tag);
+	common::append(tx_extra, common::get_varint_data(blob.size()));
+	common::append(tx_extra, blob);
+}
+
+bool cn::extra_get_block_capacity_vote(const BinaryArray &tx_extra, size_t *block_capacity) {
+	TransactionExtraBlockCapacityVote field;
+	if (!find_field_in_extra(tx_extra, field))
+		return false;
+	*block_capacity = field.block_capacity;
+	return true;
+}
+
+void cn::extra_add_payment_id(BinaryArray &tx_extra, const Hash &payment_id) {
 	BinaryArray extra_nonce;
 	extra_nonce.push_back(TransactionExtraNonce::PAYMENT_ID);
 	common::append(extra_nonce, std::begin(payment_id.data), std::end(payment_id.data));
 	extra_add_nonce(tx_extra, extra_nonce);
 }
 
-bool bytecoin::extra_get_payment_id(const BinaryArray &tx_extra, Hash &payment_id) {
+bool cn::extra_get_payment_id(const BinaryArray &tx_extra, Hash &payment_id) {
 	TransactionExtraNonce extra_nonce;
 	if (!find_field_in_extra(tx_extra, extra_nonce))
 		return false;
@@ -124,27 +160,11 @@ bool bytecoin::extra_get_payment_id(const BinaryArray &tx_extra, Hash &payment_i
 	return true;
 }
 
-static void do_serialize(TransactionExtraMergeMiningTag &tag, seria::ISeria &s) {
-	s.begin_object();
-	uint64_t depth = static_cast<uint64_t>(tag.depth);
-	seria_kv("depth", depth, s);
-	tag.depth = static_cast<size_t>(depth);
-	seria_kv("merkle_root", tag.merkle_root, s);
-	s.end_object();
+void seria::ser_members(TransactionExtraMergeMiningTag &v, ISeria &s) {
+	seria_kv("depth", v.depth, s);
+	seria_kv("merkle_root", v.merkle_root, s);
 }
 
-void seria::ser(TransactionExtraMergeMiningTag &v, ISeria &s) {
-	if (s.is_input()) {
-		std::string field;
-		ser(field, s);
-		common::MemoryInputStream stream(field.data(), field.size());
-		seria::BinaryInputStream input(stream);
-		do_serialize(v, input);
-	} else {
-		std::string field;
-		common::StringOutputStream os(field);
-		seria::BinaryOutputStream output(os);
-		do_serialize(v, output);
-		ser(field, s);
-	}
+void seria::ser_members(TransactionExtraBlockCapacityVote &v, ISeria &s) {
+	seria_kv("block_capacity", v.block_capacity, s);
 }

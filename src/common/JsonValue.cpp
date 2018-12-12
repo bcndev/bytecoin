@@ -42,7 +42,7 @@ JsonValue::JsonValue(const JsonValue &other) {
 	type = other.type;
 }
 
-JsonValue::JsonValue(JsonValue &&other) {
+JsonValue::JsonValue(JsonValue &&other) noexcept {
 	switch (other.type) {
 	case ARRAY:
 		new (&value_array) Array(std::move(reinterpret_cast<Array &>(other.value_array)));
@@ -196,7 +196,7 @@ JsonValue &JsonValue::operator=(const JsonValue &other) {
 }
 
 // Analysers might warn about absense of this != &other
-JsonValue &JsonValue::operator=(JsonValue &&other) {
+JsonValue &JsonValue::operator=(JsonValue &&other) noexcept {
 	if (type != other.type) {
 		destruct_value();
 		switch (other.type) {
@@ -522,7 +522,7 @@ std::ostream &operator<<(std::ostream &out, const JsonValue &json_value) {
 	case JsonValue::ARRAY: {
 		const JsonValue::Array &array = *reinterpret_cast<const JsonValue::Array *>(&json_value.value_array);
 		out << '[';
-		if (array.size() > 0) {
+		if (!array.empty()) {
 			out << array[0];
 			for (size_t i = 1; i < array.size(); ++i) {
 				out << ',' << array[i];
@@ -901,4 +901,4 @@ void JsonValue::read_string(StreamContext &ctx) {
 	String value = ctx.read_string_token();
 	*this        = std::move(value);
 }
-}
+}  // namespace common

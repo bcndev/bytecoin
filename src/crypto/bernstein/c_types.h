@@ -3,19 +3,11 @@
 
 #pragma once
 
-#if defined(__cplusplus)
-namespace crypto { extern "C" {
-#endif
-
 #pragma pack(push, 1)
-struct EllipticCurvePoint {
+struct cryptoEllipticCurvePoint {
 	unsigned char data[32];
 };
-struct EllipticCurveScalar {
+struct cryptoEllipticCurveScalar {
 	unsigned char data[32];
 };
 #pragma pack(pop)
-
-#if defined(__cplusplus)
-}}
-#endif

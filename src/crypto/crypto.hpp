@@ -14,14 +14,23 @@
 
 namespace crypto {
 
-void generate_random_bytes(size_t n, void *result);  // thread-safe
-void random_scalar(EllipticCurveScalar &res);
+// thrown when invariants a violated
+// 1. PublicKey, SecretKey are invalid (except key_isvalid, secret_key_to_public_key, keys_match)
+// 2. array sizes mismatch or other logic error
+
+class Error : public std::logic_error {
+public:
+	explicit Error(const std::string &msg) : std::logic_error(msg) {}
+};
+
+void generate_random_bytes(void *result, size_t n);  // thread-safe
+SecretKey random_scalar();
 
 template<typename T>
 T rand() {
 	static_assert(std::is_standard_layout<T>::value, "T must be Standard Layout");
 	T res;
-	generate_random_bytes(sizeof(T), &res);
+	generate_random_bytes(&res, sizeof(T));
 	return res;
 }
 
@@ -48,7 +57,7 @@ inline KeyPair random_keypair() {
 // Check a public key. Returns true if it is valid, false otherwise.
 bool key_isvalid(const PublicKey &key);
 // Checks a private key and computes the corresponding public key.
-bool secret_key_to_public_key(const SecretKey &sec, PublicKey &pub);
+bool secret_key_to_public_key(const SecretKey &sec, PublicKey *pub);
 bool keys_match(const SecretKey &secret_key, const PublicKey &expected_public_key);
 
 // To generate an ephemeral key used to send money to:
@@ -58,35 +67,22 @@ bool keys_match(const SecretKey &secret_key, const PublicKey &expected_public_ke
 // The sender uses key derivation, the output index, and the receivers' "spend" key to derive an ephemeral public key.
 // The receiver can either derive the public key (to check that the transaction is addressed to him) or the private key
 // (to spend the money).
-bool generate_key_derivation(const PublicKey &key1, const SecretKey &key2, KeyDerivation &derivation);
+KeyDerivation generate_key_derivation(const PublicKey &tx_public_key, const SecretKey &view_secret_key);
 
-bool derive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &base,
-    const uint8_t *prefix, size_t prefix_length, PublicKey &derived_key);
+PublicKey derive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &spend_public_key);
 
-bool derive_public_key(
-    const KeyDerivation &derivation, size_t output_index, const PublicKey &base, PublicKey &derived_key);
-
-bool underive_public_key_and_get_scalar(const KeyDerivation &derivation, std::size_t output_index,
-    const PublicKey &derived_key, PublicKey &base, EllipticCurveScalar &hashed_derivation);
-
-void derive_secret_key(const KeyDerivation &derivation, std::size_t output_index, const SecretKey &base,
-    const uint8_t *prefix, size_t prefix_length, SecretKey &derived_key);
-
-void derive_secret_key(
-    const KeyDerivation &derivation, std::size_t output_index, const SecretKey &base, SecretKey &derived_key);
+SecretKey derive_secret_key(
+    const KeyDerivation &derivation, std::size_t output_index, const SecretKey &spend_secret_key);
 
 // Inverse function of derive_public_key. It can be used by the receiver to find which "spend" key was used to generate
 // a transaction. This may be useful if the receiver used multiple addresses which only differ in "spend" key.
-bool underive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &derived_key,
-    const uint8_t *prefix, size_t prefix_length, PublicKey &base);
 
-bool underive_public_key(
-    const KeyDerivation &derivation, size_t output_index, const PublicKey &derived_key, PublicKey &base);
+PublicKey underive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &output_public_key);
 
 // returns false if keys are corrupted/invalid
-void generate_signature(const Hash &prefix_hash, const PublicKey &pub, const SecretKey &sec, Signature &sig);
-bool check_signature(
-    const Hash &prefix_hash, const PublicKey &pub, const Signature &sig, bool *key_corrupted = nullptr);
+Signature generate_signature(const Hash &prefix_hash, const PublicKey &pub, const SecretKey &sec);
+
+bool check_signature(const Hash &prefix_hash, const PublicKey &pub, const Signature &sig);
 
 // To send money to a key:
 // The sender generates an ephemeral key and includes it in transaction output.
@@ -94,35 +90,56 @@ bool check_signature(
 // Then he selects a bunch of outputs, including the one he spends, and uses them to generate a ring signature.
 // To check the signature, it is necessary to collect all the keys that were used to generate it. To detect double
 // spends, it is necessary to check that each key image is used at most once.
-void generate_key_image(const PublicKey &pub, const SecretKey &sec, KeyImage &image);
+KeyImage generate_key_image(const PublicKey &pub, const SecretKey &sec);
 
 // void hash_data_to_ec(const uint8_t* data, std::size_t len, EllipticCurvePoint& key);
 
-// returns false if keys are corrupted/invalid
-bool generate_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey *const pubs[],
-    std::size_t pubs_count, const SecretKey &sec, std::size_t sec_index, Signature sigs[]);
-bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey *const pubs[],
-    size_t pubs_count, const Signature sigs[], bool key_image_subgroup_check, bool *key_corrupted = nullptr);
-// TODO - remove one pair of funs
-// returns false if keys are corrupted/invalid
-inline bool generate_ring_signature(const Hash &prefix_hash, const KeyImage &image,
-    const std::vector<const PublicKey *> &pubs, const SecretKey &sec, size_t sec_index, Signature sigs[]) {
-	return generate_ring_signature(prefix_hash, image, pubs.data(), pubs.size(), sec, sec_index, sigs);
-}
-inline bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image,
-    const std::vector<const PublicKey *> &pubs, const Signature sigs[], bool key_image_subgroup_check,
-    bool *key_corrupted = nullptr) {
-	return check_ring_signature(
-	    prefix_hash, image, pubs.data(), pubs.size(), sigs, key_image_subgroup_check, key_corrupted);
-}
+RingSignature generate_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey pubs[],
+    std::size_t pubs_count, const SecretKey &sec, std::size_t sec_index);
 
-bool generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_sec, const PublicKey &receiver_view_key_pub,
-    const KeyDerivation &derivation, const Hash &message_hash, Signature &proof);
+bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey pubs[], size_t pubs_count,
+    const RingSignature &sig, bool key_image_subgroup_check);
+
+RingSignature3 generate_ring_signature3(const Hash &prefix_hash, const std::vector<KeyImage> &images,
+    const std::vector<std::vector<PublicKey>> &pubs, const std::vector<SecretKey> &secs,
+    const std::vector<size_t> &sec_indexes, const SecretKey &view_secret_key);
+// returns false if keys are corrupted/invalid
+
+bool check_ring_signature3(const Hash &prefix_hash, const std::vector<KeyImage> &image,
+    const std::vector<std::vector<PublicKey>> &pubs, const RingSignature3 &sig);
+
+size_t find_deterministic_input3(const Hash &prefix_hash, size_t input_index, const std::vector<EllipticCurveScalar> &r,
+    const SecretKey &view_secret_key);
+// returns r.size() if not our input
+
+Signature generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_sec,
+    const PublicKey &receiver_view_key_pub, const KeyDerivation &derivation, const Hash &message_hash);
 // Transaction key and the derivation supplied with the proof can be invalid, this just means that the proof is invalid.
 bool check_sendproof(const PublicKey &txkey_pub, const PublicKey &receiver_view_key_pub,
     const KeyDerivation &derivation, const Hash &message_hash, const Signature &proof);
 
-void hash_to_scalar(const void *data, size_t length, EllipticCurveScalar &res);
-void hash_to_point_for_tests(const Hash &h, EllipticCurvePoint &res);  // Used only in tests
-void hash_to_ec(const PublicKey &key, EllipticCurvePoint &res);
-}
+SecretKey hash_to_scalar(const void *data, size_t length);
+SecretKey hash_to_scalar64(const void *data, size_t length);
+EllipticCurvePoint hash_to_point_for_tests(const Hash &h);  // Used only in tests
+PublicKey hash_to_ec(const PublicKey &key);
+
+// result size should be set to number of desired spend keys
+void generate_hd_spendkeys(
+    const KeyPair &base, const Hash &keys_generation_seed, size_t index, std::vector<KeyPair> *result);
+PublicKey generate_address_s_v(const PublicKey &spend_public_key, const SecretKey &view_secret_key);
+
+// Unlinkable crypto, spend_scalar is temporary value that is expensive to calc, we pass it arounf
+PublicKey unlinkable_underive_public_key(const SecretKey &view_secret_key, const Hash &tx_inputs_hash,
+    size_t output_index, const PublicKey &output_public_key, const Hash &encrypted_output_secret,
+    SecretKey *spend_scalar);
+
+SecretKey unlinkable_derive_secret_key(const SecretKey &spend_secret_key, const SecretKey &spend_scalar);
+
+PublicKey unlinkable_derive_public_key(const Hash &output_secret, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &spend_public_key, const PublicKey &vs_public_key, Hash *encrypted_output_secret);
+
+bool unlinkable_underive_address(const Hash &output_secret, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &output_public_key, const Hash &encrypted_output_secret, PublicKey *spend_public_key,
+    PublicKey *vs_public_key);
+
+}  // namespace crypto

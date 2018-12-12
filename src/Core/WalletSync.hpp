@@ -9,13 +9,15 @@
 #include "http/Agent.hpp"
 #include "http/JsonRpc.hpp"
 
-namespace bytecoin {
+namespace cn {
+
+class WalletState;
 
 class WalletSync {
 public:
 	explicit WalletSync(logging::ILogger &, const Config &, WalletState &, std::function<void()> state_changed_handler);
-
-	const api::bytecoind::GetStatus::Response &get_last_node_status() const { return m_last_node_status; }
+	~WalletSync();
+	const api::cnd::GetStatus::Response &get_last_node_status() const { return m_last_node_status; }
 	std::string get_sync_error() const { return m_sync_error; }
 
 protected:
@@ -23,7 +25,7 @@ protected:
 	logging::LoggerRef m_log;
 	const Config &m_config;
 
-	api::bytecoind::GetStatus::Response m_last_node_status;
+	api::cnd::GetStatus::Response m_last_node_status;
 	std::string m_sync_error;
 	platform::Timer m_status_timer;
 	http::Agent m_sync_agent;
@@ -38,8 +40,8 @@ protected:
 	std::unique_ptr<platform::PreventSleep> prevent_sleep;
 	platform::Timer m_commit_timer;
 
-	Hash next_send_hash;
-	Hash sending_transaction_hash;
+	Hash m_next_send_hash;
+	Hash m_sending_transaction_hash;
 
 	void db_commit();
 	void send_get_status();
@@ -48,4 +50,4 @@ protected:
 	void send_get_blocks();
 };
 
-}  // namespace bytecoin
+}  // namespace cn

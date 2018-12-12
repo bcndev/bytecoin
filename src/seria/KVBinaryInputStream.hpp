@@ -14,10 +14,10 @@ class KVBinaryInputStream : public JsonInputStreamValue {
 	common::JsonValue value_storage;
 
 public:
-	KVBinaryInputStream(common::IInputStream &strm);
+	explicit KVBinaryInputStream(common::IInputStream &strm);
 	using JsonInputStreamValue::seria_v;
-	virtual void seria_v(common::BinaryArray &value) override;
-	virtual void binary(void *value, size_t size) override;
+	bool seria_v(common::BinaryArray &value) override;
+	bool binary(void *value, size_t size) override;
 };
 
 template<typename T>
@@ -44,4 +44,4 @@ void from_binary_kv(T &v, const std::string &buf) {
 	common::MemoryInputStream stream(buf.data(), buf.size());
 	from_binary_kv(v, stream);
 }
-}
+}  // namespace seria

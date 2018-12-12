@@ -22,7 +22,6 @@ using namespace platform;
 ExclusiveLock::ExclusiveLock(const std::string &folder, const std::string &file) {
 	std::string full_path = folder + "/" + file;
 #if !TARGET_OS_IPHONE  // We do not need lock on iOS because only 1 instance of app will be running
-//	create_folders_if_necessary(folder);  // We ignore result here
 #ifdef _WIN32
 	auto wfull_path = FileStream::utf8_to_utf16(full_path);
 	handle = CreateFileW(wfull_path.c_str(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

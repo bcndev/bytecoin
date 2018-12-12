@@ -15,7 +15,7 @@ cn_slow_hash_noaesni
 	size_t i;
 	__m128i *longoutput, *expkey, *xmminput, b_x;
 	ALIGNED_DECL(uint64_t a[2], 16);
-	keccak_into_state((const uint8_t *)data, length, &ctx->state.hs);
+	crypto_keccak_into_state((const uint8_t *)data, length, &ctx->state.hs);
 
 	memcpy(ctx->text, ctx->state.init, INIT_SIZE_BYTE);
 #if defined(AESNI)
@@ -175,6 +175,6 @@ cn_slow_hash_noaesni
 #endif
 
 	memcpy(ctx->state.init, ctx->text, INIT_SIZE_BYTE);
-	keccak_permutation(&ctx->state.hs);
+	crypto_keccak_permutation(&ctx->state.hs);
 	extra_hashes[ctx->state.hs.b[0] & 3](&ctx->state, 200, hash);
 }

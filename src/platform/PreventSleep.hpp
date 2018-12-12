@@ -10,4 +10,4 @@ public:
 	explicit PreventSleep(const char *reason);  // some OSes will show this string to user
 	~PreventSleep();
 };
-}
+}  // namespace platform

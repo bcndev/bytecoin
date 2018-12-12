@@ -38,9 +38,10 @@ void get_unsigned(const common::JsonValue *val, T &v, const char *t_name) {
 		}
 	}
 }
-}
+}  // namespace
 
-JsonInputStreamValue::JsonInputStreamValue(const common::JsonValue &value) : value(value) {}
+JsonInputStreamValue::JsonInputStreamValue(const common::JsonValue &value, bool allow_unused_object_keys)
+    : value(value), allow_unused_object_keys(allow_unused_object_keys) {}
 
 bool JsonInputStreamValue::object_key(common::StringView name, bool optional) {
 	const JsonValue *parent = chain.back();
@@ -88,8 +89,9 @@ void JsonInputStreamValue::begin_object() {
 	if (val) {
 		itrs.push_back(val->get_object().begin());
 		std::set<std::string> all_keys;
-		for (const auto &kv : val->get_object())
-			all_keys.insert(kv.first);
+		if (!allow_unused_object_keys)
+			for (const auto &kv : val->get_object())
+				all_keys.insert(kv.first);
 		remaining_object_keys.push_back(std::move(all_keys));
 	}
 	chain.push_back(val);
@@ -137,18 +139,20 @@ void JsonInputStreamValue::seria_v(int64_t &value) { get_integer(get_value(), va
 
 void JsonInputStreamValue::seria_v(uint64_t &value) { get_unsigned(get_value(), value, "uint64_t"); }
 
-void JsonInputStreamValue::seria_v(double &value) {
-	const common::JsonValue *val = get_value();
-	if (val)
-		value = val->get_double();
-}
+// void JsonInputStreamValue::seria_v(double &value) {
+//	const common::JsonValue *val = get_value();
+//	if (val)
+//		value = val->get_double();
+//}
 
 void JsonInputStreamValue::seria_v(uint8_t &value) { get_unsigned(get_value(), value, "uint8_t"); }
 
-void JsonInputStreamValue::seria_v(std::string &value) {
+bool JsonInputStreamValue::seria_v(std::string &value) {
 	const JsonValue *val = get_value();
-	if (val)
-		value = val->get_string();
+	if (!val)
+		return false;
+	value = val->get_string();
+	return true;
 }
 
 void JsonInputStreamValue::seria_v(bool &value) {
@@ -157,22 +161,24 @@ void JsonInputStreamValue::seria_v(bool &value) {
 		value = val->get_bool();
 }
 
-void JsonInputStreamValue::binary(void *value, size_t size) {
-	const JsonValue *val = get_value();
-	if (val) {
-		const std::string &str = val->get_string();
-		if (str.empty())
-			memset(value, 0, size);
-		else
-			common::from_hex_or_throw(str, value, size);
-	}
-}
-
-void JsonInputStreamValue::seria_v(common::BinaryArray &value) {
+bool JsonInputStreamValue::binary(void *value, size_t size) {
 	const JsonValue *val = get_value();
 	if (!val)
-		return;
+		return false;
+	const std::string &str = val->get_string();
+	if (str.empty())
+		memset(value, 0, size);
+	else
+		common::from_hex_or_throw(str, value, size);
+	return true;
+}
+
+bool JsonInputStreamValue::seria_v(common::BinaryArray &value) {
+	const JsonValue *val = get_value();
+	if (!val)
+		return false;
 	value = common::from_hex(val->get_string());
+	return true;
 }
 
 const JsonValue *JsonInputStreamValue::get_value() {

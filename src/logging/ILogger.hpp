@@ -27,4 +27,4 @@ public:
 };
 
 std::ostream &operator<<(std::ostream &out, common::console::Color color);
-}
+}  // namespace logging
