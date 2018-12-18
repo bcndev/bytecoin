@@ -165,6 +165,10 @@ static Amount validate_semantic(const Currency &currency, uint8_t block_major_ve
 			amount                 = key_output.amount;
 			if (check_output_key && !key_isvalid(key_output.public_key))
 				throw ConsensusError(common::to_string("Output key not valid elliptic point", key_output.public_key));
+			if (check_output_key && tx.version >= currency.amethyst_transaction_version &&
+			    !key_isvalid(key_output.encrypted_secret))
+				throw ConsensusError(
+				    common::to_string("Output encrypted secret not valid elliptic point", key_output.encrypted_secret));
 			if (tx.version < currency.amethyst_transaction_version && key_output.is_auditable)
 				throw ConsensusError(
 				    common::to_string("Transaction version", tx.version, "insufficient for output with audit"));

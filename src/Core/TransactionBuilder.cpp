@@ -17,25 +17,112 @@
 
 using namespace cn;
 
-OutputKey TransactionBuilder::create_output(const AccountAddress &to, const SecretKey &tx_secret_key,
-    const Hash &tx_inputs_hash, size_t output_index, const Hash &output_secret) {
+std::array<uint8_t, 8> TransactionBuilder::encrypt_real_index(
+    const PublicKey &output_key, const SecretKey &view_secret_key) {
+	std::array<uint8_t, 8> result{};
+	BinaryArray ba;
+	common::append(ba, std::begin(view_secret_key.data), std::end(view_secret_key.data));
+	common::append(ba, std::begin(output_key.data), std::end(output_key.data));
+	Hash ha = crypto::cn_fast_hash(ba.data(), ba.size());
+	static_assert(result.size() < sizeof(ha), "Modify line below");
+	std::copy(ha.data, ha.data + result.size(), result.begin());
+	return result;
+}
+
+OutputKey TransactionBuilder::create_output(bool tx_amethyst, const AccountAddress &to, const SecretKey &tx_secret_key,
+    const Hash &tx_inputs_hash, size_t output_index, const KeyPair &output_det_keys) {
 	OutputKey out_key;
+
+	BinaryArray ba(std::begin(output_det_keys.public_key.data), std::end(output_det_keys.public_key.data));
+	SecretKey output_secret_scalar = crypto::hash_to_scalar(ba.data(), ba.size());
+	PublicKey output_secret_point  = crypto::hash_to_point(ba.data(), ba.size());
+	ba.push_back(0);  // Or use cn_fast_hash64
+	Hash output_secret2 = crypto::cn_fast_hash(ba.data(), ba.size());
+
+	if (!tx_amethyst) {
+		if (to.type() == typeid(AccountAddressSimple)) {
+			auto &addr                     = boost::get<AccountAddressSimple>(to);
+			const KeyDerivation derivation = crypto::generate_key_derivation(addr.view_public_key, tx_secret_key);
+			out_key.public_key             = crypto::derive_public_key(derivation, output_index, addr.spend_public_key);
+			out_key.encrypted_address_type = AccountAddressSimple::type_tag ^ output_secret2.data[0];
+			return out_key;
+		}
+		throw std::runtime_error(
+		    "TransactionBuilder::create_output output type forbidden for transaction version, wait for amethyst upgrade");
+	}
 	if (to.type() == typeid(AccountAddressSimple)) {
-		auto &addr                     = boost::get<AccountAddressSimple>(to);
-		const KeyDerivation derivation = crypto::generate_key_derivation(addr.view_public_key, tx_secret_key);
-		out_key.public_key             = crypto::derive_public_key(derivation, output_index, addr.spend_public_key);
-		for (size_t i = 0; i != sizeof(output_secret); ++i)
-			out_key.encrypted_secret.data[i] = output_secret.data[i] ^ addr.view_public_key.data[i];
+		auto &addr         = boost::get<AccountAddressSimple>(to);
+		out_key.public_key = crypto::linkable_derive_public_key(output_secret_scalar, tx_inputs_hash, output_index,
+		    addr.spend_public_key, addr.view_public_key, &out_key.encrypted_secret);
+		out_key.encrypted_address_type = AccountAddressSimple::type_tag ^ output_secret2.data[0];
 		return out_key;
 	}
 	if (to.type() == typeid(AccountAddressUnlinkable)) {
 		auto &addr         = boost::get<AccountAddressUnlinkable>(to);
 		out_key.public_key = crypto::unlinkable_derive_public_key(
-		    output_secret, tx_inputs_hash, output_index, addr.s, addr.sv, &out_key.encrypted_secret);
+		    output_secret_point, tx_inputs_hash, output_index, addr.s, addr.sv, &out_key.encrypted_secret);
 		out_key.is_auditable = addr.is_auditable;
+		out_key.encrypted_address_type =
+		    (addr.is_auditable ? AccountAddressUnlinkable::type_tag_auditable : AccountAddressUnlinkable::type_tag) ^
+		    output_secret2.data[0];
 		return out_key;
 	}
 	throw std::runtime_error("TransactionBuilder::create_output unknown address type");
+}
+
+bool TransactionBuilder::detect_not_our_output(const Wallet *wallet, bool tx_amethyst, const Hash &tid,
+    const Hash &tx_inputs_hash, boost::optional<Wallet::History> *history, KeyPair *tx_keys, size_t out_index,
+    const OutputKey &key_output, Amount *amount, AccountAddress *address) {
+	if (!tx_amethyst) {
+		if (!*history)
+			*history = wallet->load_history(tid);
+		if (!history->get().empty()) {
+			if (tx_keys->secret_key == SecretKey{})
+				*tx_keys = transaction_keys_from_seed(tx_inputs_hash, wallet->get_tx_derivation_seed());
+			for (const auto &addr : history->get()) {
+				const KeyDerivation derivation = generate_key_derivation(addr.view_public_key, tx_keys->secret_key);
+				const PublicKey guess_key = crypto::derive_public_key(derivation, out_index, addr.spend_public_key);
+				if (guess_key == key_output.public_key) {
+					*address = addr;
+					*amount  = key_output.amount;
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	// In amethyst, we sholud always detect out outputs
+	const KeyPair output_det_keys = TransactionBuilder::deterministic_keys_from_seed(
+	    tx_inputs_hash, wallet->get_tx_derivation_seed(), common::get_varint_data(out_index));
+	BinaryArray ba(std::begin(output_det_keys.public_key.data), std::end(output_det_keys.public_key.data));
+	const SecretKey output_secret_scalar = crypto::hash_to_scalar(ba.data(), ba.size());
+	const PublicKey output_secret_point  = crypto::hash_to_point(ba.data(), ba.size());
+	ba.push_back(0);  // Or use cn_fast_hash64
+	const Hash output_secret2 = crypto::cn_fast_hash(ba.data(), ba.size());
+
+	const uint8_t address_type = key_output.encrypted_address_type ^ output_secret2.data[0];
+	if (address_type == AccountAddressSimple::type_tag) {
+		AccountAddressSimple addr;
+		crypto::linkable_underive_address(output_secret_scalar, tx_inputs_hash, out_index, key_output.public_key,
+		    key_output.encrypted_secret, &addr.spend_public_key, &addr.view_public_key);
+		*address = addr;
+		*amount  = key_output.amount;
+		return true;
+	}
+	if (address_type == AccountAddressUnlinkable::type_tag ||
+	    address_type == AccountAddressUnlinkable::type_tag_auditable) {
+		const bool address_auditable = (address_type == AccountAddressUnlinkable::type_tag_auditable);
+		if (address_auditable != key_output.is_auditable)
+			return false;
+		AccountAddressUnlinkable u_address;
+		crypto::unlinkable_underive_address(output_secret_point, tx_inputs_hash, out_index, key_output.public_key,
+		    key_output.encrypted_secret, &u_address.s, &u_address.sv);
+		u_address.is_auditable = key_output.is_auditable;
+		*amount                = key_output.amount;
+		*address               = u_address;
+		return true;
+	}
+	return false;
 }
 
 void TransactionBuilder::add_output(uint64_t amount, const AccountAddress &to) {
@@ -97,24 +184,24 @@ Transaction TransactionBuilder::sign(
 		input_key.amount    = our_output.amount;
 		for (const auto &o : desc.outputs)
 			input_key.output_indexes.push_back(o.index);
-		input_key.output_indexes = absolute_output_offsets_to_relative(input_key.output_indexes);
+		input_key.output_indexes       = absolute_output_offsets_to_relative(input_key.output_indexes);
+		input_key.encrypted_real_index = encrypt_real_index(our_output.public_key, wallet->get_view_secret_key());
 		m_transaction.inputs.push_back(input_key);
 	}
 	// Deterministic generation of tx private key.
 	const Hash tx_inputs_hash = get_transaction_inputs_hash(m_transaction);
 	const KeyPair tx_keys     = transaction_keys_from_seed(tx_inputs_hash, wallet->get_tx_derivation_seed());
 
-	extra_add_transaction_public_key(m_transaction.extra, tx_keys.public_key);
+	if (!is_tx_amethyst)
+		extra_add_transaction_public_key(m_transaction.extra, tx_keys.public_key);
 	// Now when we set tx keys we can derive output keys
 	m_transaction.outputs.resize(m_output_descs.size());
 	for (size_t out_index = 0; out_index != m_output_descs.size(); ++out_index) {
-		KeyPair output_secret_keys = deterministic_keys_from_seed(
+		KeyPair output_det_keys = deterministic_keys_from_seed(
 		    tx_inputs_hash, wallet->get_tx_derivation_seed(), common::get_varint_data(out_index));
-		Hash output_secret =
-		    crypto::cn_fast_hash(output_secret_keys.public_key.data, sizeof(output_secret_keys.public_key.data));
-		OutputKey out_key = TransactionBuilder::create_output(
-		    m_output_descs.at(out_index).addr, tx_keys.secret_key, tx_inputs_hash, out_index, output_secret);
-		out_key.amount                      = m_output_descs.at(out_index).amount;
+		OutputKey out_key = TransactionBuilder::create_output(is_tx_amethyst, m_output_descs.at(out_index).addr,
+		    tx_keys.secret_key, tx_inputs_hash, out_index, output_det_keys);
+		out_key.amount    = m_output_descs.at(out_index).amount;
 		m_transaction.outputs.at(out_index) = out_key;
 	}
 	// Now we can sign
@@ -141,7 +228,7 @@ Transaction TransactionBuilder::sign(
 			throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "Could not parse address " + our_output.address);
 		invariant(!only_records || only_records->count(address) != 0, "Output with wrong address selected by selector");
 		WalletRecord record;
-		if (!wallet->get_record(record, address))
+		if (!wallet->get_record(&record, address))
 			throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "No keys in wallet for address " + our_output.address);
 		KeyPair output_keypair;
 		boost::optional<KeyDerivation> kd;

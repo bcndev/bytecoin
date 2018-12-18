@@ -59,6 +59,7 @@ public:
 	virtual void export_wallet(const std::string &export_path, const std::string &new_password, bool view_only,
 	    bool view_outgoing_addresses) const                = 0;
 	virtual bool is_view_only() const { return m_wallet_records.at(0).spend_secret_key == SecretKey{}; }
+	bool can_view_outgoing_addresses() const { return m_tx_derivation_seed != Hash{}; }
 	virtual bool is_deterministic() const { return false; }
 	virtual bool is_unlinkable() const { return false; }
 	virtual bool is_auditable() const { return false; }
@@ -68,7 +69,7 @@ public:
 	const SecretKey &get_view_secret_key() const { return m_view_secret_key; }
 	const std::vector<WalletRecord> &get_records() const { return m_wallet_records; }
 	virtual size_t get_actual_records_count() const { return m_wallet_records.size(); }
-	virtual bool get_record(WalletRecord &record, const AccountAddress &) const = 0;
+	virtual bool get_record(WalletRecord *record, const AccountAddress &) const = 0;
 	virtual void create_look_ahead_records(size_t count) {}
 	bool get_look_ahead_record(WalletRecord &record, const PublicKey &);
 
@@ -109,8 +110,6 @@ public:
 	virtual bool detect_our_output(const Hash &tid, const Hash &tx_inputs_hash,
 	    const boost::optional<KeyDerivation> &kd, size_t out_index, const PublicKey &spend_public_key,
 	    const SecretKey &secret_scalar, const OutputKey &, Amount *, KeyPair *output_keypair, AccountAddress *) = 0;
-	virtual bool detect_not_our_output(bool tx_amethyst, const Hash &tid, const Hash &tx_inputs_hash,
-	    boost::optional<History> *, size_t out_index, const OutputKey &, Amount *, AccountAddress *)            = 0;
 };
 
 // stores at most 1 view secret key. 1 or more spend secret keys
@@ -146,7 +145,7 @@ public:
 	std::vector<WalletRecord> generate_new_addresses(
 	    const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now, bool *rescan_from_ct) override;
 	AccountAddress record_to_address(const WalletRecord &record) const override;
-	bool get_record(WalletRecord &record, const AccountAddress &) const override;
+	bool get_record(WalletRecord *record, const AccountAddress &) const override;
 	void set_password(const std::string &password) override;
 	void export_wallet(const std::string &export_path, const std::string &new_password, bool view_only,
 	    bool view_outgoing_addresses) const override;
@@ -172,8 +171,6 @@ public:
 	bool detect_our_output(const Hash &tid, const Hash &tx_inputs_hash, const boost::optional<KeyDerivation> &kd,
 	    size_t out_index, const PublicKey &spend_public_key, const SecretKey &secret_scalar, const OutputKey &,
 	    Amount *, KeyPair *output_keypair, AccountAddress *) override;
-	bool detect_not_our_output(bool tx_amethyst, const Hash &tid, const Hash &tx_inputs_hash,
-	    boost::optional<History> *, size_t out_index, const OutputKey &, Amount *, AccountAddress *) override;
 };
 
 // stores either mnemonic or some seeds if view-only
@@ -222,7 +219,7 @@ public:
 	std::vector<WalletRecord> generate_new_addresses(
 	    const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now, bool *rescan_from_ct) override;
 	AccountAddress record_to_address(const WalletRecord &record) const override;
-	bool get_record(WalletRecord &record, const AccountAddress &) const override;
+	bool get_record(WalletRecord *record, const AccountAddress &) const override;
 	void set_password(const std::string &password) override;
 	void export_wallet(const std::string &export_path, const std::string &new_password, bool view_only,
 	    bool view_outgoing_addresses) const override;
@@ -248,8 +245,6 @@ public:
 	bool detect_our_output(const Hash &tid, const Hash &tx_inputs_hash, const boost::optional<KeyDerivation> &kd,
 	    size_t out_index, const PublicKey &spend_public_key, const SecretKey &secret_scalar, const OutputKey &,
 	    Amount *, KeyPair *output_keypair, AccountAddress *) override;
-	bool detect_not_our_output(bool tx_amethyst, const Hash &tid, const Hash &tx_inputs_hash,
-	    boost::optional<History> *, size_t out_index, const OutputKey &, Amount *, AccountAddress *) override;
 };
 
 }  // namespace cn

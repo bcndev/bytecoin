@@ -9,7 +9,7 @@
 
 namespace seria {
 
-class JsonOutputStream : public ISeria {};  // Common base für use with dynamic_cast in ser() methods
+class JsonOutputStream : public ISeria {};  // Common base for use with dynamic_cast in ser() methods
 
 class JsonOutputStreamValue : public JsonOutputStream {
 public:

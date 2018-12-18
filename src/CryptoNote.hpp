@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <boost/variant.hpp>
 #include <functional>
 #include <vector>
@@ -49,6 +50,7 @@ struct InputKey {
 	Amount amount = 0;
 	std::vector<size_t> output_indexes;
 	KeyImage key_image;
+	std::array<uint8_t, 8> encrypted_real_index{};  // serialized only in amethyst if output_indexes.size >= 2
 	enum { type_tag = 2 };
 	static std::string str_type_tag() { return "key"; }
 };
@@ -56,7 +58,9 @@ struct InputKey {
 struct OutputKey {
 	Amount amount = 0;
 	PublicKey public_key;
-	Hash encrypted_secret;  // serialized only in amethyst
+	PublicKey encrypted_secret;          // serialized only in amethyst
+	uint8_t encrypted_address_type = 0;  // serialized only in amethyst
+
 	bool is_auditable = false;
 	enum { type_tag = 2, type_tag_auditable = 32 + 2 };  // we treat it similar to a flag
 	// type_tag_auditable is only allowed in amethyst
@@ -156,14 +160,17 @@ struct SendproofKey {
 	// he or she wished to include public view key of address into proof. To further check, look up tx_hash in
 	// main chain and sum amounts of outputs which have spend keys corresponding to address public spend key
 	// For unlinkable addresses
+	static std::string str_type_tag() { return ""; }  // legacy sendproofs lack explicit type
 };
-struct SendproofUnlinkable {
+struct SendproofAmethyst {
 	struct Element {
 		size_t out_index = 0;
-		PublicKey q;
+		PublicKey deterministic_public_key;
 		Signature signature;
 	};
 	std::vector<Element> elements;
+	// signature per output, proving that creator knows deterministic output private key
+	static std::string str_type_tag() { return "amethyst"; }
 };
 
 struct Sendproof {  // proofing that some tx actually sent amount to particular address
@@ -171,7 +178,7 @@ struct Sendproof {  // proofing that some tx actually sent amount to particular 
 	AccountAddress address;
 	Amount amount = 0;
 	std::string message;
-	boost::variant<SendproofKey, SendproofUnlinkable> proof;
+	boost::variant<SendproofKey, SendproofAmethyst> proof;
 };
 
 struct RawBlock {
@@ -244,14 +251,14 @@ void ser_members(cn::AccountAddressSimple &v, ISeria &s);
 void ser_members(cn::AccountAddressUnlinkable &v, ISeria &s);
 void ser_members(cn::AccountAddress &v, ISeria &s);
 void ser_members(cn::SendproofKey &v, ISeria &s);
-void ser_members(cn::SendproofUnlinkable::Element &v, ISeria &s);
-void ser_members(cn::SendproofUnlinkable &v, ISeria &s);
+void ser_members(cn::SendproofAmethyst::Element &v, ISeria &s);
+void ser_members(cn::SendproofAmethyst &v, ISeria &s);
 void ser_members(cn::Sendproof &v, ISeria &s, const cn::Currency &);
-void ser_members(cn::TransactionInput &v, ISeria &s);
+void ser_members(cn::TransactionInput &v, ISeria &s, bool is_tx_amethyst);
 void ser_members(cn::TransactionOutput &v, ISeria &s, bool is_tx_amethyst);
 
 void ser_members(cn::InputCoinbase &v, ISeria &s);
-void ser_members(cn::InputKey &v, ISeria &s);
+void ser_members(cn::InputKey &v, ISeria &s, bool is_tx_amethyst);
 void ser_members(cn::RingSignatures &v, ISeria &s);
 void ser_members(cn::RingSignature3 &v, ISeria &s);
 void ser_members(cn::TransactionSignatures &v, ISeria &s);

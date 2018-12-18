@@ -66,12 +66,7 @@ class TCPAcceptor : private common::Nocopy {
 public:
 	typedef std::function<void()> A_handler;
 
-	explicit TCPAcceptor(const std::string &addr,
-	    uint16_t port,
-	    A_handler a_handler,
-	    const std::string &ssl_pem_file             = std::string(),
-	    const std::string &ssl_certificate_password = std::string())
-	    : a_handler(a_handler) {}
+	explicit TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_handler) : a_handler(a_handler) {}
 	~TCPAcceptor() {}
 
 	bool accept(TCPSocket &socket, std::string &accepted_addr) { return false; }
@@ -141,11 +136,7 @@ class TCPAcceptor : private common::Nocopy {
 public:
 	typedef std::function<void()> A_handler;
 
-	explicit TCPAcceptor(const std::string &addr,
-	    uint16_t port,
-	    A_handler &&a_handler,
-	    const std::string &ssl_pem_file             = std::string(),
-	    const std::string &ssl_certificate_password = std::string())
+	explicit TCPAcceptor(const std::string &addr, uint16_t port, A_handler &&a_handler)
 	    : a_handler(std::move(a_handler)) {}
 	~TCPAcceptor() {}
 
@@ -248,8 +239,7 @@ public:
 
 	static std::vector<std::string> local_addresses(bool ipv4, bool ipv6);
 
-	explicit TCPAcceptor(const std::string &addr, uint16_t port, A_handler &&a_handler,
-	    const std::string &ssl_pem_file = std::string(), const std::string &ssl_certificate_password = std::string());
+	explicit TCPAcceptor(const std::string &addr, uint16_t port, A_handler &&a_handler);
 	~TCPAcceptor();
 
 	// if accept returns false, will fire accept_handler in future

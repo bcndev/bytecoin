@@ -252,9 +252,8 @@ WalletPreparatorMulticore::~WalletPreparatorMulticore() {
 		th.join();
 }
 
-PreparedWalletTransaction::PreparedWalletTransaction(
-    TransactionPrefix &&ttx, TransactionSignatures &&sigs, const Wallet::OutputHandler &o_handler)
-    : tx(std::move(ttx)), sigs(std::move(sigs)) {
+PreparedWalletTransaction::PreparedWalletTransaction(TransactionPrefix &&ttx, const Wallet::OutputHandler &o_handler)
+    : tx(std::move(ttx)) {
 	// We ignore results of most crypto calls here and absence of tx_public_key
 	// All errors will lead to spend_key not found in our wallet
 	PublicKey tx_public_key = extra_get_transaction_public_key(tx.extra);
@@ -275,19 +274,16 @@ PreparedWalletTransaction::PreparedWalletTransaction(
 }
 
 PreparedWalletTransaction::PreparedWalletTransaction(Transaction &&tx, const Wallet::OutputHandler &o_handler)
-    : PreparedWalletTransaction(std::move(static_cast<TransactionPrefix &&>(tx)), std::move(tx.signatures), o_handler) {
-}
+    : PreparedWalletTransaction(std::move(static_cast<TransactionPrefix &&>(tx)), o_handler) {}
 
 PreparedWalletBlock::PreparedWalletBlock(BlockTemplate &&bc_header, std::vector<TransactionPrefix> &&raw_transactions,
-    std::vector<TransactionSignatures> &&signatures, Hash base_transaction_hash, const Wallet::OutputHandler &o_handler)
+    Hash base_transaction_hash, const Wallet::OutputHandler &o_handler)
     : base_transaction_hash(base_transaction_hash) {
-	header = bc_header;
-	base_transaction =
-	    PreparedWalletTransaction(std::move(bc_header.base_transaction), TransactionSignatures{}, o_handler);
+	header           = bc_header;
+	base_transaction = PreparedWalletTransaction(std::move(bc_header.base_transaction), o_handler);
 	transactions.reserve(raw_transactions.size());
 	for (size_t tx_index = 0; tx_index != raw_transactions.size(); ++tx_index) {
-		transactions.emplace_back(std::move(raw_transactions.at(tx_index)),
-		    tx_index < signatures.size() ? std::move(signatures.at(tx_index)) : TransactionSignatures{}, o_handler);
+		transactions.emplace_back(std::move(raw_transactions.at(tx_index)), o_handler);
 	}
 }
 
@@ -314,7 +310,7 @@ void WalletPreparatorMulticore::thread_run() {
 			work.blocks.erase(work.blocks.begin());
 		}
 		PreparedWalletBlock result(std::move(sync_block.raw_header), std::move(sync_block.raw_transactions),
-		    std::move(sync_block.signatures), sync_block.transactions.at(0).hash, o_handler);
+		    sync_block.transactions.at(0).hash, o_handler);
 		{
 			std::unique_lock<std::mutex> lock(mu);
 			if (local_work_counter == work_counter) {

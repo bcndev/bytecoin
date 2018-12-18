@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSE for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for
+// details.
 
 #include "test_blockchain.hpp"
 
@@ -11,6 +12,7 @@
 #include "Core/Currency.hpp"
 #include "Core/Difficulty.hpp"
 #include "Core/TransactionExtra.hpp"
+#include "common/Varint.hpp"
 #include "crypto/crypto.hpp"
 #include "logging/ConsoleLogger.hpp"
 #include "seria/BinaryInputStream.hpp"
@@ -19,7 +21,7 @@
 #include "seria/KVBinaryOutputStream.hpp"
 #include "version.hpp"
 
-using namespace bytecoin;
+using namespace cn;
 
 struct MinedBlockDesc {
 	BlockTemplate block_template;
@@ -32,13 +34,13 @@ class TestMiner {
 public:
 	BlockChainState &block_chain;
 	const Currency &currency;
-	AccountPublicAddress address;
+	AccountAddress address;
 	crypto::CryptoNightContext cryptoContext;
 	std::vector<KeyPair> checkpoint_keypairs;
 
 	TestMiner(BlockChainState &block_chain, const Currency &currency) : block_chain(block_chain), currency(currency) {
-		invariant(currency.parse_account_address_string(
-		              "21mQ7KPdmLbjfpg3Coayi4hZzAEgjeL87QXGeDTHahKeJsvKHc6DoprAJmqUcLhWTUXtxCL6rQFSwEUe6NZdEoqZNpSq1iC",
+		invariant(currency.parse_account_address_string("21mQ7KPdmLbjfpg3Coayi4hZzAEgjeL87QXGeDTHahKeJsvKHc6DoprAJmqU"
+		                                                "cLhWTUXtxCL6rQFSwEUe6NZdEoqZNpSq1iC",
 		              &address),
 		    "");
 		std::vector<std::string> skeys{"dacb828348483011f63ebb538401b3f3d52e8ce1916278f9b189f820d1ec730e",
@@ -46,33 +48,37 @@ public:
 		    "16d4d146d8ba2bbff13a4bb174b4c5d73d3ca22817a6585956a697337be26a09"};
 		for (auto &&sk : skeys) {
 			checkpoint_keypairs.push_back(KeyPair{});
-			invariant(common::pod_from_hex(sk, checkpoint_keypairs.back().secret_key), "");
+			invariant(common::pod_from_hex(sk, &checkpoint_keypairs.back().secret_key), "");
 			invariant(crypto::secret_key_to_public_key(
-			              checkpoint_keypairs.back().secret_key, checkpoint_keypairs.back().public_key),
+			              checkpoint_keypairs.back().secret_key, &checkpoint_keypairs.back().public_key),
 			    "");
 		}
 	}
 	MinedBlockDesc mine_block(Hash bid) {
 		api::BlockHeader parent;
-		invariant(block_chain.read_header(bid, &parent), "");
+		invariant(block_chain.get_header(bid, &parent), "");
 
 		BlockTemplate block;
-		Difficulty difficulty = 0;
-		Height height         = 0;
-		block_chain.create_mining_block_template(address, BinaryArray{}, &block, &difficulty, &height, bid);
-		set_solo_mining_tag(block);
-		block.parent_block.timestamp = parent.timestamp + currency.difficulty_target;
-		block.timestamp              = block.parent_block.timestamp;
-		block.parent_block.nonce     = crypto::rand<uint32_t>();
-		block.nonce                  = block.parent_block.nonce;
-		auto body_proxy              = get_body_proxy_from_template(block);
+		Difficulty difficulty      = 0;
+		Height height              = 0;
+		size_t reserve_back_offset = 0;
+		block_chain.create_mining_block_template(
+		    bid, address, BinaryArray{}, &block, &difficulty, &height, &reserve_back_offset);
+		set_root_extra_to_solo_mining_tag(block);
+		block.root_block.timestamp = parent.timestamp + currency.difficulty_target;
+		block.timestamp            = block.root_block.timestamp;
+		//		block.root_block.nonce.resize(4);
+		uint32_t nonce = crypto::rand<uint32_t>();
+		//		block.nonce.resize(4);
+		auto body_proxy = get_body_proxy_from_template(block);
 		while (true) {
+			common::uint_le_to_bytes(block.root_block.nonce, 4, nonce);
+			//			block.nonce    = block.root_block.nonce;
 			BinaryArray ba = currency.get_block_long_hashing_data(block, body_proxy);
 			Hash hash      = cryptoContext.cn_slow_hash(ba.data(), ba.size());
 			if (check_hash(hash, difficulty))
 				break;
-			block.parent_block.nonce += 1;
-			block.nonce = block.parent_block.nonce;
+			nonce += 1;
 		}
 		RawBlock rb;
 		MinedBlockDesc desc{block, seria::to_binary(block), get_block_hash(block, body_proxy), parent.height + 1};
@@ -81,7 +87,7 @@ public:
 	void add_mined_block(const MinedBlockDesc &desc, bool log = true) {
 		RawBlock rb;
 		api::BlockHeader info;
-		invariant(block_chain.add_mined_block(desc.binary_block_template, &rb, &info) != BroadcastAction::BAN, "");
+		block_chain.add_mined_block(desc.binary_block_template, &rb, &info);
 		if (log)
 			std::cout << "---- After add_mined_block tip=" << block_chain.get_tip_height() << " : "
 			          << block_chain.get_tip_bid() << std::endl;
@@ -97,14 +103,15 @@ public:
 		          << block_chain.get_tip_bid() << std::endl;
 		return desc;
 	}
-	void add_checkpoint(uint32_t key_id, uint64_t counter, Hash hash, Height height) {
+	void add_checkpoint(size_t key_id, uint64_t counter, Hash hash, Height height) {
 		SignedCheckpoint small_checkpoint;
-		small_checkpoint.height  = height;
-		small_checkpoint.hash    = hash;
-		small_checkpoint.key_id  = key_id;
-		small_checkpoint.counter = counter;
-		crypto::generate_signature(small_checkpoint.get_message_hash(), checkpoint_keypairs.at(key_id).public_key,
-		    checkpoint_keypairs.at(key_id).secret_key, small_checkpoint.signature);
+		small_checkpoint.height    = height;
+		small_checkpoint.hash      = hash;
+		small_checkpoint.key_id    = key_id;
+		small_checkpoint.counter   = counter;
+		small_checkpoint.signature = crypto::generate_signature(small_checkpoint.get_message_hash(),
+		    checkpoint_keypairs.at(key_id).public_key,
+		    checkpoint_keypairs.at(key_id).secret_key);
 		invariant(block_chain.add_checkpoint(small_checkpoint, ""), "");
 		std::cout << "---- After add_checkpoint tip=" << block_chain.get_tip_height() << " : "
 		          << block_chain.get_tip_bid() << std::endl;
@@ -122,7 +129,7 @@ void test_blockchain(common::CommandLine &cmd) {
 	Currency currency(config.net);
 
 	std::cout << "Point 2" << std::endl;
-	BlockChainState block_chain(logger, config, currency, /*read only*/ false);
+	BlockChainState block_chain(logger, config, currency, false);
 
 	std::cout << "Point 3" << std::endl;
 	TestMiner test_miner(block_chain, currency);
@@ -186,8 +193,8 @@ class TestBlockChain {
 		std::vector<TestBlock *> children;
 	};
 	std::map<Hash, TestBlock> blocks;
-	std::map<uint32_t, SignedCheckpoint> checkpoints;
-	std::map<uint32_t, SignedCheckpoint> stable_checkpoints;
+	std::map<size_t, SignedCheckpoint> checkpoints;
+	std::map<size_t, SignedCheckpoint> stable_checkpoints;
 
 	bool add_block(const api::BlockHeader &info) {
 		auto bit = blocks.find(info.hash);
@@ -214,10 +221,8 @@ public:
 	Hash get_tip_bid() const { return m_tip_bid; }
 	Height get_tip_height() const { return m_tip_height; }
 	bool add_checkpoint(const SignedCheckpoint &checkpoint) { return false; }
-	BroadcastAction add_block(const PreparedBlock &pb, api::BlockHeader *info) { return BroadcastAction::NOTHING; }
-	BroadcastAction add_mined_block(const BinaryArray &raw_block_template,
-	    RawBlock *raw_block,
-	    api::BlockHeader *info) {
-		return BroadcastAction::NOTHING;
+	bool add_block(const PreparedBlock &pb, api::BlockHeader *info) { return false; }
+	bool add_mined_block(const BinaryArray &raw_block_template, RawBlock *raw_block, api::BlockHeader *info) {
+		return false;
 	}
 };

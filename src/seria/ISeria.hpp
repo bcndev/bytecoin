@@ -141,6 +141,11 @@ void seria_kv_optional(common::StringView name, T &value, ISeria &s) {
 	}
 }
 
+inline bool seria_kv_binary(common::StringView name, void *value, size_t size, ISeria &s) {
+	s.object_key(name, true);
+	return s.binary(value, size);
+}
+
 template<typename T, typename... Context>
 void ser_members(T &value, ISeria &s, Context... context);  //{
 //        static_assert(false); // Good idea, but clang complains

@@ -256,7 +256,7 @@ Bip32Key Bip32Key::derive_key(uint32_t child_num) const {
 	unsigned char numbuf[4]{};
 	common::uint_be_to_bytes(numbuf, 4, child_num);
 	Bip32Key result;
-	result.child_num = child_num;
+	result.key_num = child_num;
 	common::BinaryArray buf;
 	if (child_num >= 0x80000000U) {
 		buf.push_back(0);

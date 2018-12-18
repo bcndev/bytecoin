@@ -34,7 +34,7 @@ WalletSync::WalletSync(
 	m_commit_timer.once(float(m_config.db_commit_period_wallet_cache));
 }
 
-WalletSync::~WalletSync() {}  // we have unique_ptr to inoplete type
+WalletSync::~WalletSync() {}  // we have unique_ptr to incomplete type
 
 void WalletSync::db_commit() {
 	m_wallet_state.db_commit();
@@ -117,8 +117,7 @@ void WalletSync::advance_sync() {
 void WalletSync::send_sync_pool() {
 	m_log(logging::TRACE) << "Sending SyncMemPool request" << std::endl;
 	api::cnd::SyncMemPool::Request msg;
-	msg.known_hashes    = m_wallet_state.get_tx_pool_hashes();
-	msg.need_signatures = m_wallet_state.get_wallet().is_det_viewonly();
+	msg.known_hashes = m_wallet_state.get_tx_pool_hashes();
 	http::RequestBody req_header;
 	req_header.r.set_firstline("POST", api::cnd::binary_url(), 1, 1);
 	req_header.r.basic_authorization = m_config.bytecoind_authorization;
@@ -175,7 +174,6 @@ void WalletSync::send_get_blocks() {
 	    (m_wallet_state.get_wallet().get_oldest_timestamp() / m_config.wallet_sync_timestamp_granularity) *
 	    m_config.wallet_sync_timestamp_granularity;
 	msg.need_redundant_data = false;
-	msg.need_signatures     = m_wallet_state.get_wallet().is_det_viewonly();
 	http::RequestBody req_header;
 	req_header.r.set_firstline("POST", api::cnd::binary_url(), 1, 1);
 	req_header.r.basic_authorization = m_config.bytecoind_authorization;

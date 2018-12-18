@@ -39,8 +39,6 @@ public:
 	float multicast_period;
 	bool secrets_via_api;
 
-	std::string ssl_certificate_pem_file;
-	boost::optional<std::string> ssl_certificate_password;
 	std::string bytecoind_authorization;
 	std::string bytecoind_authorization_private;
 	uint16_t bytecoind_bind_port;

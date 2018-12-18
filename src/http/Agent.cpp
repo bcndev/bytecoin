@@ -21,10 +21,10 @@ Agent::Connection::Connection(handler &&r_handler, handler &&d_handler)
     , sock([this](bool, bool) { advance_state(true); }, std::bind(&Connection::on_disconnect, this))
     , keep_alive(true) {}
 
-bool Agent::Connection::connect(const std::string &address, uint16_t port) {
+bool Agent::Connection::connect(const std::string &a, uint16_t p) {
 	clear();
 	waiting_write_response = true;
-	return sock.connect(address, port);
+	return sock.connect(a, p);
 }
 
 void Agent::Connection::disconnect() {

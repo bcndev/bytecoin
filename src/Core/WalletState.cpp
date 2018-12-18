@@ -449,34 +449,36 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction *ptx,
 				return false;
 			ptx->anonymity = std::min(ptx->anonymity, in.output_indexes.size() - 1);
 			api::Output existing_output;
-			if (m_wallet.is_det_viewonly() && pwtx.sigs.type() == typeid(RingSignature3)) {
-				auto &signatures    = boost::get<RingSignature3>(pwtx.sigs);
-				auto my_mixin_index = in.output_indexes.size();
-				if (in_index < signatures.r.size() && in.output_indexes.size() == signatures.r[in_index].size())
-					my_mixin_index = crypto::find_deterministic_input3(
-					    pwtx.prefix_hash, in_index, signatures.r[in_index], m_wallet.get_view_secret_key());
-				if (my_mixin_index < in.output_indexes.size()) {
-					size_t my_index = 0;
-					for (size_t i = 0; i < my_mixin_index + 1; ++i) {
-						my_index += in.output_indexes.at(i);
+			if (m_wallet.is_det_viewonly()) {
+				std::vector<size_t> global_indexes;
+				if (!relative_output_offsets_to_absolute(&global_indexes, in.output_indexes))
+					return false;
+				size_t my_index = std::numeric_limits<size_t>::max();
+				for (auto index : global_indexes)
+					if (try_adding_deterministic_input(in.amount, index, &existing_output) &&
+					    (in.output_indexes.size() == 1 ||
+					        TransactionBuilder::encrypt_real_index(existing_output.public_key,
+					            m_wallet.get_view_secret_key()) == in.encrypted_real_index)) {
+						my_index = index;
+						break;
 					}
-					if (try_adding_deterministic_input(in.amount, my_index, &existing_output)) {
-						api::Transfer &transfer = transfer_map_inputs[existing_output.address];
-						transfer.amount -= static_cast<SignedAmount>(existing_output.amount);
-						transfer.ours = true;
-						transfer.outputs.push_back(existing_output);
-						our_inputs = true;
-						continue;
-					}
+				if (my_index != std::numeric_limits<size_t>::max()) {
+					api::Transfer &transfer = transfer_map_inputs[existing_output.address];
+					transfer.amount -= static_cast<SignedAmount>(existing_output.amount);
+					transfer.ours = true;
+					transfer.outputs.push_back(existing_output);
+					our_inputs = true;
+					continue;
 				}
-			}
-			if (try_adding_incoming_keyimage(in.key_image, &existing_output)) {
-				api::Transfer &transfer = transfer_map_inputs[existing_output.address];
-				transfer.amount -= static_cast<SignedAmount>(existing_output.amount);
-				transfer.ours = true;
-				transfer.outputs.push_back(existing_output);
-				our_inputs = true;
-				continue;
+			} else {
+				if (try_adding_incoming_keyimage(in.key_image, &existing_output)) {
+					api::Transfer &transfer = transfer_map_inputs[existing_output.address];
+					transfer.amount -= static_cast<SignedAmount>(existing_output.amount);
+					transfer.ours = true;
+					transfer.outputs.push_back(existing_output);
+					our_inputs = true;
+					continue;
+				}
 			}
 			*unrecognized_inputs_amount += in.amount;
 		}
@@ -527,8 +529,8 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction *ptx,
 			our_key     = true;
 		}
 		if (!our_key && our_inputs &&
-		    m_wallet.detect_not_our_output(
-		        is_tx_amethyst, tid, pwtx.inputs_hash, &history, out_index, key_output, &out.amount, &address)) {
+		    TransactionBuilder::detect_not_our_output(&m_wallet, is_tx_amethyst, tid, pwtx.inputs_hash, &history,
+		        &tx_keys, out_index, key_output, &out.amount, &address)) {
 			//			out.dust                = m_currency.is_dust(key_output.amount);
 			api::Transfer &transfer = transfer_map_outputs[false][address];
 			if (transfer.address.empty())
@@ -657,13 +659,16 @@ bool WalletState::api_get_transaction(Hash tid, bool check_pool, TransactionPref
 
 bool WalletState::api_create_proof(const TransactionPrefix &tx, Sendproof &sp) const {
 	const Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
-	KeyPair tx_keys = TransactionBuilder::transaction_keys_from_seed(tx_inputs_hash, m_wallet.get_tx_derivation_seed());
-	if (sp.address.type() == typeid(AccountAddressSimple)) {
-		auto &addr = boost::get<AccountAddressSimple>(sp.address);
+	const Hash message_hash   = crypto::cn_fast_hash(sp.message.data(), sp.message.size());
+	if (tx.version < m_currency.amethyst_transaction_version) {
+		if (sp.address.type() != typeid(AccountAddressSimple))
+			return false;
+		KeyPair tx_keys =
+		    TransactionBuilder::transaction_keys_from_seed(tx_inputs_hash, m_wallet.get_tx_derivation_seed());
+		const auto &addr = boost::get<AccountAddressSimple>(sp.address);
 		SendproofKey var;
-		var.derivation    = crypto::generate_key_derivation(addr.view_public_key, tx_keys.secret_key);
-		Hash message_hash = crypto::cn_fast_hash(sp.message.data(), sp.message.size());
-		var.signature     = crypto::generate_sendproof(
+		var.derivation = crypto::generate_key_derivation(addr.view_public_key, tx_keys.secret_key);
+		var.signature  = crypto::generate_sendproof(
             tx_keys.public_key, tx_keys.secret_key, addr.view_public_key, var.derivation, message_hash);
 		Amount total_amount = 0;
 		for (size_t out_index = 0; out_index != tx.outputs.size(); ++out_index) {
@@ -680,36 +685,62 @@ bool WalletState::api_create_proof(const TransactionPrefix &tx, Sendproof &sp) c
 		sp.proof  = var;
 		return total_amount != 0;
 	}
-	if (sp.address.type() == typeid(AccountAddressUnlinkable)) {
-		auto &addr          = boost::get<AccountAddressUnlinkable>(sp.address);
-		Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
-		SendproofUnlinkable var;
-		Amount total_amount = 0;
-		for (size_t out_index = 0; out_index != tx.outputs.size(); ++out_index) {
-			const auto &output = tx.outputs.at(out_index);
-			if (output.type() != typeid(OutputKey))
+	SendproofAmethyst var;
+	Amount total_amount = 0;
+	for (size_t out_index = 0; out_index != tx.outputs.size(); ++out_index) {
+		const auto &output = tx.outputs.at(out_index);
+		if (output.type() != typeid(OutputKey))
+			continue;
+		const auto &key_output        = boost::get<OutputKey>(output);
+		const KeyPair output_det_keys = TransactionBuilder::deterministic_keys_from_seed(
+		    tx_inputs_hash, m_wallet.get_tx_derivation_seed(), common::get_varint_data(out_index));
+		BinaryArray ba(std::begin(output_det_keys.public_key.data), std::end(output_det_keys.public_key.data));
+		const SecretKey output_secret_scalar = crypto::hash_to_scalar(ba.data(), ba.size());
+		const PublicKey output_secret_point  = crypto::hash_to_point(ba.data(), ba.size());
+		ba.push_back(0);  // Or use cn_fast_hash64
+		const Hash output_secret2 = crypto::cn_fast_hash(ba.data(), ba.size());
+		if (sp.address.type() == typeid(AccountAddressSimple)) {
+			const uint8_t should_be_encrypted_address_type = AccountAddressSimple::type_tag ^ output_secret2.data[0];
+			if (key_output.encrypted_address_type != should_be_encrypted_address_type)
+				continue;  // Protocol violation to fool auditor
+			const auto &addr = boost::get<AccountAddressSimple>(sp.address);
+			AccountAddressSimple address;
+			crypto::linkable_underive_address(output_secret_scalar, tx_inputs_hash, out_index, key_output.public_key,
+			    key_output.encrypted_secret, &address.spend_public_key, &address.view_public_key);
+			if (address != addr)
 				continue;
-			const auto &key_output     = boost::get<OutputKey>(output);
-			KeyPair output_secret_keys = TransactionBuilder::deterministic_keys_from_seed(
-			    tx_inputs_hash, m_wallet.get_tx_derivation_seed(), common::get_varint_data(out_index));
-			Hash output_secret =
-			    crypto::cn_fast_hash(output_secret_keys.public_key.data, sizeof(output_secret_keys.public_key.data));
-			AccountAddressUnlinkable address;
-			if (!crypto::unlinkable_underive_address(output_secret, tx_inputs_hash, out_index, key_output.public_key,
-			        key_output.encrypted_secret, &address.s, &address.sv) ||
-			    address != addr)
-				continue;
-			SendproofUnlinkable::Element el{out_index, output_secret_keys.public_key, Signature{}};
-			el.signature =
-			    crypto::generate_signature(output_secret, output_secret_keys.public_key, output_secret_keys.secret_key);
+			SendproofAmethyst::Element el{out_index, output_det_keys.public_key, Signature{}};
+			el.signature = crypto::amethyst_generate_sendproof(
+			    output_det_keys, sp.transaction_hash, message_hash, address.spend_public_key, address.view_public_key);
 			var.elements.push_back(el);
 			total_amount += key_output.amount;
+			continue;
 		}
-		sp.amount = total_amount;
-		sp.proof  = var;
-		return total_amount != 0;
+		if (sp.address.type() == typeid(AccountAddressUnlinkable)) {
+			const auto &addr = boost::get<AccountAddressUnlinkable>(sp.address);
+			const uint8_t should_be_encrypted_address_type =
+			    (addr.is_auditable ? AccountAddressUnlinkable::type_tag_auditable
+			                       : AccountAddressUnlinkable::type_tag) ^
+			    output_secret2.data[0];
+			if (key_output.encrypted_address_type != should_be_encrypted_address_type)
+				continue;  // Protocol violation to fool auditor
+			AccountAddressUnlinkable address;
+			crypto::unlinkable_underive_address(output_secret_point, tx_inputs_hash, out_index, key_output.public_key,
+			    key_output.encrypted_secret, &address.s, &address.sv);
+			address.is_auditable = key_output.is_auditable;
+			if (address != addr)
+				continue;
+			SendproofAmethyst::Element el{out_index, output_det_keys.public_key, Signature{}};
+			el.signature = crypto::amethyst_generate_sendproof(
+			    output_det_keys, sp.transaction_hash, message_hash, address.s, address.sv);
+			var.elements.push_back(el);
+			total_amount += key_output.amount;
+			continue;
+		}
 	}
-	return false;
+	sp.amount = total_amount;
+	sp.proof  = var;
+	return total_amount != 0;
 }
 
 api::Block WalletState::api_get_pool_as_history(const std::string &address) const {

@@ -24,6 +24,7 @@ if(WIN32)
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -g -Wall -Wextra -Werror=return-type -Wno-unused-parameter")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -maes -g -Wall -Wextra -Werror=return-type -Wno-unused-parameter")
+    # We can use -Wshadow with clang occasionally
     if(BETTER_DEBUG)
         message(STATUS "Using better debug: " ${BETTER_DEBUG})
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
@@ -90,6 +91,7 @@ file(GLOB SRC_HTTP src/http/*.cpp src/http/*.hpp)
 file(GLOB SRC_PLATFORM
     src/platform/ExclusiveLock.cpp src/platform/ExclusiveLock.hpp
     src/platform/Files.cpp src/platform/Files.hpp
+    src/platform/Ledger.cpp src/platform/Ledger.hpp
     src/platform/Time.cpp src/platform/Time.hpp
     src/platform/Network.cpp src/platform/Network.hpp
     src/platform/PathTools.cpp src/platform/PathTools.hpp

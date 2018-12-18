@@ -113,7 +113,6 @@ public:
 	bool is_transaction_unlocked(uint8_t block_major_version, BlockOrTimestamp unlock_time, Height block_height,
 	    Timestamp block_time, Timestamp block_median_time) const;
 
-	//	bool is_dust(Amount amount) const;
 	bool amount_allowed_in_output(uint8_t block_major_version, Amount amount) const;
 
 	static uint64_t get_penalized_amount(uint64_t amount, size_t median_size, size_t current_transactions_size);
@@ -128,13 +127,13 @@ private:
 	const HardCheckpoint *checkpoints_end   = nullptr;
 };
 
-// we should probaly find better place for these global funs
+// we should probably find better place for these global funs
 Hash get_transaction_inputs_hash(const TransactionPrefix &);
 Hash get_transaction_prefix_hash(const TransactionPrefix &);
 Hash get_transaction_hash(const Transaction &);
 
 Hash get_block_hash(const BlockHeader &, const BlockBodyProxy &);
 Hash get_auxiliary_block_header_hash(const BlockHeader &, const BlockBodyProxy &);
-// Auxilary hash, or prehash - inserted into MM or CM tree
+// Auxiliary or Pre- hash - inserted into MM or CM tree
 
 }  // namespace cn

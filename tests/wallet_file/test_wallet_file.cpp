@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSE for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for
+// details.
 
 #include "Core/Wallet.hpp"
 #include "crypto/crypto.hpp"
@@ -8,7 +9,7 @@
 
 #include "test_wallet_file.hpp"
 
-using namespace bytecoin;
+using namespace cn;
 
 // test01.simplewallet.wallet
 // format - simplewallet with cache
@@ -17,7 +18,8 @@ using namespace bytecoin;
 // 24xTx43fFtNBUn5f6Fj1wC7y8JsbD4N1XS2s3Q8HzWxtfvERccTPX6e5ua1mf55Wm7Z4MiaWT7LPeiBxPtD8kU9V7z3kuex
 
 // test02.wallet
-// format - legacy walletd with cache (file truncated to 1000000 bytes due to git limitations)
+// format - legacy walletd with cache (file truncated to 1000000 bytes due to
+// git limitations)
 // no password
 // created by rpc-wallet-2.1.2, several tx received and sent
 // 25HYsSBvERcePEb7LWrECYiPw4vpeG3MWCBxB3LbNC43issv7LEDp8gat9CRkq1ZusM85yZA6y2gTBfdUpJwyJKdDb8W8dk
@@ -25,13 +27,15 @@ using namespace bytecoin;
 // 23acTzmNBWFSDK12QNVucEdjRjTwPmXHsPwyXaYtc1yP9FviK5e5bMiat9CRkq1ZusM85yZA6y2gTBfdUpJwyJKdDaQapEx
 
 // test03.wallet
-// format - legacy walletd with cache (file truncated to 1000000 bytes due to git limitations)
+// format - legacy walletd with cache (file truncated to 1000000 bytes due to
+// git limitations)
 // password - test03
 // created by rpc-wallet-2.1.2, several tx received and sent
 // 21vbqHu4mDLGyo7Q959fbggLU4Z6cXMfaDpUJuHQSY9b4bRfYGbv9hF4zcz3DBpH1y4kUop2HPKPsNb9WLBYE6U16w1V12t
 
 // test04.wallet
-// format - legacy walletd with cache and contacts (file truncated to 1000000 bytes due to git limitations)
+// format - legacy walletd with cache and contacts (file truncated to 1000000
+// bytes due to git limitations)
 // password - test04
 // created by GUI wallet 1.1.9.3, several tx received and sent
 // 27TfAw84qKYEktQW9QvV94VkjNnRJuQ9JTrirjbQC5ASdRS233RAtENBNEZrGCSjPAFBNBReUsaQ8Jo82GTHLU4xQ28tTWU
@@ -59,7 +63,7 @@ const std::string tmp_name("../tests/scratchpad/test_wallet_file.tmp");
 static void test_body(const Currency &currency, const std::string &path, const std::string &password,
     const std::vector<std::string> &addresses, bool view_only, bool test_create_addresses) {
 	logging::ConsoleLogger logger;
-	Wallet wallet(logger, tmp_name, password);
+	WalletContainerStorage wallet(currency, logger, tmp_name, password);
 	if (wallet.is_view_only() != view_only)
 		throw std::runtime_error("view_only test failed for " + path);
 	auto records = wallet.get_records();
@@ -67,9 +71,11 @@ static void test_body(const Currency &currency, const std::string &path, const s
 		throw std::runtime_error("view keys do not match for " + path);
 	WalletRecord first_record = records.at(0);
 	for (auto &&a : addresses) {
-		AccountPublicAddress address;
-		if (!currency.parse_account_address_string(a, &address))
+		AccountAddress v_address;
+		if (!currency.parse_account_address_string(a, &v_address))
 			throw std::runtime_error("failed to parse address " + a);
+		invariant(v_address.type() == typeid(AccountAddressSimple), "");
+		auto &address = boost::get<AccountAddressSimple>(v_address);
 		if (address.view_public_key != wallet.get_view_public_key())
 			throw std::runtime_error("view_public_key test failed for " + path);
 		size_t pos = 0;
@@ -121,9 +127,9 @@ static void test_single_file(const Currency &currency, const std::string &path, 
 	platform::copy_file(path, tmp_name);
 	test_body(currency, tmp_name, password, addresses, view_only, false);
 	{
-		platform::FileStream fs(tmp_name, platform::FileStream::READ_EXISTING);
+		platform::FileStream fs(tmp_name, platform::O_READ_EXISTING);
 		auto si = fs.seek(0, SEEK_END);
-		if (si != Wallet::wallet_file_size(addresses.size()))
+		if (si != WalletContainerStorage::wallet_file_size(addresses.size()))
 			throw std::runtime_error("truncated/overwritten wallet size wrong " + path);
 	}
 	test_body(currency, tmp_name, password, addresses, view_only, true);
@@ -134,28 +140,47 @@ void test_wallet_file(const std::string &path_prefix) {
 	Currency currency("main");
 
 	test_single_file(currency, path_prefix + "/test01.simplewallet.wallet", "",
-	    {"24xTx43fFtNBUn5f6Fj1wC7y8JsbD4N1XS2s3Q8HzWxtfvERccTPX6e5ua1mf55Wm7Z4MiaWT7LPeiBxPtD8kU9V7z3kuex"}, false);
+	    {"24xTx43fFtNBUn5f6Fj1wC7y8JsbD4N1XS2s3Q8HzWxtfvERccTPX6e5ua"
+	     "1mf55Wm7Z4MiaWT7LPeiBxPtD8kU9V7z3kuex"},
+	    false);
 	test_single_file(currency, path_prefix + "/test02.wallet", "",
-	    {"25HYsSBvERcePEb7LWrECYiPw4vpeG3MWCBxB3LbNC43issv7LEDp8gat9CRkq1ZusM85yZA6y2gTBfdUpJwyJKdDb8W8dk",
-	        "29gEx3NRgooBHLdzQUGicXBtMdAtHaaDtf6aGZjbsgJrCSFVaRCT9SYat9CRkq1ZusM85yZA6y2gTBfdUpJwyJKdDZriJ8Y",
-	        "23acTzmNBWFSDK12QNVucEdjRjTwPmXHsPwyXaYtc1yP9FviK5e5bMiat9CRkq1ZusM85yZA6y2gTBfdUpJwyJKdDaQapEx"},
+	    {"25HYsSBvERcePEb7LWrECYiPw4vpeG3MWCBxB3LbNC43issv7LEDp8gat9"
+	     "CRkq1ZusM85yZA6y2gTBfdUpJwyJKdDb8W8dk",
+	        "29gEx3NRgooBHLdzQUGicXBtMdAtHaaDtf6aGZjbsgJrCSFVaRCT9SYat9"
+	        "CRkq1ZusM85yZA6y2gTBfdUpJwyJKdDZriJ8Y",
+	        "23acTzmNBWFSDK12QNVucEdjRjTwPmXHsPwyXaYtc1yP9FviK5e5bMiat9"
+	        "CRkq1ZusM85yZA6y2gTBfdUpJwyJKdDaQapEx"},
 	    false);
 	test_single_file(currency, path_prefix + "/test03.wallet", "test03",
-	    {"21vbqHu4mDLGyo7Q959fbggLU4Z6cXMfaDpUJuHQSY9b4bRfYGbv9hF4zcz3DBpH1y4kUop2HPKPsNb9WLBYE6U16w1V12t"}, false);
+	    {"21vbqHu4mDLGyo7Q959fbggLU4Z6cXMfaDpUJuHQSY9b4bRfYGbv9hF4zc"
+	     "z3DBpH1y4kUop2HPKPsNb9WLBYE6U16w1V12t"},
+	    false);
 	test_single_file(currency, path_prefix + "/test04.wallet", "test04",
-	    {"27TfAw84qKYEktQW9QvV94VkjNnRJuQ9JTrirjbQC5ASdRS233RAtENBNEZrGCSjPAFBNBReUsaQ8Jo82GTHLU4xQ28tTWU"}, false);
+	    {"27TfAw84qKYEktQW9QvV94VkjNnRJuQ9JTrirjbQC5ASdRS233RAtENBNE"
+	     "ZrGCSjPAFBNBReUsaQ8Jo82GTHLU4xQ28tTWU"},
+	    false);
 	test_single_file(currency, path_prefix + "/test05.wallet", "test05",
-	    {"23ryfTTpryt8q3h5NFoMGs4BjM6jGmdQqUrtSuU4nM3oP8CKmXXwu6CcEYrwtUm2rx43LvihFEhKEfDagjQxWoLwDTX6XpC"}, false);
+	    {"23ryfTTpryt8q3h5NFoMGs4BjM6jGmdQqUrtSuU4nM3oP8CKmXXwu6CcEY"
+	     "rwtUm2rx43LvihFEhKEfDagjQxWoLwDTX6XpC"},
+	    false);
 	test_single_file(currency, path_prefix + "/test05v.wallet", "test05",
-	    {"23ryfTTpryt8q3h5NFoMGs4BjM6jGmdQqUrtSuU4nM3oP8CKmXXwu6CcEYrwtUm2rx43LvihFEhKEfDagjQxWoLwDTX6XpC"}, true);
+	    {"23ryfTTpryt8q3h5NFoMGs4BjM6jGmdQqUrtSuU4nM3oP8CKmXXwu6CcEY"
+	     "rwtUm2rx43LvihFEhKEfDagjQxWoLwDTX6XpC"},
+	    true);
 	test_single_file(currency, path_prefix + "/test06.wallet", "",
-	    {"27j6TP7du1SWKk4fVQa138VNhy339xa76jEBRajhHYnVeLaLs5HmSkEZ4FiLuLy87hgWYkSinGntREBMq3dvui11NkhsuUJ",
-	        "23kJeyCgzH6JkTJqq1NNjrhXFYrfsUYvw2a9HhiEqVtRXK86HAu3uWWZ4FiLuLy87hgWYkSinGntREBMq3dvui11NiUKftd",
-	        "28acio4hR2cjQPSBj8oYbjSYkFvVaPdQTH44HsigJQiSgr6S5BaAZkzZ4FiLuLy87hgWYkSinGntREBMq3dvui11Ng9YMtq"},
+	    {"27j6TP7du1SWKk4fVQa138VNhy339xa76jEBRajhHYnVeLaLs5HmSkEZ4F"
+	     "iLuLy87hgWYkSinGntREBMq3dvui11NkhsuUJ",
+	        "23kJeyCgzH6JkTJqq1NNjrhXFYrfsUYvw2a9HhiEqVtRXK86HAu3uWWZ4F"
+	        "iLuLy87hgWYkSinGntREBMq3dvui11NiUKftd",
+	        "28acio4hR2cjQPSBj8oYbjSYkFvVaPdQTH44HsigJQiSgr6S5BaAZkzZ4F"
+	        "iLuLy87hgWYkSinGntREBMq3dvui11Ng9YMtq"},
 	    false);
 	test_single_file(currency, path_prefix + "/test06v.wallet", "",
-	    {"27j6TP7du1SWKk4fVQa138VNhy339xa76jEBRajhHYnVeLaLs5HmSkEZ4FiLuLy87hgWYkSinGntREBMq3dvui11NkhsuUJ",
-	        "23kJeyCgzH6JkTJqq1NNjrhXFYrfsUYvw2a9HhiEqVtRXK86HAu3uWWZ4FiLuLy87hgWYkSinGntREBMq3dvui11NiUKftd",
-	        "28acio4hR2cjQPSBj8oYbjSYkFvVaPdQTH44HsigJQiSgr6S5BaAZkzZ4FiLuLy87hgWYkSinGntREBMq3dvui11Ng9YMtq"},
+	    {"27j6TP7du1SWKk4fVQa138VNhy339xa76jEBRajhHYnVeLaLs5HmSkEZ4F"
+	     "iLuLy87hgWYkSinGntREBMq3dvui11NkhsuUJ",
+	        "23kJeyCgzH6JkTJqq1NNjrhXFYrfsUYvw2a9HhiEqVtRXK86HAu3uWWZ4F"
+	        "iLuLy87hgWYkSinGntREBMq3dvui11NiUKftd",
+	        "28acio4hR2cjQPSBj8oYbjSYkFvVaPdQTH44HsigJQiSgr6S5BaAZkzZ4F"
+	        "iLuLy87hgWYkSinGntREBMq3dvui11Ng9YMtq"},
 	    true);
 }

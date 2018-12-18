@@ -152,7 +152,7 @@ bool decode_block_good(const char *block, size_t size, uint8_t *res) {
 	}
 	java_hi_part += java_lo_part / 0x100000000;
 	java_lo_part %= 0x100000000;  // Not strictly necessary
-	if (java_hi_part > 0x100000000)
+	if (java_hi_part >= 0x100000000)
 		return false;
 	if (res_size > 4) {
 		uint_be_to_bytes(res, res_size - 4, java_hi_part);

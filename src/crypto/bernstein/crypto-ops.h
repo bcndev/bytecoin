@@ -105,6 +105,9 @@ void sc_reduce(struct cryptoEllipticCurveScalar *, const unsigned char[64]);
 /* New code */
 
 void ge_scalarmult(ge_p2 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *);
+void ge_scalarmult3(ge_p3 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *);
+// TODO - ge_scalarmult3 is quick fix. conversion of p2 -> p1p1 would also work
+
 void ge_double_scalarmult_precomp_vartime(ge_p2 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *, const struct cryptoEllipticCurveScalar *, const ge_dsmp);
 int ge_check_subgroup_precomp_vartime(const ge_dsmp);
 void ge_mul8(ge_p1p1 *, const ge_p2 *);

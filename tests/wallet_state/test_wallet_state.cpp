@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSE for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for
+// details.
 
 #include "../Random.hpp"
 #include "Core/Config.hpp"
@@ -9,18 +10,21 @@
 
 #include "test_wallet_state.hpp"
 
-using namespace bytecoin;
+using namespace cn;
 
 class WalletStateTest : public WalletStateBasic {
 public:
-	std::map<KeyImage, int> memory_spent;
+	std::map<crypto::EllipticCurvePoint, int> memory_spent;
 	explicit WalletStateTest(logging::ILogger &log, const Config &config, const Currency &currency)
-	    : WalletStateBasic(log, config, currency, "test_wallet_state") {}
+	    : WalletStateBasic(log, config, currency, "test_wallet_state", false) {}
 	Amount add_incoming_output(const api::Output &output, const Hash &tid) override {
 		return WalletStateBasic::add_incoming_output(output, tid);
 	}
 	Amount add_incoming_keyimage(Height block_height, const KeyImage &ki) override {
 		return WalletStateBasic::add_incoming_keyimage(block_height, ki);
+	}
+	Amount add_incoming_deterministic_input(Height block_height, Amount am, size_t gi, const PublicKey &pk) override {
+		return 0;  // TODO
 	}
 	bool try_add_incoming_output(const api::Output &output, Amount *confirmed_balance_delta) const {
 		return WalletStateBasic::try_add_incoming_output(output, confirmed_balance_delta);
@@ -33,7 +37,7 @@ public:
 		WalletStateBasic::add_transaction(height, tid, tx, ptx);
 	}
 	void unlock(Height height, Timestamp ts) { WalletStateBasic::unlock(height, ts); }
-	const std::map<KeyImage, int> &get_used_key_images() const override { return memory_spent; }
+	const std::map<crypto::EllipticCurvePoint, int> &get_mempool_kis_or_pks() const override { return memory_spent; }
 };
 
 static bool less_output(const api::Output &a, const api::Output &b) {
@@ -45,22 +49,25 @@ static bool eq_output(const api::Output &a, const api::Output &b) {
 
 // We will check that WalletStateBasic and model have the same behaviour
 
-// Wallet State cannot remember all key images, so sending key image before corresponding output is also NOP in model
-// They will both incorrectly show corresponding unspent as available, creating invalid transactions
-// We might add "conflicting keyimage" to bytecoind CreateTransaction reply, so that they can somehow update their
+// Wallet State cannot remember all key images, so sending key image before
+// corresponding output is also NOP in model
+// They will both incorrectly show corresponding unspent as available, creating
+// invalid transactions
+// We might add "conflicting keyimage" to bytecoind CreateTransaction reply, so
+// that they can somehow update their
 // balances
 class WalletStateModel : public IWalletState {
 public:
 	const Currency &m_currency;
 
 	explicit WalletStateModel(const Currency &currency) : m_currency(currency) {}
-	std::map<KeyImage, std::pair<Amount, uint32_t>> all_keyimages;
-	std::map<std::pair<Amount, uint32_t>, api::Output> outputs;
+	std::map<KeyImage, std::pair<Amount, size_t>> all_keyimages;
+	std::map<std::pair<Amount, size_t>, api::Output> outputs;
 	//	std::map<Height, std::vector<api::Transaction>> transactions;
 	std::map<Height, api::Block> transfers;
 
 	std::vector<api::Output> locked_outputs;
-	std::map<std::pair<Amount, uint32_t>, std::pair<Height, Amount>>
+	std::map<std::pair<Amount, size_t>, std::pair<Height, Amount>>
 	    unlocked_outputs;  // height of unlock and adjusted amount
 
 	Amount add_incoming_output(Height block_height, const api::Output &output, bool just_unlocked) {
@@ -115,12 +122,12 @@ public:
 	virtual Amount add_incoming_output(const api::Output &output, const Hash &tid) override {
 		return add_incoming_output(output.height, output, false);
 	}
-	std::map<KeyImage, int> memory_spent;
+	std::map<crypto::EllipticCurvePoint, int> memory_spent;
 	bool is_memory_spent(const api::Output &output) const { return memory_spent.count(output.key_image) != 0; }
 	void unlock(Height height, Timestamp timestamp) {
 		std::vector<api::Output> to_unlock;
 		for (size_t i = 0; i != locked_outputs.size(); ++i)
-			if (m_currency.is_transaction_spend_time_block(locked_outputs.at(i).unlock_block_or_timestamp)) {
+			if (m_currency.is_block_or_timestamp_block(locked_outputs.at(i).unlock_block_or_timestamp)) {
 				if (locked_outputs.at(i).unlock_block_or_timestamp <= height)
 					to_unlock.push_back(locked_outputs.at(i));
 			} else {
@@ -158,7 +165,10 @@ public:
 		transfers[block_height].transactions.back().transfers.push_back(transfer);
 		return existing_output.amount;
 	}
-	virtual void add_transaction(
+	Amount add_incoming_deterministic_input(Height block_height, Amount am, size_t gi, const PublicKey &pk) override {
+		return 0;  // TODO
+	}
+	void add_transaction(
 	    Height height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override {
 		//		transactions[height].push_back(ptx);
 	}
@@ -190,22 +200,25 @@ public:
 	}
 
 	std::vector<api::Block> api_get_transfers(const std::string &address, Height *from_height, Height *to_height,
-	    bool forward, uint32_t desired_tx_count = std::numeric_limits<uint32_t>::max()) const {
+	    bool forward, size_t desired_tx_count = std::numeric_limits<size_t>::max()) const {
 		std::vector<api::Block> result;
-		for (auto mit = transfers.upper_bound(*from_height); mit != transfers.upper_bound(*to_height); ++mit) {
+		for (auto mit = transfers.lower_bound(*from_height); mit != transfers.lower_bound(*to_height); ++mit) {
 			//			api::Block block;
 			//			block.header.height = mit->second.header.height;
 			//			block.transactions.push_back(api::Transaction{});
 			//			for(auto && tr : mit->second.transactions)
 			//				for(auto && t : tr.transfers)
-			//					if(address.empty() || t.address == address)
+			//					if(address.empty() || t.address
+			//== address)
 			//						block.transactions.back().transfers.push_back(t);
 			//			result.push_back(block);
 			result.push_back(mit->second);
 		}
 		return result;
 	}
-	// virtual std::vector<api::Output> api_get_locked_or_unconfirmed_unspent(const std::string &address, Height height)
+	// virtual std::vector<api::Output>
+	// api_get_locked_or_unconfirmed_unspent(const std::string &address, Height
+	// height)
 	// const;
 	api::Balance get_balance(const std::string &address, Height height) const {
 		api::Balance balance;
@@ -222,7 +235,8 @@ public:
 					WalletStateBasic::combine_balance(balance, la.second, 1, 0);
 			}
 		for (auto &&la : locked_outputs)
-			//			if(!is_memory_spent(la)) // WalletStateBasic does not perform this check, because it requires
+			//			if(!is_memory_spent(la)) // WalletStateBasic
+			// does not perform this check, because it requires
 			// iterating either all used keyimages or all lock index
 			if (address.empty() || la.address == address)
 				WalletStateBasic::combine_balance(balance, la, 1, 0);
@@ -241,7 +255,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 	WalletStateTest ws(logger, config, currency);
 	WalletStateModel wm(currency);
 
-	std::map<Amount, uint32_t> next_gi;
+	std::map<Amount, size_t> next_gi;
 	std::set<KeyImage> used_keyimages;
 	std::set<KeyImage> output_keyimages;
 
@@ -251,7 +265,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 	const Height TEST_HEIGHT = 2000;
 
 	if (!VIEW_ONLY)
-		for (uint32_t i = 0; i != 1024; ++i) {
+		for (size_t i = 0; i != 1024; ++i) {
 			KeyImage ki;
 			ki.data[0] = random() % 256;
 			ki.data[1] = random() % 16;
@@ -267,13 +281,13 @@ void test_wallet_state(common::CommandLine &cmd) {
 
 	const Timestamp TEST_TIMESTAMP = currency.max_block_height * 2;
 
-	for (uint32_t ha = 1; ha != TEST_HEIGHT; ++ha) {
+	for (Height ha = 1; ha != TEST_HEIGHT; ++ha) {
 		api::Transaction ptx;
 		size_t spend_outputs = (random() % 16);
 		if (ha == 36)
 			std::cout << "Aha";
 		if (spend_outputs < 10 && ha != TEST_HEIGHT - 1) {
-			for (uint32_t j = 0; j != spend_outputs; ++j) {
+			for (size_t j = 0; j != spend_outputs; ++j) {
 				KeyImage ki;
 				if (random() % 4 == 0 || output_keyimages.empty()) {
 					ki.data[0] = random() % 256;
@@ -302,13 +316,13 @@ void test_wallet_state(common::CommandLine &cmd) {
 		}
 		size_t add_outputs = (random() % 8);
 		if (add_outputs < 3 && ha != TEST_HEIGHT - 1) {
-			for (uint32_t j = 0; j != add_outputs; ++j) {
+			for (size_t j = 0; j != add_outputs; ++j) {
 				api::Output output;
-				size_t dc      = 5 + (random() % 5);
-				size_t am      = 1 + (random() % 9);
-				output.height  = ha;
-				output.amount  = am * Currency::DECIMAL_PLACES.at(dc);
-				output.dust    = currency.is_dust(output.amount);
+				size_t dc     = 5 + (random() % 5);
+				size_t am     = 1 + (random() % 9);
+				output.height = ha;
+				output.amount = am * Currency::DECIMAL_PLACES.at(dc);
+				//				output.dust    = currency.is_dust(output.amount);
 				output.index   = next_gi[output.amount];
 				output.address = addresses.at(random() % (addresses.size() - 1));  // last one is empty
 				if (random() % 20 == 0)
@@ -344,7 +358,8 @@ void test_wallet_state(common::CommandLine &cmd) {
 			          << (ba.locked_or_unconfirmed_outputs + ba.spendable_outputs + ba.spendable_dust_outputs)
 			          << " spent " << wm.all_keyimages.size() << std::endl;
 			for (const auto &ki : output_keyimages) {
-				//				if (used_keyimages.insert(ki).second) {  // We never get same ki from blockchain
+				//				if (used_keyimages.insert(ki).second) {  // We
+				// never get same ki from blockchain
 				api::Output spending_output;
 				if (ws.try_adding_incoming_keyimage(ki, &spending_output)) {
 					api::Transfer transfer;
@@ -363,7 +378,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 		    TEST_TIMESTAMP + ha * currency.difficulty_target + random() % currency.block_future_time_limit;
 		wm.unlock(ha, uti);
 		ws.unlock(ha, uti);
-		for (uint32_t wi = 0; wi != 25; ++wi) {  // [-20..5) range around tip
+		for (Height wi = 0; wi != 25; ++wi) {  // [-20..5) range around tip
 			if (ha + wi < 20)
 				continue;
 			//			if(ha == 19 && wi == 1)
@@ -395,8 +410,8 @@ void test_wallet_state(common::CommandLine &cmd) {
 		for (const auto &addr : addresses) {
 			std::map<std::string, SignedAmount> transfer_balances1;
 			std::map<std::string, SignedAmount> transfer_balances2;
-			Height from_height = ha == 0 ? ha : ha - 1;
-			Height to_height   = ha;
+			Height from_height = ha;
+			Height to_height   = ha + 1;
 			auto tra1          = wm.api_get_transfers(addr, &from_height, &to_height, true);
 			for (auto &&b1 : tra1)
 				for (auto &&tr1 : b1.transactions)
@@ -404,18 +419,20 @@ void test_wallet_state(common::CommandLine &cmd) {
 						if (t1.ours && !t1.locked && (addr.empty() || t1.address == addr)) {
 							invariant(!t1.address.empty(), "");
 							transfer_balances1[addr] += t1.amount;
-							//							invariant(transfer_balances1[addr] >= 0, "");
+							//							invariant(transfer_balances1[addr]
+							//>= 0, "");
 							if (transfer_balances1[addr] == 0)
 								transfer_balances1.erase(addr);
 						}
-			from_height = ha == 0 ? ha : ha - 1;
-			to_height   = ha;
+			from_height = ha;
+			to_height   = ha + 1;
 			auto unl2   = ws.api_get_unlocked_transfers(addr, from_height, to_height);
 			for (auto &&u : unl2)
 				if (addr.empty() || u.address == addr) {
 					invariant(!u.address.empty(), "");
 					transfer_balances2[addr] += u.amount;
-					//					invariant(transfer_balances2[addr] >= 0, "");
+					//					invariant(transfer_balances2[addr] >= 0,
+					//"");
 					if (transfer_balances2[addr] == 0)
 						transfer_balances2.erase(addr);
 				}
@@ -426,7 +443,8 @@ void test_wallet_state(common::CommandLine &cmd) {
 						if (t1.ours && !t1.locked && (addr.empty() || t1.address == addr)) {
 							invariant(!t1.address.empty(), "");
 							transfer_balances2[addr] += t1.amount;
-							//							invariant(transfer_balances2[addr] >= 0, "");
+							//							invariant(transfer_balances2[addr]
+							//>= 0, "");
 							if (transfer_balances2[addr] == 0)
 								transfer_balances2.erase(addr);
 						}
@@ -448,7 +466,8 @@ void test_wallet_state(common::CommandLine &cmd) {
 		invariant(sum1 == sum2, "");
 	}
 	//	for (auto uk : output_keyimages) {
-	//		invariant(ws.add_incoming_keyimage(TEST_HEIGHT, uk) == wm.add_incoming_keyimage(TEST_HEIGHT, uk), "");
+	//		invariant(ws.add_incoming_keyimage(TEST_HEIGHT, uk) ==
+	// wm.add_incoming_keyimage(TEST_HEIGHT, uk), "");
 	//	}
 	for (auto addr : addresses) {
 		auto ba1 = wm.get_balance(addr, TEST_HEIGHT + 10);

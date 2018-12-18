@@ -92,7 +92,6 @@ public:
 
 struct PreparedWalletTransaction {
 	TransactionPrefix tx;
-	TransactionSignatures sigs;
 	Hash prefix_hash;
 	Hash inputs_hash;
 	boost::optional<KeyDerivation> derivation;  // Will be assigned on first actual use
@@ -100,8 +99,7 @@ struct PreparedWalletTransaction {
 	std::vector<SecretKey> output_secret_scalars;
 
 	PreparedWalletTransaction() = default;
-	PreparedWalletTransaction(
-	    TransactionPrefix &&tx, TransactionSignatures &&sigs, const Wallet::OutputHandler &o_handler);
+	PreparedWalletTransaction(TransactionPrefix &&tx, const Wallet::OutputHandler &o_handler);
 	PreparedWalletTransaction(Transaction &&tx, const Wallet::OutputHandler &o_handler);
 };
 
@@ -112,8 +110,7 @@ struct PreparedWalletBlock {
 	std::vector<PreparedWalletTransaction> transactions;
 	PreparedWalletBlock() = default;
 	PreparedWalletBlock(BlockTemplate &&bc_header, std::vector<TransactionPrefix> &&raw_transactions,
-	    std::vector<TransactionSignatures> &&signatures, Hash base_transaction_hash,
-	    const Wallet::OutputHandler &o_handler);
+	    Hash base_transaction_hash, const Wallet::OutputHandler &o_handler);
 };
 
 class WalletPreparatorMulticore {

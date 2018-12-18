@@ -60,25 +60,6 @@ bool key_isvalid(const PublicKey &key);
 bool secret_key_to_public_key(const SecretKey &sec, PublicKey *pub);
 bool keys_match(const SecretKey &secret_key, const PublicKey &expected_public_key);
 
-// To generate an ephemeral key used to send money to:
-// The sender generates a new key pair, which becomes the transaction key. The public transaction key is included in
-// "extra" field.
-// Both the sender and the receiver generate key derivation from the transaction key and the receivers' "view" key.
-// The sender uses key derivation, the output index, and the receivers' "spend" key to derive an ephemeral public key.
-// The receiver can either derive the public key (to check that the transaction is addressed to him) or the private key
-// (to spend the money).
-KeyDerivation generate_key_derivation(const PublicKey &tx_public_key, const SecretKey &view_secret_key);
-
-PublicKey derive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &spend_public_key);
-
-SecretKey derive_secret_key(
-    const KeyDerivation &derivation, std::size_t output_index, const SecretKey &spend_secret_key);
-
-// Inverse function of derive_public_key. It can be used by the receiver to find which "spend" key was used to generate
-// a transaction. This may be useful if the receiver used multiple addresses which only differ in "spend" key.
-
-PublicKey underive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &output_public_key);
-
 // returns false if keys are corrupted/invalid
 Signature generate_signature(const Hash &prefix_hash, const PublicKey &pub, const SecretKey &sec);
 
@@ -108,18 +89,9 @@ RingSignature3 generate_ring_signature3(const Hash &prefix_hash, const std::vect
 bool check_ring_signature3(const Hash &prefix_hash, const std::vector<KeyImage> &image,
     const std::vector<std::vector<PublicKey>> &pubs, const RingSignature3 &sig);
 
-size_t find_deterministic_input3(const Hash &prefix_hash, size_t input_index, const std::vector<EllipticCurveScalar> &r,
-    const SecretKey &view_secret_key);
-// returns r.size() if not our input
-
-Signature generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_sec,
-    const PublicKey &receiver_view_key_pub, const KeyDerivation &derivation, const Hash &message_hash);
-// Transaction key and the derivation supplied with the proof can be invalid, this just means that the proof is invalid.
-bool check_sendproof(const PublicKey &txkey_pub, const PublicKey &receiver_view_key_pub,
-    const KeyDerivation &derivation, const Hash &message_hash, const Signature &proof);
-
 SecretKey hash_to_scalar(const void *data, size_t length);
 SecretKey hash_to_scalar64(const void *data, size_t length);
+PublicKey hash_to_point(const void *data, size_t length);
 EllipticCurvePoint hash_to_point_for_tests(const Hash &h);  // Used only in tests
 PublicKey hash_to_ec(const PublicKey &key);
 
@@ -128,18 +100,68 @@ void generate_hd_spendkeys(
     const KeyPair &base, const Hash &keys_generation_seed, size_t index, std::vector<KeyPair> *result);
 PublicKey generate_address_s_v(const PublicKey &spend_public_key, const SecretKey &view_secret_key);
 
-// Unlinkable crypto, spend_scalar is temporary value that is expensive to calc, we pass it arounf
+// Legacy crypto
+// To generate an ephemeral key used to send money to:
+// The sender generates a new key pair, which becomes the transaction key. The public transaction key is included in
+// "extra" field.
+// Both the sender and the receiver generate key derivation from the transaction key and the receivers' "view" key.
+// The sender uses key derivation, the output index, and the receivers' "spend" key to derive an ephemeral public key.
+// The receiver can either derive the public key (to check that the transaction is addressed to him) or the private key
+// (to spend the money).
+
+KeyDerivation generate_key_derivation(const PublicKey &tx_public_key, const SecretKey &view_secret_key);
+
+PublicKey derive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &spend_public_key);
+
+PublicKey underive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &output_public_key);
+
+SecretKey derive_secret_key(
+    const KeyDerivation &derivation, std::size_t output_index, const SecretKey &spend_secret_key);
+
+Signature generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_sec,
+    const PublicKey &receiver_view_key_pub, const KeyDerivation &derivation, const Hash &message_hash);
+
+// Transaction key and the derivation supplied with the proof can be invalid, this just means that the proof is invalid.
+bool check_sendproof(const PublicKey &txkey_pub, const PublicKey &receiver_view_key_pub,
+    const KeyDerivation &derivation, const Hash &message_hash, const Signature &proof);
+
+// Linkable crypto, spend_scalar is temporary value that is expensive to calc, we pass it around
+// Old addresses use improved crypto in amethyst, because we need to enforce unique output public keys
+// on crypto level. Enforcing on daemon DB index level does not work (each of 2 solutions is vulnerable attack).
+
+PublicKey linkable_derive_public_key(const SecretKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &spend_public_key, const PublicKey &view_public_key, PublicKey *encrypted_output_secret);
+
+PublicKey linkable_underive_public_key(const SecretKey &inv_view_secret_key, const Hash &tx_inputs_hash,
+    size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
+    Hash *spend_scalar);
+
+SecretKey linkable_derive_secret_key(const SecretKey &spend_secret_key, const SecretKey &spend_scalar);
+
+void linkable_underive_address(const SecretKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, PublicKey *spend_public_key,
+    PublicKey *view_public_key);
+void test_linkable();
+
+// Unlinkable crypto, spend_scalar is temporary value that is expensive to calc, we pass it around
+PublicKey unlinkable_derive_public_key(const PublicKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &spend_public_key, const PublicKey &vs_public_key, PublicKey *encrypted_output_secret);
+
 PublicKey unlinkable_underive_public_key(const SecretKey &view_secret_key, const Hash &tx_inputs_hash,
-    size_t output_index, const PublicKey &output_public_key, const Hash &encrypted_output_secret,
+    size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
     SecretKey *spend_scalar);
 
 SecretKey unlinkable_derive_secret_key(const SecretKey &spend_secret_key, const SecretKey &spend_scalar);
 
-PublicKey unlinkable_derive_public_key(const Hash &output_secret, const Hash &tx_inputs_hash, size_t output_index,
-    const PublicKey &spend_public_key, const PublicKey &vs_public_key, Hash *encrypted_output_secret);
-
-bool unlinkable_underive_address(const Hash &output_secret, const Hash &tx_inputs_hash, size_t output_index,
-    const PublicKey &output_public_key, const Hash &encrypted_output_secret, PublicKey *spend_public_key,
+void unlinkable_underive_address(const PublicKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, PublicKey *spend_public_key,
     PublicKey *vs_public_key);
+void test_unlinkable();
+
+Signature amethyst_generate_sendproof(const KeyPair &output_keys, const Hash &tid, const Hash &message_hash,
+    const PublicKey &address_spend_key, const PublicKey &address_other_key);
+
+bool amethyst_check_sendproof(const PublicKey &output_public_key, const Hash &tid, const Hash &message_hash,
+    const PublicKey &address_spend_key, const PublicKey &address_other_key, const Signature &sig);
 
 }  // namespace crypto

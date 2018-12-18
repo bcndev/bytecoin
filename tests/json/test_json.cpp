@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSE for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for
+// details.
 
 #include "test_json.hpp"
 
@@ -20,7 +21,8 @@ void test_json(const std::string &filename, bool should_be) {
 		common::JsonValue val = common::JsonValue::from_string(content);
 		success               = true;
 	} catch (const std::exception &) {
-		//		std::cout << filename << " fail reason: " << common::what(ex) << std::endl;
+		//		std::cout << filename << " fail reason: " << common::what(ex) <<
+		// std::endl;
 	}
 	if (success != should_be)
 		throw std::runtime_error("test case failed " + filename);

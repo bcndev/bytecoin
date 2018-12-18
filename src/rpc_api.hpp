@@ -276,6 +276,8 @@ struct GetWalletInfo {
 		bool view_only                      = false;
 		bool deterministic                  = false;
 		bool auditable                      = false;
+		bool unlinkable                     = false;
+		bool can_view_outgoing_addresses    = false;
 		Timestamp wallet_creation_timestamp = 0;  // O if not known (restored form keys and did not sync yet)
 		std::string first_address;
 		size_t total_address_count = 0;  // Useful when iterating

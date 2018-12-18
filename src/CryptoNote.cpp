@@ -101,12 +101,12 @@ void ser_members(cn::SendproofKey &v, ISeria &s) {
 	seria_kv("derivation", v.derivation, s);
 	seria_kv("signature", v.signature, s);
 }
-void ser_members(cn::SendproofUnlinkable::Element &v, ISeria &s) {
+void ser_members(cn::SendproofAmethyst::Element &v, ISeria &s) {
 	seria_kv("out_index", v.out_index, s);
-	seria_kv("q", v.q, s);
+	seria_kv("deterministic_public_key", v.deterministic_public_key, s);
 	seria_kv("signature", v.signature, s);
 }
-void ser_members(cn::SendproofUnlinkable &v, ISeria &s) { seria_kv("elements", v.elements, s); }
+void ser_members(cn::SendproofAmethyst &v, ISeria &s) { seria_kv("elements", v.elements, s); }
 void ser_members(Sendproof &v, ISeria &s, const Currency &currency) {
 	std::string addr;
 	if (!s.is_input())
@@ -120,11 +120,15 @@ void ser_members(Sendproof &v, ISeria &s, const Currency &currency) {
 	std::string proof;
 	BinaryArray binary_proof;
 	if (!s.is_input()) {
-		if (v.address.type() == typeid(AccountAddressSimple)) {
+		if (v.proof.type() == typeid(SendproofKey)) {
+			auto type = SendproofKey::str_type_tag();
+			seria_kv("type", type, s);
 			auto &var    = boost::get<SendproofKey>(v.proof);
 			binary_proof = seria::to_binary(var);
-		} else if (v.address.type() == typeid(AccountAddressUnlinkable)) {
-			auto &var    = boost::get<SendproofUnlinkable>(v.proof);
+		} else if (v.proof.type() == typeid(SendproofAmethyst)) {
+			auto type = SendproofAmethyst::str_type_tag();
+			seria_kv("type", type, s);
+			auto &var    = boost::get<SendproofAmethyst>(v.proof);
 			binary_proof = seria::to_binary(var);
 		} else
 			throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Unknown address type", addr);
@@ -134,19 +138,21 @@ void ser_members(Sendproof &v, ISeria &s, const Currency &currency) {
 	if (s.is_input()) {
 		if (!common::base58::decode(proof, &binary_proof))
 			throw std::runtime_error("Wrong proof format - " + proof);
-		if (v.address.type() == typeid(AccountAddressSimple)) {
+		std::string type = SendproofKey::str_type_tag();
+		seria_kv("type", type, s);
+		if (type == SendproofKey::str_type_tag()) {
 			SendproofKey sp;
 			seria::from_binary(sp, binary_proof);
 			v.proof = sp;
-		} else if (v.address.type() == typeid(AccountAddressUnlinkable)) {
-			SendproofUnlinkable sp;
+		} else if (type == SendproofAmethyst::str_type_tag()) {
+			SendproofAmethyst sp;
 			seria::from_binary(sp, binary_proof);
 			v.proof = sp;
 		} else
 			throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Unknown address type", addr);
 	}
 }
-void ser_members(TransactionInput &v, ISeria &s) {
+void ser_members(TransactionInput &v, ISeria &s, bool is_tx_amethyst) {
 	if (s.is_input()) {
 		uint8_t type = 0;
 		s.object_key("type");
@@ -170,7 +176,7 @@ void ser_members(TransactionInput &v, ISeria &s) {
 		}
 		case InputKey::type_tag: {
 			InputKey in{};
-			ser_members(in, s);
+			ser_members(in, s, is_tx_amethyst);
 			v = in;
 			break;
 		}
@@ -198,7 +204,7 @@ void ser_members(TransactionInput &v, ISeria &s) {
 			ser(str_type_tag, s);
 		} else
 			s.binary(&type, 1);
-		ser_members(in, s);
+		ser_members(in, s, is_tx_amethyst);
 	}
 }
 void ser_members(TransactionOutput &v, ISeria &s, bool is_tx_amethyst) {
@@ -251,10 +257,12 @@ void ser_members(TransactionOutput &v, ISeria &s, bool is_tx_amethyst) {
 	}
 }
 void ser_members(InputCoinbase &v, ISeria &s) { seria_kv("height", v.height, s); }
-void ser_members(InputKey &v, ISeria &s) {
+void ser_members(InputKey &v, ISeria &s, bool is_tx_amethyst) {
 	seria_kv("amount", v.amount, s);
 	seria_kv("output_indexes", v.output_indexes, s);
 	seria_kv("key_image", v.key_image, s);
+	if (is_tx_amethyst && v.output_indexes.size() >= 2)
+		seria_kv("encrypted_real_index", v.encrypted_real_index, s);
 }
 void ser_members(cn::RingSignatures &v, ISeria &s) { seria_kv("signatures", v.signatures, s); }
 void ser_members(cn::RingSignature3 &v, ISeria &s) {
@@ -422,15 +430,17 @@ void ser_members(OutputKey &v, ISeria &s, bool is_tx_amethyst) {
 	if (is_tx_amethyst)  // We moved amount inside variant part in amethyst
 		seria_kv("amount", v.amount, s);
 	seria_kv("public_key", v.public_key, s);
-	if (is_tx_amethyst)
+	if (is_tx_amethyst) {
 		seria_kv("encrypted_secret", v.encrypted_secret, s);
+		seria_kv_binary("encrypted_address_type", &v.encrypted_address_type, 1, s);
+	}
 }
 
 void ser_members(TransactionPrefix &v, ISeria &s) {
 	seria_kv("version", v.version, s);
 	const bool is_tx_amethyst = (v.version >= parameters::TRANSACTION_VERSION_AMETHYST);
 	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
-	seria_kv("inputs", v.inputs, s);
+	seria_kv("inputs", v.inputs, s, is_tx_amethyst);
 	seria_kv("outputs", v.outputs, s, is_tx_amethyst);
 	seria_kv("extra", v.extra, s);
 }
@@ -461,8 +471,7 @@ void ser_members(RootBlock &v, ISeria &s, BlockSeriaType seria_type) {
 	seria_kv("minor_version", v.minor_version, s);
 	seria_kv("timestamp", v.timestamp, s);
 	seria_kv("previous_block_hash", v.previous_block_hash, s);
-	s.object_key("nonce");
-	s.binary(v.nonce, 4);
+	seria_kv_binary("nonce", v.nonce, 4, s);
 
 	if (seria_type == BlockSeriaType::BLOCKHASH || seria_type == BlockSeriaType::LONG_BLOCKHASH) {
 		Hash miner_tx_hash = get_root_block_base_transaction_hash(v.base_transaction);
@@ -560,8 +569,7 @@ void ser_members(RootBlock &v, ISeria &s, BlockSeriaType seria_type) {
     }
 */
 void ser_members(crypto::CMBranchElement &v, ISeria &s) {
-	s.object_key("depth");
-	s.binary(&v.depth, 1);
+	seria_kv_binary("depth", &v.depth, 1, s);
 	seria_kv("hash", v.hash, s);
 }
 
@@ -577,8 +585,7 @@ void ser_members(BlockHeader &v,
 			seria_kv("timestamp", v.timestamp, s);
 			seria_kv("previous_block_hash", v.previous_block_hash, s);
 			v.nonce.resize(4);
-			s.object_key("nonce");
-			s.binary(v.nonce.data(), 4);
+			seria_kv_binary("nonce", v.nonce.data(), 4, s);
 			return;
 		}
 		if (v.is_merge_mined()) {
@@ -607,8 +614,7 @@ void ser_members(BlockHeader &v,
 		seria_kv("timestamp", v.timestamp, s);
 		seria_kv("previous_block_hash", v.previous_block_hash, s);
 		invariant(v.nonce.size() == 4, "");
-		s.object_key("nonce");
-		s.binary(v.nonce.data(), 4);
+		seria_kv_binary("nonce", v.nonce.data(), 4, s);
 		seria_kv("body_proxy", body_proxy, s);
 		return;
 	}
@@ -636,8 +642,7 @@ void ser_members(BlockHeader &v,
 			// We select "nonce" to be first, because this would allow compatibility with some weird
 			// ASICs which select algorithm based on block major version. Nonce could be made to contain
 			// all required bytes and be of appropriate length (39+4+1 bytes for full binary compatibilty)
-			s.object_key("nonce");
-			s.binary(v.nonce.data(), v.nonce.size());
+			seria_kv_binary("nonce", v.nonce.data(), v.nonce.size(), s);
 			seria_kv("cm_merkle_root", cm_merkle_root, s);
 			return;
 		}

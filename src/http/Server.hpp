@@ -25,9 +25,8 @@ public:
 	typedef std::function<bool(Client *who, RequestBody &&request, ResponseBody &response)> request_handler;
 	typedef std::function<void(Client *who)> disconnect_handler;
 
-	explicit Server(const std::string &address, uint16_t port, request_handler &&r_handler,
-	    disconnect_handler &&d_handler, const std::string &ssl_pem_file = std::string(),
-	    const std::string &ssl_certificate_password = std::string());
+	explicit Server(
+	    const std::string &address, uint16_t port, request_handler &&r_handler, disconnect_handler &&d_handler);
 	~Server();
 
 private:

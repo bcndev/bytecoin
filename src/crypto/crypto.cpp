@@ -62,6 +62,12 @@ static ge_p2 ge_scalarmult(const EllipticCurveScalar &sec, const ge_p3 &point_ba
 	return point2;
 }
 
+static ge_p3 ge_scalarmult3(const EllipticCurveScalar &sec, const ge_p3 &point_base) {
+	ge_p3 point3;
+	ge_scalarmult3(&point3, &sec, &point_base);
+	return point3;
+}
+
 static ge_p2 ge_double_scalarmult_base_vartime(
     const EllipticCurveScalar &a, const ge_p3 &A, const EllipticCurveScalar &b) {
 	ge_p2 tmp2;
@@ -111,7 +117,14 @@ ge_cached ge_p3_to_cached(const ge_p3 &p3) {
 	ge_p3_to_cached(&ca, &p3);
 	return ca;
 }
-
+/*ge_cached ge_p2_to_cached(const ge_p2 &p2) {
+    // TODO - faster?
+    auto by = ge_tobytes(p2);
+    auto p3 = ge_frombytes_vartime(by);
+    ge_cached ca;
+    ge_p3_to_cached(&ca, &p3);
+    return ca;
+}*/
 // Integer parameters of all funs in crypto.cpp are size_t
 enum { max_varint_size = (std::numeric_limits<size_t>::digits + 6) / 7 };
 
@@ -143,6 +156,7 @@ struct MiniBuffer {
 		buf[pos++] = static_cast<uint8_t>(i);
 		check_overflow(0);  // cheap paranoid check
 	}
+	Hash cn_fast_hash() const { return crypto::cn_fast_hash(buf, pos); }
 	SecretKey hash_to_scalar() const { return crypto::hash_to_scalar(buf, pos); }
 	SecretKey hash_to_scalar64() const { return crypto::hash_to_scalar64(buf, pos); }
 };
@@ -184,6 +198,19 @@ SecretKey hash_to_scalar64(const void *data, size_t length) {
 	return result;
 }
 
+PublicKey hash_to_point(const void *data, size_t length) {
+	Hash h = cn_fast_hash(data, length);
+	ge_p2 point;
+	ge_fromfe_frombytes_vartime(&point, h.data);
+	return ge_tobytes(point);
+}
+
+EllipticCurvePoint hash_to_point_for_tests(const Hash &h) {
+	ge_p2 point;
+	ge_fromfe_frombytes_vartime(&point, h.data);
+	return ge_tobytes(point);
+}
+
 void random_keypair(PublicKey &pub, SecretKey &sec) {
 	sec = random_scalar();
 	pub = ge_tobytes(ge_scalarmult_base(sec));
@@ -205,49 +232,6 @@ bool secret_key_to_public_key(const SecretKey &sec, PublicKey *pub) {
 		return false;
 	*pub = ge_tobytes(ge_scalarmult_base(sec));
 	return true;
-}
-
-KeyDerivation generate_key_derivation(const PublicKey &tx_public_key, const SecretKey &view_secret_key) {
-	check_scalar(view_secret_key);
-	const ge_p3 tx_public_key_p3 = ge_frombytes_vartime(tx_public_key);
-	const ge_p2 point2           = ge_scalarmult(view_secret_key, tx_public_key_p3);
-	KeyDerivation derivation;
-	static_cast<EllipticCurvePoint &>(derivation) = ge_tobytes(ge_p1p1_to_p2(ge_mul8(point2)));
-	return derivation;
-}
-
-static SecretKey derivation_to_scalar(const KeyDerivation &derivation, size_t output_index) {
-	FixedBuffer<sizeof(KeyDerivation) + max_varint_size> buf;
-	buf.append(derivation);
-	buf.append(output_index);
-	return buf.hash_to_scalar();
-}
-
-PublicKey derive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &spend_public_key) {
-	const ge_p3 spend_public_key_g3  = ge_frombytes_vartime(spend_public_key);
-	const EllipticCurveScalar scalar = derivation_to_scalar(derivation, output_index);
-	const ge_cached point3           = ge_p3_to_cached(ge_scalarmult_base(scalar));
-	ge_p1p1 point_sum;
-	ge_add(&point_sum, &spend_public_key_g3, &point3);
-	return ge_tobytes(ge_p1p1_to_p2(point_sum));
-}
-
-SecretKey derive_secret_key(const KeyDerivation &derivation, size_t output_index, const SecretKey &spend_secret_key) {
-	check_scalar(spend_secret_key);
-	const EllipticCurveScalar scalar = derivation_to_scalar(derivation, output_index);
-	SecretKey output_secret_key;
-	sc_add(&output_secret_key, &spend_secret_key, &scalar);
-	return output_secret_key;
-}
-
-PublicKey underive_public_key(
-    const KeyDerivation &derivation, size_t output_index, const PublicKey &output_public_key) {
-	const ge_p3 output_public_key_p3 = ge_frombytes_vartime(output_public_key);
-	const EllipticCurveScalar scalar = derivation_to_scalar(derivation, output_index);
-	const ge_cached point3           = ge_p3_to_cached(ge_scalarmult_base(scalar));
-	ge_p1p1 point_diff;
-	ge_sub(&point_diff, &output_public_key_p3, &point3);
-	return ge_tobytes(ge_p1p1_to_p2(point_diff));
 }
 
 Signature generate_signature(const Hash &prefix_hash, const PublicKey &pub, const SecretKey &sec) {
@@ -286,12 +270,6 @@ static ge_p3 hash_to_ec_p3(const PublicKey &key) {
 	const Hash h = cn_fast_hash(&key, sizeof(PublicKey));
 	ge_fromfe_frombytes_vartime(&point_p2, h.data);
 	return ge_p1p1_to_p3(ge_mul8(point_p2));
-}
-
-EllipticCurvePoint hash_to_point_for_tests(const Hash &h) {
-	ge_p2 point;
-	ge_fromfe_frombytes_vartime(&point, h.data);
-	return ge_tobytes(point);
 }
 
 PublicKey hash_to_ec(const PublicKey &key) { return ge_tobytes(hash_to_ec_p3(key)); }
@@ -462,7 +440,7 @@ RingSignature3 generate_ring_signature3(const Hash &prefix_hash, const std::vect
 		FixedBuffer<sizeof(Hash) + sizeof(SecretKey)> k_buf;
 		k_buf.append(prefix_hash);
 		k_buf.append(secs.at(i));
-		const EllipticCurveScalar k = k_buf.hash_to_scalar64();
+		const EllipticCurveScalar k = k_buf.hash_to_scalar64();  // TODO - k must be the same in both fors
 		// std::cout << "k[" << i << "]=" << k << std::endl;
 		EllipticCurveScalar next_c = sig.c0;
 		for (size_t j = 0; j != sec_index; ++j) {
@@ -542,23 +520,47 @@ bool check_ring_signature3(const Hash &prefix_hash, const std::vector<KeyImage> 
 	return sc_iszero(&c) != 0;
 }
 
-size_t find_deterministic_input3(const Hash &prefix_hash, size_t input_index, const std::vector<EllipticCurveScalar> &r,
-    const SecretKey &view_secret_key) {
-	size_t bad_index = r.size();
-	for (size_t i = 0; i < r.size(); i++) {
-		FixedBuffer<sizeof(Hash) + sizeof(SecretKey) + 2 * max_varint_size> r_buf;
-		r_buf.append(view_secret_key);
-		r_buf.append(prefix_hash);
-		r_buf.append(input_index);
-		r_buf.append(i);
-		const SecretKey must_be_r = r_buf.hash_to_scalar64();
-		if (must_be_r != r[i]) {
-			if (bad_index != r.size())  // second bad index
-				return r.size();
-			bad_index = i;
-		}
-	}
-	return bad_index;
+KeyDerivation generate_key_derivation(const PublicKey &tx_public_key, const SecretKey &view_secret_key) {
+	check_scalar(view_secret_key);
+	const ge_p3 tx_public_key_p3 = ge_frombytes_vartime(tx_public_key);
+	const ge_p2 point2           = ge_scalarmult(view_secret_key, tx_public_key_p3);
+	KeyDerivation derivation;
+	static_cast<EllipticCurvePoint &>(derivation) = ge_tobytes(ge_p1p1_to_p2(ge_mul8(point2)));
+	return derivation;
+}
+
+static SecretKey derivation_to_scalar(const KeyDerivation &derivation, size_t output_index) {
+	FixedBuffer<sizeof(KeyDerivation) + max_varint_size> buf;
+	buf.append(derivation);
+	buf.append(output_index);
+	return buf.hash_to_scalar();
+}
+
+PublicKey derive_public_key(const KeyDerivation &derivation, size_t output_index, const PublicKey &spend_public_key) {
+	const ge_p3 spend_public_key_g3  = ge_frombytes_vartime(spend_public_key);
+	const EllipticCurveScalar scalar = derivation_to_scalar(derivation, output_index);
+	const ge_cached point3           = ge_p3_to_cached(ge_scalarmult_base(scalar));
+	ge_p1p1 point_sum;
+	ge_add(&point_sum, &spend_public_key_g3, &point3);
+	return ge_tobytes(ge_p1p1_to_p2(point_sum));
+}
+
+SecretKey derive_secret_key(const KeyDerivation &derivation, size_t output_index, const SecretKey &spend_secret_key) {
+	check_scalar(spend_secret_key);
+	const EllipticCurveScalar scalar = derivation_to_scalar(derivation, output_index);
+	SecretKey output_secret_key;
+	sc_add(&output_secret_key, &spend_secret_key, &scalar);
+	return output_secret_key;
+}
+
+PublicKey underive_public_key(
+    const KeyDerivation &derivation, size_t output_index, const PublicKey &output_public_key) {
+	const ge_p3 output_public_key_p3 = ge_frombytes_vartime(output_public_key);
+	const EllipticCurveScalar scalar = derivation_to_scalar(derivation, output_index);
+	const ge_cached point3           = ge_p3_to_cached(ge_scalarmult_base(scalar));
+	ge_p1p1 point_diff;
+	ge_sub(&point_diff, &output_public_key_p3, &point3);
+	return ge_tobytes(ge_p1p1_to_p2(point_diff));
 }
 
 Signature generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_sec,
@@ -642,45 +644,188 @@ PublicKey generate_address_s_v(const PublicKey &spend_public_key, const SecretKe
 	return ge_tobytes(ge_scalarmult(view_secret_key, spend_public_key_p3));
 }
 
-static_assert(sizeof(PublicKey) == sizeof(Hash), "We are going to XOR them");
-
 // create map s*G -> WalletRecord
+
+// In tx we generate per-output deterministic secret
+// q = deterministic(wallet_seed_special_for_k | inputs | #o)
+// Q = q*G
+// K = Hp(Q)                              *** k = Hs(Q)
+
+// P.S. If we need more secret bytes, we do k(suffix) = H(Q | suffix)
 
 // In tx, there is 2 values per output T (encrypted output secret) and P (output public key)
 
-// T = k xor inv(H(k|inputs|#o))*v*s*G
-// P = inv(H(k|inputs|#o))*s*G)
+// T = K + inv(H(K|inputs|#o))*(v*s*G)    ***  T = k * (v*G)
+// P = inv(H(K|inputs|#o))*s*G            ***  P = S + H(k*G|inputs|#o)*G
 
 // look for our output
-// k' = P*v xor T
-// lookup H(k'|inputs|#o)*P in map
+// K' = T - P*v                           ***  D = inv(v) * T
+// S' = H(K'|inputs|#o)*P in map          ***  S' = P - H(D|inputs|#o)*G
 
-// if found, then secret output key
-// p = inv(H(k|inputs|#o))*s
+// if found in map, then secret output key
+// p = inv(H(K'|inputs|#o))*s             ***  p = s + H(D|inputs|#o)
 
 // send_proof
 
-// q = deterministic(wallet_seed_special_for_k | inputs | #o)
-// Q = q*G
-// k = Q or H(Q)
+// proof of send to address s*G is
+// (Q, txid, message, s*G, v*s*G)         *** (Q, txid, message, s*G, v*G)
+// signed by q
 
-// proof of send to address s*G is (Q, txid, message, s*G, v*s*G), signed by q
+PublicKey linkable_derive_public_key(const SecretKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &spend_public_key, const PublicKey &view_public_key, PublicKey *encrypted_output_secret) {
+	check_scalar(output_secret);
+	const ge_p3 view_public_key_p3 = ge_frombytes_vartime(view_public_key);
+	*encrypted_output_secret       = ge_tobytes(ge_scalarmult(output_secret, view_public_key_p3));
+
+	const EllipticCurvePoint derivation = ge_tobytes(ge_scalarmult_base(output_secret));
+	//	std::cout << "derivation=" << derivation << std::endl;
+	FixedBuffer<sizeof(EllipticCurvePoint) + sizeof(Hash) + max_varint_size> cr_comm;
+	cr_comm.append(derivation);
+	cr_comm.append(tx_inputs_hash);
+	cr_comm.append(output_index);
+	const EllipticCurveScalar derivation_hash = cr_comm.hash_to_scalar();
+	//	std::cout << "derivation_hash=" << derivation_hash << std::endl;
+	const ge_cached point3 = ge_p3_to_cached(ge_scalarmult_base(derivation_hash));
+
+	const ge_p3 spend_public_key_g3 = ge_frombytes_vartime(spend_public_key);
+	ge_p1p1 point_sum;
+	ge_add(&point_sum, &spend_public_key_g3, &point3);
+	return ge_tobytes(ge_p1p1_to_p2(point_sum));
+}
+
+PublicKey linkable_underive_public_key(const SecretKey &inv_view_secret_key, const Hash &tx_inputs_hash,
+    size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
+    SecretKey *spend_scalar) {
+	check_scalar(inv_view_secret_key);
+	const ge_p3 encrypted_output_secret_p3 = ge_frombytes_vartime(encrypted_output_secret);
+	const EllipticCurvePoint derivation    = ge_tobytes(ge_scalarmult(inv_view_secret_key, encrypted_output_secret_p3));
+	//	std::cout << "derivation=" << derivation << std::endl;
+	FixedBuffer<sizeof(EllipticCurvePoint) + sizeof(Hash) + max_varint_size> cr_comm;
+	cr_comm.append(derivation);
+	cr_comm.append(tx_inputs_hash);
+	cr_comm.append(output_index);
+	*spend_scalar = cr_comm.hash_to_scalar();
+	//	std::cout << "derivation_hash=" << *spend_scalar << std::endl;
+	const ge_p3 output_public_key_g3 = ge_frombytes_vartime(output_public_key);
+	const ge_cached point3           = ge_p3_to_cached(ge_scalarmult_base(*spend_scalar));
+	ge_p1p1 point_diff;
+	ge_sub(&point_diff, &output_public_key_g3, &point3);
+	return ge_tobytes(ge_p1p1_to_p2(point_diff));
+}
+
+SecretKey linkable_derive_secret_key(const SecretKey &spend_secret_key, const SecretKey &spend_scalar) {
+	check_scalar(spend_secret_key);
+	check_scalar(spend_scalar);
+	SecretKey output_secret_key;
+	sc_add(&output_secret_key, &spend_secret_key, &spend_scalar);
+	return output_secret_key;
+}
+
+void linkable_underive_address(const SecretKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, PublicKey *spend_public_key,
+    PublicKey *view_public_key) {
+	check_scalar(output_secret);
+	const EllipticCurvePoint derivation = ge_tobytes(ge_scalarmult_base(output_secret));
+	FixedBuffer<sizeof(EllipticCurvePoint) + sizeof(Hash) + max_varint_size> cr_comm;
+	cr_comm.append(derivation);
+	cr_comm.append(tx_inputs_hash);
+	cr_comm.append(output_index);
+	const EllipticCurveScalar derivation_hash = cr_comm.hash_to_scalar();
+	const ge_cached point3                    = ge_p3_to_cached(ge_scalarmult_base(derivation_hash));
+
+	const ge_p3 output_public_key_g3 = ge_frombytes_vartime(output_public_key);
+	ge_p1p1 point_diff;
+	ge_sub(&point_diff, &output_public_key_g3, &point3);
+	*spend_public_key = ge_tobytes(ge_p1p1_to_p2(point_diff));
+
+	const SecretKey inv_output_secret = sc_invert(output_secret);
+
+	const ge_p3 encrypted_output_secret_g3 = ge_frombytes_vartime(encrypted_output_secret);
+	*view_public_key                       = ge_tobytes(ge_scalarmult(inv_output_secret, encrypted_output_secret_g3));
+}
+
+void test_linkable() {
+	const SecretKey output_secret       = random_scalar();
+	const Hash tx_inputs_hash           = rand<Hash>();
+	const size_t output_index           = rand<size_t>();
+	const KeyPair spend_keypair         = random_keypair();
+	const KeyPair view_keypair          = random_keypair();
+	const SecretKey inv_view_secret_key = sc_invert(view_keypair.secret_key);
+
+	PublicKey encrypted_output_secret;
+	PublicKey output_public_key = linkable_derive_public_key(output_secret, tx_inputs_hash, output_index,
+	    spend_keypair.public_key, view_keypair.public_key, &encrypted_output_secret);
+
+	SecretKey spend_scalar;
+	PublicKey spend_public_key2 = linkable_underive_public_key(
+	    inv_view_secret_key, tx_inputs_hash, output_index, output_public_key, encrypted_output_secret, &spend_scalar);
+	if (spend_public_key2 != spend_keypair.public_key)
+		throw Error("Aha");
+	SecretKey output_secret_key2 = linkable_derive_secret_key(spend_keypair.secret_key, spend_scalar);
+	PublicKey output_public_key2;
+	if (!secret_key_to_public_key(output_secret_key2, &output_public_key2) || output_public_key2 != output_public_key)
+		throw Error("Oho");
+	PublicKey spend_public_key3;
+	PublicKey view_public_key3;
+	linkable_underive_address(output_secret, tx_inputs_hash, output_index, output_public_key, encrypted_output_secret,
+	    &spend_public_key3, &view_public_key3);
+	if (spend_public_key3 != spend_keypair.public_key || view_public_key3 != view_keypair.public_key)
+		throw Error("Uhu");
+}
+
+PublicKey unlinkable_derive_public_key(const PublicKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &spend_public_key, const PublicKey &vs_public_key, PublicKey *encrypted_output_secret) {
+	//	std::cout << "output_secret=" << output_secret << std::endl;
+	const ge_p3 spend_public_key_p3 = ge_frombytes_vartime(spend_public_key);
+	const ge_p3 vs_public_key_p3    = ge_frombytes_vartime(vs_public_key);
+	const ge_p3 output_secret_p3    = ge_frombytes_vartime(output_secret);
+
+	FixedBuffer<sizeof(PublicKey) + sizeof(Hash) + max_varint_size> cr_comm;
+	cr_comm.append(output_secret);
+	cr_comm.append(tx_inputs_hash);
+	cr_comm.append(output_index);
+	const SecretKey spend_scalar = cr_comm.hash_to_scalar();
+	//	std::cout << "spend_scalar=" << spend_scalar << std::endl;
+	const SecretKey inv_spend_scalar = sc_invert(spend_scalar);
+	//	std::cout << "inv_spend_scalar=" << inv_spend_scalar << std::endl;
+	PublicKey output_public_key = ge_tobytes(ge_scalarmult(inv_spend_scalar, spend_public_key_p3));
+
+	const ge_cached p_v = ge_p3_to_cached(ge_scalarmult3(inv_spend_scalar, vs_public_key_p3));
+
+	ge_p1p1 point_sum;
+	ge_add(&point_sum, &output_secret_p3, &p_v);
+
+	*encrypted_output_secret = ge_tobytes(ge_p1p1_to_p2(point_sum));
+	return output_public_key;
+}
+
+// T = K + inv(H(K|inputs|#o))*(v*s*G)    ***  T = k * (v*G)
+// P = inv(H(K|inputs|#o))*s*G            ***  P = S + H(k*G|inputs|#o)*G
+
+// look for our output
+// K' = T - P*v                           ***  D = inv(v) * T
+// S' = H(K'|inputs|#o)*P in map          ***  S' = P - H(D|inputs|#o)*G
 
 PublicKey unlinkable_underive_public_key(const SecretKey &view_secret_key, const Hash &tx_inputs_hash,
-    size_t output_index, const PublicKey &output_public_key, const Hash &encrypted_output_secret,
+    size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
     SecretKey *spend_scalar) {
 	check_scalar(view_secret_key);
-	// TODO - When passing to ledger, check that no crypto attacks possible
-	const ge_p3 output_public_key_p3 = ge_frombytes_vartime(output_public_key);
-	const PublicKey p_v              = ge_tobytes(ge_scalarmult(view_secret_key, output_public_key_p3));
-	Hash output_secret;
-	for (size_t i = 0; i != sizeof(output_secret.data); ++i)
-		output_secret.data[i] = p_v.data[i] ^ encrypted_output_secret.data[i];
-	FixedBuffer<2 * sizeof(Hash) + max_varint_size> cr_comm;
+	const ge_p3 output_public_key_p3       = ge_frombytes_vartime(output_public_key);
+	const ge_p3 encrypted_output_secret_p3 = ge_frombytes_vartime(encrypted_output_secret);
+	const ge_cached p_v                    = ge_p3_to_cached(ge_scalarmult3(view_secret_key, output_public_key_p3));
+	ge_p1p1 point_diff;
+	ge_sub(&point_diff, &encrypted_output_secret_p3, &p_v);
+
+	const PublicKey output_secret = ge_tobytes(ge_p1p1_to_p2(point_diff));
+	//	std::cout << "output_secret=" << output_secret << std::endl;
+
+	FixedBuffer<sizeof(PublicKey) + sizeof(Hash) + max_varint_size> cr_comm;
 	cr_comm.append(output_secret);
 	cr_comm.append(tx_inputs_hash);
 	cr_comm.append(output_index);
 	*spend_scalar = cr_comm.hash_to_scalar();
+	//	std::cout << "spend_scalar=" << *spend_scalar << std::endl;
+
 	return ge_tobytes(ge_scalarmult(*spend_scalar, output_public_key_p3));
 }
 
@@ -693,44 +838,79 @@ SecretKey unlinkable_derive_secret_key(const SecretKey &spend_secret_key, const 
 	return output_secret_key;
 }
 
-PublicKey unlinkable_derive_public_key(const Hash &output_secret, const Hash &tx_inputs_hash, size_t output_index,
-    const PublicKey &spend_public_key, const PublicKey &vs_public_key, Hash *encrypted_output_secret) {
-	const ge_p3 spend_public_key_p3 = ge_frombytes_vartime(spend_public_key);
-	const ge_p3 vs_public_key_p3    = ge_frombytes_vartime(vs_public_key);
-
-	FixedBuffer<2 * sizeof(Hash) + max_varint_size> cr_comm;
-	cr_comm.append(output_secret);
-	cr_comm.append(tx_inputs_hash);
-	cr_comm.append(output_index);
-	const SecretKey spend_scalar     = cr_comm.hash_to_scalar();
-	const SecretKey inv_spend_scalar = sc_invert(spend_scalar);
-	PublicKey output_public_key      = ge_tobytes(ge_scalarmult(inv_spend_scalar, spend_public_key_p3));
-	const PublicKey p_v              = ge_tobytes(ge_scalarmult(inv_spend_scalar, vs_public_key_p3));
-	for (size_t i = 0; i != sizeof(output_secret.data); ++i)
-		encrypted_output_secret->data[i] = p_v.data[i] ^ output_secret.data[i];
-	return output_public_key;
-}
-
-bool unlinkable_underive_address(const Hash &output_secret, const Hash &tx_inputs_hash, size_t output_index,
-    const PublicKey &output_public_key, const Hash &encrypted_output_secret, PublicKey *spend_public_key,
+void unlinkable_underive_address(const PublicKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, PublicKey *spend_public_key,
     PublicKey *vs_public_key) {
-	ge_p3 output_public_key_p3;
-	if (ge_frombytes_vartime(&output_public_key_p3, &output_public_key) != 0)
-		return false;
-	FixedBuffer<2 * sizeof(Hash) + max_varint_size> cr_comm;
+	const ge_p3 output_public_key_p3       = ge_frombytes_vartime(output_public_key);
+	const ge_p3 output_secret_p3           = ge_frombytes_vartime(output_secret);
+	const ge_p3 encrypted_output_secret_p3 = ge_frombytes_vartime(encrypted_output_secret);
+	FixedBuffer<sizeof(PublicKey) + sizeof(Hash) + max_varint_size> cr_comm;
 	cr_comm.append(output_secret);
 	cr_comm.append(tx_inputs_hash);
 	cr_comm.append(output_index);
 	const SecretKey spend_scalar = cr_comm.hash_to_scalar();
 	*spend_public_key            = ge_tobytes(ge_scalarmult(spend_scalar, output_public_key_p3));
-	PublicKey t;
-	for (size_t i = 0; i != sizeof(output_secret.data); ++i)
-		t.data[i] = encrypted_output_secret.data[i] ^ output_secret.data[i];
-	ge_p3 t_p3;
-	if (ge_frombytes_vartime(&t_p3, &t) != 0)
-		return false;
-	*vs_public_key = ge_tobytes(ge_scalarmult(spend_scalar, t_p3));
-	return true;
+
+	const ge_cached p_v = ge_p3_to_cached(output_secret_p3);
+	ge_p1p1 point_diff;
+	ge_sub(&point_diff, &encrypted_output_secret_p3, &p_v);
+
+	const ge_p3 t_minus_k = ge_p1p1_to_p3(point_diff);
+
+	*vs_public_key = ge_tobytes(ge_scalarmult(spend_scalar, t_minus_k));
+}
+
+void test_unlinkable() {
+	const PublicKey output_secret = random_keypair().public_key;
+	const Hash tx_inputs_hash     = rand<Hash>();
+	const size_t output_index     = rand<size_t>();
+	const KeyPair spend_keypair   = random_keypair();
+	const KeyPair view_keypair    = random_keypair();
+	const PublicKey address_s_v   = generate_address_s_v(spend_keypair.public_key, view_keypair.secret_key);
+
+	PublicKey encrypted_output_secret;
+	PublicKey output_public_key = unlinkable_derive_public_key(
+	    output_secret, tx_inputs_hash, output_index, spend_keypair.public_key, address_s_v, &encrypted_output_secret);
+
+	SecretKey spend_scalar;
+	PublicKey spend_public_key2 = unlinkable_underive_public_key(view_keypair.secret_key, tx_inputs_hash, output_index,
+	    output_public_key, encrypted_output_secret, &spend_scalar);
+	if (spend_public_key2 != spend_keypair.public_key)
+		throw Error("Aha");
+	SecretKey output_secret_key2 = unlinkable_derive_secret_key(spend_keypair.secret_key, spend_scalar);
+	PublicKey output_public_key2;
+	if (!secret_key_to_public_key(output_secret_key2, &output_public_key2) || output_public_key2 != output_public_key)
+		throw Error("Oho");
+	PublicKey spend_public_key3;
+	PublicKey address_s_v3;
+	unlinkable_underive_address(output_secret, tx_inputs_hash, output_index, output_public_key, encrypted_output_secret,
+	    &spend_public_key3, &address_s_v3);
+	if (spend_public_key3 != spend_keypair.public_key || address_s_v3 != address_s_v)
+		throw Error("Uhu");
+}
+
+Signature amethyst_generate_sendproof(const KeyPair &output_keys, const Hash &tid, const Hash &message_hash,
+    const PublicKey &address_spend_key, const PublicKey &address_other_key) {
+	FixedBuffer<3 * sizeof(PublicKey) + 2 * sizeof(Hash)> cr_comm;
+	cr_comm.append(output_keys.public_key);
+	cr_comm.append(tid);
+	cr_comm.append(message_hash);
+	cr_comm.append(address_spend_key);
+	cr_comm.append(address_other_key);
+	const Hash hash = cr_comm.cn_fast_hash();
+	return generate_signature(hash, output_keys.public_key, output_keys.secret_key);
+}
+
+bool amethyst_check_sendproof(const PublicKey &output_public_key, const Hash &tid, const Hash &message_hash,
+    const PublicKey &address_spend_key, const PublicKey &address_other_key, const Signature &sig) {
+	FixedBuffer<3 * sizeof(PublicKey) + 2 * sizeof(Hash)> cr_comm;
+	cr_comm.append(output_public_key);
+	cr_comm.append(tid);
+	cr_comm.append(message_hash);
+	cr_comm.append(address_spend_key);
+	cr_comm.append(address_other_key);
+	const Hash hash = cr_comm.cn_fast_hash();
+	return check_signature(hash, output_public_key, sig);
 }
 
 }  // namespace crypto

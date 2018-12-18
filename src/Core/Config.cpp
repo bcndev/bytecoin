@@ -90,20 +90,6 @@ Config::Config(common::CommandLine &cmd)
 		if (!common::parse_ip_address_and_port(pa, &walletd_bind_ip, &walletd_bind_port))
 			throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
 	}
-	if (const char *pa = cmd.get("--ssl-certificate-pem-file")) {
-		ssl_certificate_pem_file = pa;
-#if !platform_USE_SSL
-		throw std::runtime_error(
-		    "Setting --ssl-certificate-pem-file impossible - this binary is built without OpenSSL");
-#endif
-	}
-	if (const char *pa = cmd.get("--ssl-certificate-password")) {
-		ssl_certificate_password = pa;
-#if !platform_USE_SSL
-		throw std::runtime_error(
-		    "Setting --ssl_certificate_password impossible - this binary is built without OpenSSL");
-#endif
-	}
 	if (const char *pa = cmd.get("--" CRYPTONOTE_NAME "d-authorization")) {
 		bytecoind_authorization         = common::base64::encode(BinaryArray(pa, pa + strlen(pa)));
 		bytecoind_authorization_private = bytecoind_authorization;

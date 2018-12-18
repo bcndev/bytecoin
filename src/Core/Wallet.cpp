@@ -93,18 +93,15 @@ static Hash derive_from_key(const crypto::chacha_key &key, const std::string &ap
 AccountAddress Wallet::get_first_address() const { return record_to_address(m_wallet_records.at(0)); }
 
 std::string Wallet::get_cache_name() const {
-	Hash h = crypto::cn_fast_hash(m_view_public_key.data, sizeof(m_view_public_key.data));
-	return common::pod_to_hex(h) + (is_view_only() ? "-view-only" : std::string());
-}
-
-bool Wallet::is_our_address(const AccountAddress &v_addr) const {
-	if (v_addr.type() != typeid(AccountAddressSimple))
-		return false;
-	auto &addr = boost::get<AccountAddressSimple>(v_addr);
-	auto rit   = m_records_map.find(addr.spend_public_key);
-	if (m_view_public_key != addr.view_public_key || rit == m_records_map.end())
-		return false;
-	return m_wallet_records.at(rit->second).spend_public_key == addr.spend_public_key;
+	Hash h           = crypto::cn_fast_hash(m_view_public_key.data, sizeof(m_view_public_key.data));
+	std::string name = common::pod_to_hex(h);
+	if (is_view_only()) {
+		if (can_view_outgoing_addresses())
+			name += "-view-only-voa";
+		else
+			name += "-view-only";
+	}
+	return name;
 }
 
 bool Wallet::get_look_ahead_record(WalletRecord &record, const PublicKey &spend_public_key) {
@@ -157,6 +154,11 @@ static void encrypt_key_pair(
 	common::uint_le_to_bytes<uint64_t>(rec_data + sizeof(PublicKey) + sizeof(SecretKey), sizeof(uint64_t), ct);
 	r.iv = crypto::rand<crypto::chacha_iv>();
 	chacha8(&rec_data, sizeof(r.data), key, r.iv, r.data);
+}
+
+bool Wallet::is_our_address(const AccountAddress &v_addr) const {
+	WalletRecord wr;
+	return get_record(&wr, v_addr);
 }
 
 size_t WalletContainerStorage::wallet_file_size(size_t records) {
@@ -496,7 +498,7 @@ AccountAddress WalletContainerStorage::record_to_address(const WalletRecord &rec
 	return AccountAddressSimple{record.spend_public_key, m_view_public_key};
 }
 
-bool WalletContainerStorage::get_record(WalletRecord &record, const AccountAddress &v_addr) const {
+bool WalletContainerStorage::get_record(WalletRecord *record, const AccountAddress &v_addr) const {
 	if (v_addr.type() != typeid(AccountAddressSimple))
 		return false;
 	auto &addr = boost::get<AccountAddressSimple>(v_addr);
@@ -506,7 +508,7 @@ bool WalletContainerStorage::get_record(WalletRecord &record, const AccountAddre
 	if (rit->second >= get_actual_records_count())
 		return false;
 	invariant(m_wallet_records.at(rit->second).spend_public_key == addr.spend_public_key, "");
-	record = m_wallet_records.at(rit->second);
+	*record = m_wallet_records.at(rit->second);
 	return true;
 }
 
@@ -674,47 +676,6 @@ bool WalletContainerStorage::detect_our_output(const Hash &tid, const Hash &tx_i
 	return true;
 }
 
-bool WalletContainerStorage::detect_not_our_output(bool tx_amethyst, const Hash &tid, const Hash &tx_inputs_hash,
-    boost::optional<History> *history, size_t out_index, const OutputKey &key_output, Amount *amount,
-    AccountAddress *address) {
-	KeyPair tx_keys;  // We do some expensive calcs once and only if needed
-	if (tx_amethyst) {
-		KeyPair output_secret_keys = TransactionBuilder::deterministic_keys_from_seed(
-		    tx_inputs_hash, m_tx_derivation_seed, common::get_varint_data(out_index));
-		Hash output_secret =
-		    crypto::cn_fast_hash(output_secret_keys.public_key.data, sizeof(output_secret_keys.public_key.data));
-		AccountAddressSimple addr;
-		for (size_t i = 0; i != sizeof(output_secret); ++i)
-			addr.view_public_key.data[i] = output_secret.data[i] ^ key_output.encrypted_secret.data[i];
-		if (crypto::key_isvalid(addr.view_public_key)) {
-			if (tx_keys.secret_key == SecretKey{})
-				tx_keys = TransactionBuilder::transaction_keys_from_seed(tx_inputs_hash, m_tx_derivation_seed);
-			KeyDerivation to_derivation = generate_key_derivation(addr.view_public_key, tx_keys.secret_key);
-			addr.spend_public_key       = underive_public_key(to_derivation, out_index, key_output.public_key);
-			*address                    = addr;
-			*amount                     = key_output.amount;
-			return true;
-		}
-		return false;
-	}
-	if (!*history)
-		*history = load_history(tid);
-	if (!history->get().empty()) {
-		if (tx_keys.secret_key == SecretKey{})
-			tx_keys = TransactionBuilder::transaction_keys_from_seed(tx_inputs_hash, m_tx_derivation_seed);
-		for (const auto &addr : history->get()) {
-			const KeyDerivation derivation = generate_key_derivation(addr.view_public_key, tx_keys.secret_key);
-			const PublicKey guess_key      = crypto::derive_public_key(derivation, out_index, addr.spend_public_key);
-			if (guess_key == key_output.public_key) {
-				*address = addr;
-				*amount  = key_output.amount;
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
 static const std::string current_version = "CryptoNoteWallet1";
 static const size_t GENERATE_AHEAD       = 20000;  // TODO - move to better place
 
@@ -818,9 +779,9 @@ WalletHD::WalletHD(const Currency &currency, logging::ILogger &log, const std::s
 	m_wallet_key = generate_chacha8_key(cn_ctx, salt.data(), salt.size());
 	try {
 		load();
-	} catch (const Bip32Key::Exception &ex) {
+	} catch (const Bip32Key::Exception &) {
 		std::throw_with_nested(Exception{api::WALLETD_MNEMONIC_CRC, "Wrong mnemonic"});
-	} catch (const std::exception &ex) {
+	} catch (const std::exception &) {
 		std::throw_with_nested(Exception{api::WALLET_FILE_DECRYPT_ERROR, "Wallet file invalid or wrong password"});
 	}
 }
@@ -859,9 +820,9 @@ WalletHD::WalletHD(const Currency &currency, logging::ILogger &log, const std::s
 
 	try {
 		load();
-	} catch (const Bip32Key::Exception &ex) {
+	} catch (const Bip32Key::Exception &) {
 		std::throw_with_nested(Exception{api::WALLETD_MNEMONIC_CRC, "Wrong mnemonic"});
-	} catch (const std::exception &ex) {
+	} catch (const std::exception &) {
 		std::throw_with_nested(Exception{api::WALLET_FILE_DECRYPT_ERROR, "Wallet file invalid or wrong password"});
 	}
 	commit();
@@ -1096,11 +1057,13 @@ AccountAddress WalletHD::record_to_address(const WalletRecord &record) const {
 	    record.spend_public_key, sv, m_address_type == AccountAddressUnlinkable::type_tag_auditable};
 }
 
-bool WalletHD::get_record(WalletRecord &record, const AccountAddress &v_addr) const {
+bool WalletHD::get_record(WalletRecord *record, const AccountAddress &v_addr) const {
 	if (v_addr.type() != typeid(AccountAddressUnlinkable))
 		return false;
 	auto &addr = boost::get<AccountAddressUnlinkable>(v_addr);
-	auto rit   = m_records_map.find(addr.s);
+	if (addr.is_auditable != is_auditable())
+		return false;
+	auto rit = m_records_map.find(addr.s);
 	if (rit == m_records_map.end() || rit->second >= get_actual_records_count())
 		return false;
 	// TODO - do not call record_to_address
@@ -1108,7 +1071,7 @@ bool WalletHD::get_record(WalletRecord &record, const AccountAddress &v_addr) co
 	if (v_addr != addr2)
 		return false;
 	//	invariant (m_wallet_records.at(rit->second).spend_public_key == addr.spend_public_key, "");
-	record = m_wallet_records.at(rit->second);
+	*record = m_wallet_records.at(rit->second);
 	return true;
 }
 
@@ -1348,23 +1311,5 @@ bool WalletHD::detect_our_output(const Hash &tid, const Hash &tx_inputs_hash, co
 	//							std::cout << "My unlinkable output! out_index=" << out_index <<
 	// "amount=" << key_output.amount << std::endl;
 	*amount = key_output.amount;
-	return true;
-}
-
-bool WalletHD::detect_not_our_output(bool tx_amethyst, const Hash &tid, const Hash &tx_inputs_hash,
-    boost::optional<History> *history, size_t out_index, const OutputKey &key_output, Amount *amount,
-    AccountAddress *address) {
-	KeyPair output_secret_keys = TransactionBuilder::deterministic_keys_from_seed(
-	    tx_inputs_hash, m_tx_derivation_seed, common::get_varint_data(out_index));
-	Hash output_secret =
-	    crypto::cn_fast_hash(output_secret_keys.public_key.data, sizeof(output_secret_keys.public_key.data));
-	AccountAddressUnlinkable u_address;
-	if (!crypto::unlinkable_underive_address(output_secret, tx_inputs_hash, out_index, key_output.public_key,
-	        key_output.encrypted_secret, &u_address.s, &u_address.sv))
-		return false;
-	u_address.is_auditable = key_output.is_auditable;
-	*amount                = key_output.amount;
-	// We cannot generate key_image for others addresses
-	*address = u_address;
 	return true;
 }

@@ -5,7 +5,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <iostream>
-#include "BlockChainFileFormat.hpp"
 #include "Config.hpp"
 #include "CryptoNoteTools.hpp"
 #include "TransactionExtra.hpp"
@@ -40,15 +39,10 @@ Node::Node(logging::ILogger &log, const Config &config, BlockChainState &block_c
 	const std::string old_path = platform::get_default_data_directory(CRYPTONOTE_NAME);
 	const std::string new_path = config.get_data_folder();
 
-	m_block_chain_reader1 = std::make_unique<LegacyBlockChainReader>(
-	    block_chain.get_currency(), new_path + config.block_indexes_file_name, new_path + config.blocks_file_name);
-	if (m_block_chain_reader1->get_block_count() <= block_chain.get_tip_height())
-		m_block_chain_reader1.reset();
 	if (!config.bytecoind_bind_ip.empty() && config.bytecoind_bind_port != 0)
 		m_api = std::make_unique<http::Server>(config.bytecoind_bind_ip, config.bytecoind_bind_port,
-		    std::bind(&Node::on_api_http_request, this, _1, _2, _3), std::bind(&Node::on_api_http_disconnect, this, _1),
-		    config.ssl_certificate_pem_file,
-		    config.ssl_certificate_password ? config.ssl_certificate_password.get() : std::string());
+		    std::bind(&Node::on_api_http_request, this, _1, _2, _3),
+		    std::bind(&Node::on_api_http_disconnect, this, _1));
 
 	m_commit_timer.once(float(m_config.db_commit_period_blockchain));
 	advance_long_poll();
@@ -106,8 +100,7 @@ bool Node::on_idle() {
 	auto idle_start     = std::chrono::steady_clock::now();
 	Hash was_top_bid    = m_block_chain.get_tip_bid();
 	bool on_idle_result = false;
-	if (!m_block_chain_reader1 && !m_block_chain_reader2 &&
-	    m_block_chain.get_tip_height() >= m_block_chain.internal_import_known_height()) {
+	if (m_block_chain.get_tip_height() >= m_block_chain.internal_import_known_height()) {
 		for (size_t s = 0; s != 10; ++s) {
 			bool on_idle_result_s = false;
 			std::vector<P2PProtocolBytecoin *> bp_copy{m_broadcast_protocols.begin(), m_broadcast_protocols.end()};
@@ -121,14 +114,6 @@ bool Node::on_idle() {
 	}
 	if (m_block_chain.get_tip_height() < m_block_chain.internal_import_known_height())
 		m_block_chain.internal_import();
-	else {
-		if (m_block_chain_reader1 && !m_block_chain_reader1->import_blocks(&m_block_chain)) {
-			m_block_chain_reader1.reset();
-		}
-		if (m_block_chain_reader2 && !m_block_chain_reader2->import_blocks(&m_block_chain)) {
-			m_block_chain_reader2.reset();
-		}
-	}
 	if (m_block_chain.get_tip_bid() != was_top_bid) {
 		advance_long_poll();
 	}
@@ -319,12 +304,6 @@ api::cnd::GetStatus::Response Node::create_status_response() const {
 		res.top_known_block_height = std::max(res.top_known_block_height, gc->get_peer_sync_data().current_height);
 	res.top_known_block_height =
 	    std::max<Height>(res.top_known_block_height, m_block_chain.internal_import_known_height());
-	if (m_block_chain_reader1)
-		res.top_known_block_height =
-		    std::max<Height>(res.top_known_block_height, m_block_chain_reader1->get_block_count());
-	if (m_block_chain_reader2)
-		res.top_known_block_height =
-		    std::max<Height>(res.top_known_block_height, m_block_chain_reader2->get_block_count());
 	for (auto &&pb : m_broadcast_protocols)
 		if (pb->is_incoming())
 			res.incoming_peer_count += 1;
@@ -722,8 +701,12 @@ bool Node::on_check_sendproof(http::Client *, http::RequestBody &&, json_rpc::Re
 	}
 	Transaction tx;
 	seria::from_binary(tx, binary_tx);
-	Hash message_hash = crypto::cn_fast_hash(sp.message.data(), sp.message.size());
-	if (sp.address.type() == typeid(AccountAddressSimple)) {
+	const Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
+	const Hash message_hash   = crypto::cn_fast_hash(sp.message.data(), sp.message.size());
+	if (tx.version < m_block_chain.get_currency().amethyst_transaction_version) {
+		if (sp.address.type() != typeid(AccountAddressSimple))
+			throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION,
+			    "Transaction version too low to contain address of type other than simple");
 		auto &addr              = boost::get<AccountAddressSimple>(sp.address);
 		auto &var               = boost::get<SendproofKey>(sp.proof);
 		PublicKey tx_public_key = extra_get_transaction_public_key(tx.extra);
@@ -753,58 +736,84 @@ bool Node::on_check_sendproof(http::Client *, http::RequestBody &&, json_rpc::Re
 			    "Wrong amount in outputs, actual amount is " + common::to_string(total_amount));
 		return true;
 	}
-	if (sp.address.type() == typeid(AccountAddressUnlinkable)) {
-		auto &addr          = boost::get<AccountAddressUnlinkable>(sp.address);
-		auto &var           = boost::get<SendproofUnlinkable>(sp.proof);
-		Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
-		for (size_t oi = 1; oi < var.elements.size(); ++oi) {
-			if (var.elements.at(oi).out_index <= var.elements.at(oi - 1).out_index)
-				throw api::cnd::CheckSendproof::Error(
-				    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object elements are not in ascending order");
-		}
-		Amount total_amount = 0;
-		size_t out_index    = 0;
-		for (const auto &output : tx.outputs) {
-			if (output.type() == typeid(OutputKey)) {
-				const auto &key_output = boost::get<OutputKey>(output);
-				for (size_t oi = 0; oi != var.elements.size(); ++oi) {
-					const auto &el = var.elements.at(oi);
-					if (el.out_index == out_index) {
-						if (addr.is_auditable != key_output.is_auditable)
-							throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_SIGNATURE,
-							    "Auditability of coin does not match auditability of address");
-						Hash output_secret = crypto::cn_fast_hash(el.q.data, sizeof(el.q.data));
-						if (!crypto::check_signature(output_secret, el.q, el.signature))
-							throw api::cnd::CheckSendproof::Error(
-							    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object element signature wrong");
-						AccountAddressUnlinkable address;
-						if (!crypto::unlinkable_underive_address(output_secret, tx_inputs_hash, out_index,
-						        key_output.public_key, key_output.encrypted_secret, &address.s, &address.sv) ||
-						    address != addr) {
-							throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_SIGNATURE,
-							    "Proof unlinkable address derivation failed");
-						}
-						total_amount += key_output.amount;
-						response.output_indexes.push_back(out_index);
-						var.elements.erase(var.elements.begin() + oi);
-						break;
-					}
-				}
-			}
-			++out_index;
-		}
-		if (!var.elements.empty())
+	auto &var = boost::get<SendproofAmethyst>(sp.proof);
+	for (size_t oi = 1; oi < var.elements.size(); ++oi) {
+		if (var.elements.at(oi).out_index <= var.elements.at(oi - 1).out_index)
 			throw api::cnd::CheckSendproof::Error(
-			    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object contains excess elements");
-		if (total_amount == 0)
-			throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION,
-			    "No outputs found in transaction for the address being proofed");
-		if (total_amount != sp.amount)
-			throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_AMOUNT,
-			    "Wrong amount in outputs, actual amount is " + common::to_string(total_amount));
-		return true;
+			    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object elements are not in ascending order");
 	}
-	return false;
+	std::reverse(var.elements.begin(), var.elements.end());  // pop_back instead of erase(begin)
+	Amount total_amount = 0;
+	for (size_t out_index = 0; out_index != tx.outputs.size() && !var.elements.empty(); ++out_index) {
+		const auto &output = tx.outputs.at(out_index);
+		if (output.type() != typeid(OutputKey))
+			continue;
+		const auto &key_output = boost::get<OutputKey>(output);
+		if (var.elements.back().out_index != out_index)
+			continue;
+		const auto &el = var.elements.back();
+		BinaryArray ba(std::begin(el.deterministic_public_key.data), std::end(el.deterministic_public_key.data));
+		const SecretKey output_secret_scalar = crypto::hash_to_scalar(ba.data(), ba.size());
+		const PublicKey output_secret_point  = crypto::hash_to_point(ba.data(), ba.size());
+		ba.push_back(0);  // Or use cn_fast_hash64
+		const Hash output_secret2 = crypto::cn_fast_hash(ba.data(), ba.size());
+
+		if (sp.address.type() == typeid(AccountAddressSimple)) {
+			const auto &addr = boost::get<AccountAddressSimple>(sp.address);
+			AccountAddressSimple address;
+			crypto::linkable_underive_address(output_secret_scalar, tx_inputs_hash, out_index, key_output.public_key,
+			    key_output.encrypted_secret, &address.spend_public_key, &address.view_public_key);
+			if (address != addr)
+				throw api::cnd::CheckSendproof::Error(
+				    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof linkable address derivation failed");
+			const uint8_t should_be_encrypted_address_type = AccountAddressSimple::type_tag ^ output_secret2.data[0];
+			if (key_output.encrypted_address_type != should_be_encrypted_address_type)
+				throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_SIGNATURE,
+				    "Proof invalid because encrypted address type wrong (protocol violated when sending)");
+			if (!crypto::amethyst_check_sendproof(el.deterministic_public_key, sp.transaction_hash, message_hash,
+			        address.spend_public_key, address.view_public_key, el.signature))
+				throw api::cnd::CheckSendproof::Error(
+				    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object element signature wrong");
+		} else if (sp.address.type() == typeid(AccountAddressUnlinkable)) {
+			const auto &addr = boost::get<AccountAddressUnlinkable>(sp.address);
+			AccountAddressUnlinkable address;
+			crypto::unlinkable_underive_address(output_secret_point, tx_inputs_hash, out_index, key_output.public_key,
+			    key_output.encrypted_secret, &address.s, &address.sv);
+			address.is_auditable = key_output.is_auditable;
+			if (addr.is_auditable != address.is_auditable)
+				throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_SIGNATURE,
+				    "Auditability of coin does not match auditability of address");
+			if (address != addr)
+				throw api::cnd::CheckSendproof::Error(
+				    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof unlinkable address derivation failed");
+			const uint8_t should_be_encrypted_address_type =
+			    (addr.is_auditable ? AccountAddressUnlinkable::type_tag_auditable
+			                       : AccountAddressUnlinkable::type_tag) ^
+			    output_secret2.data[0];
+			if (key_output.encrypted_address_type != should_be_encrypted_address_type)
+				throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_SIGNATURE,
+				    "Proof invalid because encrypted address type wrong (protocol violated when sending)");
+			if (!crypto::amethyst_check_sendproof(el.deterministic_public_key, sp.transaction_hash, message_hash,
+			        address.s, address.sv, el.signature))
+				throw api::cnd::CheckSendproof::Error(
+				    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object element signature wrong");
+		} else
+			throw api::cnd::CheckSendproof::Error(
+			    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Unknown address type in proof");
+		total_amount += key_output.amount;
+		response.output_indexes.push_back(out_index);
+		var.elements.pop_back();
+	}
+	if (!var.elements.empty())
+		throw api::cnd::CheckSendproof::Error(
+		    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object contains excess elements");
+	if (total_amount == 0)
+		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION,
+		    "No outputs found in transaction for the address being proofed");
+	if (total_amount != sp.amount)
+		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_AMOUNT,
+		    "Wrong amount in outputs, actual amount is " + common::to_string(total_amount));
+	return true;
 }
 
 void Node::submit_block(const BinaryArray &blockblob, api::BlockHeader *info) {

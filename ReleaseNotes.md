@@ -1,5 +1,13 @@
 ## Release Notes
 
+### v3.4.0-beta-20181218
+
+- Signatures are now fully prunable (but not yet pruned) via modification to transaction hash calculations.
+- A view-only wallet now shows address balance even for non-auditable unlinkable addresses, but only if sender follows the protocol. If in doubt about sender's fair play, auditable addresses should be used instead.
+- A view-only wallet can now be exported with or without ability to view transaction destination addresses.
+- `bytecoind` will not automatically look for `blocks.bin` anywhere. If you need to import blocks from file, use `--import-blocks=<folder>` command line parameter.
+- `bytecoind` command line parameters  `--ssl-certificate-pem-file`, `--ssl-certificate-password` removed, use ngnx in https proxy mode!
+
 ### v3.4.0-beta-20181212
 
 *Consensus update (hard fork)*

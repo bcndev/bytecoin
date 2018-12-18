@@ -37,8 +37,8 @@ static void generate_system_random_bytes(size_t n, void *result) {
 		wchar_t message[]    = L"Failed to acquire random bytes from PROV_RSA_FULL provider";
 		DWORD dwToWrite      = (DWORD)wcslen(message);
 		DWORD dwWritten      = 0;
-		HANDLE hParentStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
-		WriteConsoleW(hParentStdOut, message, dwToWrite, &dwWritten, NULL);
+		HANDLE hParentStdErr = GetStdHandle(STD_ERROR_HANDLE);
+		WriteConsoleW(hParentStdErr, message, dwToWrite, &dwWritten, NULL);
 		abort();
 	}
 }

@@ -38,15 +38,12 @@ Options:
   --data-folder=<folder-path>            Folder for blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
                             R"(bytecoin].
   --bytecoind-authorization=<usr:pass>   HTTP basic authentication credentials for RPC API.
-  --bytecoind-authorization-private=<usr:pass>   HTTP basic authentication credentials for get_statistics and get_archive methods.)"
-#if platform_USE_SSL
-                            R"(
-  --ssl-certificate-pem-file=<file-path> Full path to file containing both server SSL certificate and private key in PEM format.
-  --ssl-certificate-password=<pass>      DEPRECATED. Will read password from stdin if not specified.)"
-#endif
-    ;
+  --bytecoind-authorization-private=<usr:pass>   HTTP basic authentication credentials for get_statistics and get_archive methods.)";
 
 int main(int argc, const char *argv[]) try {
+	crypto::test_unlinkable();
+	crypto::test_linkable();
+
 	common::console::UnicodeConsoleSetup console_setup;
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	common::CommandLine cmd(argc, argv);
@@ -106,15 +103,6 @@ int main(int argc, const char *argv[]) try {
 		if (print_outputs)
 			block_chain_read_only.test_print_outputs();
 		return 0;
-	}
-
-	if (!config.ssl_certificate_pem_file.empty() && !config.ssl_certificate_password) {
-		std::string ssl_certificate_password;
-		std::cout << "Enter ssl certificate password: " << std::flush;
-		std::getline(std::cin, ssl_certificate_password);
-		boost::algorithm::trim(ssl_certificate_password);
-
-		config.ssl_certificate_password = ssl_certificate_password;
 	}
 
 	platform::ExclusiveLock coin_lock(coin_folder, CRYPTONOTE_NAME "d.lock");

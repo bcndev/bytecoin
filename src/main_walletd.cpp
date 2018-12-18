@@ -77,6 +77,7 @@ int main(int argc, const char *argv[]) try {
 	bool ask_walletd_http_auth      = true;
 	const bool export_keys          = cmd.get_bool("--export-keys");
 	const bool create_wallet        = cmd.get_bool("--create-wallet");
+	const bool check_mnemonic       = cmd.get_bool("--check-mnemonic");  // Undocumented, used by GUI for now
 	const bool create_legacy_wallet = cmd.get_bool("--create-legacy-wallet");
 	const bool import_keys          = cmd.get_bool("--import-keys");
 	bool view_outgoing_addresses    = false;
@@ -117,13 +118,15 @@ int main(int argc, const char *argv[]) try {
 		std::cout << "You cannot ask to create both legacy and new wallet" << std::endl;
 		return 1;
 	}
-	if (create_wallet && mnemonic.empty()) {
-		std::cout << "Enter BIP39 mnemonic: " << std::flush;
+	if ((create_wallet && mnemonic.empty()) || check_mnemonic) {
+		if (!check_mnemonic)
+			std::cout << "Enter BIP39 mnemonic: " << std::flush;
 		if (!console_setup.getline(mnemonic)) {
 			std::cout << "Unexpected end of stdin" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
-		std::cout << std::endl;
+		if (!check_mnemonic)
+			std::cout << std::endl;
 		if (mnemonic.empty()) {
 			std::cout << "Mnemonic should not be empty" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
@@ -134,6 +137,8 @@ int main(int argc, const char *argv[]) try {
 			std::cout << "Mnemonic invalid - " << common::what(ex) << std::endl;
 			return api::WALLETD_MNEMONIC_CRC;
 		}
+		if (check_mnemonic)
+			return 0;
 		std::cout << "Enter BIP39 mnemonic password (empty recommended): " << std::flush;
 		if (!console_setup.getline(mnemonic_password)) {
 			std::cout << "Unexpected end of stdin" << std::endl;

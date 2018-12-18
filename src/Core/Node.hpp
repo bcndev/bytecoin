@@ -23,7 +23,6 @@ namespace platform {
 class PreventSleep;
 }
 namespace cn {
-class LegacyBlockChainReader;
 
 class Node {
 public:
@@ -88,9 +87,6 @@ public:
 	const Config &m_config;
 
 protected:
-	// We read from both because any could be truncated/corrupted
-	std::unique_ptr<LegacyBlockChainReader> m_block_chain_reader1;
-	std::unique_ptr<LegacyBlockChainReader> m_block_chain_reader2;
 	std::unique_ptr<http::Server> m_api;
 	std::unique_ptr<platform::PreventSleep> m_prevent_sleep;
 	struct LongPollClient {

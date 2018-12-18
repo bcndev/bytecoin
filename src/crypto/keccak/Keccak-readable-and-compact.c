@@ -218,22 +218,22 @@ void KeccakF1600_StatePermute(void *state)
     UINT8 LFSRstate = 0x01;
 
     for(round=0; round<24; round++) {
-        {   /* === θ step (see [Keccak Reference, Section 2.3.2]) === */
+        {   /* === theta step (see [Keccak Reference, Section 2.3.2]) === */
             tKeccakLane C[5], D;
 
             /* Compute the parity of the columns */
             for(x=0; x<5; x++)
                 C[x] = readLane(x, 0) ^ readLane(x, 1) ^ readLane(x, 2) ^ readLane(x, 3) ^ readLane(x, 4);
             for(x=0; x<5; x++) {
-                /* Compute the θ effect for a given column */
+                /* Compute the theta effect for a given column */
                 D = C[(x+4)%5] ^ ROL64(C[(x+1)%5], 1);
-                /* Add the θ effect to the whole column */
+                /* Add the theta effect to the whole column */
                 for (y=0; y<5; y++)
                     XORLane(x, y, D);
             }
         }
 
-        {   /* === ρ and π steps (see [Keccak Reference, Sections 2.3.3 and 2.3.4]) === */
+        {   /* === ro and pi steps (see [Keccak Reference, Sections 2.3.3 and 2.3.4]) === */
             tKeccakLane current, temp;
             /* Start at coordinates (1 0) */
             x = 1; y = 0;
@@ -251,19 +251,19 @@ void KeccakF1600_StatePermute(void *state)
             }
         }
 
-        {   /* === χ step (see [Keccak Reference, Section 2.3.1]) === */
+        {   /* === xi step (see [Keccak Reference, Section 2.3.1]) === */
             tKeccakLane temp[5];
             for(y=0; y<5; y++) {
                 /* Take a copy of the plane */
                 for(x=0; x<5; x++)
                     temp[x] = readLane(x, y);
-                /* Compute χ on the plane */
+                /* Compute xi on the plane */
                 for(x=0; x<5; x++)
                     writeLane(x, y, temp[x] ^((~temp[(x+1)%5]) & temp[(x+2)%5]));
             }
         }
 
-        {   /* === ι step (see [Keccak Reference, Section 2.3.5]) === */
+        {   /* === iota step (see [Keccak Reference, Section 2.3.5]) === */
             for(j=0; j<7; j++) {
                 unsigned int bitPosition = (1<<j)-1; /* 2^j-1 */
                 if (LFSR86540(&LFSRstate))

@@ -1,5 +1,6 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
-// Licensed under the GNU Lesser General Public License. See LICENSE for details.
+// Licensed under the GNU Lesser General Public License. See LICENSE for
+// details.
 
 #pragma once
 
@@ -8,30 +9,7 @@
 #include <iostream>
 #include <type_traits>
 #include <vector>
-
-inline bool hexdecode(const char *from, std::size_t length, void *to) {
-	std::size_t i;
-	for (i = 0; i < length; i++) {
-		int v = 0;
-		if (from[2 * i] >= '0' && from[2 * i] <= '9') {
-			v = from[2 * i] - '0';
-		} else if (from[2 * i] >= 'a' && from[2 * i] <= 'f') {
-			v = from[2 * i] - 'a' + 10;
-		} else {
-			return false;
-		}
-		v <<= 4;
-		if (from[2 * i + 1] >= '0' && from[2 * i + 1] <= '9') {
-			v |= from[2 * i + 1] - '0';
-		} else if (from[2 * i + 1] >= 'a' && from[2 * i + 1] <= 'f') {
-			v |= from[2 * i + 1] - 'a' + 10;
-		} else {
-			return false;
-		}
-		*(reinterpret_cast<unsigned char *>(to) + i) = v;
-	}
-	return true;
-}
+#include "common/StringTools.hpp"
 
 inline void get(std::istream &input, bool &res) {
 	std::string sres;
@@ -53,9 +31,10 @@ typename std::enable_if<std::is_integral<T>::value, void>::type get(std::istream
 inline void getvar(std::istream &input, std::size_t length, void *res) {
 	std::string sres;
 	input >> sres;
-	if (sres.length() != 2 * length || !hexdecode(sres.data(), length, res)) {
+	//	if (!sres.length() != 2 * length || !hexdecode(sres.data(), length, res))
+	//		input.setstate(std::ios_base::failbit);
+	if (!common::from_hex(sres, res, length))
 		input.setstate(std::ios_base::failbit);
-	}
 }
 
 template<typename T>
@@ -74,9 +53,9 @@ inline void get(std::istream &input, std::vector<char> &res) {
 	} else {
 		std::size_t length = sres.length() / 2;
 		res.resize(length);
-		if (!hexdecode(sres.data(), length, res.data())) {
+		if (!common::from_hex(sres, res.data(), length))
+			//		if (!hexdecode(sres.data(), length, res.data()))
 			input.setstate(std::ios_base::failbit);
-		}
 	}
 }
 

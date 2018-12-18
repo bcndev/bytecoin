@@ -4,12 +4,12 @@
 #pragma once
 
 #include "CryptoNote.hpp"
+#include "Wallet.hpp"
 #include "logging/LoggerMessage.hpp"
 #include "rpc_api.hpp"
 
 namespace cn {
 
-class Wallet;
 class Currency;
 class WalletStateBasic;
 
@@ -45,9 +45,12 @@ public:
 	    const Hash &tx_inputs_hash, const Hash &tx_derivation_seed, const BinaryArray &add);
 	static KeyPair deterministic_keys_from_seed(
 	    const TransactionPrefix &tx, const Hash &tx_derivation_seed, const BinaryArray &add);
-
-	static OutputKey create_output(const AccountAddress &to, const SecretKey &tx_secret_key, const Hash &tx_inputs_hash,
-	    size_t output_index, const Hash &output_secret);
+	static std::array<uint8_t, 8> encrypt_real_index(const PublicKey &output_key, const SecretKey &view_secret_key);
+	static OutputKey create_output(bool tx_amethyst, const AccountAddress &to, const SecretKey &tx_secret_key,
+	    const Hash &tx_inputs_hash, size_t output_index, const KeyPair &output_det_keys);
+	static bool detect_not_our_output(const Wallet *wallet, bool tx_amethyst, const Hash &tid,
+	    const Hash &tx_inputs_hash, boost::optional<Wallet::History> *, KeyPair *tx_keys, size_t out_index,
+	    const OutputKey &, Amount *, AccountAddress *);
 };
 
 class UnspentSelector {

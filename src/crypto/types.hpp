@@ -61,11 +61,6 @@ struct KeyPair {
 
 typedef std::vector<Signature> RingSignature;
 
-struct RingSignature2 {                  // New half-size signatures
-	EllipticCurveScalar c0;              // c[0]
-	std::vector<EllipticCurveScalar> r;  // r[0]..r[n]
-};
-
 struct RingSignature3 {                               // New half-size signatures
 	EllipticCurveScalar c0;                           // c0
 	std::vector<std::vector<EllipticCurveScalar>> r;  // r[i, j]

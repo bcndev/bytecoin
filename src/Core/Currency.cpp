@@ -87,7 +87,6 @@ Currency::Currency(const std::string &net)
 	if (net == "stage") {
 		upgrade_heights               = {1, 1};  // block 1 is already V3
 		upgrade_desired_major_version = 4;
-		upgrade_window                = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;
 	}
 	{
 		BinaryArray miner_tx_blob;
@@ -291,7 +290,8 @@ Height Currency::largest_window() const {
 Transaction Currency::construct_miner_tx(
     uint8_t block_major_version, Height height, Amount block_reward, const AccountAddress &miner_address) const {
 	Transaction tx;
-	const size_t max_outs = get_max_coinbase_outputs();
+	const bool is_tx_amethyst = miner_address.type() != typeid(AccountAddressSimple);
+	const size_t max_outs     = get_max_coinbase_outputs();
 	// If we wish to limit number of outputs, it makes sense to round miner reward to some arbitrary number
 	// Though this solution will reduce number of coins to mix
 
@@ -300,7 +300,8 @@ Transaction Currency::construct_miner_tx(
 	Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
 	KeyPair txkey       = crypto::random_keypair();
 
-	extra_add_transaction_public_key(tx.extra, txkey.public_key);
+	if (!is_tx_amethyst)
+		extra_add_transaction_public_key(tx.extra, txkey.public_key);
 
 	std::vector<Amount> out_amounts;
 	decompose_amount(block_reward, min_dust_threshold, &out_amounts);
@@ -312,9 +313,9 @@ Transaction Currency::construct_miner_tx(
 
 	Amount summary_amounts = 0;
 	for (size_t out_index = 0; out_index < out_amounts.size(); out_index++) {
-		Hash output_secret = crypto::rand<Hash>();
-		OutputKey tk       = TransactionBuilder::create_output(
-            miner_address, txkey.secret_key, tx_inputs_hash, out_index, output_secret);
+		const KeyPair output_det_keys = crypto::random_keypair();
+		OutputKey tk                  = TransactionBuilder::create_output(
+            is_tx_amethyst, miner_address, txkey.secret_key, tx_inputs_hash, out_index, output_det_keys);
 		tk.amount = out_amounts.at(out_index);
 		summary_amounts += tk.amount;
 		tx.outputs.push_back(tk);
@@ -322,7 +323,7 @@ Transaction Currency::construct_miner_tx(
 
 	invariant(summary_amounts == block_reward, "");
 
-	tx.version = miner_address.type() == typeid(AccountAddressSimple) ? 1 : amethyst_transaction_version;
+	tx.version = is_tx_amethyst ? amethyst_transaction_version : 1;
 	// if mining on old address, we maintain binary compatibility
 	if (block_major_version < amethyst_block_version)
 		tx.unlock_block_or_timestamp = height + mined_money_unlock_window;
@@ -557,7 +558,8 @@ bool Currency::amount_allowed_in_output(uint8_t block_major_version, Amount amou
 }*/
 
 Hash cn::get_transaction_inputs_hash(const TransactionPrefix &tx) {
-	BinaryArray ba = seria::to_binary(tx.inputs);
+	const bool is_tx_amethyst = (tx.version >= parameters::TRANSACTION_VERSION_AMETHYST);
+	BinaryArray ba            = seria::to_binary(tx.inputs, is_tx_amethyst);
 	return crypto::cn_fast_hash(ba.data(), ba.size());
 }
 

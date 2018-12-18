@@ -32,12 +32,11 @@ struct RequestHeader {
 	bool keep_alive       = true;
 	size_t content_length = std::numeric_limits<size_t>::max();
 
-	void set_firstline(
-	    const std::string &method, const std::string &uri, int http_version_major, int http_version_minor) {
-		this->method             = method;
-		this->uri                = uri;
-		this->http_version_major = http_version_major;
-		this->http_version_minor = http_version_minor;
+	void set_firstline(const std::string &m, const std::string &u, int ma, int mi) {
+		method             = m;
+		uri                = u;
+		http_version_major = ma;
+		http_version_minor = mi;
 	}
 	bool has_content_length() const { return content_length != size_t(-1); }
 	std::string to_string() const;
@@ -73,9 +72,9 @@ struct RequestBody {
 	http::RequestHeader r;
 	std::string body;
 
-	void set_body(std::string &&body) {
-		this->body       = std::move(body);
-		r.content_length = this->body.size();
+	void set_body(std::string &&b) {
+		body             = std::move(b);
+		r.content_length = body.size();
 	}
 };
 
@@ -85,9 +84,9 @@ struct ResponseBody {
 
 	ResponseBody() = default;
 	explicit ResponseBody(const http::RequestHeader &r) : r(r) {}
-	void set_body(std::string &&body) {
-		this->body       = std::move(body);
-		r.content_length = this->body.size();
+	void set_body(std::string &&b) {
+		body             = std::move(b);
+		r.content_length = body.size();
 	}
 };
 

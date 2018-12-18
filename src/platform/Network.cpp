@@ -414,48 +414,28 @@ static void add_system_root_certs(ssl::context &ctx) {
 }
 #endif
 
-// static thread_local std::shared_ptr<ssl::context> shared_client_context;
 #endif
 
 thread_local EventLoop *EventLoop::current_loop = nullptr;
 
 EventLoop::EventLoop(boost::asio::io_service &io_service) : io_service(io_service) {
-	if (current_loop != 0)
+	if (current_loop)
 		throw std::logic_error("RunLoop::RunLoop Only single RunLoop per thread is allowed");
 	current_loop = this;
 }
 
-EventLoop::~EventLoop() {
-	current_loop = nullptr;
-	//#if platform_USE_SSL
-	//	shared_client_context.reset();
-	//#endif
-}
+EventLoop::~EventLoop() { current_loop = nullptr; }
 
 void EventLoop::cancel() { io_service.stop(); }
 
 void EventLoop::run() { io_service.run(); }
 void EventLoop::wake() {
-	io_service.post([](void) {});
+	io_service.post([]() {});
 }
-
-// static bool ispowerof2(unsigned int x) {
-//    return x && !(x & (x - 1));
-//}
-// static unsigned global_timer_impl_counter = 0;
 
 class Timer::Impl {
 public:
-	explicit Impl(Timer *owner) : owner(owner), pending_wait(false), timer(EventLoop::current()->io()) {
-		//		global_timer_impl_counter += 1;
-		//		if( ispowerof2(global_timer_impl_counter) )
-		//		    std::cout << "++Timer::Impl::counter=" << global_timer_impl_counter << std::endl;
-	}
-	~Impl() {
-		//      if( ispowerof2(global_timer_impl_counter) )
-		//            std::cout << "--Timer::Impl::counter=" << global_timer_impl_counter << std::endl;
-		//		global_timer_impl_counter -= 1;
-	}
+	explicit Impl(Timer *owner) : owner(owner), pending_wait(false), timer(EventLoop::current()->io()) {}
 	Timer *owner;
 	bool pending_wait;
 	boost::asio::deadline_timer timer;
@@ -771,27 +751,12 @@ void TCPSocket::shutdown_both() {
 
 class TCPAcceptor::Impl {
 public:
-	explicit Impl(TCPAcceptor *owner, bool ssl)
-	    : owner(owner)
-	    , ssl(ssl)
-	    , acceptor(EventLoop::current()->io())
-	    , socket_being_accepted(EventLoop::current()->io())
-#if platform_USE_SSL
-	    , ssl_context(std::make_shared<ssl::context>(ssl::context::sslv23))
-	    , ssl_socket_being_accepted(
-	          ssl ? std::make_unique<SSLSocket>(EventLoop::current()->io(), *ssl_context) : nullptr)
-#endif
-	{
-	}
+	explicit Impl(TCPAcceptor *owner)
+	    : owner(owner), acceptor(EventLoop::current()->io()), socket_being_accepted(EventLoop::current()->io()) {}
 	TCPAcceptor *owner;
-	const bool ssl;
 	bool pending_accept = false;
 	boost::asio::ip::tcp::acceptor acceptor;
 	boost::asio::ip::tcp::socket socket_being_accepted;
-#if platform_USE_SSL
-	std::shared_ptr<ssl::context> ssl_context;
-	std::unique_ptr<SSLSocket> ssl_socket_being_accepted;
-#endif
 	bool socket_ready = false;
 
 	void close() {
@@ -807,13 +772,7 @@ public:
 		if (!owner)
 			return;
 		pending_accept = true;
-#if platform_USE_SSL
-		if (ssl)
-			acceptor.async_accept(
-			    ssl_socket_being_accepted->next_layer(), std::bind(&Impl::handle_accept, owner->impl, _1));
-		else
-#endif
-			acceptor.async_accept(socket_being_accepted, std::bind(&Impl::handle_accept, owner->impl, _1));
+		acceptor.async_accept(socket_being_accepted, std::bind(&Impl::handle_accept, owner->impl, _1));
 	}
 	void handle_accept(const boost::system::error_code &e) {
 		pending_accept = false;
@@ -828,23 +787,9 @@ public:
 	}
 };
 
-TCPAcceptor::TCPAcceptor(const std::string &addr, uint16_t port, A_handler &&a_handler, const std::string &ssl_pem_file,
-    const std::string &ssl_certificate_password) try : impl(std::make_shared<Impl>(this, !ssl_pem_file.empty())),
-                                                       a_handler(std::move(a_handler)) {
-
-#if platform_USE_SSL
-	if (impl->ssl) {
-		impl->ssl_context->set_options(
-		    ssl::context::default_workarounds | ssl::context::no_sslv2);  // | ssl::context::single_dh_use
-		impl->ssl_context->set_password_callback(
-		    [ssl_certificate_password](std::size_t max_length, ssl::context::password_purpose purpose) -> std::string {
-			    return ssl_certificate_password;
-		    });
-		impl->ssl_context->use_certificate_chain_file(ssl_pem_file);
-		impl->ssl_context->use_private_key_file(ssl_pem_file, ssl::context::pem);
-		//	impl->ssl_context.use_tmp_dh_file("dh512.pem");
-	}
-#endif
+TCPAcceptor::TCPAcceptor(const std::string &addr, uint16_t port, A_handler &&a_handler) try
+    : impl(std::make_shared<Impl>(this)),
+      a_handler(std::move(a_handler)) {
 	boost::asio::ip::tcp::resolver resolver(EventLoop::current()->io());
 	boost::asio::ip::tcp::resolver::query query(addr, common::to_string(port));
 	boost::asio::ip::tcp::endpoint endpoint = *resolver.resolve(query);
@@ -871,32 +816,15 @@ bool TCPAcceptor::accept(TCPSocket &socket, std::string &accepted_addr) {
 	socket.close();
 	std::swap(socket.impl->socket, impl->socket_being_accepted);
 	boost::system::error_code ec;
-#if platform_USE_SSL
-	std::swap(socket.impl->ssl_socket, impl->ssl_socket_being_accepted);
-	auto endpoint =
-	    impl->ssl ? socket.impl->ssl_socket->next_layer().remote_endpoint(ec) : socket.impl->socket.remote_endpoint(ec);
-#else
 	auto endpoint = socket.impl->socket.remote_endpoint(ec);
-#endif
 
 	if (ec) {
 		impl->start_accept();
 		return false;
 	}
-	accepted_addr = endpoint.address().to_string();
-#if platform_USE_SSL
-	if (impl->ssl) {
-		if (!impl->ssl_socket_being_accepted)
-			impl->ssl_socket_being_accepted =
-			    std::make_unique<SSLSocket>(EventLoop::current()->io(), *impl->ssl_context);
-		socket.impl->ssl_context = impl->ssl_context;
-		socket.impl->start_handshake(ssl::stream_base::server);
-	} else
-#endif
-	{
-		socket.impl->connected = true;
-		socket.impl->start_read();
-	}
+	accepted_addr          = endpoint.address().to_string();
+	socket.impl->connected = true;
+	socket.impl->start_read();
 	impl->start_accept();
 	return true;
 }

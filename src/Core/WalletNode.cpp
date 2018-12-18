@@ -187,12 +187,14 @@ bool WalletNode::on_get_addresses(http::Client *, http::RequestBody &&, json_rpc
 
 bool WalletNode::on_get_wallet_info(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::GetWalletInfo::Request &&request, api::walletd::GetWalletInfo::Response &response) {
-	const Wallet &wa                   = m_wallet_state.get_wallet();
-	response.view_only                 = wa.is_view_only();
-	response.deterministic             = wa.is_deterministic();
-	response.auditable                 = wa.is_auditable();
-	response.total_address_count       = wa.get_actual_records_count();
-	response.wallet_creation_timestamp = wa.get_oldest_timestamp();
+	const Wallet &wa                     = m_wallet_state.get_wallet();
+	response.view_only                   = wa.is_view_only();
+	response.deterministic               = wa.is_deterministic();
+	response.auditable                   = wa.is_auditable();
+	response.unlinkable                  = wa.is_unlinkable();
+	response.can_view_outgoing_addresses = wa.can_view_outgoing_addresses();
+	response.total_address_count         = wa.get_actual_records_count();
+	response.wallet_creation_timestamp   = wa.get_oldest_timestamp();
 	response.first_address = m_wallet_state.get_currency().account_address_as_string(wa.get_first_address());
 	response.net           = m_config.net;
 	if (request.need_secrets) {
@@ -243,6 +245,7 @@ bool WalletNode::on_get_wallet_records(http::Client *, http::RequestBody &&, jso
 
 bool WalletNode::on_set_label(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::SetAddressLabel::Request &&request, api::walletd::SetAddressLabel::Response &) {
+	check_address_in_wallet_or_throw(request.address);
 	m_wallet_state.get_wallet().set_label(request.address, request.label);
 	return true;
 }
@@ -260,8 +263,8 @@ bool WalletNode::on_get_view_key(http::Client *, http::RequestBody &&, json_rpc:
 
 bool WalletNode::on_create_addresses(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::CreateAddresses::Request &&request, api::walletd::CreateAddresses::Response &response) {
-	if (m_wallet_state.get_wallet().is_view_only())
-		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "wallet is view-only, impossible to create addresses");
+	//	if (m_wallet_state.get_wallet().is_view_only())
+	//		throw json_rpc::Error(json_rpc::INVALID_PARAMS, "wallet is view-only, impossible to create addresses");
 	if (request.secret_spend_keys.empty())
 		return true;
 	auto records = m_wallet_state.generate_new_addresses(
@@ -407,8 +410,7 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 		AccountAddress addr;
 		if (!m_wallet_state.get_currency().parse_account_address_string(ad, &addr))
 			throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse spend address", ad);
-		WalletRecord record;
-		if (!m_wallet_state.get_wallet().get_record(record, addr))
+		if (!m_wallet_state.get_wallet().is_our_address(addr))
 			throw api::ErrorAddress(api::ErrorAddress::ADDRESS_NOT_IN_WALLET, "Address not in wallet", ad);
 		only_records.insert(addr);
 	}
