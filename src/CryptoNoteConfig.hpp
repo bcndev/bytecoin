@@ -46,9 +46,10 @@ const Amount MIN_DUST_THRESHOLD    = 1000000;            // Everything smaller w
 const Amount MAX_DUST_THRESHOLD    = 30000000000000000;  // Everything larger is dust because very few coins
 const Amount SELF_DUST_THRESHOLD   = 1000;               // forfeit outputs smaller than this in a change
 
-const BinaryArray ADDRESS_BASE58_PREFIX{6};                                      // legacy addresses start with "2"
-const BinaryArray ADDRESS_BASE58_PREFIX_UNLINKABLE{0xce, 0xf5, 0xe2};            // addresses start with "bcn1"
-const BinaryArray ADDRESS_BASE58_PREFIX_AUDITABLE_UNLINKABLE{0xce, 0xf5, 0xe4};  // addresses start with "bcn2"
+const uint64_t ADDRESS_BASE58_PREFIX          = 6;       // legacy addresses start with "2"
+const uint64_t ADDRESS_BASE58_PREFIX_AMETHYST = 572238;  // addresses start with "bcnZ", varintdata={0xce, 0xf6, 0x22}
+const uint64_t SENDPROOF_BASE58_PREFIX =
+    86762904402638;  // proofs start with "bcn1PRoof", varintdata={0xce, 0xf5, 0xe2, 0x80, 0x91, 0xdd, 0x13}
 const char BLOCKS_FILENAME[]       = "blocks.bin";
 const char BLOCKINDEXES_FILENAME[] = "blockindexes.bin";
 
@@ -212,9 +213,11 @@ constexpr const HardCheckpoint CHECKPOINTS[] = {
     {1579000, common::pfh<Hash>("debfa79d14ff49dc7e8c24e5e27a22f9a67819124a7dcd187c67493a969044be")},
     {1605000, common::pfh<Hash>("a34a41f2b5091f28f234b55a6255a9727fed355ca41233d59f779b2f87d1a359")},
     {1628000, common::pfh<Hash>("4e7b55e53402c71c45cb97f8ed78ed3f128c802008c83b0153aa52c30b740c68")},
-    {1670000, common::pfh<Hash>("58770b800108c72512a386783fd0a4326c74dc9f99b538337a195945b89a9a6f")}};
+    {1670000, common::pfh<Hash>("58770b800108c72512a386783fd0a4326c74dc9f99b538337a195945b89a9a6f")},
+    {1709000, common::pfh<Hash>("82185d3365e730074c4804b151c19d29ee4b2407772467853f96839567d8b45a")}};
 
 constexpr const HardCheckpoint CHECKPOINTS_STAGENET[] = {
     {450, common::pfh<Hash>("c69823a6b3e0c1f724411e697219a9d31a2df900cb49bb0488b1a91a9989a805")},
-    {30000, common::pfh<Hash>("4a3b02206d120bab6c3bef4a7bcbc1934b5327c27c181d790f4db407dc92c640")}};
+    {30000, common::pfh<Hash>("4a3b02206d120bab6c3bef4a7bcbc1934b5327c27c181d790f4db407dc92c640")},
+    {49000, common::pfh<Hash>("1960a677cda6afd47dd4a928bf876b7cb7c9bd86107e3193ca9b0fd0926bad4c")}};
 }}  // namespace cn::parameters

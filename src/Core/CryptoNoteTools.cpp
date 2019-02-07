@@ -4,6 +4,7 @@
 #include "CryptoNoteTools.hpp"
 #include "Currency.hpp"
 #include "TransactionExtra.hpp"
+#include "common/StringTools.hpp"
 #include "common/Varint.hpp"
 #include "seria/ISeria.hpp"
 
@@ -128,6 +129,15 @@ Amount cn::get_tx_sum_inputs(const TransactionPrefix &tx) {
 			amount_in += boost::get<InputKey>(in).amount;
 	}
 	return amount_in;
+}
+
+size_t cn::get_tx_key_outputs_count(const TransactionPrefix &tx) {
+	size_t count = 0;
+	for (const auto &o : tx.outputs) {
+		if (o.type() == typeid(OutputKey))
+			count += 1;
+	}
+	return count;
 }
 
 bool cn::get_tx_fee(const TransactionPrefix &tx, uint64_t *fee) {

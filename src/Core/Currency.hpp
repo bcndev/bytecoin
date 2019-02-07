@@ -78,6 +78,8 @@ public:
 	Height upgrade_votes_required() const;
 	Height upgrade_window;
 
+	uint64_t sendproof_base58_prefix;
+
 	size_t hard_checkpoint_count() const { return checkpoints_end - checkpoints_begin; }
 	bool is_in_hard_checkpoint_zone(Height height) const;
 	bool check_hard_checkpoint(Height height, const Hash &h, bool &is_hard_checkpoint) const;

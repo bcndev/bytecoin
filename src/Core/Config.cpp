@@ -167,6 +167,8 @@ Config::Config(common::CommandLine &cmd)
 	}
 }
 
+bool Config::use_multicast() const { return multicast_period != 0 && p2p_bind_ip != "127.0.0.1"; }
+
 std::string Config::prepare_usage(const std::string &usage) {
 	std::string result = usage;
 	boost::replace_all(result, "bytecoin", CRYPTONOTE_NAME);

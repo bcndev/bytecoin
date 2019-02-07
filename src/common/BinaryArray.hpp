@@ -132,5 +132,15 @@ inline BinaryArray::iterator append(BinaryArray &ba, const BinaryArray &other) {
 	return ba.insert(ba.end(), other.begin(), other.end());
 }
 
+inline BinaryArray &operator|=(BinaryArray &a, const BinaryArray &b) {
+	common::append(a, b);
+	return a;
+}
+
+inline BinaryArray operator|(const BinaryArray &a, const BinaryArray &b) {
+	BinaryArray tmp(a);
+	return tmp |= b;
+}
+
 const unsigned char *slow_memmem(const unsigned char *buf, size_t buflen, const unsigned char *pat, size_t patlen);
 }  // namespace common

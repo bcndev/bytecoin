@@ -19,7 +19,7 @@
 using namespace cn;
 using namespace platform;
 
-const std::string BlockChain::version_current = "6";
+const std::string BlockChain::version_current = "8";
 // We increment when making incompatible changes to indices.
 
 // We use suffixes so all keys related to the same block are close to each other in DB

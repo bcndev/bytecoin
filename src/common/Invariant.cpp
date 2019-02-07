@@ -2,6 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Invariant.hpp"
+#include <sstream>
 #include <stdexcept>
 #include "string.hpp"
 

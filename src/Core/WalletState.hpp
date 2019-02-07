@@ -41,8 +41,6 @@ class WalletState : public WalletStateBasic {
 
 		Amount add_incoming_output(const api::Output &, const Hash &tid) override;  // added amount may be lower
 		Amount add_incoming_keyimage(Height, const KeyImage &) override;
-		Amount add_incoming_deterministic_input(
-		    Height block_height, Amount am, size_t gi, const PublicKey &pk) override;
 		void add_transaction(
 		    Height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override;
 
@@ -77,7 +75,9 @@ public:
 	bool parse_raw_transaction(bool is_base, api::Transaction &ptx, Transaction &&tx, Hash tid) const;
 
 	// Read state
-	bool api_create_proof(const TransactionPrefix &tx, Sendproof &sp) const;
+	std::string api_create_proof(const TransactionPrefix &tx,
+	    const std::vector<std::vector<PublicKey>> &mixed_public_keys, const std::string &addr_str, const Hash &tid,
+	    const std::string &message) const;
 	api::Block api_get_pool_as_history(const std::string &address) const;
 
 	size_t get_tx_pool_version() const { return m_tx_pool_version; }
@@ -86,7 +86,8 @@ public:
 
 	void wallet_addresses_updated();
 	// generating through state prevents undo of blocks within 2*block_future_time_limit from now
-	std::vector<WalletRecord> generate_new_addresses(const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now);
+	std::vector<WalletRecord> generate_new_addresses(
+	    const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now, std::vector<AccountAddress> *addresses);
 	void create_addresses(size_t count);
 
 protected:
@@ -95,9 +96,11 @@ protected:
 
 	bool parse_raw_transaction(bool is_base, api::Transaction *ptx, std::vector<api::Transfer> *input_transfers,
 	    std::vector<api::Transfer> *output_transfers, Amount *output_amount, const PreparedWalletTransaction &pwtx,
-	    Hash tid, const std::vector<size_t> &global_indices, Height block_heights) const;
+	    Hash tid, const std::vector<size_t> &global_indices, size_t start_global_key_output_index,
+	    Height block_heights) const;
 	bool redo_transaction(const PreparedWalletTransaction &pwtx, const std::vector<size_t> &global_indices,
-	    IWalletState *delta_state, bool is_base, Hash tid, Height block_height, Hash bid, Timestamp tx_timestamp);
+	    size_t start_global_key_output_index, IWalletState *delta_state, bool is_base, Hash tid, Height block_height,
+	    Hash bid, Timestamp tx_timestamp);
 	const std::map<crypto::EllipticCurvePoint, int> &get_mempool_kis_or_pks() const override;
 	void on_first_transaction_found(Timestamp ts) override;
 

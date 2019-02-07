@@ -1,5 +1,37 @@
 ## Release Notes
 
+### v3.4.0 (Amethyst)
+
+- Sendproofs are now in base58 format, which eases copying and sharing.
+- New addresses now start from `bcnZ` prefix.
+
+*Command line changes/additions*
+
+- New walletd command-line parameter `--wallet-type` to create legacy wallets (`--create-wallet` by default creates new HD wallet).
+
+*API removal*
+
+- Removed `amethyst_only` flag in the `get_random_outputs` bytecoind method.
+
+
+### v3.4.0-beta-20190123
+
+*Strong support for audit-compatible wallets*
+
+- All new unlinkable addresses are now auditable, so separate auditable address type removed from system.
+- View-only HD wallet is now guaranteed to have the same balance as original wallet. So owner of HD wallet cannot spend any funds in a way that view-only version of the same wallet does not see the fact.
+- If view-only HD wallet was exported with --view-outgoing-addresses, it can also see all destination addresses in transactions that spend funds. If spender is sending to some address, he cannot make auditor see different destination address for this transaction. If spender is using sophisticated "out-of-blockchain shared secret" fraud, auditor will see random address, and spender will not be able to provide valid sendproof for this transaction.
+
+*Consensus update (hard fork)*
+- New crypto for legacy addresses (unlinkable-inspired), which prevents "burning bug" attacks on crypto level. This is important because such attacks cannot be reliably fixed on operational level.
+
+*API additions*
+- `amethyst_only` flag in `get_random_outputs` bytecoind method.
+
+*Incompatible API changes (likely to affect only developers of block explorers)*
+
+- In all raw block objects `output_indexes` renamed to `stack_indexes`.
+
 ### v3.4.0-beta-20181218
 
 - Signatures are now fully prunable (but not yet pruned) via modification to transaction hash calculations.
@@ -19,7 +51,7 @@
 - New auditable addresses, guaranteed to always have balance exactly equal to what view-only version of the same wallet shows (useful for public deposits).
 - Signatures are now half size.
 - The requirement that coinbase transactions are locked for 10 blocks is removed from consensus.
-- Creating dust (or other not round output amounts) are now prohibited by consensus rules.
+- Creating 6-digit dust (or other not round output amounts) are now prohibited by consensus rules.
 - Minimum anonymity is now 3 (4 output references per input). This does not apply to dust or not round outputs.
 - `bytecoind` now calculates output obfuscation value, and does not use less-than-ideal outputs for mix-in
 

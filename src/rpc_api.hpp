@@ -46,7 +46,8 @@ constexpr HeightOrDepth DEFAULT_CONFIRMATIONS = 5;
 struct Output {
 	Amount amount = 0;
 	PublicKey public_key;
-	size_t index = 0;
+	size_t stack_index  = 0;
+	size_t global_index = 0;
 	// Added from transaction
 	Height height                              = 0;  // Added from block
 	BlockOrTimestamp unlock_block_or_timestamp = 0;
@@ -113,6 +114,7 @@ struct BlockHeader {
 
 	Amount already_generated_coins        = 0;
 	size_t already_generated_transactions = 0;
+	size_t already_generated_key_outputs  = 0;
 	size_t size_median                    = 0;  // median of transactions_size, 0 in amethyst
 	size_t effective_size_median          = 0;  // median of transactions_size, 0 in amethyst
 	size_t block_capacity_vote            = 0;  // 0 before amethyst
@@ -134,11 +136,10 @@ struct RawBlock {
 	api::BlockHeader header;
 	BlockTemplate raw_header;
 	std::vector<TransactionPrefix> raw_transactions;
-	std::vector<TransactionSignatures> signatures;  // empty unless request.signatures set
 	std::vector<api::Transaction>
 	    transactions;  // for each transaction + coinbase, contain only info known to bytecoind
 	std::vector<std::vector<size_t>>
-	    output_indexes;  // for each transaction + coinbase, not empty only if block in main chain
+	    output_stack_indexes;  // for each transaction + coinbase, not empty only if block in main chain
 };
 
 // In legacy view-only wallets sum of incoming outputs can be arbitrary large and overflow
@@ -176,7 +177,9 @@ enum return_code {
 	    210,  // Another walletd instance is using the same or another wallet file with the same keys.
 	WALLETD_WRONG_ARGS             = 211,
 	WALLETD_EXPORTKEYS_MORETHANONE = 212,  // We can export keys only if wallet file contains exactly 1 spend keypair
-	WALLETD_MNEMONIC_CRC           = 213   // Unknown version or wrong crc
+	WALLETD_MNEMONIC_CRC           = 213,  // Unknown version or wrong crc
+	WALLET_FILE_HARDWARE_DECRYPT_ERROR =
+	    214  // This wallet file is backed by hardware and no hardware could decrypt wallet file
 };
 
 // Returned from many methods
@@ -274,11 +277,9 @@ struct GetWalletInfo {
 	};
 	struct Response {
 		bool view_only                      = false;
-		bool deterministic                  = false;
-		bool auditable                      = false;
-		bool unlinkable                     = false;
-		bool can_view_outgoing_addresses    = false;
-		Timestamp wallet_creation_timestamp = 0;  // O if not known (restored form keys and did not sync yet)
+		bool amethyst                       = false;  // combines deterministic, auditable, unlinkable properties
+		bool can_view_outgoing_addresses    = false;  // can be false for some view-only wallets
+		Timestamp wallet_creation_timestamp = 0;      // O if not known (restored form keys and did not sync yet)
 		std::string first_address;
 		size_t total_address_count = 0;  // Useful when iterating
 		std::string net;                 // network walletd is currently operating on
@@ -559,7 +560,6 @@ struct GetRawBlock {
 	struct Request {
 		Hash hash;
 		HeightOrDepth height_or_depth = std::numeric_limits<HeightOrDepth>::max();
-		bool need_signatures          = false;  // signatures are usually of no interest, they all are checked and valid
 	};
 	struct Response {
 		api::RawBlock block;
@@ -591,7 +591,7 @@ struct GetBlockHeader {
 
 struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoind
 	static std::string method() { return "sync_blocks"; }
-	static std::string bin_method() { return "sync_blocks_v3.4"; }
+	static std::string bin_method() { return "sync_blocks_v3.4.0"; }
 	// we increment bin method version when binary format changes
 
 	struct Request {
@@ -600,8 +600,7 @@ struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoin
 		Timestamp first_block_timestamp = 0;
 		size_t max_count                = MAX_COUNT / 10;
 		size_t max_size                 = 10 * 1024 * 1024;  // No more than 10 megabytes of blocks + 1 block
-		bool need_signatures     = false;  // signatures are usually of no interest, they all are checked and valid
-		bool need_redundant_data = true;   // walletd and smart clients can save traffic
+		bool need_redundant_data        = true;              // walletd and smart clients can save traffic
 	};
 	struct Response {
 		std::vector<RawBlock> blocks;
@@ -614,12 +613,12 @@ struct GetRawTransaction {
 	static std::string method() { return "get_raw_transaction"; }
 	struct Request {
 		Hash hash;
-		bool need_signatures = false;  // signatures are usually of no interest, they all are checked and valid
 	};
 	struct Response {
 		api::Transaction transaction;  // contain only info known to bytecoind
 		TransactionPrefix raw_transaction;
-		TransactionSignatures signatures;  // empty unless request.signatures set
+		std::vector<std::vector<PublicKey>> mixed_public_keys; // not documented yet
+		// TransactionPrefix contains only indexes, we need public keys to sign sendproof
 	};
 	enum {
 		HASH_NOT_FOUND = -5  // Neither in main nor in side chain
@@ -629,17 +628,15 @@ struct GetRawTransaction {
 // Signature of this method will stabilize to the end of beta
 struct SyncMemPool {  // Used by walletd sync process
 	static std::string method() { return "sync_mem_pool"; }
-	static std::string bin_method() { return "sync_mem_pool_v3.4"; }
+	static std::string bin_method() { return "sync_mem_pool_v3.4.0"; }
 	// we increment bin method version when binary format changes
 	struct Request {
-		std::vector<Hash> known_hashes;    // Should be sent sorted
-		bool need_signatures     = false;  // signatures are usually of no interest, they all are checked and valid
-		bool need_redundant_data = true;   // walletd and smart clients can save traffic
+		std::vector<Hash> known_hashes;   // Should be sent sorted
+		bool need_redundant_data = true;  // walletd and smart clients can save traffic
 	};
 	struct Response {
 		std::vector<Hash> removed_hashes;                       // Hashes no more in pool
 		std::vector<TransactionPrefix> added_raw_transactions;  // New raw transactions in pool
-		std::vector<TransactionSignatures> added_signatures;    // empty unless request.signatures set
 		std::vector<api::Transaction> added_transactions;       // contain only info known to bytecoind
 		GetStatus::Response status;  // We save roundtrip during sync by also sending status here
 	};

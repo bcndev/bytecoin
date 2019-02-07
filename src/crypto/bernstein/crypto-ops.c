@@ -63,7 +63,7 @@ static void fe_0(fe h) {
 h = 1
 */
 
-static void fe_1(fe h) {
+void fe_1(fe h) {
   h[0] = 1;
   h[1] = 0;
   h[2] = 0;
@@ -203,7 +203,7 @@ static void fe_cmov(fe f, const fe g, unsigned int b) {
 h = f
 */
 
-static void fe_copy(fe h, const fe f) {
+void fe_copy(fe h, const fe f) {
   int32_t f0 = f[0];
   int32_t f1 = f[1];
   int32_t f2 = f[2];
@@ -1144,7 +1144,8 @@ static void slide(signed char *r, const unsigned char *a) {
   }
 }
 
-void ge_dsm_precomp(ge_dsmp r, const ge_p3 *s) {
+void ge_dsm_precomp(ge_dsmp * rr, const ge_p3 *s) {
+	ge_cached * r = rr->ca;
   ge_p1p1 t;
   ge_p3 s2, u;
   ge_p3_to_cached(&r[0], s);
@@ -1165,19 +1166,28 @@ and b = b[0]+256*b[1]+...+256^31 b[31].
 B is the Ed25519 base point (x,4/5) with x positive.
 */
 
-void ge_double_scalarmult_base_vartime(ge_p2 *r, const struct cryptoEllipticCurveScalar *aa, const ge_p3 *A, const struct cryptoEllipticCurveScalar *bb) {
+/* From ge_p3_0.c */
+
+static void ge_p3_0(ge_p3 *h) {
+  fe_0(h->X);
+  fe_1(h->Y);
+  fe_1(h->Z);
+  fe_0(h->T);
+}
+
+/*void ge_double_scalarmult_base_vartime(ge_p2 *r, const struct cryptoEllipticCurveScalar *aa, const ge_p3 *A, const struct cryptoEllipticCurveScalar *bb) {
 	const unsigned char * a = aa->data;
 	const unsigned char * b = bb->data;
   signed char aslide[256];
   signed char bslide[256];
-  ge_dsmp Ai; /* A, 3A, 5A, 7A, 9A, 11A, 13A, 15A */
+  ge_dsmp Ai; // A, 3A, 5A, 7A, 9A, 11A, 13A, 15A
   ge_p1p1 t;
   ge_p3 u;
   int i;
 
   slide(aslide, a);
   slide(bslide, b);
-  ge_dsm_precomp(Ai, A);
+  ge_dsm_precomp(&Ai, A);
 
   ge_p2_0(r);
 
@@ -1190,10 +1200,10 @@ void ge_double_scalarmult_base_vartime(ge_p2 *r, const struct cryptoEllipticCurv
 
     if (aslide[i] > 0) {
       ge_p1p1_to_p3(&u, &t);
-      ge_add(&t, &u, &Ai[aslide[i]/2]);
+      ge_add(&t, &u, &Ai.ca[aslide[i]/2]);
     } else if (aslide[i] < 0) {
       ge_p1p1_to_p3(&u, &t);
-      ge_sub(&t, &u, &Ai[(-aslide[i])/2]);
+      ge_sub(&t, &u, &Ai.ca[(-aslide[i])/2]);
     }
 
     if (bslide[i] > 0) {
@@ -1206,8 +1216,55 @@ void ge_double_scalarmult_base_vartime(ge_p2 *r, const struct cryptoEllipticCurv
 
     ge_p1p1_to_p2(r, &t);
   }
-}
+}*/
 
+void ge_double_scalarmult_base_vartime3(ge_p3 *rr, const struct cryptoEllipticCurveScalar *aa, const ge_p3 *A, const struct cryptoEllipticCurveScalar *bb) {
+	const unsigned char * a = aa->data;
+	const unsigned char * b = bb->data;
+  signed char aslide[256];
+  signed char bslide[256];
+  ge_dsmp Ai; /* A, 3A, 5A, 7A, 9A, 11A, 13A, 15A */
+  ge_p1p1 t;
+  ge_p3 u;
+  int i;
+  ge_p2 r;
+
+  slide(aslide, a);
+  slide(bslide, b);
+  ge_dsm_precomp(&Ai, A);
+
+  ge_p2_0(&r);
+  ge_p3_0(rr); // We will not enter "for" below for some inputs
+
+  for (i = 255; i >= 0; --i) {
+    if (aslide[i] || bslide[i]) break;
+  }
+
+  for (; i >= 0; --i) {
+    ge_p2_dbl(&t, &r);
+
+    if (aslide[i] > 0) {
+      ge_p1p1_to_p3(&u, &t);
+      ge_add(&t, &u, &Ai.ca[aslide[i]/2]);
+    } else if (aslide[i] < 0) {
+      ge_p1p1_to_p3(&u, &t);
+      ge_sub(&t, &u, &Ai.ca[(-aslide[i])/2]);
+    }
+
+    if (bslide[i] > 0) {
+      ge_p1p1_to_p3(&u, &t);
+      ge_madd(&t, &u, &ge_Bi[bslide[i]/2]);
+    } else if (bslide[i] < 0) {
+      ge_p1p1_to_p3(&u, &t);
+      ge_msub(&t, &u, &ge_Bi[(-bslide[i])/2]);
+    }
+
+    if(i == 0)
+      ge_p1p1_to_p3(rr, &t);
+    else
+      ge_p1p1_to_p2(&r, &t);
+  }
+}
 /* From ge_frombytes.c, modified */
 
 int ge_frombytes_vartime(ge_p3 *h, const struct cryptoEllipticCurvePoint *ss) {
@@ -1395,15 +1452,6 @@ void ge_p2_dbl(ge_p1p1 *r, const ge_p2 *p) {
   fe_sub(r->T, r->T, r->Z);
 }
 
-/* From ge_p3_0.c */
-
-static void ge_p3_0(ge_p3 *h) {
-  fe_0(h->X);
-  fe_1(h->Y);
-  fe_1(h->Z);
-  fe_0(h->T);
-}
-
 /* From ge_p3_dbl.c */
 
 /*
@@ -1441,6 +1489,13 @@ void ge_p3_to_p2(ge_p2 *r, const ge_p3 *p) {
   fe_copy(r->Z, p->Z);
 }
 
+// naive impl fe_1(r->T); leads to overflows later in ge_add
+//void ge_p2_to_p3(ge_p3 * r, const ge_p2  *p) {
+//  fe_copy(r->X, p->X);
+//  fe_copy(r->Y, p->Y);
+//  fe_copy(r->Z, p->Z);
+//  r->T = X*Y*inv(Z) <-- this is too long to calc, so we do not use this fun
+//}
 /* From ge_p3_tobytes.c */
 
 void ge_p3_tobytes(struct cryptoEllipticCurvePoint * ss, const ge_p3 *h) {
@@ -1607,7 +1662,7 @@ Output:
   where l = 2^252 + 27742317777372353535851937790883648493.
   Overwrites s in place.
 */
-void sc_reduce(struct cryptoEllipticCurveScalar * aa, const unsigned char s[64]) {
+void sc_reduce64(struct cryptoEllipticCurveScalar * aa, const unsigned char s[64]) {
   int64_t s0 = 2097151 & load_3(s);
   int64_t s1 = 2097151 & (load_4(s + 2) >> 5);
   int64_t s2 = 2097151 & (load_3(s + 5) >> 2);
@@ -1917,65 +1972,65 @@ static void ge_cached_cmov(ge_cached *t, const ge_cached *u, unsigned char b) {
 }
 
 /* Assumes that a[31] <= 127 */
-void ge_scalarmult(ge_p2 *r, const struct cryptoEllipticCurveScalar *a, const ge_p3 *A) {
-  signed char e[64];
-  int carry, carry2, i;
-  ge_cached Ai[8]; /* 1 * A, 2 * A, ..., 8 * A */
-  ge_p1p1 t;
-  ge_p3 u;
-
-  carry = 0; /* 0..1 */
-  for (i = 0; i < 31; i++) {
-    carry += a->data[i]; /* 0..256 */
-    carry2 = (carry + 8) >> 4; /* 0..16 */
-    e[2 * i] = carry - (carry2 << 4); /* -8..7 */
-    carry = (carry2 + 8) >> 4; /* 0..1 */
-    e[2 * i + 1] = carry2 - (carry << 4); /* -8..7 */
-  }
-  carry += a->data[31]; /* 0..128 */
-  carry2 = (carry + 8) >> 4; /* 0..8 */
-  e[62] = carry - (carry2 << 4); /* -8..7 */
-  e[63] = carry2; /* 0..8 */
-
-  ge_p3_to_cached(&Ai[0], A);
-  for (i = 0; i < 7; i++) {
-    ge_add(&t, A, &Ai[i]);
-    ge_p1p1_to_p3(&u, &t);
-    ge_p3_to_cached(&Ai[i + 1], &u);
-  }
-
-  ge_p2_0(r);
-  for (i = 63; i >= 0; i--) {
-    signed char b = e[i];
-    unsigned char bnegative = negative(b);
-    unsigned char babs = b - (((-bnegative) & b) << 1);
-    ge_cached cur, minuscur;
-    ge_p2_dbl(&t, r);
-    ge_p1p1_to_p2(r, &t);
-    ge_p2_dbl(&t, r);
-    ge_p1p1_to_p2(r, &t);
-    ge_p2_dbl(&t, r);
-    ge_p1p1_to_p2(r, &t);
-    ge_p2_dbl(&t, r);
-    ge_p1p1_to_p3(&u, &t);
-    ge_cached_0(&cur);
-    ge_cached_cmov(&cur, &Ai[0], equal(babs, 1));
-    ge_cached_cmov(&cur, &Ai[1], equal(babs, 2));
-    ge_cached_cmov(&cur, &Ai[2], equal(babs, 3));
-    ge_cached_cmov(&cur, &Ai[3], equal(babs, 4));
-    ge_cached_cmov(&cur, &Ai[4], equal(babs, 5));
-    ge_cached_cmov(&cur, &Ai[5], equal(babs, 6));
-    ge_cached_cmov(&cur, &Ai[6], equal(babs, 7));
-    ge_cached_cmov(&cur, &Ai[7], equal(babs, 8));
-    fe_copy(minuscur.YplusX, cur.YminusX);
-    fe_copy(minuscur.YminusX, cur.YplusX);
-    fe_copy(minuscur.Z, cur.Z);
-    fe_neg(minuscur.T2d, cur.T2d);
-    ge_cached_cmov(&cur, &minuscur, bnegative);
-    ge_add(&t, &u, &cur);
-    ge_p1p1_to_p2(r, &t);
-  }
-}
+//void ge_scalarmult(ge_p2 *r, const struct cryptoEllipticCurveScalar *a, const ge_p3 *A) {
+//  signed char e[64];
+//  int carry, carry2, i;
+//  ge_cached Ai[8]; /* 1 * A, 2 * A, ..., 8 * A */
+//  ge_p1p1 t;
+//  ge_p3 u;
+//
+//  carry = 0; /* 0..1 */
+//  for (i = 0; i < 31; i++) {
+//    carry += a->data[i]; /* 0..256 */
+//    carry2 = (carry + 8) >> 4; /* 0..16 */
+//    e[2 * i] = carry - (carry2 << 4); /* -8..7 */
+//    carry = (carry2 + 8) >> 4; /* 0..1 */
+//    e[2 * i + 1] = carry2 - (carry << 4); /* -8..7 */
+//  }
+//  carry += a->data[31]; /* 0..128 */
+//  carry2 = (carry + 8) >> 4; /* 0..8 */
+//  e[62] = carry - (carry2 << 4); /* -8..7 */
+//  e[63] = carry2; /* 0..8 */
+//
+//  ge_p3_to_cached(&Ai[0], A);
+//  for (i = 0; i < 7; i++) {
+//    ge_add(&t, A, &Ai[i]);
+//    ge_p1p1_to_p3(&u, &t);
+//    ge_p3_to_cached(&Ai[i + 1], &u);
+//  }
+//
+//  ge_p2_0(r);
+//  for (i = 63; i >= 0; i--) {
+//    signed char b = e[i];
+//    unsigned char bnegative = negative(b);
+//    unsigned char babs = b - (((-bnegative) & b) << 1);
+//    ge_cached cur, minuscur;
+//    ge_p2_dbl(&t, r);
+//    ge_p1p1_to_p2(r, &t);
+//    ge_p2_dbl(&t, r);
+//    ge_p1p1_to_p2(r, &t);
+//    ge_p2_dbl(&t, r);
+//    ge_p1p1_to_p2(r, &t);
+//    ge_p2_dbl(&t, r);
+//    ge_p1p1_to_p3(&u, &t);
+//    ge_cached_0(&cur);
+//    ge_cached_cmov(&cur, &Ai[0], equal(babs, 1));
+//    ge_cached_cmov(&cur, &Ai[1], equal(babs, 2));
+//    ge_cached_cmov(&cur, &Ai[2], equal(babs, 3));
+//    ge_cached_cmov(&cur, &Ai[3], equal(babs, 4));
+//    ge_cached_cmov(&cur, &Ai[4], equal(babs, 5));
+//    ge_cached_cmov(&cur, &Ai[5], equal(babs, 6));
+//    ge_cached_cmov(&cur, &Ai[6], equal(babs, 7));
+//    ge_cached_cmov(&cur, &Ai[7], equal(babs, 8));
+//    fe_copy(minuscur.YplusX, cur.YminusX);
+//    fe_copy(minuscur.YminusX, cur.YplusX);
+//    fe_copy(minuscur.Z, cur.Z);
+//    fe_neg(minuscur.T2d, cur.T2d);
+//    ge_cached_cmov(&cur, &minuscur, bnegative);
+//    ge_add(&t, &u, &cur);
+//    ge_p1p1_to_p2(r, &t);
+//  }
+//}
 
 /* Assumes that a[31] <= 127 */
 void ge_scalarmult3(ge_p3 *rr, const struct cryptoEllipticCurveScalar *a, const ge_p3 *A) {
@@ -2042,19 +2097,19 @@ void ge_scalarmult3(ge_p3 *rr, const struct cryptoEllipticCurveScalar *a, const 
   }
 }
 
-void ge_double_scalarmult_precomp_vartime(ge_p2 *r, const struct cryptoEllipticCurveScalar *aa, const ge_p3 *A, const struct cryptoEllipticCurveScalar *bb, const ge_dsmp Bi) {
+/*void ge_double_scalarmult_precomp_vartime(ge_p2 *r, const struct cryptoEllipticCurveScalar *aa, const ge_p3 *A, const struct cryptoEllipticCurveScalar *bb, const ge_dsmp *Bi) {
 	const unsigned char * a = aa->data;
 	const unsigned char * b = bb->data;
   signed char aslide[256];
   signed char bslide[256];
-  ge_dsmp Ai; /* A, 3A, 5A, 7A, 9A, 11A, 13A, 15A */
+  ge_dsmp Ai; // A, 3A, 5A, 7A, 9A, 11A, 13A, 15A
   ge_p1p1 t;
   ge_p3 u;
   int i;
 
   slide(aslide, a);
   slide(bslide, b);
-  ge_dsm_precomp(Ai, A);
+  ge_dsm_precomp(&Ai, A);
 
   ge_p2_0(r);
 
@@ -2067,25 +2122,74 @@ void ge_double_scalarmult_precomp_vartime(ge_p2 *r, const struct cryptoEllipticC
 
     if (aslide[i] > 0) {
       ge_p1p1_to_p3(&u, &t);
-      ge_add(&t, &u, &Ai[aslide[i]/2]);
+      ge_add(&t, &u, &Ai.ca[aslide[i]/2]);
     } else if (aslide[i] < 0) {
       ge_p1p1_to_p3(&u, &t);
-      ge_sub(&t, &u, &Ai[(-aslide[i])/2]);
+      ge_sub(&t, &u, &Ai.ca[(-aslide[i])/2]);
     }
 
     if (bslide[i] > 0) {
       ge_p1p1_to_p3(&u, &t);
-      ge_add(&t, &u, &Bi[bslide[i]/2]);
+      ge_add(&t, &u, &Bi->ca[bslide[i]/2]);
     } else if (bslide[i] < 0) {
       ge_p1p1_to_p3(&u, &t);
-      ge_sub(&t, &u, &Bi[(-bslide[i])/2]);
+      ge_sub(&t, &u, &Bi->ca[(-bslide[i])/2]);
     }
 
     ge_p1p1_to_p2(r, &t);
   }
+}*/
+
+void ge_double_scalarmult_precomp_vartime3(ge_p3 *rr, const struct cryptoEllipticCurveScalar *aa, const ge_p3 *A, const struct cryptoEllipticCurveScalar *bb, const ge_dsmp *Bi) {
+	const unsigned char * a = aa->data;
+	const unsigned char * b = bb->data;
+  signed char aslide[256];
+  signed char bslide[256];
+  ge_dsmp Ai; /* A, 3A, 5A, 7A, 9A, 11A, 13A, 15A */
+  ge_p1p1 t;
+  ge_p3 u;
+  int i;
+  ge_p2 r;
+
+  slide(aslide, a);
+  slide(bslide, b);
+  ge_dsm_precomp(&Ai, A);
+
+  ge_p2_0(&r);
+  ge_p3_0(rr); // We will not enter "for" below for some inputs
+
+  for (i = 255; i >= 0; --i) {
+    if (aslide[i] || bslide[i]) break;
+  }
+
+  for (; i >= 0; --i) {
+    ge_p2_dbl(&t, &r);
+
+    if (aslide[i] > 0) {
+      ge_p1p1_to_p3(&u, &t);
+      ge_add(&t, &u, &Ai.ca[aslide[i]/2]);
+    } else if (aslide[i] < 0) {
+      ge_p1p1_to_p3(&u, &t);
+      ge_sub(&t, &u, &Ai.ca[(-aslide[i])/2]);
+    }
+
+    if (bslide[i] > 0) {
+      ge_p1p1_to_p3(&u, &t);
+      ge_add(&t, &u, &Bi->ca[bslide[i]/2]);
+    } else if (bslide[i] < 0) {
+      ge_p1p1_to_p3(&u, &t);
+      ge_sub(&t, &u, &Bi->ca[(-bslide[i])/2]);
+    }
+
+    if(i == 0)
+      ge_p1p1_to_p3(rr, &t);
+    else
+      ge_p1p1_to_p2(&r, &t);
+  }
 }
 
-int ge_check_subgroup_precomp_vartime(const ge_dsmp p) {
+int ge_check_subgroup_precomp_vartime(const ge_dsmp * pp) {
+	const ge_cached * p = pp->ca;
   ge_p3 s;
   ge_p1p1 t;
   ge_p2 u;
@@ -2637,9 +2741,18 @@ int ge_check_subgroup_precomp_vartime(const ge_dsmp p) {
   return fe_isnonzero(t.Y);
 }
 
-void ge_mul8(ge_p1p1 *r, const ge_p2 *t) {
+void ge_mul8_p2(ge_p1p1 *r, const ge_p2 *t) {
   ge_p2 u;
   ge_p2_dbl(r, t);
+  ge_p1p1_to_p2(&u, r);
+  ge_p2_dbl(r, &u);
+  ge_p1p1_to_p2(&u, r);
+  ge_p2_dbl(r, &u);
+}
+
+void ge_mul8(ge_p1p1 *r, const ge_p3 *t) {
+  ge_p2 u;
+  ge_p3_dbl(r, t);
   ge_p1p1_to_p2(&u, r);
   ge_p2_dbl(r, &u);
   ge_p1p1_to_p2(&u, r);
@@ -2894,6 +3007,7 @@ void sc_reduce32(struct cryptoEllipticCurveScalar * aa, const unsigned char s[32
   a[31] = (unsigned char) (s11 >> 17);
 }
 
+/* Computes s = a + b, then applies sc_reduce32. */
 void sc_add(struct cryptoEllipticCurveScalar *s, const struct cryptoEllipticCurveScalar *a, const struct cryptoEllipticCurveScalar *b) {
   int64_t a0 = 2097151 & load_3(a->data);
   int64_t a1 = 2097151 & (load_4(a->data + 2) >> 5);
@@ -3033,6 +3147,7 @@ void sc_add(struct cryptoEllipticCurveScalar *s, const struct cryptoEllipticCurv
   s->data[31] = (unsigned char) (s11 >> 17);
 }
 
+/* Computes s = a + b, then applies sc_reduce32. */
 void sc_sub(struct cryptoEllipticCurveScalar *s, const struct cryptoEllipticCurveScalar *a, const struct cryptoEllipticCurveScalar *b) {
   int64_t a0 = 2097151 & load_3(a->data);
   int64_t a1 = 2097151 & (load_4(a->data + 2) >> 5);
@@ -3181,6 +3296,8 @@ Input:
 Output:
   s[0]+256*s[1]+...+256^31*s[31] = (c-ab) mod l
   where l = 2^252 + 27742317777372353535851937790883648493.
+
+  Unpacks two 32-byte sequences, multiplies them into an unpacked 64-byte sequence and applies sc_reduce64.
 */
 
 void sc_mulsub(struct cryptoEllipticCurveScalar *ss, const struct cryptoEllipticCurveScalar *aa, const struct cryptoEllipticCurveScalar *bb, const struct cryptoEllipticCurveScalar *cc) {
@@ -3507,39 +3624,333 @@ void sc_mulsub(struct cryptoEllipticCurveScalar *ss, const struct cryptoElliptic
   s[30] = (unsigned char) (s11 >> 9);
   s[31] = (unsigned char) (s11 >> 17);
 }
+void sc_mul(struct cryptoEllipticCurveScalar *ss, const struct cryptoEllipticCurveScalar *aa, const struct cryptoEllipticCurveScalar *bb) {
+    unsigned char * s = ss->data;
+    const unsigned char * a = aa->data;
+    const unsigned char * b = bb->data;
+  int64_t a0 = 2097151 & load_3(a);
+  int64_t a1 = 2097151 & (load_4(a + 2) >> 5);
+  int64_t a2 = 2097151 & (load_3(a + 5) >> 2);
+  int64_t a3 = 2097151 & (load_4(a + 7) >> 7);
+  int64_t a4 = 2097151 & (load_4(a + 10) >> 4);
+  int64_t a5 = 2097151 & (load_3(a + 13) >> 1);
+  int64_t a6 = 2097151 & (load_4(a + 15) >> 6);
+  int64_t a7 = 2097151 & (load_3(a + 18) >> 3);
+  int64_t a8 = 2097151 & load_3(a + 21);
+  int64_t a9 = 2097151 & (load_4(a + 23) >> 5);
+  int64_t a10 = 2097151 & (load_3(a + 26) >> 2);
+  int64_t a11 = (load_4(a + 28) >> 7);
+  int64_t b0 = 2097151 & load_3(b);
+  int64_t b1 = 2097151 & (load_4(b + 2) >> 5);
+  int64_t b2 = 2097151 & (load_3(b + 5) >> 2);
+  int64_t b3 = 2097151 & (load_4(b + 7) >> 7);
+  int64_t b4 = 2097151 & (load_4(b + 10) >> 4);
+  int64_t b5 = 2097151 & (load_3(b + 13) >> 1);
+  int64_t b6 = 2097151 & (load_4(b + 15) >> 6);
+  int64_t b7 = 2097151 & (load_3(b + 18) >> 3);
+  int64_t b8 = 2097151 & load_3(b + 21);
+  int64_t b9 = 2097151 & (load_4(b + 23) >> 5);
+  int64_t b10 = 2097151 & (load_3(b + 26) >> 2);
+  int64_t b11 = (load_4(b + 28) >> 7);
+  int64_t s0;
+  int64_t s1;
+  int64_t s2;
+  int64_t s3;
+  int64_t s4;
+  int64_t s5;
+  int64_t s6;
+  int64_t s7;
+  int64_t s8;
+  int64_t s9;
+  int64_t s10;
+  int64_t s11;
+  int64_t s12;
+  int64_t s13;
+  int64_t s14;
+  int64_t s15;
+  int64_t s16;
+  int64_t s17;
+  int64_t s18;
+  int64_t s19;
+  int64_t s20;
+  int64_t s21;
+  int64_t s22;
+  int64_t s23;
+  int64_t carry0;
+  int64_t carry1;
+  int64_t carry2;
+  int64_t carry3;
+  int64_t carry4;
+  int64_t carry5;
+  int64_t carry6;
+  int64_t carry7;
+  int64_t carry8;
+  int64_t carry9;
+  int64_t carry10;
+  int64_t carry11;
+  int64_t carry12;
+  int64_t carry13;
+  int64_t carry14;
+  int64_t carry15;
+  int64_t carry16;
+  int64_t carry17;
+  int64_t carry18;
+  int64_t carry19;
+  int64_t carry20;
+  int64_t carry21;
+  int64_t carry22;
 
-/*  where l = 2^252 + 27742317777372353535851937790883648493.
- * last num is 0x1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed
- * -2
- * is
- * 1 <124 zeros> 0x14DEF9DE 0xA2F79CD6 0x5812631A 0x5CF5D3EB
- */
+  s0 = a0*b0;
+  s1 = (a0*b1 + a1*b0);
+  s2 = (a0*b2 + a1*b1 + a2*b0);
+  s3 = (a0*b3 + a1*b2 + a2*b1 + a3*b0);
+  s4 = (a0*b4 + a1*b3 + a2*b2 + a3*b1 + a4*b0);
+  s5 = (a0*b5 + a1*b4 + a2*b3 + a3*b2 + a4*b1 + a5*b0);
+  s6 = (a0*b6 + a1*b5 + a2*b4 + a3*b3 + a4*b2 + a5*b1 + a6*b0);
+  s7 = (a0*b7 + a1*b6 + a2*b5 + a3*b4 + a4*b3 + a5*b2 + a6*b1 + a7*b0);
+  s8 = (a0*b8 + a1*b7 + a2*b6 + a3*b5 + a4*b4 + a5*b3 + a6*b2 + a7*b1 + a8*b0);
+  s9 = (a0*b9 + a1*b8 + a2*b7 + a3*b6 + a4*b5 + a5*b4 + a6*b3 + a7*b2 + a8*b1 + a9*b0);
+  s10 = (a0*b10 + a1*b9 + a2*b8 + a3*b7 + a4*b6 + a5*b5 + a6*b4 + a7*b3 + a8*b2 + a9*b1 + a10*b0);
+  s11 = (a0*b11 + a1*b10 + a2*b9 + a3*b8 + a4*b7 + a5*b6 + a6*b5 + a7*b4 + a8*b3 + a9*b2 + a10*b1 + a11*b0);
+  s12 = (a1*b11 + a2*b10 + a3*b9 + a4*b8 + a5*b7 + a6*b6 + a7*b5 + a8*b4 + a9*b3 + a10*b2 + a11*b1);
+  s13 = (a2*b11 + a3*b10 + a4*b9 + a5*b8 + a6*b7 + a7*b6 + a8*b5 + a9*b4 + a10*b3 + a11*b2);
+  s14 = (a3*b11 + a4*b10 + a5*b9 + a6*b8 + a7*b7 + a8*b6 + a9*b5 + a10*b4 + a11*b3);
+  s15 = (a4*b11 + a5*b10 + a6*b9 + a7*b8 + a8*b7 + a9*b6 + a10*b5 + a11*b4);
+  s16 = (a5*b11 + a6*b10 + a7*b9 + a8*b8 + a9*b7 + a10*b6 + a11*b5);
+  s17 = (a6*b11 + a7*b10 + a8*b9 + a9*b8 + a10*b7 + a11*b6);
+  s18 = (a7*b11 + a8*b10 + a9*b9 + a10*b8 + a11*b7);
+  s19 = (a8*b11 + a9*b10 + a10*b9 + a11*b8);
+  s20 = (a9*b11 + a10*b10 + a11*b9);
+  s21 = (a10*b11 + a11*b10);
+  s22 = a11*b11;
+  s23 = 0;
 
-void sc_mul(struct cryptoEllipticCurveScalar * rr, const struct cryptoEllipticCurveScalar * aa, const struct cryptoEllipticCurveScalar * bb) {
-	struct cryptoEllipticCurveScalar zz, minus_rr;
-	sc_0(&zz);
-	sc_mulsub(&minus_rr, aa, bb, &zz);
-	sc_sub(rr, &zz, &minus_rr);
-	// TODO - optimize
+  carry0 = (s0 + (1<<20)) >> 21; s1 += carry0; s0 -= carry0 << 21;
+  carry2 = (s2 + (1<<20)) >> 21; s3 += carry2; s2 -= carry2 << 21;
+  carry4 = (s4 + (1<<20)) >> 21; s5 += carry4; s4 -= carry4 << 21;
+  carry6 = (s6 + (1<<20)) >> 21; s7 += carry6; s6 -= carry6 << 21;
+  carry8 = (s8 + (1<<20)) >> 21; s9 += carry8; s8 -= carry8 << 21;
+  carry10 = (s10 + (1<<20)) >> 21; s11 += carry10; s10 -= carry10 << 21;
+  carry12 = (s12 + (1<<20)) >> 21; s13 += carry12; s12 -= carry12 << 21;
+  carry14 = (s14 + (1<<20)) >> 21; s15 += carry14; s14 -= carry14 << 21;
+  carry16 = (s16 + (1<<20)) >> 21; s17 += carry16; s16 -= carry16 << 21;
+  carry18 = (s18 + (1<<20)) >> 21; s19 += carry18; s18 -= carry18 << 21;
+  carry20 = (s20 + (1<<20)) >> 21; s21 += carry20; s20 -= carry20 << 21;
+  carry22 = (s22 + (1<<20)) >> 21; s23 += carry22; s22 -= carry22 << 21;
+
+  carry1 = (s1 + (1<<20)) >> 21; s2 += carry1; s1 -= carry1 << 21;
+  carry3 = (s3 + (1<<20)) >> 21; s4 += carry3; s3 -= carry3 << 21;
+  carry5 = (s5 + (1<<20)) >> 21; s6 += carry5; s5 -= carry5 << 21;
+  carry7 = (s7 + (1<<20)) >> 21; s8 += carry7; s7 -= carry7 << 21;
+  carry9 = (s9 + (1<<20)) >> 21; s10 += carry9; s9 -= carry9 << 21;
+  carry11 = (s11 + (1<<20)) >> 21; s12 += carry11; s11 -= carry11 << 21;
+  carry13 = (s13 + (1<<20)) >> 21; s14 += carry13; s13 -= carry13 << 21;
+  carry15 = (s15 + (1<<20)) >> 21; s16 += carry15; s15 -= carry15 << 21;
+  carry17 = (s17 + (1<<20)) >> 21; s18 += carry17; s17 -= carry17 << 21;
+  carry19 = (s19 + (1<<20)) >> 21; s20 += carry19; s19 -= carry19 << 21;
+  carry21 = (s21 + (1<<20)) >> 21; s22 += carry21; s21 -= carry21 << 21;
+
+  s11 += s23 * 666643;
+  s12 += s23 * 470296;
+  s13 += s23 * 654183;
+  s14 -= s23 * 997805;
+  s15 += s23 * 136657;
+  s16 -= s23 * 683901;
+
+  s10 += s22 * 666643;
+  s11 += s22 * 470296;
+  s12 += s22 * 654183;
+  s13 -= s22 * 997805;
+  s14 += s22 * 136657;
+  s15 -= s22 * 683901;
+
+  s9 += s21 * 666643;
+  s10 += s21 * 470296;
+  s11 += s21 * 654183;
+  s12 -= s21 * 997805;
+  s13 += s21 * 136657;
+  s14 -= s21 * 683901;
+
+  s8 += s20 * 666643;
+  s9 += s20 * 470296;
+  s10 += s20 * 654183;
+  s11 -= s20 * 997805;
+  s12 += s20 * 136657;
+  s13 -= s20 * 683901;
+
+  s7 += s19 * 666643;
+  s8 += s19 * 470296;
+  s9 += s19 * 654183;
+  s10 -= s19 * 997805;
+  s11 += s19 * 136657;
+  s12 -= s19 * 683901;
+
+  s6 += s18 * 666643;
+  s7 += s18 * 470296;
+  s8 += s18 * 654183;
+  s9 -= s18 * 997805;
+  s10 += s18 * 136657;
+  s11 -= s18 * 683901;
+
+  carry6 = (s6 + (1<<20)) >> 21; s7 += carry6; s6 -= carry6 << 21;
+  carry8 = (s8 + (1<<20)) >> 21; s9 += carry8; s8 -= carry8 << 21;
+  carry10 = (s10 + (1<<20)) >> 21; s11 += carry10; s10 -= carry10 << 21;
+  carry12 = (s12 + (1<<20)) >> 21; s13 += carry12; s12 -= carry12 << 21;
+  carry14 = (s14 + (1<<20)) >> 21; s15 += carry14; s14 -= carry14 << 21;
+  carry16 = (s16 + (1<<20)) >> 21; s17 += carry16; s16 -= carry16 << 21;
+
+  carry7 = (s7 + (1<<20)) >> 21; s8 += carry7; s7 -= carry7 << 21;
+  carry9 = (s9 + (1<<20)) >> 21; s10 += carry9; s9 -= carry9 << 21;
+  carry11 = (s11 + (1<<20)) >> 21; s12 += carry11; s11 -= carry11 << 21;
+  carry13 = (s13 + (1<<20)) >> 21; s14 += carry13; s13 -= carry13 << 21;
+  carry15 = (s15 + (1<<20)) >> 21; s16 += carry15; s15 -= carry15 << 21;
+
+  s5 += s17 * 666643;
+  s6 += s17 * 470296;
+  s7 += s17 * 654183;
+  s8 -= s17 * 997805;
+  s9 += s17 * 136657;
+  s10 -= s17 * 683901;
+
+  s4 += s16 * 666643;
+  s5 += s16 * 470296;
+  s6 += s16 * 654183;
+  s7 -= s16 * 997805;
+  s8 += s16 * 136657;
+  s9 -= s16 * 683901;
+
+  s3 += s15 * 666643;
+  s4 += s15 * 470296;
+  s5 += s15 * 654183;
+  s6 -= s15 * 997805;
+  s7 += s15 * 136657;
+  s8 -= s15 * 683901;
+
+  s2 += s14 * 666643;
+  s3 += s14 * 470296;
+  s4 += s14 * 654183;
+  s5 -= s14 * 997805;
+  s6 += s14 * 136657;
+  s7 -= s14 * 683901;
+
+  s1 += s13 * 666643;
+  s2 += s13 * 470296;
+  s3 += s13 * 654183;
+  s4 -= s13 * 997805;
+  s5 += s13 * 136657;
+  s6 -= s13 * 683901;
+
+  s0 += s12 * 666643;
+  s1 += s12 * 470296;
+  s2 += s12 * 654183;
+  s3 -= s12 * 997805;
+  s4 += s12 * 136657;
+  s5 -= s12 * 683901;
+  s12 = 0;
+
+  carry0 = (s0 + (1<<20)) >> 21; s1 += carry0; s0 -= carry0 << 21;
+  carry2 = (s2 + (1<<20)) >> 21; s3 += carry2; s2 -= carry2 << 21;
+  carry4 = (s4 + (1<<20)) >> 21; s5 += carry4; s4 -= carry4 << 21;
+  carry6 = (s6 + (1<<20)) >> 21; s7 += carry6; s6 -= carry6 << 21;
+  carry8 = (s8 + (1<<20)) >> 21; s9 += carry8; s8 -= carry8 << 21;
+  carry10 = (s10 + (1<<20)) >> 21; s11 += carry10; s10 -= carry10 << 21;
+
+  carry1 = (s1 + (1<<20)) >> 21; s2 += carry1; s1 -= carry1 << 21;
+  carry3 = (s3 + (1<<20)) >> 21; s4 += carry3; s3 -= carry3 << 21;
+  carry5 = (s5 + (1<<20)) >> 21; s6 += carry5; s5 -= carry5 << 21;
+  carry7 = (s7 + (1<<20)) >> 21; s8 += carry7; s7 -= carry7 << 21;
+  carry9 = (s9 + (1<<20)) >> 21; s10 += carry9; s9 -= carry9 << 21;
+  carry11 = (s11 + (1<<20)) >> 21; s12 += carry11; s11 -= carry11 << 21;
+
+  s0 += s12 * 666643;
+  s1 += s12 * 470296;
+  s2 += s12 * 654183;
+  s3 -= s12 * 997805;
+  s4 += s12 * 136657;
+  s5 -= s12 * 683901;
+  s12 = 0;
+
+  carry0 = s0 >> 21; s1 += carry0; s0 -= carry0 << 21;
+  carry1 = s1 >> 21; s2 += carry1; s1 -= carry1 << 21;
+  carry2 = s2 >> 21; s3 += carry2; s2 -= carry2 << 21;
+  carry3 = s3 >> 21; s4 += carry3; s3 -= carry3 << 21;
+  carry4 = s4 >> 21; s5 += carry4; s4 -= carry4 << 21;
+  carry5 = s5 >> 21; s6 += carry5; s5 -= carry5 << 21;
+  carry6 = s6 >> 21; s7 += carry6; s6 -= carry6 << 21;
+  carry7 = s7 >> 21; s8 += carry7; s7 -= carry7 << 21;
+  carry8 = s8 >> 21; s9 += carry8; s8 -= carry8 << 21;
+  carry9 = s9 >> 21; s10 += carry9; s9 -= carry9 << 21;
+  carry10 = s10 >> 21; s11 += carry10; s10 -= carry10 << 21;
+  carry11 = s11 >> 21; s12 += carry11; s11 -= carry11 << 21;
+
+  s0 += s12 * 666643;
+  s1 += s12 * 470296;
+  s2 += s12 * 654183;
+  s3 -= s12 * 997805;
+  s4 += s12 * 136657;
+  s5 -= s12 * 683901;
+
+  carry0 = s0 >> 21; s1 += carry0; s0 -= carry0 << 21;
+  carry1 = s1 >> 21; s2 += carry1; s1 -= carry1 << 21;
+  carry2 = s2 >> 21; s3 += carry2; s2 -= carry2 << 21;
+  carry3 = s3 >> 21; s4 += carry3; s3 -= carry3 << 21;
+  carry4 = s4 >> 21; s5 += carry4; s4 -= carry4 << 21;
+  carry5 = s5 >> 21; s6 += carry5; s5 -= carry5 << 21;
+  carry6 = s6 >> 21; s7 += carry6; s6 -= carry6 << 21;
+  carry7 = s7 >> 21; s8 += carry7; s7 -= carry7 << 21;
+  carry8 = s8 >> 21; s9 += carry8; s8 -= carry8 << 21;
+  carry9 = s9 >> 21; s10 += carry9; s9 -= carry9 << 21;
+  carry10 = s10 >> 21; s11 += carry10; s10 -= carry10 << 21;
+
+  s[0] = (unsigned char) (s0 >> 0);
+  s[1] = (unsigned char) (s0 >> 8);
+  s[2] = (unsigned char) ((s0 >> 16) | (s1 << 5));
+  s[3] = (unsigned char) (s1 >> 3);
+  s[4] = (unsigned char) (s1 >> 11);
+  s[5] = (unsigned char) ((s1 >> 19) | (s2 << 2));
+  s[6] = (unsigned char) (s2 >> 6);
+  s[7] = (unsigned char) ((s2 >> 14) | (s3 << 7));
+  s[8] = (unsigned char) (s3 >> 1);
+  s[9] = (unsigned char) (s3 >> 9);
+  s[10] = (unsigned char) ((s3 >> 17) | (s4 << 4));
+  s[11] = (unsigned char) (s4 >> 4);
+  s[12] = (unsigned char) (s4 >> 12);
+  s[13] = (unsigned char) ((s4 >> 20) | (s5 << 1));
+  s[14] = (unsigned char) (s5 >> 7);
+  s[15] = (unsigned char) ((s5 >> 15) | (s6 << 6));
+  s[16] = (unsigned char) (s6 >> 2);
+  s[17] = (unsigned char) (s6 >> 10);
+  s[18] = (unsigned char) ((s6 >> 18) | (s7 << 3));
+  s[19] = (unsigned char) (s7 >> 5);
+  s[20] = (unsigned char) (s7 >> 13);
+  s[21] = (unsigned char) (s8 >> 0);
+  s[22] = (unsigned char) (s8 >> 8);
+  s[23] = (unsigned char) ((s8 >> 16) | (s9 << 5));
+  s[24] = (unsigned char) (s9 >> 3);
+  s[25] = (unsigned char) (s9 >> 11);
+  s[26] = (unsigned char) ((s9 >> 19) | (s10 << 2));
+  s[27] = (unsigned char) (s10 >> 6);
+  s[28] = (unsigned char) ((s10 >> 14) | (s11 << 7));
+  s[29] = (unsigned char) (s11 >> 1);
+  s[30] = (unsigned char) (s11 >> 9);
+  s[31] = (unsigned char) (s11 >> 17);
 }
 
-static void sc_invert_helper(struct cryptoEllipticCurveScalar * rr, const struct cryptoEllipticCurveScalar * xx, unsigned bits){
-  for(unsigned i = 32; i-- > 0;){
+static void sc_invert_helper(struct cryptoEllipticCurveScalar * rr, const struct cryptoEllipticCurveScalar * xx, uint8_t bits){
+  for(unsigned i = 8; i-- > 0;){
     sc_mul(rr, rr, rr);
     if(bits & (1U << i))
       sc_mul(rr, rr, xx);
   }
 }
 
-// TODO - single bit array
 void sc_invert(struct cryptoEllipticCurveScalar * rr, const struct cryptoEllipticCurveScalar * xx){
   *rr = *xx; // first bit
-  for(int i = 0; i != 124; ++i) // 124 zeroes
+  for(int i = 0; i != 124; ++i) // 124 zero bits
     sc_mul(rr, rr, rr);
-  sc_invert_helper(rr, xx, 0x14DEF9DEU);
-  sc_invert_helper(rr, xx, 0xA2F79CD6U);
-  sc_invert_helper(rr, xx, 0x5812631AU);
-  sc_invert_helper(rr, xx, 0x5CF5D3EBU);
+  for(int i = 15; i != 0; --i)
+  	sc_invert_helper(rr, xx, crypto_L.data[i]);
+  sc_invert_helper(rr, xx, crypto_L.data[0] - 2); // inv(x) = x^(L-2)
 }
 
 /* Assumes that a != INT64_MIN */

@@ -13,6 +13,9 @@ extern "C" {
 
 typedef int32_t fe[10];
 
+void fe_copy(fe h, const fe f);
+void fe_1(fe h);
+
 /* From ge.h */
 
 typedef struct {
@@ -54,9 +57,13 @@ void ge_add(ge_p1p1 *, const ge_p3 *, const ge_cached *);
 
 /* From ge_double_scalarmult.c, modified */
 
-typedef ge_cached ge_dsmp[8];
-void ge_dsm_precomp(ge_dsmp r, const ge_p3 *s);
-void ge_double_scalarmult_base_vartime(ge_p2 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *, const struct cryptoEllipticCurveScalar *);
+typedef struct {
+	ge_cached ca[8];
+} ge_dsmp;
+
+void ge_dsm_precomp(ge_dsmp * r, const ge_p3 *s);
+//void ge_double_scalarmult_base_vartime(ge_p2 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *, const struct cryptoEllipticCurveScalar *);
+void ge_double_scalarmult_base_vartime3(ge_p3 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *, const struct cryptoEllipticCurveScalar *);
 
 /* From ge_frombytes.c, modified */
 
@@ -81,6 +88,7 @@ void ge_p3_to_cached(ge_cached *, const ge_p3 *);
 /* From ge_p3_to_p2.c */
 
 void ge_p3_to_p2(ge_p2 *, const ge_p3 *);
+//void ge_p2_to_p3(ge_p3 *, const ge_p2 *);
 
 /* From ge_p3_tobytes.c */
 
@@ -100,17 +108,20 @@ void ge_tobytes(struct cryptoEllipticCurvePoint *, const ge_p2 *);
 
 /* From sc_reduce.c */
 
-void sc_reduce(struct cryptoEllipticCurveScalar *, const unsigned char[64]);
+void sc_reduce64(struct cryptoEllipticCurveScalar *, const unsigned char[64]);
 
 /* New code */
 
-void ge_scalarmult(ge_p2 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *);
+//void ge_scalarmult(ge_p2 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *);
 void ge_scalarmult3(ge_p3 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *);
 // TODO - ge_scalarmult3 is quick fix. conversion of p2 -> p1p1 would also work
 
-void ge_double_scalarmult_precomp_vartime(ge_p2 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *, const struct cryptoEllipticCurveScalar *, const ge_dsmp);
-int ge_check_subgroup_precomp_vartime(const ge_dsmp);
-void ge_mul8(ge_p1p1 *, const ge_p2 *);
+//void ge_double_scalarmult_precomp_vartime(ge_p2 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *, const struct cryptoEllipticCurveScalar *, const ge_dsmp *);
+void ge_double_scalarmult_precomp_vartime3(ge_p3 *r, const struct cryptoEllipticCurveScalar *aa, const ge_p3 *A, const struct cryptoEllipticCurveScalar *bb, const ge_dsmp *Bi);
+
+int ge_check_subgroup_precomp_vartime(const ge_dsmp *);
+void ge_mul8_p2(ge_p1p1 *, const ge_p2 *);
+void ge_mul8(ge_p1p1 *, const ge_p3 *);
 void ge_fromfe_frombytes_vartime(ge_p2 *, const unsigned char[32]); // Arbirtrary bytes to Point
 void sc_0(struct cryptoEllipticCurveScalar *);
 void sc_1(struct cryptoEllipticCurveScalar *);

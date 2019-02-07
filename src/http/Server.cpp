@@ -20,7 +20,7 @@
 using namespace http;
 
 Server::Server(const std::string &address, uint16_t port, request_handler &&r_handler, disconnect_handler &&d_handler)
-    : la_socket{new platform::TCPAcceptor{address, port, std::bind(&Server::accept_all, this)}}
+    : la_socket{std::make_unique<platform::TCPAcceptor>(address, port, std::bind(&Server::accept_all, this))}
     , r_handler(std::move(r_handler))
     , d_handler(std::move(d_handler)) {
 	accept_all();

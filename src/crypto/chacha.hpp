@@ -11,6 +11,8 @@ struct chacha_key {
 	chacha_key() : data{} {}
 	explicit chacha_key(const Hash &ha);
 	~chacha_key();
+
+	std::vector<uint8_t> as_binary_array() const { return std::vector<uint8_t>{std::begin(data), std::end(data)}; }
 };
 struct chacha_iv {
 	uint8_t data[8]{};

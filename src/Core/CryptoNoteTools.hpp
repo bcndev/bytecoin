@@ -29,6 +29,8 @@ size_t get_maximum_tx_input_size(size_t anonymity);
 Amount get_tx_sum_outputs(const TransactionPrefix &tx);
 Amount get_tx_sum_inputs(const TransactionPrefix &tx);
 
+size_t get_tx_key_outputs_count(const TransactionPrefix &tx);
+
 inline bool add_amount(Amount &sum, Amount amount) {
 	if (std::numeric_limits<Amount>::max() - amount < sum)
 		return false;
@@ -43,4 +45,5 @@ std::vector<size_t> absolute_output_offsets_to_relative(const std::vector<size_t
 bool relative_output_offsets_to_absolute(std::vector<size_t> *result, const std::vector<size_t> &off);
 
 BlockBodyProxy get_body_proxy_from_template(const BlockTemplate &bt);
+
 }  // namespace cn

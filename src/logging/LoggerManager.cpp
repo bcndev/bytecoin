@@ -21,16 +21,16 @@ void LoggerManager::configure_default(
 		loggers.clear();
 		LoggerGroup::loggers.clear();
 
-		std::unique_ptr<logging::CommonLogger> logger(
-		    new FileLogger(log_folder + "/" + log_prefix + "verbose", 1024 * 1024, TRACE));
+		std::unique_ptr<logging::CommonLogger> logger =
+		    std::make_unique<FileLogger>(log_folder + "/" + log_prefix + "verbose", 1024 * 1024, DEBUGGING);
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());
 
-		logger.reset(new FileLogger(log_folder + "/" + log_prefix + "errors", 1024 * 1024, ERROR));
+		logger = std::make_unique<FileLogger>(log_folder + "/" + log_prefix + "errors", 1024 * 1024, ERROR);
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());
 
-		logger.reset(new ConsoleLogger(INFO));
+		logger = std::make_unique<ConsoleLogger>(INFO);
 		logger->set_pattern("%T %l %C ");
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());

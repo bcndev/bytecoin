@@ -14,7 +14,7 @@
 // We define here, as CryptoNoteConfig.h is never included anywhere anymore
 #define bytecoin_ALLOW_DEBUG_COMMANDS 1
 
-#define bytecoin_ALLOW_CM 1
+#define bytecoin_ALLOW_CM 0
 
 namespace cn {
 
@@ -24,8 +24,9 @@ using crypto::KeyImage;
 using crypto::KeyPair;
 using crypto::PublicKey;
 using crypto::RingSignature;
-using crypto::RingSignature3;
+using crypto::RingSignatureAmethyst;
 using crypto::SecretKey;
+using crypto::SendproofSignatureAmethyst;
 using crypto::Signature;
 
 using common::BinaryArray;
@@ -50,7 +51,6 @@ struct InputKey {
 	Amount amount = 0;
 	std::vector<size_t> output_indexes;
 	KeyImage key_image;
-	std::array<uint8_t, 8> encrypted_real_index{};  // serialized only in amethyst if output_indexes.size >= 2
 	enum { type_tag = 2 };
 	static std::string str_type_tag() { return "key"; }
 };
@@ -61,11 +61,8 @@ struct OutputKey {
 	PublicKey encrypted_secret;          // serialized only in amethyst
 	uint8_t encrypted_address_type = 0;  // serialized only in amethyst
 
-	bool is_auditable = false;
-	enum { type_tag = 2, type_tag_auditable = 32 + 2 };  // we treat it similar to a flag
-	// type_tag_auditable is only allowed in amethyst
+	enum { type_tag = 2 };
 	static std::string str_type_tag() { return "key"; }
-	static std::string str_type_tag_auditable() { return "key_auditable"; }
 };
 
 typedef boost::variant<InputCoinbase, InputKey> TransactionInput;
@@ -87,7 +84,7 @@ struct RingSignatures {
 	std::vector<RingSignature> signatures;
 };
 
-typedef boost::variant<boost::blank, RingSignatures, RingSignature3> TransactionSignatures;
+typedef boost::variant<boost::blank, RingSignatures, RingSignatureAmethyst> TransactionSignatures;
 
 struct Transaction : public TransactionPrefix {
 	TransactionSignatures signatures;
@@ -116,9 +113,8 @@ struct BlockHeader {
 
 	RootBlock root_block;                                   // For block with is_merge_mined() true
 	std::vector<crypto::CMBranchElement> cm_merkle_branch;  // For blocks with is_cm_mined() true
-
-	bool is_merge_mined() const { return major_version == 2 || major_version == 3 || major_version == 4; }
 	bool is_cm_mined() const { return major_version == 5; }
+	bool is_merge_mined() const { return major_version == 2 || major_version == 3 || major_version == 4; }
 };
 
 struct BlockBodyProxy {
@@ -136,49 +132,48 @@ struct BlockTemplate : public BlockHeader {
 enum BlockSeriaType { NORMAL, PREHASH, BLOCKHASH, LONG_BLOCKHASH };
 
 struct AccountAddressSimple {
-	PublicKey spend_public_key;
-	PublicKey view_public_key;
+	PublicKey S;
+	PublicKey V;
 	enum { type_tag = 0 };
 	static std::string str_type_tag() { return "simple"; }
 };
 
 struct AccountAddressUnlinkable {
-	PublicKey s;
-	PublicKey sv;
-	bool is_auditable = false;
-	enum { type_tag = 1, type_tag_auditable = 2 };
+	PublicKey S;
+	PublicKey Sv;
+	enum { type_tag = 1 };
 	static std::string str_type_tag() { return "unlinkable"; }
-	static std::string str_type_tag_auditable() { return "unlinkable_auditable"; }
 };
 
 typedef boost::variant<AccountAddressSimple, AccountAddressUnlinkable> AccountAddress;
 
 struct SendproofKey {
+	Hash transaction_hash;
+	std::string message;
+	std::string address;
 	KeyDerivation derivation;
 	Signature signature;
 	// pair of derivation and signature form a proof of only fact that creator knows transaction private key and
 	// he or she wished to include public view key of address into proof. To further check, look up tx_hash in
 	// main chain and sum amounts of outputs which have spend keys corresponding to address public spend key
 	// For unlinkable addresses
-	static std::string str_type_tag() { return ""; }  // legacy sendproofs lack explicit type
 };
+
 struct SendproofAmethyst {
+	uint8_t version = 0;
+	Hash transaction_hash;
+	std::string message;
+	// fields for version 1-3
+	AccountAddressSimple address_simple;
+	KeyDerivation derivation;
+	Signature signature;
+	// fields for version amethyst
 	struct Element {
 		size_t out_index = 0;
 		PublicKey deterministic_public_key;
-		Signature signature;
 	};
 	std::vector<Element> elements;
-	// signature per output, proving that creator knows deterministic output private key
-	static std::string str_type_tag() { return "amethyst"; }
-};
-
-struct Sendproof {  // proofing that some tx actually sent amount to particular address
-	Hash transaction_hash;
-	AccountAddress address;
-	Amount amount = 0;
-	std::string message;
-	boost::variant<SendproofKey, SendproofAmethyst> proof;
+	// followed by RingSignatureAmethyst signature in serialization.
 };
 
 struct RawBlock {
@@ -215,21 +210,21 @@ struct SignedCheckpoint : public Checkpoint {
 
 // Predicates for using in maps, sets, etc
 inline bool operator==(const AccountAddressSimple &a, const AccountAddressSimple &b) {
-	return std::tie(a.view_public_key, a.spend_public_key) == std::tie(b.view_public_key, b.spend_public_key);
+	return std::tie(a.V, a.S) == std::tie(b.V, b.S);
 }
 inline bool operator!=(const AccountAddressSimple &a, const AccountAddressSimple &b) { return !operator==(a, b); }
 inline bool operator<(const AccountAddressSimple &a, const AccountAddressSimple &b) {
-	return std::tie(a.view_public_key, a.spend_public_key) < std::tie(b.view_public_key, b.spend_public_key);
+	return std::tie(a.V, a.S) < std::tie(b.V, b.S);
 }
 
 inline bool operator==(const AccountAddressUnlinkable &a, const AccountAddressUnlinkable &b) {
-	return std::tie(a.s, a.sv) == std::tie(b.s, b.sv);
+	return std::tie(a.S, a.Sv) == std::tie(b.S, b.Sv);
 }
 inline bool operator!=(const AccountAddressUnlinkable &a, const AccountAddressUnlinkable &b) {
 	return !operator==(a, b);
 }
 inline bool operator<(const AccountAddressUnlinkable &a, const AccountAddressUnlinkable &b) {
-	return std::tie(a.s, a.sv) < std::tie(b.s, b.sv);
+	return std::tie(a.S, a.Sv) < std::tie(b.S, b.Sv);
 }
 
 class Currency;  // For ser_members of cn::Sendproof
@@ -253,15 +248,17 @@ void ser_members(cn::AccountAddress &v, ISeria &s);
 void ser_members(cn::SendproofKey &v, ISeria &s);
 void ser_members(cn::SendproofAmethyst::Element &v, ISeria &s);
 void ser_members(cn::SendproofAmethyst &v, ISeria &s);
-void ser_members(cn::Sendproof &v, ISeria &s, const cn::Currency &);
-void ser_members(cn::TransactionInput &v, ISeria &s, bool is_tx_amethyst);
+void ser_members(cn::TransactionInput &v, ISeria &s);
 void ser_members(cn::TransactionOutput &v, ISeria &s, bool is_tx_amethyst);
 
 void ser_members(cn::InputCoinbase &v, ISeria &s);
-void ser_members(cn::InputKey &v, ISeria &s, bool is_tx_amethyst);
+void ser_members(cn::InputKey &v, ISeria &s);
 void ser_members(cn::RingSignatures &v, ISeria &s);
-void ser_members(cn::RingSignature3 &v, ISeria &s);
-void ser_members(cn::TransactionSignatures &v, ISeria &s);
+void ser_members(cn::RingSignatureAmethyst &v, ISeria &s);
+void ser_members(cn::SendproofSignatureAmethyst &v, ISeria &s);
+
+// void ser_members(cn::TransactionSignatures &v, ISeria &s);
+void ser_members(cn::RingSignatureAmethyst &v, ISeria &s, const cn::TransactionPrefix &prefix);
 void ser_members(cn::TransactionSignatures &v, ISeria &s, const cn::TransactionPrefix &prefix);
 
 void ser_members(cn::OutputKey &v, ISeria &s, bool is_tx_amethyst);

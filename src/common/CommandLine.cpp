@@ -120,33 +120,33 @@ const std::vector<const char *> &CommandLine::get_positional(const char *depreca
 	return positional;
 }
 
-bool CommandLine::should_quit(const char *help_text, const char *version_text) {
+int CommandLine::should_quit(const char *help_text, const char *version_text) {
 	const bool v1 = get_bool("--version");
 	const bool v2 = get_bool("-v");
 	if (version_text && (v1 || v2)) {  // in case both specified
 		printf("%s\n", version_text);
-		return true;  // No more output so scripts get version only
+		return 1;  // No more output so scripts get version only
 	}
-	bool quit     = false;
+	int quit      = 0;
 	const bool h1 = get_bool("--help");
 	const bool h2 = get_bool("-h");
 	if (help_text && (h1 || h2)) {  // in case both specified
 		printf("%s\n", help_text);
-		quit = true;
+		quit = 1;
 	}
 	if (!positional_used)
 		for (auto &&po : positional) {
 			printf("Positional args are not allowed - you specified '%s' (typo?)\n", po);
-			quit = true;
+			quit = 2;
 		}
 	for (auto &&op : options) {
 		if (!op.used) {
 			printf("Command line option '%s' has no meaning (typo?)\n", op.key.data);
-			quit = true;
+			quit = 2;
 		}
 		if (op.wrong_type_message) {
 			printf("Command line option '%s' %s\n", op.key.data, op.wrong_type_message);
-			quit = true;
+			quit = 2;
 		}
 	}
 	return quit;
@@ -182,8 +182,8 @@ int CommandLine::toy_main(int argc, const char *argv[]) {
 	if (cmd.get_bool("--pos"))
 		for (auto &&el : cmd.get_positional())
 			printf("positional value={%s}\n", el);
-	if (cmd.should_quit(TOY_USAGE, "Toy cmd v 1.1"))
-		return 0;
+	if (int r = cmd.should_quit(TOY_USAGE, "Toy cmd v 1.1"))
+		return r != 1;
 	printf("Toy is launching...\n");
 	return 0;
 }

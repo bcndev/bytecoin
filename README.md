@@ -12,7 +12,7 @@ Contents
 
 ## Building on Linux 64-bit
 
-All commands below are adapted for Ubuntu, other distributions may need an other command set.
+All commands below work on Ubuntu 18.*, other distributions may need different command set.
 
 ### Building with standard options
 
@@ -29,24 +29,27 @@ To go futher you have to have a number of packages and utilities. You need at le
     $bcndev> sudo apt-get install build-essential
     ```
 
-* CMake (3.5 or newer):
+* CMake (3.0 or newer):
     ```
     $bcndev> sudo apt-get install cmake
     $bcndev> cmake --version
     ```
     If version is too old, follow instructions on [the official site](https://cmake.org/download/).
 
-* Boost (1.62 or newer):
-    You need boost in `bcndev` folder. We do not configure to use boost installed by `apt-get`, because it is sometimes updated without your control by installing some unrelated packages. Also some users reported crashes after `find_package` finds headers from one version of boost and libraries from different version, or if installed boost uses dynamic linking.
+* Boost (1.65 or newer):
+    We use boost as a header-only library via find_boost package. So, if your system has boost installed and set up, it will be used automatically.
+    
+    Note - there is a bug in `boost::asio` 1.66 that affects `bytecoind`. Please use either version 1.65 or 1.67+.
     ```
-    $bcndev> wget -c 'http://sourceforge.net/projects/boost/files/boost/1.67.0/boost_1_67_0.tar.bz2/download'
-    $bcndev> tar xf download
-    $bcndev> rm download
-    $bcndev> mv boost_1_67_0 boost
-    $bcndev> cd boost
-    $bcndev/boost> ./bootstrap.sh
-    $bcndev/boost> ./b2 link=static -j 8 --build-dir=build64 --stagedir=stage
-    cd ..
+    $bcndev> sudo apt-get install libboost-dev
+    ```
+    If the latest boost installed is too old (e.g. for Ubuntu 16.*), then you need to download and unpack boost into the `bcndev/boost` folder. 
+
+    ```
+    $bcndev> wget -c 'https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz'
+    $bcndev> tar -xzf ./boost_1_69_0.tar.gz
+    $bcndev> rm ./boost_1_69_0.tar.gz
+    $bcndev> mv ./boost_1_69_0/ ./boost/
     ```
 
 * OpenSSL (1.1.1 or newer):
@@ -55,8 +58,25 @@ To go futher you have to have a number of packages and utilities. You need at le
     $bcndev> git clone https://github.com/openssl/openssl.git
     $bcndev> cd openssl
     $bcndev/openssl> ./Configure linux-x86_64 no-shared
-    $bcndev/openssl> time make -j4
+    $bcndev/openssl> make -j4
     $bcndev/openssl> cd ..
+    ```
+
+* SQLite (3.1 or newer)
+    Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into `bcndev/sqlite` folder (source files are referenced via relative paths, so you do not need to separately build it).
+    Please, note the direct download link is periodically updated with old versions removed, so you might need to tweak instructions below
+    ```
+    $bcndev> wget -c https://www.sqlite.org/2018/sqlite-amalgamation-3260000.zip
+    $bcndev> unzip ./sqlite-amalgamation-3260000.zip
+    $bcndev> rm ./sqlite-amalgamation-3260000.zip
+    $bcndev> mv ./sqlite-amalgamation-3260000/ ./sqlite/
+    ```
+
+* LMDB
+    Source files are referenced via relative paths, so you do not need to separately build it:
+    Please note, we use LMDB only when building 64-bit daemons. For 32-bit daemons SQLite is used instead.
+    ```
+    $bcndev> git clone https://github.com/bcndev/lmdb.git
     ```
 
 Git-clone (or git-pull) Bytecoin source code in that folder:
@@ -64,35 +84,17 @@ Git-clone (or git-pull) Bytecoin source code in that folder:
 $bcndev> git clone https://github.com/bcndev/bytecoin.git
 ```
 
-Put LMDB source code in `bcndev` folder (source files are referenced via relative paths, so you do not need to separately build it):
-```
-$bcndev> git clone https://github.com/LMDB/lmdb.git
-```
-
 Create build directory inside bytecoin, go there and run CMake and Make:
 ```
-$bcndev> mkdir bytecoin/build
+$bcndev> mkdir -p bytecoin/build
 $bcndev> cd bytecoin/build
 $bcndev/bytecoin/build> cmake ..
-$bcndev/bytecoin/build> time make -j4
+$bcndev/bytecoin/build> make -j4
 ```
 
 Check built binaries by running them from `../bin` folder
 ```
 $bcndev/bytecoin/build> ../bin/bytecoind -v
-```
-
-### Building with specific options
-
-Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into `bcndev/sqlite` folder (source files are referenced via relative paths, so you do not need to separately build it).
-
-Below are the commands which remove OpenSSL support and switch from LMDB to SQLite by providing options to CMake:
-
-```
-$bcndev> mkdir bytecoin/build
-$bcndev> cd bytecoin/build
-$bcndev/bytecoin/build> cmake -DUSE_SSL=0 -DUSE_SQLITE=1 ..
-$bcndev/bytecoin/build> time make -j4
 ```
 
 ## Building on Mac OSX
@@ -119,37 +121,7 @@ $bcndev> git clone https://github.com/bcndev/bytecoin.git
 
 Put LMDB source code in `bcndev` folder (source files are referenced via relative paths, so you do not need to separately build it):
 ```
-$bcndev> git clone https://github.com/LMDB/lmdb.git
-```
-
-Create build directory inside bytecoin, go there and run CMake and Make:
-```
-$bcndev> mkdir bytecoin/build
-$bcndev> cd bytecoin/build
-$bcndev/bytecoin/build> cmake -DUSE_SSL=0 ..
-$bcndev/bytecoin/build> time make -j4
-```
-
-Check built binaries by running them from `../bin` folder:
-```
-$bcndev/bytecoin/build> ../bin/bytecoind -v
-```
-
-### Building with specific options
-
-Binaries linked with Boost installed by Homebrew will work only on your computer's OS X version or newer, but not on older versions like El Capitan.
-
-If you need binaries to run on all versions of OS X starting from El Capitan, you need to build boost yourself targeting El Capitan SDK.
-
-Download [Mac OSX 10.11 SDK](https://github.com/phracker/MacOSX-SDKs/releases) and unpack to it into `Downloads` folder
-
-Download and unpack [Boost](https://boost.org) to `Downloads` folder.
-
-Then build and install Boost:
-```
-$~> cd ~/Downloads/boost_1_67_0/
-$~/Downloads/boost_1_67_0> ./bootstrap.sh
-$~/Downloads/boost_1_67_0> ./b2 -a -j 4 cxxflags="-stdlib=libc++ -std=c++14 -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk" install`
+$~/Downloads/bcndev> git clone https://github.com/bcndev/lmdb.git
 ```
 
 Install OpenSSL to `bcndev/openssl` folder:
@@ -160,27 +132,38 @@ $~/Downloads/bcndev> cd openssl
 
 If you need binaries to run on all versions of OS X starting from El Capitan, you need to build OpenSSL targeting El Capitan SDK.
 ```
-$bcndev/openssl> ./Configure darwin64-x86_64-cc no-shared -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk
+$~/Downloads/bcndev/openssl> ./Configure darwin64-x86_64-cc no-shared -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk
 ```
 Otherwise just use
 ```
-$bcndev/openssl> ./Configure darwin64-x86_64-cc no-shared
+$~/Downloads/bcndev/openssl> ./Configure darwin64-x86_64-cc no-shared
 ```
 
 ```
-$bcndev/openssl> time make -j4
-$bcndev/openssl> cd ..
+$~/Downloads/bcndev/openssl> make -j4
+$~/Downloads/bcndev/openssl> cd ..
 ```
 
 Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into `bcndev/sqlite` folder (source files are referenced via relative paths, so you do not need to separately build it).
-
-You add OpenSSL support or switch from LMDB to SQLite by providing options to CMake:
-
+Please, note the direct download link is periodically updated with old versions removed, so you might need to tweak instructions below
 ```
-$bcndev> mkdir bytecoin/build
-$bcndev> cd bytecoin/build
-$bcndev/bytecoin/build> cmake -DUSE_SSL=1 -DUSE_SQLITE=1 ..
-$bcndev/bytecoin/build> time make -j4
+$~/Downloads/bcndev> wget -c https://www.sqlite.org/2018/sqlite-amalgamation-3260000.zip
+$~/Downloads/bcndev> unzip sqlite-amalgamation-3260000.zip
+$~/Downloads/bcndev> rm sqlite-amalgamation-3260000.zip
+$~/Downloads/bcndev> mv sqlite-amalgamation-3260000 sqlite
+```
+
+Create build directory inside bytecoin, go there and run CMake and Make:
+```
+$~/Downloads/bcndev> mkdir bytecoin/build
+$~/Downloads/bcndev> cd bytecoin/build
+$~/Downloads/bcndev/bytecoin/build> cmake ..
+$~/Downloads/bcndev/bytecoin/build> make -j4
+```
+
+Check built binaries by running them from `../bin` folder:
+```
+$bcndev/bytecoin/build> ../bin/bytecoind -v
 ```
 
 ## Building on Windows
@@ -194,16 +177,8 @@ $C:\> mkdir bcndev
 $C:\> cd bcndev
 ```
 
-Get [Boost](https://boost.org) and unpack it into a folder inside `bcndev` and rename it from `boost_1_66_0` or similar to just `boost`.
-
-Build boost (build 32-bit boost version only if you need 32-bit bytecoin binaries).
-```
-$> cd boost
-$C:\bcndev\boost> bootstrap.bat
-$C:\bcndev\boost> b2.exe address-model=64 link=static -j 8 --build-dir=build64 --stagedir=stage
-$C:\bcndev\boost> b2.exe address-model=32 link=static -j 8 --build-dir=build32 --stagedir=stage32
-cd ..
-```
+Boost (1.65 or newer):
+    We use boost as a header-only library via find_boost package. So, if your system has boost installed and set up, it will be used automatically. If not, you need to download and unpack boost into bcndev/boost folder.
 
 Git-clone (or git-pull) Bytecoin source code in that folder:
 ```
@@ -212,8 +187,10 @@ $C:\bcndev> git clone https://github.com/bcndev/bytecoin.git
 
 Put LMDB in the same folder (source files are referenced via relative paths, so you do not need to separately build it):
 ```
-$C:\bcndev> git clone https://github.com/LMDB/lmdb.git
+$C:\bcndev> git clone https://github.com/bcndev/lmdb.git
 ```
+
+Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into the same folder (source files are referenced via relative paths, so you do not need to separately build it).
 
 You need to build openssl, first install ActivePerl (select "add to PATH" option, then restart console):
 ```
@@ -236,13 +213,19 @@ Now launch Visual Studio, in File menu select `Open Folder`, select `C:\bcndev\b
 Wait until CMake finishes running and `Build` appears in main menu.
 Select `x64-Debug` or `x64-Release` from standard toolbar, and then `Build/Build Solution` from the main menu.
 
-You cannot add options to CMake running inside Visual Studio so just edit `CMakeLists.txt` and set `USE_SSL` or `USE_SQLITE` to `ON` if you wish to build with them.
+## Building with options
+
+You can build daemons that use SQLite istead of LMDB on any platform by providing options to CMake.
+You may need to clean 'build' folder, if you built with default options before, due to cmake aggressive caching.
+
+```
+$bytecoin/build> cmake -DUSE_SQLITE=1 ..
+$bytecoin/build> time make -j8
+```
 
 ## Building on 32-bit x86 platforms, iOS, Android and other ARM platforms
 
 Bytecoin works on 32-bit systems if SQLite is used instead of LMDB (we've experienced lots of problems building and running with lmdb in 32-bit compatibility mode, especially on iOS).
-
-Therefore SQLite option is automatically selected by CMake on 32-bit platforms and you must have SQLite downloaded as explained in appropriate sections above.
 
 We build official x86 32-bit version for Windows only, because there is zero demand for 32-bit version for Linux or Mac.
 
@@ -250,7 +233,7 @@ Building source code for iOS, Android, Raspberry PI, etc is possible (we have ex
 
 ## Building on Big-Endian platforms
 
-Currently it is impossible to run Bytecoin on any Big-Endian platform, due to lots of endianess-dependent code. This may be fixed in the future. If you wish to run on Big-Endian platform, please contact us.
+Currently bytecoin does not work out of the box on any Big-Endian platform, due to some endianess-dependent code. This may be fixed in the future. If you wish to run on Big-Endian platform, please contact us.
 
 ## Building with parameters
 

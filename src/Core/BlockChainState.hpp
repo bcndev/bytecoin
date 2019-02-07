@@ -15,12 +15,13 @@ class Config;
 
 class IBlockChainState {
 public:
-	struct UnlockTimePublickKeyHeightSpent {
+	struct OutputIndexData {
+		Amount amount;  // We will serialize encrypted amount if amount == 0
 		BlockOrTimestamp unlock_block_or_timestamp = 0;
 		PublicKey public_key;
-		Height height  = 0;
-		bool auditable = false;
-		uint8_t spent  = 0;  // Aftermath of "keyimage out of subgroup" attack
+		Height height    = 0;
+		uint8_t spent    = 0;  // Aftermath of "keyimage out of subgroup" attack
+		bool is_amethyst = false;
 		std::vector<size_t> dins;
 	};
 	virtual ~IBlockChainState()                                  = default;
@@ -28,10 +29,10 @@ public:
 	virtual void delete_keyimage(const KeyImage &)               = 0;
 	virtual bool read_keyimage(const KeyImage &, Height *) const = 0;
 
-	virtual size_t push_amount_output(Amount, BlockOrTimestamp, Height, const PublicKey &, bool is_auditable) = 0;
-	virtual void pop_amount_output(Amount, BlockOrTimestamp, const PublicKey &, bool is_auditable)            = 0;
-	virtual size_t next_global_index_for_amount(Amount) const                                                 = 0;
-	virtual bool read_amount_output(Amount, size_t global_index, UnlockTimePublickKeyHeightSpent *) const     = 0;
+	virtual size_t push_amount_output(Amount, BlockOrTimestamp, Height, const PublicKey &, bool is_amethyst) = 0;
+	virtual void pop_amount_output(Amount, BlockOrTimestamp, const PublicKey &)                              = 0;
+	virtual size_t next_stack_index_for_amount(Amount) const                                                 = 0;
+	virtual bool read_amount_output(Amount, size_t stack_index, OutputIndexData *) const                     = 0;
 };
 
 class BlockChainState : public BlockChain, private IBlockChainState {
@@ -72,9 +73,10 @@ public:
 
 	static api::BlockHeader fill_genesis(Hash genesis_bid, const BlockTemplate &);
 
-	void test_print_outputs();
+	void dump_outputs_quality(size_t max_count) const;
 
 	void fill_statistics(api::cnd::GetStatistics::Response &res) const override;
+	std::vector<PublicKey> get_mixed_public_keys(const InputKey &in) const;
 
 protected:
 	void check_standalone_consensus(const PreparedBlock &pb, api::BlockHeader *info, const api::BlockHeader &prev_info,
@@ -86,6 +88,7 @@ private:
 	class DeltaState : public IBlockChainState {
 		std::map<KeyImage, Height> m_keyimages;  // sorted to speed up bulk saving to DB
 		std::map<Amount, std::vector<std::tuple<uint64_t, PublicKey, bool>>> m_global_amounts;
+		std::vector<OutputIndexData> m_ordered_global_amounts;
 		//		std::vector<std::pair<Amount, size_t>> m_spent_outputs;
 		Height m_block_height;  // Every delta state corresponds to some height
 		Timestamp m_block_timestamp;
@@ -109,22 +112,23 @@ private:
 		void delete_keyimage(const KeyImage &) override;
 		bool read_keyimage(const KeyImage &, Height *) const override;
 
-		size_t push_amount_output(Amount, BlockOrTimestamp, Height, const PublicKey &, bool is_auditable) override;
-		void pop_amount_output(Amount, BlockOrTimestamp, const PublicKey &, bool is_auditable) override;
-		size_t next_global_index_for_amount(Amount) const override;
-		bool read_amount_output(Amount, size_t global_index, UnlockTimePublickKeyHeightSpent *) const override;
+		size_t push_amount_output(Amount, BlockOrTimestamp, Height, const PublicKey &, bool is_amethyst) override;
+		void pop_amount_output(Amount, BlockOrTimestamp, const PublicKey &) override;
+		size_t next_stack_index_for_amount(Amount) const override;
+		bool read_amount_output(Amount, size_t stack_index, OutputIndexData *) const override;
 	};
 
 	void store_keyimage(const KeyImage &, Height) override;
 	void delete_keyimage(const KeyImage &) override;
 	bool read_keyimage(const KeyImage &, Height *) const override;
 
-	size_t push_amount_output(Amount, BlockOrTimestamp, Height, const PublicKey &, bool is_auditable) override;
-	void pop_amount_output(Amount, BlockOrTimestamp, const PublicKey &, bool is_auditable) override;
-	size_t next_global_index_for_amount(Amount) const override;
-	bool read_amount_output(Amount, size_t global_index, UnlockTimePublickKeyHeightSpent *) const override;
-	void spend_output(UnlockTimePublickKeyHeightSpent &&, Amount, size_t global_index, size_t trigger_input_index,
-	    size_t level, bool spent);
+	size_t push_amount_output(Amount, BlockOrTimestamp, Height, const PublicKey &, bool is_amethyst) override;
+	void pop_amount_output(Amount, BlockOrTimestamp, const PublicKey &) override;
+	size_t next_stack_index_for_amount(Amount) const override;
+	bool read_amount_output(Amount, size_t stack_index, OutputIndexData *) const override;
+	bool read_hidden_amount_map(Amount, size_t stack_index, size_t *hidden_index) const;
+	bool read_hidden_amount_output(size_t hidden_index, OutputIndexData *) const;
+	void spend_output(OutputIndexData &&, size_t hidden_index, size_t trigger_input_index, size_t level, bool spent);
 
 	void redo_transaction(uint8_t major_block_version, bool generating, const Transaction &, DeltaState *,
 	    BlockGlobalIndices *, Hash *newest_referenced_bid,
@@ -136,7 +140,7 @@ private:
 
 	const size_t m_max_pool_size;
 	mutable crypto::CryptoNightContext m_hash_crypto_context;
-	mutable std::unordered_map<Amount, size_t> m_next_gi_for_amount;
+	mutable std::unordered_map<Amount, size_t> m_next_stack_index;
 	// Read from db on first use, write on modification
 
 	void remove_from_pool(Hash tid);
@@ -151,7 +155,8 @@ private:
 	mutable std::map<Hash, std::pair<BinaryArray, Height>> m_mining_transactions;
 	// We remember them for several blocks
 	void clear_mining_transactions() const;
-	size_t m_next_nz_input_index = 0;
+	size_t m_next_global_key_output_index = 0;
+	size_t m_next_nz_input_index          = 0;
 	void process_input(const Hash &tid, size_t iid, const InputKey &input);
 	void unprocess_input(const InputKey &input);
 

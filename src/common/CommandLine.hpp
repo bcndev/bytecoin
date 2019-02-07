@@ -40,7 +40,8 @@ public:
 	const std::vector<const char *> &get_array(const char *key, const char *deprecation_text = nullptr);
 	const std::vector<const char *> &get_positional(const char *deprecation_text = nullptr);
 	// after everything is parsed call this fun to quit if there were errors or help, version was specified
-	bool should_quit(const char *help_text = nullptr, const char *version_text = nullptr);
+	// returns 1 when no errors, 2 otherwise
+	int should_quit(const char *help_text = nullptr, const char *version_text = nullptr);
 
 	static int toy_main(int argc, const char *argv[]);  // For testing
 };

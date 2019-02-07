@@ -17,6 +17,11 @@ inline Hash cn_fast_hash(const void *data, size_t length) {
 	crypto_cn_fast_hash(data, length, &h);
 	return h;
 }
+inline Hash cn_fast_hash(const std::vector<uint8_t> &data) {
+	Hash h;
+	crypto_cn_fast_hash(data.data(), data.size(), &h);
+	return h;
+}
 
 class CryptoNightContext {
 public:

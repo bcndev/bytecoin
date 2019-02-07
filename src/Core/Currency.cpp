@@ -74,10 +74,11 @@ Currency::Currency(const std::string &net)
     , amethyst_block_version(BLOCK_VERSION_AMETHYST)
     , amethyst_transaction_version(TRANSACTION_VERSION_AMETHYST)
     , upgrade_from_major_version(3)
-    , upgrade_indicator_minor_version(5)
+    , upgrade_indicator_minor_version(6)
     , upgrade_desired_major_version(0)
     , upgrade_voting_window(UPGRADE_VOTING_WINDOW)
-    , upgrade_window(UPGRADE_WINDOW) {
+    , upgrade_window(UPGRADE_WINDOW)
+    , sendproof_base58_prefix(SENDPROOF_BASE58_PREFIX) {
 	if (net == "test") {
 		upgrade_heights               = {1, 1};  // block 1 is already V3
 		upgrade_desired_major_version = 4;
@@ -315,7 +316,7 @@ Transaction Currency::construct_miner_tx(
 	for (size_t out_index = 0; out_index < out_amounts.size(); out_index++) {
 		const KeyPair output_det_keys = crypto::random_keypair();
 		OutputKey tk                  = TransactionBuilder::create_output(
-            is_tx_amethyst, miner_address, txkey.secret_key, tx_inputs_hash, out_index, output_det_keys);
+            is_tx_amethyst, miner_address, txkey.secret_key, tx_inputs_hash, out_index, output_det_keys.public_key);
 		tk.amount = out_amounts.at(out_index);
 		summary_amounts += tk.amount;
 		tx.outputs.push_back(tk);
@@ -366,27 +367,24 @@ std::string Currency::account_address_as_string(const AccountAddress &v_addr) co
 	if (v_addr.type() == typeid(AccountAddressUnlinkable)) {
 		auto &addr     = boost::get<AccountAddressUnlinkable>(v_addr);
 		BinaryArray ba = seria::to_binary(addr);
-		if (addr.is_auditable)
-			return common::base58::encode_addr(ADDRESS_BASE58_PREFIX_AUDITABLE_UNLINKABLE, ba);
-		return common::base58::encode_addr(ADDRESS_BASE58_PREFIX_UNLINKABLE, ba);
+		return common::base58::encode_addr(ADDRESS_BASE58_PREFIX_AMETHYST, ba);
 	}
 	throw std::runtime_error("Unknown address type");
 }
 
 bool Currency::parse_account_address_string(const std::string &str, AccountAddress *v_addr) const {
-	BinaryArray tag;
+	uint64_t tag = 0;
 	BinaryArray data;
-	if (!common::base58::decode_addr(str, 2 * sizeof(PublicKey), &tag, &data))
+	if (!common::base58::decode_addr(str, &tag, &data))
 		return false;
-	if (tag == ADDRESS_BASE58_PREFIX_UNLINKABLE || tag == ADDRESS_BASE58_PREFIX_AUDITABLE_UNLINKABLE) {
+	if (tag == ADDRESS_BASE58_PREFIX_AMETHYST) {
 		AccountAddressUnlinkable addr;
-		addr.is_auditable = (tag == ADDRESS_BASE58_PREFIX_AUDITABLE_UNLINKABLE);
 		try {
 			seria::from_binary(addr, data);
 		} catch (const std::exception &) {
 			return false;
 		}
-		if (!key_isvalid(addr.s) || !key_isvalid(addr.sv))
+		if (!key_in_main_subgroup(addr.S) || !key_in_main_subgroup(addr.Sv))
 			return false;
 		*v_addr = addr;
 		return true;
@@ -398,7 +396,7 @@ bool Currency::parse_account_address_string(const std::string &str, AccountAddre
 		} catch (const std::exception &) {
 			return false;
 		}
-		if (!key_isvalid(addr.spend_public_key) || !key_isvalid(addr.view_public_key))
+		if (!key_in_main_subgroup(addr.S) || !key_in_main_subgroup(addr.V))
 			return false;
 		*v_addr = addr;
 		return true;
@@ -558,13 +556,15 @@ bool Currency::amount_allowed_in_output(uint8_t block_major_version, Amount amou
 }*/
 
 Hash cn::get_transaction_inputs_hash(const TransactionPrefix &tx) {
-	const bool is_tx_amethyst = (tx.version >= parameters::TRANSACTION_VERSION_AMETHYST);
-	BinaryArray ba            = seria::to_binary(tx.inputs, is_tx_amethyst);
+	//	const bool is_tx_amethyst = (tx.version >= parameters::TRANSACTION_VERSION_AMETHYST);
+	BinaryArray ba = seria::to_binary(tx.inputs);
+	//	std::cout << "get_transaction_inputs_hash body=" << common::to_hex(ba) << std::endl;
 	return crypto::cn_fast_hash(ba.data(), ba.size());
 }
 
 Hash cn::get_transaction_prefix_hash(const TransactionPrefix &tx) {
 	BinaryArray ba = seria::to_binary(tx);
+	//	std::cout << "get_transaction_prefix_hash body=" << common::to_hex(ba) << std::endl;
 	return crypto::cn_fast_hash(ba.data(), ba.size());
 }
 
@@ -575,6 +575,9 @@ Hash cn::get_transaction_hash(const Transaction &tx) {
 		BinaryArray binary_sigs = seria::to_binary(tx.signatures, static_cast<const TransactionPrefix &>(tx));
 		ha.second               = crypto::cn_fast_hash(binary_sigs.data(), binary_sigs.size());
 		BinaryArray ba          = seria::to_binary(ha);
+//		BinaryArray tx_body = seria::to_binary(static_cast<const TransactionPrefix&>(tx));
+//		common::append(tx_body, binary_sigs);
+//		invariant(tx_body == seria::to_binary(tx), "");
 		return crypto::cn_fast_hash(ba.data(), ba.size());
 	}
 	BinaryArray ba = seria::to_binary(tx);

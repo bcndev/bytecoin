@@ -244,12 +244,14 @@ void LegacyBlockChainWriter::write_block(const RawBlock &raw_block) {
 	m_indexes_file.write(&si, sizeof si);
 }
 
-bool LegacyBlockChainWriter::export_blockchain2(
-    const std::string &index_file_name, const std::string &item_file_name, const BlockChainState &block_chain) {
+bool LegacyBlockChainWriter::export_blockchain2(const std::string &index_file_name, const std::string &item_file_name,
+    const BlockChainState &block_chain, Height max_height) {
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	std::cout << "Start exporting blocks" << std::endl;
 	LegacyBlockChainWriter writer(index_file_name, item_file_name, block_chain.get_tip_height() + 1);
 	for (Height ha = 0; ha != block_chain.get_tip_height() + 1; ++ha) {
+		if (ha >= max_height)
+			break;
 		Hash bid{};
 		BinaryArray block_data;
 		RawBlock raw_block;

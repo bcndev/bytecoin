@@ -41,9 +41,6 @@ Options:
   --bytecoind-authorization-private=<usr:pass>   HTTP basic authentication credentials for get_statistics and get_archive methods.)";
 
 int main(int argc, const char *argv[]) try {
-	crypto::test_unlinkable();
-	crypto::test_linkable();
-
 	common::console::UnicodeConsoleSetup console_setup;
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	common::CommandLine cmd(argc, argv);
@@ -54,18 +51,23 @@ int main(int argc, const char *argv[]) try {
 	std::string export_blocks;
 	if (const char *pa = cmd.get("--export-blocks"))
 		export_blocks = platform::normalize_folder(pa);
+	Height max_height = std::numeric_limits<Height>::max();
+	if (const char *pa = cmd.get("--max-height"))  // for export, import
+		max_height = boost::lexical_cast<Height>(pa);
 	std::string backup_blockchain;
 	if (const char *pa = cmd.get("--backup-blockchain"))
 		backup_blockchain = platform::normalize_folder(pa);
 	Config config(cmd);
 	Currency currency(config.net);
-
-	Height print_structure = Height(-1);
+	//	config.db_commit_every_n_blocks = 10000;
+	Height print_structure = std::numeric_limits<Height>::max();
 	if (const char *pa = cmd.get("--print-structure"))
-		print_structure = std::stoi(pa);
-	const bool print_outputs = cmd.get_bool("--print-outputs");
-	if (cmd.should_quit(Config::prepare_usage(USAGE).c_str(), cn::app_version()))
-		return 0;
+		print_structure = boost::lexical_cast<Height>(pa);
+	size_t dump_outputs_quality = 0;
+	if (const char *pa = cmd.get("--dump-outputs-quality"))
+		dump_outputs_quality = boost::lexical_cast<Height>(pa);
+	if (int r = cmd.should_quit(Config::prepare_usage(USAGE).c_str(), cn::app_version()))
+		return r == 1 ? 0 : api::BYTECOIND_WRONG_ARGS;
 
 	const std::string coin_folder = config.get_data_folder();
 	if (!export_blocks.empty() && !backup_blockchain.empty()) {
@@ -88,20 +90,20 @@ int main(int argc, const char *argv[]) try {
 		std::cout << "Finished blockchain backup." << std::endl;
 		return 0;
 	}
-	if (!export_blocks.empty() || print_structure != Height(-1) || print_outputs) {
+	if (!export_blocks.empty() || print_structure != std::numeric_limits<Height>::max() || dump_outputs_quality != 0) {
 		logging::ConsoleLogger log_console;
 		BlockChainState block_chain_read_only(log_console, config, currency, true);
 
 		if (!export_blocks.empty()) {
 			if (!LegacyBlockChainWriter::export_blockchain2(export_blocks + "/" + config.block_indexes_file_name,
-			        export_blocks + "/" + config.blocks_file_name, block_chain_read_only))
+			        export_blocks + "/" + config.blocks_file_name, block_chain_read_only, max_height))
 				return 1;
 			return 0;
 		}
-		if (print_structure != Height(-1))
+		if (print_structure != std::numeric_limits<Height>::max())
 			block_chain_read_only.test_print_structure(print_structure);
-		if (print_outputs)
-			block_chain_read_only.test_print_outputs();
+		if (dump_outputs_quality != 0)
+			block_chain_read_only.dump_outputs_quality(dump_outputs_quality);
 		return 0;
 	}
 
@@ -111,19 +113,21 @@ int main(int argc, const char *argv[]) try {
 	log_manager.configure_default(config.get_data_folder("logs"), CRYPTONOTE_NAME "d-", cn::app_version());
 
 	BlockChainState block_chain(log_manager, config, currency, false);
-	//	block_chain.test_undo_everything(0);
-	//	return 0;
 	if (!import_blocks.empty()) {
 		LegacyBlockChainReader::import_blockchain2(import_blocks + "/" + config.block_indexes_file_name,
-		    import_blocks + "/" + config.blocks_file_name, &block_chain);
+		    import_blocks + "/" + config.blocks_file_name, &block_chain, max_height);
+		std::cin >> max_height;
 		return 0;
 	}
 	//	block_chain.test_undo_everything(0);
+	//	return 0;
 	//	block_chain.test_print_tips();
 	//	while(block_chain.test_prune_oldest()){
 	//		block_chain.test_print_tips();
 	//	}
 
+	//	test_trezor();
+	//	return 0;
 	boost::asio::io_service io;
 	platform::EventLoop run_loop(io);
 

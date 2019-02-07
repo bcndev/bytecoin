@@ -11,13 +11,13 @@
 #include <openssl/obj_mac.h>
 #include <openssl/sha.h>
 #include <algorithm>
-#include <crypto/crypto.hpp>
 #include <string>
 #include <vector>
 #include "common/Invariant.hpp"
 #include "common/StringTools.hpp"
 #include "common/Varint.hpp"
 #include "common/Words.hpp"
+#include "crypto/crypto.hpp"
 
 struct EC_GROUPw {
 	EC_GROUP *pgroup = nullptr;
@@ -186,6 +186,8 @@ std::string Bip32Key::create_random_bip39_mnemonic(size_t bits) {
 }
 
 std::string Bip32Key::check_bip39_mnemonic(const std::string &bip39_mnemonic) {
+	if (bip39_mnemonic.empty())
+		throw Exception("Mnemonic is empty");
 	std::string str = bip39_mnemonic;
 	// Not the fastest way to split into words by set of strings
 	std::vector<size_t> word_bits;

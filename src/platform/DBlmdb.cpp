@@ -88,8 +88,8 @@ DBlmdb::DBlmdb(OpenMode open_mode, const std::string &full_path, uint64_t max_db
 	               MDB_NOMETASYNC | (open_mode == O_READ_EXISTING ? MDB_RDONLY : 0), 0644),
 	    "Failed to open database " + full_path + " in mdb_env_open ");
 	// MDB_NOMETASYNC - We agree to trade chance of losing 1 last transaction for 2x performance boost
-	db_txn.reset(new lmdb::Txn(db_env));
-	db_dbi.reset(new lmdb::Dbi(*db_txn));
+	db_txn = std::make_unique<lmdb::Txn>(db_env);
+	db_dbi = std::make_unique<lmdb::Dbi>(*db_txn);
 }
 
 size_t DBlmdb::test_get_approximate_size() const {
@@ -168,7 +168,7 @@ DBlmdb::Cursor DBlmdb::rbegin(const std::string &prefix, const std::string &midd
 void DBlmdb::commit_db_txn() {
 	db_txn->commit();
 	db_txn.reset();
-	db_txn.reset(new lmdb::Txn(db_env));
+	db_txn = std::make_unique<lmdb::Txn>(db_env);
 }
 
 void DBlmdb::put(const std::string &key, const common::BinaryArray &value, bool nooverwrite) {

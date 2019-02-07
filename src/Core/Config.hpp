@@ -38,6 +38,7 @@ public:
 	uint16_t multicast_port;
 	float multicast_period;
 	bool secrets_via_api;
+	bool use_multicast() const;
 
 	std::string bytecoind_authorization;
 	std::string bytecoind_authorization_private;

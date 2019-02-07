@@ -58,8 +58,8 @@ public:
 	LegacyBlockChainWriter(const std::string &index_file_name, const std::string &item_file_name, uint64_t count);
 	void write_block(const RawBlock &raw_block);
 
-	static bool export_blockchain2(
-	    const std::string &index_file_name, const std::string &item_file_name, const BlockChainState &block_chain);
+	static bool export_blockchain2(const std::string &index_file_name, const std::string &item_file_name,
+	    const BlockChainState &block_chain, Height max_height = std::numeric_limits<Height>::max());
 };
 
 }  // namespace cn

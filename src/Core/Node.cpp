@@ -7,7 +7,9 @@
 #include <iostream>
 #include "Config.hpp"
 #include "CryptoNoteTools.hpp"
+#include "TransactionBuilder.hpp"
 #include "TransactionExtra.hpp"
+#include "common/Base58.hpp"
 #include "common/JsonValue.hpp"
 #include "http/Client.hpp"
 #include "http/Server.hpp"
@@ -52,7 +54,7 @@ Node::Node(logging::ILogger &log, const Config &config, BlockChainState &block_c
 Node::~Node() {}  // we have unique_ptr to incomplete type
 
 void Node::send_multicast() {
-	if (m_config.multicast_period == 0)
+	if (!m_config.use_multicast())
 		return;
 	//	std::cout << "sending multicast about node listening on port=" << m_config.p2p_external_port << std::endl;
 	BinaryArray ha = P2PProtocolBasic::create_multicast_announce(
@@ -62,6 +64,8 @@ void Node::send_multicast() {
 }
 
 void Node::on_multicast(const std::string &addr, const unsigned char *data, size_t size) {
+	if (!m_config.use_multicast())
+		return;
 	NetworkAddress na;
 	na.port = P2PProtocolBasic::parse_multicast_announce(
 	    data, size, m_config.network_id, m_block_chain.get_currency().genesis_block_hash);
@@ -398,7 +402,9 @@ bool Node::on_get_archive(http::Client *, http::RequestBody &&http_request, json
 	return true;
 }
 
-static void fill_transaction_info(const TransactionPrefix &tx, api::Transaction *api_tx) {
+// mixed_public_keys can be null if keys not needed
+void Node::fill_transaction_info(
+    const TransactionPrefix &tx, api::Transaction *api_tx, std::vector<std::vector<PublicKey>> *mixed_public_keys) {
 	api_tx->unlock_block_or_timestamp = tx.unlock_block_or_timestamp;
 	api_tx->extra                     = tx.extra;
 	api_tx->anonymity                 = std::numeric_limits<size_t>::max();
@@ -410,6 +416,8 @@ static void fill_transaction_info(const TransactionPrefix &tx, api::Transaction 
 			const InputKey &in = boost::get<InputKey>(input);
 			api_tx->anonymity  = std::min(api_tx->anonymity, in.output_indexes.size() - 1);
 			input_amount += in.amount;
+			if (mixed_public_keys)
+				mixed_public_keys->push_back(m_block_chain.get_mixed_public_keys(in));
 		}
 	}
 	Amount output_amount = get_tx_sum_outputs(tx);
@@ -471,7 +479,7 @@ bool Node::on_sync_blocks(http::Client *, http::RequestBody &&, json_rpc::Reques
 			res_block.transactions.at(0).hash = get_transaction_hash(block.header.base_transaction);
 			res_block.transactions.at(0).size = seria::binary_size(block.header.base_transaction);
 			if (req.need_redundant_data) {
-				fill_transaction_info(block.header.base_transaction, &res_block.transactions.at(0));
+				fill_transaction_info(block.header.base_transaction, &res_block.transactions.at(0), nullptr);
 				res_block.transactions.at(0).block_height = start_height + static_cast<Height>(i);
 				res_block.transactions.at(0).block_hash   = bhash;
 				res_block.transactions.at(0).coinbase     = true;
@@ -483,16 +491,15 @@ bool Node::on_sync_blocks(http::Client *, http::RequestBody &&, json_rpc::Reques
 				res_block.transactions.at(tx_index + 1).hash = res_block.raw_header.transaction_hashes.at(tx_index);
 				res_block.transactions.at(tx_index + 1).size = rb.transactions.at(tx_index).size();
 				if (req.need_redundant_data) {
-					fill_transaction_info(block.transactions.at(tx_index), &res_block.transactions.at(tx_index + 1));
+					fill_transaction_info(
+					    block.transactions.at(tx_index), &res_block.transactions.at(tx_index + 1), nullptr);
 					res_block.transactions.at(tx_index + 1).block_height = start_height + static_cast<Height>(i);
 					res_block.transactions.at(tx_index + 1).block_hash   = bhash;
 					res_block.transactions.at(tx_index + 1).timestamp    = res_block.raw_header.timestamp;
 				}
-				if (req.need_signatures)
-					res_block.signatures.push_back(std::move(block.transactions.at(tx_index).signatures));
 				res_block.raw_transactions.push_back(std::move(block.transactions.at(tx_index)));
 			}
-			invariant(m_block_chain.read_block_output_global_indices(bhash, &res_block.output_indexes),
+			invariant(m_block_chain.read_block_output_global_indices(bhash, &res_block.output_stack_indexes),
 			    "Invariant dead - bid is in chain but blockchain has no block indices");
 		}
 		total_size += res_block.header.transactions_size;
@@ -514,11 +521,9 @@ bool Node::on_sync_mempool(http::Client *, http::RequestBody &&, json_rpc::Reque
 	for (auto &&tx : pool)
 		if (!std::binary_search(req.known_hashes.begin(), req.known_hashes.end(), tx.first)) {
 			res.added_raw_transactions.push_back(tx.second.tx);
-			if (req.need_signatures)
-				res.added_signatures.push_back(tx.second.tx.signatures);
 			res.added_transactions.push_back(api::Transaction{});
 			if (req.need_redundant_data)
-				fill_transaction_info(tx.second.tx, &res.added_transactions.back());
+				fill_transaction_info(tx.second.tx, &res.added_transactions.back(), nullptr);
 			res.added_transactions.back().hash      = tx.first;
 			res.added_transactions.back().timestamp = tx.second.timestamp;
 			res.added_transactions.back().amount    = tx.second.amount;
@@ -572,7 +577,7 @@ bool Node::on_get_raw_block(http::Client *, http::RequestBody &&, json_rpc::Requ
 	b.transactions.resize(block.transactions.size() + 1);
 	b.transactions.at(0).hash = get_transaction_hash(block.header.base_transaction);
 	b.transactions.at(0).size = seria::binary_size(block.header.base_transaction);
-	fill_transaction_info(block.header.base_transaction, &b.transactions.at(0));
+	fill_transaction_info(block.header.base_transaction, &b.transactions.at(0), nullptr);
 	b.transactions.at(0).block_height = b.header.height;
 	b.transactions.at(0).block_hash   = b.header.hash;
 	b.transactions.at(0).coinbase     = true;
@@ -582,15 +587,13 @@ bool Node::on_get_raw_block(http::Client *, http::RequestBody &&, json_rpc::Requ
 	for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
 		b.transactions.at(tx_index + 1).hash = b.raw_header.transaction_hashes.at(tx_index);
 		b.transactions.at(tx_index + 1).size = rb.transactions.at(tx_index).size();
-		fill_transaction_info(block.transactions.at(tx_index), &b.transactions.at(tx_index + 1));
+		fill_transaction_info(block.transactions.at(tx_index), &b.transactions.at(tx_index + 1), nullptr);
 		b.transactions.at(tx_index + 1).block_height = b.header.height;
 		b.transactions.at(tx_index + 1).block_hash   = b.header.hash;
 		b.transactions.at(tx_index + 1).timestamp    = b.raw_header.timestamp;
-		if (request.need_signatures)
-			b.signatures.push_back(std::move(block.transactions.at(tx_index).signatures));
 		b.raw_transactions.push_back(std::move(block.transactions.at(tx_index)));
 	}
-	m_block_chain.read_block_output_global_indices(request.hash, &b.output_indexes);
+	m_block_chain.read_block_output_global_indices(request.hash, &b.output_stack_indexes);
 	// If block not in main chain - global indices will be empty
 	response.orphan_status = !m_block_chain.in_chain(b.header.height, b.header.hash);
 	response.depth = api::HeightOrDepth(b.header.height) - api::HeightOrDepth(m_block_chain.get_tip_height()) - 1;
@@ -603,9 +606,7 @@ bool Node::on_get_raw_transaction(http::Client *, http::RequestBody &&, json_rpc
 	auto tit         = pool.find(req.hash);
 	if (tit != pool.end()) {
 		res.raw_transaction = static_cast<const TransactionPrefix &>(tit->second.tx);
-		if (req.need_signatures)
-			res.signatures = tit->second.tx.signatures;
-		fill_transaction_info(tit->second.tx, &res.transaction);
+		fill_transaction_info(tit->second.tx, &res.transaction, &res.mixed_public_keys);
 		res.transaction.fee          = tit->second.fee;
 		res.transaction.hash         = req.hash;
 		res.transaction.block_height = m_block_chain.get_tip_height() + 1;
@@ -621,9 +622,7 @@ bool Node::on_get_raw_transaction(http::Client *, http::RequestBody &&, json_rpc
 		res.transaction.size = binary_tx.size();
 		seria::from_binary(tx, binary_tx);
 		res.raw_transaction = static_cast<const TransactionPrefix &>(tx);
-		if (req.need_signatures)
-			res.signatures = tx.signatures;
-		fill_transaction_info(tx, &res.transaction);
+		fill_transaction_info(tx, &res.transaction, &res.mixed_public_keys);
 		res.transaction.hash = req.hash;
 		res.transaction.fee  = get_tx_fee(res.raw_transaction);  // 0 for coinbase
 		return true;
@@ -677,20 +676,7 @@ bool Node::on_send_transaction(http::Client *, http::RequestBody &&, json_rpc::R
 	return true;
 }
 
-bool Node::on_check_sendproof(http::Client *, http::RequestBody &&, json_rpc::Request &&,
-    api::cnd::CheckSendproof::Request &&request, api::cnd::CheckSendproof::Response &response) {
-	Sendproof sp;
-	try {
-		seria::from_json_value(sp, common::JsonValue::from_string(request.sendproof), m_block_chain.get_currency());
-	} catch (const std::exception &ex) {
-		std::throw_with_nested(api::cnd::CheckSendproof::Error(
-		    api::cnd::CheckSendproof::FAILED_TO_PARSE, "Failed to parse proof object ex.what=" + common::what(ex)));
-	}
-	response.transaction_hash = sp.transaction_hash;
-	response.address          = m_block_chain.get_currency().account_address_as_string(sp.address);
-	response.message          = sp.message;
-	response.amount           = sp.amount;
-
+void Node::check_sendproof(const SendproofKey &sp, api::cnd::CheckSendproof::Response &response) const {
 	BinaryArray binary_tx;
 	Height height = 0;
 	Hash block_hash;
@@ -701,118 +687,179 @@ bool Node::on_check_sendproof(http::Client *, http::RequestBody &&, json_rpc::Re
 	}
 	Transaction tx;
 	seria::from_binary(tx, binary_tx);
-	const Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
-	const Hash message_hash   = crypto::cn_fast_hash(sp.message.data(), sp.message.size());
-	if (tx.version < m_block_chain.get_currency().amethyst_transaction_version) {
-		if (sp.address.type() != typeid(AccountAddressSimple))
-			throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION,
-			    "Transaction version too low to contain address of type other than simple");
-		auto &addr              = boost::get<AccountAddressSimple>(sp.address);
-		auto &var               = boost::get<SendproofKey>(sp.proof);
-		PublicKey tx_public_key = extra_get_transaction_public_key(tx.extra);
-		if (!crypto::check_sendproof(
-		        tx_public_key, addr.view_public_key, var.derivation, message_hash, var.signature)) {
-			throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_SIGNATURE,
-			    "Proof object does not match transaction or was tampered with");
-		}
-		Amount total_amount = 0;
-		size_t out_index    = 0;
-		for (const auto &output : tx.outputs) {
-			if (output.type() == typeid(OutputKey)) {
-				const auto &key_output    = boost::get<OutputKey>(output);
-				const PublicKey spend_key = underive_public_key(var.derivation, out_index, key_output.public_key);
-				if (spend_key == addr.spend_public_key) {
-					total_amount += key_output.amount;
-					response.output_indexes.push_back(out_index);
-				}
-			}
-			++out_index;
-		}
-		if (total_amount == 0)
-			throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION,
-			    "No outputs found in transaction for the address being proofed");
-		if (total_amount != sp.amount)
-			throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_AMOUNT,
-			    "Wrong amount in outputs, actual amount is " + common::to_string(total_amount));
-		return true;
+	const Hash message_hash = crypto::cn_fast_hash(sp.message.data(), sp.message.size());
+	if (tx.version >= m_block_chain.get_currency().amethyst_transaction_version)
+		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION,
+		    "Legacy proof cannot be used for amethyst transactions");
+	AccountAddress address;
+	if (!m_block_chain.get_currency().parse_account_address_string(sp.address, &address))
+		throw api::ErrorAddress(
+		    api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse sendproof address", sp.address);
+	if (address.type() != typeid(AccountAddressSimple))
+		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION,
+		    "Transaction version too low to contain address of type other than simple");
+	auto &addr              = boost::get<AccountAddressSimple>(address);
+	PublicKey tx_public_key = extra_get_transaction_public_key(tx.extra);
+	if (!crypto::check_sendproof(tx_public_key, addr.V, sp.derivation, message_hash, sp.signature)) {
+		throw api::cnd::CheckSendproof::Error(
+		    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object does not match transaction or was tampered with");
 	}
-	auto &var = boost::get<SendproofAmethyst>(sp.proof);
-	for (size_t oi = 1; oi < var.elements.size(); ++oi) {
-		if (var.elements.at(oi).out_index <= var.elements.at(oi - 1).out_index)
-			throw api::cnd::CheckSendproof::Error(
-			    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object elements are not in ascending order");
-	}
-	std::reverse(var.elements.begin(), var.elements.end());  // pop_back instead of erase(begin)
 	Amount total_amount = 0;
-	for (size_t out_index = 0; out_index != tx.outputs.size() && !var.elements.empty(); ++out_index) {
+	size_t out_index    = 0;
+	for (const auto &output : tx.outputs) {
+		if (output.type() == typeid(OutputKey)) {
+			const auto &key_output    = boost::get<OutputKey>(output);
+			const PublicKey spend_key = underive_address_S(sp.derivation, out_index, key_output.public_key);
+			if (spend_key == addr.S) {
+				total_amount += key_output.amount;
+				response.output_indexes.push_back(out_index);
+			}
+		}
+		++out_index;
+	}
+	if (total_amount == 0)
+		throw api::cnd::CheckSendproof::Error(
+		    api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION, "No transfers found to proof address");
+	response.transaction_hash = sp.transaction_hash;
+	response.address          = sp.address;
+	response.message          = sp.message;
+	response.amount           = total_amount;
+}
+
+void Node::check_sendproof(const BinaryArray &data_inside_base58, api::cnd::CheckSendproof::Response &response) const {
+	common::MemoryInputStream stream(data_inside_base58.data(), data_inside_base58.size());
+	seria::BinaryInputStream ba(stream);
+	ba.begin_object();
+	SendproofAmethyst sp;
+	try {
+		seria::ser_members(sp, ba);
+	} catch (const std::exception &) {
+		std::throw_with_nested(
+		    api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::FAILED_TO_PARSE, "Failed to parse proof object"));
+	}
+	if (sp.version < m_block_chain.get_currency().amethyst_transaction_version) {
+		ba.end_object();
+		if (!stream.empty())
+			throw api::cnd::CheckSendproof::Error(
+			    api::cnd::CheckSendproof::FAILED_TO_PARSE, "Failed to parse proof object - too many bytes");
+		SendproofKey spk;
+		spk.transaction_hash = sp.transaction_hash;
+		spk.message          = sp.message;
+		spk.address          = m_block_chain.get_currency().account_address_as_string(sp.address_simple);
+		spk.derivation       = sp.derivation;
+		spk.signature        = sp.signature;
+		check_sendproof(spk, response);
+		return;
+	}
+	BinaryArray binary_tx;
+	Height height = 0;
+	Hash block_hash;
+	size_t index_in_block = 0;
+	if (!m_block_chain.get_transaction(sp.transaction_hash, &binary_tx, &height, &block_hash, &index_in_block)) {
+		throw api::cnd::CheckSendproof::Error(
+		    api::cnd::CheckSendproof::NOT_IN_MAIN_CHAIN, "Transaction is not in main chain");
+	}
+	Transaction tx;
+	seria::from_binary(tx, binary_tx);
+	if (tx.inputs.empty() || tx.inputs.at(0).type() != typeid(InputKey))
+		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::FAILED_TO_PARSE,
+		    "Proof object invalid, because references coinbase transactions");
+	if (tx.version != sp.version)
+		throw api::cnd::CheckSendproof::Error(
+		    api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION, "Proof version wrong for transaction version");
+	const Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
+
+	const InputKey &in = boost::get<InputKey>(tx.inputs.at(0));
+	TransactionPrefix fake_prefix;
+	fake_prefix.version = tx.version;
+	fake_prefix.inputs.push_back(in);
+	RingSignatureAmethyst rsa;
+	try {
+		seria::ser_members(rsa, ba, fake_prefix);
+	} catch (const std::exception &) {
+		std::throw_with_nested(
+		    api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::FAILED_TO_PARSE, "Failed to parse proof object"));
+	}
+	ba.end_object();
+	if (!stream.empty())
+		throw api::cnd::CheckSendproof::Error(
+		    api::cnd::CheckSendproof::FAILED_TO_PARSE, "Failed to parse proof object - too many bytes");
+
+	const auto proof_body = seria::to_binary(sp);
+//	std::cout << "Proof body: " << common::to_hex(proof_body) << std::endl;
+	const auto proof_prefix_hash = crypto::cn_fast_hash(proof_body);
+//	std::cout << "Proof hash: " << proof_prefix_hash << std::endl;
+
+	std::vector<KeyImage> all_keyimages{in.key_image};
+	std::vector<std::vector<PublicKey>> all_output_keys{m_block_chain.get_mixed_public_keys(in)};
+
+	if (!crypto::check_ring_signature_auditable(proof_prefix_hash, all_keyimages, all_output_keys, rsa)) {
+		throw api::cnd::CheckSendproof::Error(
+		    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object does not match transaction or was tampered with");
+	}
+	for (size_t oi = 1; oi < sp.elements.size(); ++oi) {
+		if (sp.elements.at(oi).out_index <= sp.elements.at(oi - 1).out_index)
+			throw api::cnd::CheckSendproof::Error(
+			    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object elements are not in strict ascending order");
+	}
+	std::reverse(sp.elements.begin(), sp.elements.end());  // pop_back instead of erase(begin)
+	Amount total_amount = 0;
+	boost::optional<AccountAddress> all_addresses;
+	for (size_t out_index = 0; out_index != tx.outputs.size() && !sp.elements.empty(); ++out_index) {
 		const auto &output = tx.outputs.at(out_index);
 		if (output.type() != typeid(OutputKey))
 			continue;
 		const auto &key_output = boost::get<OutputKey>(output);
-		if (var.elements.back().out_index != out_index)
+		if (sp.elements.back().out_index != out_index)
 			continue;
-		const auto &el = var.elements.back();
-		BinaryArray ba(std::begin(el.deterministic_public_key.data), std::end(el.deterministic_public_key.data));
-		const SecretKey output_secret_scalar = crypto::hash_to_scalar(ba.data(), ba.size());
-		const PublicKey output_secret_point  = crypto::hash_to_point(ba.data(), ba.size());
-		ba.push_back(0);  // Or use cn_fast_hash64
-		const Hash output_secret2 = crypto::cn_fast_hash(ba.data(), ba.size());
-
-		if (sp.address.type() == typeid(AccountAddressSimple)) {
-			const auto &addr = boost::get<AccountAddressSimple>(sp.address);
-			AccountAddressSimple address;
-			crypto::linkable_underive_address(output_secret_scalar, tx_inputs_hash, out_index, key_output.public_key,
-			    key_output.encrypted_secret, &address.spend_public_key, &address.view_public_key);
-			if (address != addr)
-				throw api::cnd::CheckSendproof::Error(
-				    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof linkable address derivation failed");
-			const uint8_t should_be_encrypted_address_type = AccountAddressSimple::type_tag ^ output_secret2.data[0];
-			if (key_output.encrypted_address_type != should_be_encrypted_address_type)
-				throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_SIGNATURE,
-				    "Proof invalid because encrypted address type wrong (protocol violated when sending)");
-			if (!crypto::amethyst_check_sendproof(el.deterministic_public_key, sp.transaction_hash, message_hash,
-			        address.spend_public_key, address.view_public_key, el.signature))
-				throw api::cnd::CheckSendproof::Error(
-				    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object element signature wrong");
-		} else if (sp.address.type() == typeid(AccountAddressUnlinkable)) {
-			const auto &addr = boost::get<AccountAddressUnlinkable>(sp.address);
-			AccountAddressUnlinkable address;
-			crypto::unlinkable_underive_address(output_secret_point, tx_inputs_hash, out_index, key_output.public_key,
-			    key_output.encrypted_secret, &address.s, &address.sv);
-			address.is_auditable = key_output.is_auditable;
-			if (addr.is_auditable != address.is_auditable)
-				throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_SIGNATURE,
-				    "Auditability of coin does not match auditability of address");
-			if (address != addr)
-				throw api::cnd::CheckSendproof::Error(
-				    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof unlinkable address derivation failed");
-			const uint8_t should_be_encrypted_address_type =
-			    (addr.is_auditable ? AccountAddressUnlinkable::type_tag_auditable
-			                       : AccountAddressUnlinkable::type_tag) ^
-			    output_secret2.data[0];
-			if (key_output.encrypted_address_type != should_be_encrypted_address_type)
-				throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_SIGNATURE,
-				    "Proof invalid because encrypted address type wrong (protocol violated when sending)");
-			if (!crypto::amethyst_check_sendproof(el.deterministic_public_key, sp.transaction_hash, message_hash,
-			        address.s, address.sv, el.signature))
-				throw api::cnd::CheckSendproof::Error(
-				    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object element signature wrong");
-		} else
+		const auto &el = sp.elements.back();
+		AccountAddress output_address;
+		if (!TransactionBuilder::detect_not_our_output_amethyst(
+		        tx_inputs_hash, el.deterministic_public_key, out_index, key_output, &output_address)) {
 			throw api::cnd::CheckSendproof::Error(
-			    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Unknown address type in proof");
+			    api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION, "Cannot underive address for proof output");
+		}
+		if (all_addresses && all_addresses.get() != output_address) {
+			throw api::cnd::CheckSendproof::Error(
+			    api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION, "Send proof address inconsistent");
+		}
+		all_addresses = output_address;
 		total_amount += key_output.amount;
-		response.output_indexes.push_back(out_index);
-		var.elements.pop_back();
+		sp.elements.pop_back();
 	}
-	if (!var.elements.empty())
+	if (!sp.elements.empty())
 		throw api::cnd::CheckSendproof::Error(
 		    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object contains excess elements");
-	if (total_amount == 0)
-		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION,
-		    "No outputs found in transaction for the address being proofed");
-	if (total_amount != sp.amount)
-		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::WRONG_AMOUNT,
-		    "Wrong amount in outputs, actual amount is " + common::to_string(total_amount));
+	if (total_amount == 0 || !all_addresses)
+		throw api::cnd::CheckSendproof::Error(
+		    api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION, "No transfers found to proof address");
+	response.transaction_hash = sp.transaction_hash;
+	response.address          = m_block_chain.get_currency().account_address_as_string(all_addresses.get());
+	;
+	response.message = sp.message;
+	response.amount  = total_amount;
+}
+
+bool Node::on_check_sendproof(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+    api::cnd::CheckSendproof::Request &&request, api::cnd::CheckSendproof::Response &response) {
+	uint64_t utag = 0;
+	BinaryArray data_inside_base58;
+	if (common::base58::decode_addr(request.sendproof, &utag, &data_inside_base58)) {
+		if (utag != m_block_chain.get_currency().sendproof_base58_prefix)
+			throw api::cnd::CheckSendproof::Error(
+			    api::cnd::CheckSendproof::FAILED_TO_PARSE, "Failed to parse proof object, wrong prefix");
+		check_sendproof(data_inside_base58, response);
+		return true;
+	}
+	SendproofKey sp;
+	try {
+		common::JsonValue jv = common::JsonValue::from_string(request.sendproof);
+		seria::from_json_value(sp, jv);
+	} catch (const std::exception &ex) {
+		std::throw_with_nested(api::cnd::CheckSendproof::Error(
+		    api::cnd::CheckSendproof::FAILED_TO_PARSE, "Failed to parse proof object ex.what=" + common::what(ex)));
+	}
+	check_sendproof(sp, response);
 	return true;
 }
 
@@ -851,6 +898,7 @@ void Node::submit_block(const BinaryArray &blockblob, api::BlockHeader *info) {
 bool Node::on_submitblock(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::cnd::SubmitBlock::Request &&req, api::cnd::SubmitBlock::Response &res) {
 	if (!req.cm_nonce.empty()) {
+#if bytecoin_ALLOW_CM
 		// Experimental, a bit hacky
 		BlockTemplate bt;
 		seria::from_binary(bt, req.blocktemplate_blob);
@@ -861,6 +909,10 @@ bool Node::on_submitblock(http::Client *, http::RequestBody &&, json_rpc::Reques
 		//		auto body_proxy = get_body_proxy_from_template(bt);
 		//		auto cm_prehash  = get_auxiliary_block_header_hash(bt, body_proxy);
 		//		std::cout << "submit CM data " << body_proxy.transactions_merkle_root << " " << cm_prehash << std::endl;
+#else
+		throw json_rpc::Error{
+		    api::cnd::SubmitBlock::BLOCK_NOT_ACCEPTED, "Block not accepted, CM mining is not supported"};
+#endif
 	}
 	submit_block(req.blocktemplate_blob, &res.block_header);
 	res.orphan_status = !m_block_chain.in_chain(res.block_header.height, res.block_header.hash);

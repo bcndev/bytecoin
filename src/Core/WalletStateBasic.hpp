@@ -23,11 +23,10 @@ class Config;
 
 class IWalletState {
 public:
-	virtual ~IWalletState() {}
+	virtual ~IWalletState() = default;
 
 	virtual Amount add_incoming_output(const api::Output &, const Hash &tid)    = 0;  // added amount may be lower
 	virtual Amount add_incoming_keyimage(Height block_height, const KeyImage &) = 0;
-	virtual Amount add_incoming_deterministic_input(Height block_height, Amount am, size_t gi, const PublicKey &pk) = 0;
 	virtual void add_transaction(
 	    Height block_height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) = 0;
 };
@@ -36,8 +35,7 @@ class WalletStateBasic : protected IWalletState {
 public:
 	typedef platform::DB DB;
 
-	explicit WalletStateBasic(
-	    logging::ILogger &, const Config &, const Currency &, const std::string &cache_name, bool is_det_viewonly);
+	explicit WalletStateBasic(logging::ILogger &, const Config &, const Currency &, const std::string &cache_name);
 	const Currency &get_currency() const { return m_currency; };
 
 	Hash get_tip_bid() const { return m_tip.hash; }
@@ -64,10 +62,16 @@ public:
 		bool exists = false;
 		common::BinaryArray value;
 	};
-	struct HeightAmounGi {
+	struct HeightGi {
 		Height height       = 0;
-		Amount amount       = 0;
 		size_t global_index = 0;
+		Hash transaction_hash;  // So we can look up spent coins by keyimage
+		size_t index_in_transaction = 0;
+	};
+	struct GiHeightPk {
+		size_t global_index = 0;
+		Height height       = 0;
+		PublicKey public_key;
 	};
 
 	void db_commit();
@@ -100,18 +104,16 @@ protected:
 	virtual void on_first_transaction_found(Timestamp ts) {}
 	void unlock(Height now_height, Timestamp now);
 
-	bool read_from_unspent_index(const HeightAmounGi &value, api::Output *) const;
-	bool read_by_keyimage(const crypto::EllipticCurvePoint &ki, HeightAmounGi *value) const;
+	bool read_from_unspent_index(const HeightGi &value, api::Output *) const;
+	bool read_by_keyimage(const crypto::EllipticCurvePoint &ki, HeightGi *value) const;
 
 	bool try_add_incoming_output(const api::Output &, Amount *confirmed_balance_delta) const;
 	bool try_adding_incoming_keyimage(const KeyImage &, api::Output *spending_output) const;
-	bool try_adding_deterministic_input(Amount am, size_t gi, api::Output *spending_output) const;
 	// returns true if our keyimage
 
 	// methods to add incoming tx
 	Amount add_incoming_output(const api::Output &, const Hash &tid) override;  // added amount may be lower
 	Amount add_incoming_keyimage(Height block_height, const KeyImage &) override;
-	Amount add_incoming_deterministic_input(Height block_height, Amount am, size_t gi, const PublicKey &pk) override;
 	void add_transaction(Height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override;
 
 	std::string format_output(const api::Output &output);
@@ -124,9 +126,9 @@ private:
 	Height m_tail_height = 0;
 	api::BlockHeader m_tip;
 
-	const bool is_det_viewonly;
-	void put_am_gi_he(Amount am, size_t gi, Height he, const PublicKey &pk);
-	bool get_am_gi_he(Amount am, size_t gi, Height *he, PublicKey *pk) const;
+	//	void put_am_gi_he(const api::Output &output);
+	//	bool get_gi_he(size_t gi, Height *he, PublicKey *pk) const;
+	//	bool get_am_si_he(Amount am, size_t si, size_t *gi, Height *he, PublicKey *pk) const;
 	// DB generic undo machinery
 	typedef std::map<std::string, UndoValue> UndoMap;
 	UndoMap current_undo_map;
@@ -144,9 +146,9 @@ private:
 	void remove_from_lock_index(const api::Output &);
 
 	void unlock(Height now_height, api::Output &&output);
-	void read_unlock_index(std::map<std::pair<Amount, size_t>, api::Output> *add, const std::string &index_prefix,
+	void read_unlock_index(std::map<size_t, api::Output> *add, const std::string &index_prefix,
 	    const std::string &address, BlockOrTimestamp begin, BlockOrTimestamp end) const;
-	std::map<std::pair<Amount, size_t>, api::Output> get_unlocked_outputs(
+	std::map<size_t, api::Output> get_unlocked_outputs(
 	    const std::string &address, Height from_height, Height to_height) const;
 
 	// add coin/spend coin
@@ -154,12 +156,13 @@ private:
 	void remove_from_unspent_index(const api::Output &);
 	bool for_each_in_unspent_index(
 	    const std::string &address, Height from, Height to, std::function<bool(api::Output &&)> fun) const;
-	void update_keyimage(const crypto::EllipticCurvePoint &m, const HeightAmounGi &value, bool nooverwrite);
+	void update_keyimage(const crypto::EllipticCurvePoint &m, const HeightGi &value);
 };
 
 }  // namespace cn
 
 namespace seria {
-void ser_members(cn::WalletStateBasic::HeightAmounGi &v, ISeria &s);
+void ser_members(cn::WalletStateBasic::HeightGi &v, ISeria &s);
+void ser_members(cn::WalletStateBasic::GiHeightPk &v, ISeria &s);
 void ser_members(cn::WalletStateBasic::UndoValue &v, seria::ISeria &s);
 }  // namespace seria

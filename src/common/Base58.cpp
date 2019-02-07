@@ -6,9 +6,9 @@
 #include <algorithm>
 #include <boost/crc.hpp>
 #include <iostream>
+#include <set>
 #include <vector>
 
-#include "CRC32.hpp"
 #include "Invariant.hpp"
 #include "StringTools.hpp"
 #include "Varint.hpp"
@@ -217,15 +217,15 @@ bool decode(const std::string &enc, BinaryArray *data) {
 	return true;
 }
 
-std::string encode_addr(const BinaryArray &tag, const BinaryArray &data) {
-	BinaryArray buf = tag;
+std::string encode_addr(uint64_t tag, const BinaryArray &data) {
+	BinaryArray buf = get_varint_data(tag);
 	append(buf, data.begin(), data.end());
 	crypto::Hash hash = crypto::cn_fast_hash(buf.data(), buf.size());
 	append(buf, hash.data, hash.data + addr_checksum_size);
 	return encode(buf);
 }
 
-bool decode_addr(std::string addr, size_t body_size, BinaryArray *tag, BinaryArray *data) {
+bool decode_addr(std::string addr, uint64_t *tag, BinaryArray *data) {
 	BinaryArray addr_data;
 	bool r = decode(addr, &addr_data);
 	if (!r)
@@ -245,35 +245,13 @@ bool decode_addr(std::string addr, size_t body_size, BinaryArray *tag, BinaryArr
 	if (expected_checksum != checksum)
 		return false;
 
-	if (addr_data.size() < body_size)
+	int read = common::read_varint(addr_data.begin(), addr_data.end(), tag);
+	if (read <= 0)
 		return false;
-	tag->assign(addr_data.begin(), addr_data.end() - body_size);
-	data->assign(addr_data.end() - body_size, addr_data.end());
+	data->assign(addr_data.begin() + read, addr_data.end());
+	//	tag->assign(addr_data.begin(), addr_data.end() - body_size);
+	//	data->assign(addr_data.end() - body_size, addr_data.end());
 	return true;
-}
-
-BinaryArray find_tag(const std::string &prefix) {
-	invariant(prefix.size() <= full_encoded_block_size, "");
-	std::string str1 = prefix + std::string(full_encoded_block_size - prefix.size(), alphabet[0]);
-	std::string str2 = prefix + std::string(full_encoded_block_size - prefix.size(), alphabet[alphabet_size - 1]);
-	uint8_t result1[full_block_size]{};
-	uint8_t result2[full_block_size]{};
-	invariant(decode_block(str1.data(), str1.size(), result1), "");
-	invariant(decode_block(str2.data(), str2.size(), result2), "");
-	std::cout << "decode of " << str1 << " = " << common::to_hex(result1, full_block_size) << std::endl;
-	std::cout << "decode of " << str2 << " = " << common::to_hex(result2, full_block_size) << std::endl;
-	size_t pos = 0;
-	for (; pos != full_block_size; ++pos)
-		if (result1[pos] != result2[pos]) {
-			result1[pos] += 1;
-			pos += 1;
-			break;
-		}
-	BinaryArray tag(result1, result1 + pos);
-	std::cout << "tag= " << common::to_hex(tag) << std::endl;
-	std::cout << "address min= " << encode_addr(tag, BinaryArray(64, 0)) << std::endl;
-	std::cout << "address max= " << encode_addr(tag, BinaryArray(64, 0xff)) << std::endl;
-	return tag;
 }
 
 }}  // namespace common::base58

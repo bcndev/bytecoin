@@ -18,7 +18,8 @@
 #include "seria/BinaryOutputStream.hpp"
 
 static const std::string KEYIMAGE_PREFIX             = "i";
-static const std::string AMOUNT_OUTPUT_PREFIX        = "a";
+static const std::string AMOUNT_OUTPUT_PREFIX        = "a";  // amount:si -> g_index
+static const std::string OUTPUT_PREFIX               = "o";  // global_index -> OutputIndexData
 static const std::string BLOCK_GLOBAL_INDICES_PREFIX = "b";
 static const std::string BLOCK_GLOBAL_INDICES_SUFFIX = "g";
 
@@ -32,12 +33,13 @@ using namespace platform;
 typedef std::pair<std::vector<size_t>, std::vector<size_t>> InputDesc;
 
 namespace seria {
-void ser_members(IBlockChainState::UnlockTimePublickKeyHeightSpent &v, ISeria &s) {
+void ser_members(IBlockChainState::OutputIndexData &v, ISeria &s) {
+	seria_kv("amount", v.amount, s);
 	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
 	seria_kv("public_key", v.public_key, s);
 	seria_kv("height", v.height, s);
-	seria_kv("auditable", v.auditable, s);
 	seria_kv("spent", v.spent, s);
+	seria_kv("is_amethyst", v.is_amethyst, s);
 	seria_kv("dins", v.dins, s);
 }
 }  // namespace seria
@@ -68,56 +70,55 @@ bool BlockChainState::DeltaState::read_keyimage(const KeyImage &key_image, Heigh
 }
 
 size_t BlockChainState::DeltaState::push_amount_output(
-    Amount amount, BlockOrTimestamp unlock_time, Height block_height, const PublicKey &pk, bool is_auditable) {
-	auto pg  = m_parent_state->next_global_index_for_amount(amount);
+    Amount amount, BlockOrTimestamp unlock_time, Height block_height, const PublicKey &pk, bool is_amethyst) {
+	m_ordered_global_amounts.push_back(OutputIndexData{amount, unlock_time, pk, 0, false, is_amethyst, {}});
+	auto pg  = m_parent_state->next_stack_index_for_amount(amount);
 	auto &ga = m_global_amounts[amount];
-	ga.push_back(std::make_tuple(unlock_time, pk, is_auditable));
+	ga.push_back(std::make_tuple(unlock_time, pk, is_amethyst));
 	return pg + ga.size() - 1;
 }
 
-void BlockChainState::DeltaState::pop_amount_output(
-    Amount amount, BlockOrTimestamp unlock_time, const PublicKey &pk, bool is_auditable) {
-	std::vector<std::tuple<uint64_t, PublicKey, bool>> &el = m_global_amounts[amount];
+void BlockChainState::DeltaState::pop_amount_output(Amount amount, BlockOrTimestamp unlock_time, const PublicKey &pk) {
+	std::vector<std::tuple<Amount, PublicKey, bool>> &el = m_global_amounts[amount];
 	invariant(!el.empty(), "DeltaState::pop_amount_output underflow");
-	invariant(
-	    std::get<0>(el.back()) == unlock_time && std::get<1>(el.back()) == pk && std::get<2>(el.back()) == is_auditable,
+	invariant(!m_ordered_global_amounts.empty(), "DeltaState::pop_amount_output hidden underflow");
+	invariant(std::get<0>(el.back()) == unlock_time && std::get<1>(el.back()) == pk,
 	    "DeltaState::pop_amount_output wrong element");
 	el.pop_back();
+	m_ordered_global_amounts.pop_back();
 }
 
-size_t BlockChainState::DeltaState::next_global_index_for_amount(Amount amount) const {
-	auto pg  = m_parent_state->next_global_index_for_amount(amount);
+size_t BlockChainState::DeltaState::next_stack_index_for_amount(Amount amount) const {
+	auto pg  = m_parent_state->next_stack_index_for_amount(amount);
 	auto git = m_global_amounts.find(amount);
 	return (git == m_global_amounts.end()) ? pg : git->second.size() + pg;
 }
 
-bool BlockChainState::DeltaState::read_amount_output(
-    Amount amount, size_t global_index, UnlockTimePublickKeyHeightSpent *unp) const {
-	//	uint32_t pg = m_parent_state->next_global_index_for_amount(amount);
-	//	if (global_index < pg)
-	return m_parent_state->read_amount_output(amount, global_index, unp);
-	//	global_index -= pg;
+bool BlockChainState::DeltaState::read_amount_output(Amount amount, size_t stack_index, OutputIndexData *unp) const {
+	//	uint32_t pg = m_parent_state->next_stack_index_for_amount(amount);
+	//	if (stack_index < pg)
+	return m_parent_state->read_amount_output(amount, stack_index, unp);
+	//	stack_index -= pg;
 	//	auto git = m_global_amounts.find(amount);
-	//	if (git == m_global_amounts.end() || global_index >= git->second.size())
+	//	if (git == m_global_amounts.end() || stack_index >= git->second.size())
 	//		return false;
-	//	unp->unlock_block_or_timestamp = std::get<0>(git->second[global_index]);
-	//	unp->public_key                = std::get<1>(git->second[global_index]);
-	//	*is_white = std::get<2>(git->second[global_index]);
+	//	unp->unlock_block_or_timestamp = std::get<0>(git->second[stack_index]);
+	//	unp->public_key                = std::get<1>(git->second[stack_index]);
+	//	*is_white = std::get<2>(git->second[stack_index]);
 	//	unp->height                    = m_block_height;
 	//	unp->spent = false;  // Spending just created outputs inside mempool or block is prohibited, simplifying logic
 	//	return true;
 }
-// void BlockChainState::DeltaState::spend_output(Amount amount, size_t global_index) {
-//	m_spent_outputs.push_back(std::make_pair(amount, global_index));
+// void BlockChainState::DeltaState::spend_output(Amount amount, size_t stack_index) {
+//	m_spent_outputs.push_back(std::make_pair(amount, stack_index));
 //}
 
 void BlockChainState::DeltaState::apply(IBlockChainState *parent_state) const {
 	for (auto &&ki : m_keyimages)
 		parent_state->store_keyimage(ki.first, ki.second);
-	for (auto &&amp : m_global_amounts)
-		for (auto &&el : amp.second)
-			parent_state->push_amount_output(
-			    amp.first, std::get<0>(el), m_block_height, std::get<1>(el), std::get<2>(el));
+	for (auto &&amp : m_ordered_global_amounts)
+		parent_state->push_amount_output(
+		    amp.amount, amp.unlock_block_or_timestamp, m_block_height, amp.public_key, amp.is_amethyst);
 	//	for (auto &&mo : m_spent_outputs)
 	//		parent_state->spend_output(mo.first, mo.second);
 }
@@ -142,19 +143,21 @@ api::BlockHeader BlockChainState::fill_genesis(Hash genesis_bid, const BlockTemp
 
 // returns reward for coinbase transaction or fee for non-coinbase one
 static Amount validate_semantic(const Currency &currency, uint8_t block_major_version, bool generating,
-    const Transaction &tx, bool check_output_key) {
+    const Transaction &tx, bool check_keys, bool key_image_subgroup_check) {
 	if (tx.inputs.empty())
 		throw ConsensusError("Empty inputs");
 	//	TODO - uncomment during next hard fork, finally prohibiting old signatures, outputs without secrets
 	//	We cannot do it at once, because mem pool will have v1 transactions during switch
 
-	//	if(block_major_version >= currency.amethyst_block_version && tx.version <
-	// currency.amethyst_transaction_version && !generating) // for compatibility, we create v1 coinbase
-	// transaction if mining on legacy address
-	//		return "WRONG_TRANSACTION_VERSION";
-	if (block_major_version < currency.amethyst_block_version && tx.version >= currency.amethyst_transaction_version)
+	// for compatibility, we create v1 coinbase transaction if mining on legacy address
+	const bool is_tx_amethyst = tx.version >= currency.amethyst_transaction_version;
+	if (block_major_version < currency.amethyst_block_version && is_tx_amethyst)
 		throw ConsensusError(common::to_string(
 		    "Wrong transaction version", int(tx.version), "in block version", int(block_major_version)));
+	// Subgroup check policy is as following:
+	// 1. output keys are checked here, encrypted output secrets not checked at all
+	// 2. keyimage and blinding coin commitment are checked here
+	// 3. hps will be checked as a part of signature
 	Amount summary_output_amount = 0;
 	for (const auto &output : tx.outputs) {
 		Amount amount = 0;
@@ -163,15 +166,13 @@ static Amount validate_semantic(const Currency &currency, uint8_t block_major_ve
 		if (output.type() == typeid(OutputKey)) {
 			const auto &key_output = boost::get<OutputKey>(output);
 			amount                 = key_output.amount;
-			if (check_output_key && !key_isvalid(key_output.public_key))
+			if (check_keys && key_image_subgroup_check && !key_in_main_subgroup(key_output.public_key)) {
 				throw ConsensusError(common::to_string("Output key not valid elliptic point", key_output.public_key));
-			if (check_output_key && tx.version >= currency.amethyst_transaction_version &&
-			    !key_isvalid(key_output.encrypted_secret))
+			}
+			if (check_keys && is_tx_amethyst && !key_isvalid(key_output.encrypted_secret))
 				throw ConsensusError(
 				    common::to_string("Output encrypted secret not valid elliptic point", key_output.encrypted_secret));
-			if (tx.version < currency.amethyst_transaction_version && key_output.is_auditable)
-				throw ConsensusError(
-				    common::to_string("Transaction version", tx.version, "insufficient for output with audit"));
+			// encrypted_secret can be outside main subgroup
 		} else
 			throw ConsensusError("Output type unknown");
 		if (amount == 0)
@@ -195,23 +196,19 @@ static Amount validate_semantic(const Currency &currency, uint8_t block_major_ve
 			amount             = in.amount;
 			if (!ki.insert(in.key_image).second)
 				throw ConsensusError(common::to_string("Keyimage used twice in same transaction", in.key_image));
-			std::vector<size_t> global_indexes;
-			if (!relative_output_offsets_to_absolute(&global_indexes, in.output_indexes))
+			std::vector<size_t> absolute_indexes;
+			if (!relative_output_offsets_to_absolute(&absolute_indexes, in.output_indexes))
 				throw ConsensusError("Output indexes invalid in input");
+			if (check_keys && key_image_subgroup_check && !key_in_main_subgroup(in.key_image))
+				throw ConsensusError("Input key image not valid elliptic point");
 		} else
 			throw ConsensusError("Input type unknown");
-		//		if (std::numeric_limits<Amount>::max() - amount < summary_input_amount)
-		//			throw ConsensusError("Inputs amounts overflow");
 		if (!add_amount(summary_input_amount, amount))
 			throw ConsensusError("Outputs amounts overflow");
 	}
 	if (summary_output_amount > summary_input_amount && !generating)
 		throw ConsensusError("Sum of outputs > sum of inputs in non-coinbase transaction");
-	//	Types/count of signatures will be checked as a part of signatures check
-	//	if (tx.signatures.size() != tx.inputs.size() && !generating)
-	//		return "INPUT_UNKNOWN_TYPE";
-	//	if (!tx.signatures.empty() && generating)
-	//		return "INPUT_UNKNOWN_TYPE";
+	//	Types/count of signatures is derived from tx body during transaction serialization
 	if (generating)
 		return summary_output_amount;
 	return summary_input_amount - summary_output_amount;
@@ -223,7 +220,8 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
     , m_log_redo_block_timestamp(std::chrono::steady_clock::now()) {
 	std::string version;
 	m_db.get("$version", version);
-	if (version == "B" || version == "1" || version == "2" || version == "3" || version == "4" || version == "5") {
+	if (version == "B" || version == "1" || version == "2" || version == "3" || version == "4" || version == "5" ||
+	    version == "6" || version == "7") {
 		start_internal_import();
 		version = version_current;
 		m_db.put("$version", version, false);
@@ -251,6 +249,9 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
 	DB::Cursor cur2 = m_db.rbegin(DIN_PREFIX);
 	m_next_nz_input_index =
 	    cur2.end() ? 0 : common::integer_cast<size_t>(common::read_varint_sqlite4(cur2.get_suffix())) + 1;
+	DB::Cursor cur3 = m_db.rbegin(OUTPUT_PREFIX);
+	m_next_global_key_output_index =
+	    cur3.end() ? 0 : common::integer_cast<size_t>(common::read_varint_sqlite4(cur3.get_suffix())) + 1;
 }
 
 void BlockChainState::check_standalone_consensus(
@@ -347,10 +348,12 @@ void BlockChainState::check_standalone_consensus(
 			throw ConsensusError(common::to_string(
 			    "Wrong merge mining merkle root, tag", mm_tag.merkle_root, "actual", aux_blocks_merkle_root));
 	}
+#if bytecoin_ALLOW_CM
 	if (block.header.is_cm_mined()) {
 		if (!crypto::cm_branch_valid(block.header.cm_merkle_branch))
 			throw ConsensusError("CM branch invalid");
 	}
+#endif
 	if (block.header.base_transaction.inputs.size() != 1)
 		throw ConsensusError(common::to_string(
 		    "Coinbase transaction input count wrong,", block.header.base_transaction.inputs.size(), "should be 1"));
@@ -368,9 +371,11 @@ void BlockChainState::check_standalone_consensus(
 		    block.header.base_transaction.unlock_block_or_timestamp, "should be",
 		    info->height + m_currency.mined_money_unlock_window));
 	}
-	const bool check_keys = m_config.paranoid_checks || !m_currency.is_in_hard_checkpoint_zone(info->height);
-	const Amount miner_reward =
-	    validate_semantic(m_currency, block.header.major_version, true, block.header.base_transaction, check_keys);
+	const bool check_keys     = m_config.paranoid_checks || !m_currency.is_in_hard_checkpoint_zone(info->height);
+	const bool subgroup_check = info->height >= m_currency.key_image_subgroup_checking_height;
+	const Amount miner_reward = validate_semantic(
+	    m_currency, block.header.major_version, true, block.header.base_transaction, check_keys, subgroup_check);
+	size_t key_outputs_count = get_tx_key_outputs_count(block.header.base_transaction);
 	{
 		std::vector<Timestamp> timestamps;
 		std::vector<CumulativeDifficulty> difficulties;
@@ -389,9 +394,12 @@ void BlockChainState::check_standalone_consensus(
 
 	info->transactions_fee = 0;
 	for (auto &&tx : pb.block.transactions) {
-		const Amount tx_fee = validate_semantic(m_currency, block.header.major_version, false, tx, check_keys);
+		const Amount tx_fee =
+		    validate_semantic(m_currency, block.header.major_version, false, tx, check_keys, subgroup_check);
 		info->transactions_fee += tx_fee;
+		key_outputs_count += get_tx_key_outputs_count(tx);
 	}
+	info->already_generated_key_outputs = prev_info.already_generated_key_outputs + key_outputs_count;
 
 	if (is_amethyst) {
 		info->base_reward = m_currency.get_base_block_reward(
@@ -501,13 +509,6 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 		});
 		std::reverse(timestamps.begin(), timestamps.end());
 		std::reverse(difficulties.begin(), difficulties.end());
-		//		timestamps.reserve(blocks_count);
-		//		difficulties.reserve(blocks_count);
-		//		auto timestamps_window = get_tip_segment(parent_info, blocks_count, false);
-		//		for (auto it = timestamps_window.begin(); it != timestamps_window.end(); ++it) {
-		//			timestamps.push_back(it->timestamp);
-		//			difficulties.push_back(it->cumulative_difficulty);
-		//		}
 		*difficulty = m_currency.next_effective_difficulty(b->major_version, timestamps, difficulties);
 	}
 	b->nonce.resize(4);
@@ -800,22 +801,12 @@ bool BlockChainState::add_transaction(const Hash &tid, const Transaction &tx, co
 		}
 	}
 	const Amount my_fee3 =
-	    validate_semantic(m_currency, get_tip().major_version, false, tx, m_config.paranoid_checks || check_sigs);
-	//	if (!validate_result.empty()) {
-	//		m_log(logging::WARNING) << "add_transaction validation failed " << validate_result << " in transaction " <<
-	// tid << std::endl;
-	//		return AddTransactionResult::BAN;
-	//	}
+	    validate_semantic(m_currency, get_tip().major_version, false, tx, m_config.paranoid_checks || check_sigs, true);
 	DeltaState memory_state(get_tip_height() + 1, get_tip().timestamp, get_tip().timestamp_median, this);
 	BlockGlobalIndices global_indices;
 	Hash newest_referenced_bid;
 	redo_transaction(
 	    get_tip().major_version, false, tx, &memory_state, &global_indices, &newest_referenced_bid, check_sigs);
-	//	if (!redo_result.empty()) {
-	//		m_log(logging::TRACE) << "add_transaction redo failed " << redo_result << " in transaction " << tid
-	//		                      << std::endl;
-	//		return AddTransactionResult::FAILED_TO_REDO;  // Not a ban because reorg can change indices
-	//	}
 	if (my_fee != my_fee3)
 		m_log(logging::ERROR) << "Inconsistent fees " << my_fee << ", " << my_fee3 << " in transaction " << tid
 		                      << std::endl;
@@ -900,7 +891,7 @@ bool BlockChainState::get_largest_referenced_height(const TransactionPrefix &tra
 	}
 	Height max_height = 0;
 	for (auto lit : largest_indices) {
-		UnlockTimePublickKeyHeightSpent unp;
+		OutputIndexData unp;
 		if (!read_amount_output(lit.first, lit.second, &unp))
 			return false;
 		max_height = std::max(max_height, unp.height);
@@ -948,9 +939,24 @@ void BlockChainState::remove_from_pool(Hash tid) {
 // if output not found, conflict height is set to currency max_block_height
 // if no error, conflict_height is set to newest referenced height, (for coinbase transaction to 0)
 
+std::vector<PublicKey> BlockChainState::get_mixed_public_keys(const InputKey &in) const {
+	std::vector<size_t> absolute_indexes;
+	if (!relative_output_offsets_to_absolute(&absolute_indexes, in.output_indexes))
+		throw ConsensusError("Output indexes invalid in input");
+	std::vector<PublicKey> output_keys(absolute_indexes.size());
+	for (size_t i = 0; i != absolute_indexes.size(); ++i) {
+		OutputIndexData unp;
+		if (!read_amount_output(in.amount, absolute_indexes[i], &unp))
+			throw ConsensusErrorOutputDoesNotExist("Output does not exist", 0, absolute_indexes[i]);
+		output_keys[i] = unp.public_key;
+	}
+	return output_keys;
+}
+
 void BlockChainState::redo_transaction(uint8_t major_block_version, bool generating, const Transaction &transaction,
     DeltaState *delta_state, BlockGlobalIndices *global_indices, Hash *newest_referenced_bid, bool check_sigs) const {
-	const bool check_outputs = check_sigs;
+	const bool check_outputs  = check_sigs;
+	const bool is_tx_amethyst = transaction.version >= m_currency.amethyst_transaction_version;
 	Hash tx_prefix_hash;
 	if (m_config.paranoid_checks || check_sigs)
 		tx_prefix_hash = get_transaction_prefix_hash(transaction);
@@ -961,8 +967,8 @@ void BlockChainState::redo_transaction(uint8_t major_block_version, bool generat
 	my_indices.reserve(transaction.outputs.size());
 
 	Height newest_referenced_height = 0;
-	std::vector<std::vector<PublicKey>> all_output_keys;  // For half-size sigs
-	std::vector<KeyImage> all_keyimages;                  // For half-size sigs
+	std::vector<std::vector<PublicKey>> all_output_keys;  // For auditable sigs
+	std::vector<KeyImage> all_keyimages;                  // For auditable sigs
 	for (size_t input_index = 0; input_index != transaction.inputs.size(); ++input_index) {
 		const auto &input = transaction.inputs.at(input_index);
 		if (input.type() == typeid(InputKey)) {
@@ -978,16 +984,15 @@ void BlockChainState::redo_transaction(uint8_t major_block_version, bool generat
 				//						throw ConsensusError("Anonymity too low");
 				// In test/stage net we lack enough coins of each non-dust denomination
 				//				}
-				std::vector<size_t> global_indexes;
-				if (!relative_output_offsets_to_absolute(&global_indexes, in.output_indexes))
+				std::vector<size_t> absolute_indexes;
+				if (!relative_output_offsets_to_absolute(&absolute_indexes, in.output_indexes))
 					throw ConsensusError("Output indexes invalid in input");
-				std::vector<PublicKey> output_keys(global_indexes.size());
-				for (size_t i = 0; i != global_indexes.size(); ++i) {
-					UnlockTimePublickKeyHeightSpent unp;
-					if (!tx_delta.read_amount_output(in.amount, global_indexes[i], &unp))
-						throw ConsensusErrorOutputDoesNotExist("Output does not exist", input_index, global_indexes[i]);
-					if (unp.auditable && global_indexes.size() != 1)
-						throw ConsensusErrorBadOutputOrSignature("Auditable output mixed", unp.height);
+				std::vector<PublicKey> output_keys(absolute_indexes.size());
+				for (size_t i = 0; i != absolute_indexes.size(); ++i) {
+					OutputIndexData unp;
+					if (!tx_delta.read_amount_output(in.amount, absolute_indexes[i], &unp))
+						throw ConsensusErrorOutputDoesNotExist(
+						    "Output does not exist", input_index, absolute_indexes[i]);
 					if (!m_currency.is_transaction_unlocked(major_block_version, unp.unlock_block_or_timestamp,
 					        delta_state->get_block_height(), delta_state->get_block_timestamp(),
 					        delta_state->get_block_median_timestamp()))
@@ -1004,12 +1009,11 @@ void BlockChainState::redo_transaction(uint8_t major_block_version, bool generat
 						//									  [&output_key_pointers](const PublicKey &key) {
 						// output_key_pointers.push_back(&key); });
 						if (!check_ring_signature(tx_prefix_hash, in.key_image, output_keys.data(), output_keys.size(),
-						        signatures.signatures.at(input_index),
-						        delta_state->get_block_height() >= m_currency.key_image_subgroup_checking_height)) {
+						        signatures.signatures.at(input_index))) {
 							throw ConsensusErrorBadOutputOrSignature{
 							    "Bad signature or output reference changed", newest_referenced_height};
 						}
-					} else if (transaction.signatures.type() == typeid(RingSignature3)) {
+					} else if (transaction.signatures.type() == typeid(RingSignatureAmethyst)) {
 						all_output_keys.push_back(std::move(output_keys));
 						all_keyimages.push_back(in.key_image);
 					} else
@@ -1020,9 +1024,9 @@ void BlockChainState::redo_transaction(uint8_t major_block_version, bool generat
 		}
 	}
 	if (!all_output_keys.empty()) {
-		invariant(transaction.signatures.type() == typeid(RingSignature3), "");
-		auto &signatures = boost::get<RingSignature3>(transaction.signatures);
-		if (!crypto::check_ring_signature3(tx_prefix_hash, all_keyimages, all_output_keys, signatures))
+		invariant(transaction.signatures.type() == typeid(RingSignatureAmethyst), "");
+		auto &signatures = boost::get<RingSignatureAmethyst>(transaction.signatures);
+		if (!crypto::check_ring_signature_auditable(tx_prefix_hash, all_keyimages, all_output_keys, signatures))
 			throw ConsensusErrorBadOutputOrSignature{
 			    "Bad signature or output reference changed", newest_referenced_height};
 	}
@@ -1033,9 +1037,9 @@ void BlockChainState::redo_transaction(uint8_t major_block_version, bool generat
 	for (const auto &output : transaction.outputs) {
 		if (output.type() == typeid(OutputKey)) {
 			const auto &key_output = boost::get<OutputKey>(output);
-			auto global_index = tx_delta.push_amount_output(key_output.amount, transaction.unlock_block_or_timestamp, 0,
-			    key_output.public_key, key_output.is_auditable);  // DeltaState ignores unlock point
-			my_indices.push_back(global_index);
+			auto stack_index = tx_delta.push_amount_output(key_output.amount, transaction.unlock_block_or_timestamp, 0,
+			    key_output.public_key, is_tx_amethyst);  // DeltaState ignores unlock point
+			my_indices.push_back(stack_index);
 		}
 	}
 	tx_delta.apply(delta_state);
@@ -1046,8 +1050,7 @@ void BlockChainState::undo_transaction(IBlockChainState *delta_state, Height, co
 	for (auto oit = tx.outputs.rbegin(); oit != tx.outputs.rend(); ++oit) {
 		if (oit->type() == typeid(OutputKey)) {
 			const auto &key_output = boost::get<OutputKey>(*oit);
-			delta_state->pop_amount_output(
-			    key_output.amount, tx.unlock_block_or_timestamp, key_output.public_key, key_output.is_auditable);
+			delta_state->pop_amount_output(key_output.amount, tx.unlock_block_or_timestamp, key_output.public_key);
 		}
 	}
 	for (auto iit = tx.inputs.rbegin(); iit != tx.inputs.rend(); ++iit) {
@@ -1076,8 +1079,7 @@ void BlockChainState::redo_block(const Hash &bhash, const Block &block, const ap
 	global_indices.reserve(block.transactions.size() + 1);
 	const bool check_sigs = m_config.paranoid_checks || !m_currency.is_in_hard_checkpoint_zone(info.height + 1);
 	if (check_sigs)
-		m_ring_checker.start_work(this, m_currency, block, info.height, info.timestamp, info.timestamp_median,
-		    info.height >= m_currency.key_image_subgroup_checking_height);
+		m_ring_checker.start_work(this, m_currency, block, info.height, info.timestamp, info.timestamp_median);
 	redo_block(block, info, &delta, &global_indices);
 	if (check_sigs) {
 		auto errors = m_ring_checker.move_errors();
@@ -1145,69 +1147,72 @@ bool BlockChainState::read_block_output_global_indices(const Hash &bid, BlockGlo
 
 std::vector<api::Output> BlockChainState::get_random_outputs(uint8_t block_major_version, Amount amount,
     size_t output_count, Height confirmed_height, Timestamp block_timestamp, Timestamp block_median_timestamp) const {
+	//	const bool is_amethyst = block_major_version >= m_currency.amethyst_block_version;
 	std::vector<api::Output> result;
 	std::vector<api::Output> spent_result;
-	size_t total_count = next_global_index_for_amount(amount);
+	size_t total_stack_count = next_stack_index_for_amount(amount);
 	// We might need better algorithm if we have lots of locked amounts
 	std::set<size_t> tried_or_added;
 	crypto::random_engine<uint64_t> generator;
 	std::lognormal_distribution<double> distribution(1.9, 1.0);  // Magic params here
 	const uint32_t linear_part = 150;                            // Magic params here
 	size_t attempts            = 0;
-	for (; result.size() < output_count && attempts < output_count * 20; ++attempts) {  // TODO - 20
-		size_t num = 0;
-		if (result.size() % 2 == 0) {  // Half of outputs linear
-			if (total_count <= linear_part)
-				num = crypto::rand<size_t>() % total_count;  // 0 handled above
-			else
-				num = total_count - 1 - crypto::rand<size_t>() % linear_part;
-		} else {
-			double sample = distribution(generator);
-			int d_num     = static_cast<int>(std::floor(total_count * (1 - std::pow(10, -sample / 10))));
-			if (d_num < 0 || d_num >= int(total_count))
+	if (total_stack_count > output_count)
+		for (; result.size() < output_count && attempts < output_count * 20; ++attempts) {  // TODO - 20
+			size_t num = 0;
+			if (result.size() % 2 == 0) {  // Half of outputs linear
+				if (total_stack_count <= linear_part)
+					num = crypto::rand<size_t>() % total_stack_count;  // 0 handled in if above
+				else
+					num = total_stack_count - 1 - crypto::rand<size_t>() % linear_part;
+			} else {
+				double sample = distribution(generator);
+				int d_num     = static_cast<int>(std::floor(total_stack_count * (1 - std::pow(10, -sample / 10))));
+				if (d_num < 0 || d_num >= int(total_stack_count))
+					continue;
+				num = static_cast<size_t>(d_num);
+			}
+			if (!tried_or_added.insert(num).second)
 				continue;
-			num = static_cast<size_t>(d_num);
+			size_t global_index = 0;
+			invariant(read_hidden_amount_map(amount, num, &global_index), "");
+			OutputIndexData unp;
+			invariant(read_hidden_amount_output(global_index, &unp), "num < total_count not found");
+			if (unp.height > confirmed_height) {
+				if (confirmed_height + 128 < get_tip_height())
+					total_stack_count = num;
+				// heuristic - if confirmed_height is deep, the area under ditribution curve
+				// with height < confirmed_height might be very small, so we adjust total_count
+				// to get descent results after small number of attempts
+				continue;
+			}
+			if (!m_currency.is_transaction_unlocked(block_major_version, unp.unlock_block_or_timestamp,
+			        confirmed_height, block_timestamp, block_median_timestamp))
+				continue;
+			if (unp.spent && spent_result.size() >= output_count)
+				continue;  // We need only so much spent
+			api::Output item;
+			item.amount                    = amount;
+			item.stack_index               = num;
+			item.global_index              = global_index;
+			item.unlock_block_or_timestamp = unp.unlock_block_or_timestamp;
+			item.public_key                = unp.public_key;
+			item.height                    = unp.height;
+			(unp.spent ? spent_result : result).push_back(item);
 		}
-		if (!tried_or_added.insert(num).second)
-			continue;
-		UnlockTimePublickKeyHeightSpent unp;
-		invariant(read_amount_output(amount, num, &unp), "num < total_count not found");
-		if (unp.height > confirmed_height) {
-			if (confirmed_height + 128 < get_tip_height())
-				total_count = num;
-			// heuristic - if confirmed_height is deep, the area under ditribution curve
-			// with height < confirmed_height might be very small, so we adjust total_count
-			// to get descent results after small number of attempts
-			continue;
-		}
-		if (unp.auditable)
-			continue;
-		if (!m_currency.is_transaction_unlocked(block_major_version, unp.unlock_block_or_timestamp, confirmed_height,
-		        block_timestamp, block_median_timestamp))
-			continue;
-		if (unp.spent && spent_result.size() >= output_count)
-			continue;  // We need only so much spent
-		api::Output item;
-		item.amount                    = amount;
-		item.index                     = num;
-		item.unlock_block_or_timestamp = unp.unlock_block_or_timestamp;
-		item.public_key                = unp.public_key;
-		item.height                    = unp.height;
-		(unp.spent ? spent_result : result).push_back(item);
-	}
 	if (result.size() < output_count) {
 		// Read the whole index.
 		size_t attempts = 0;
 		for (DB::Cursor cur = m_db.rbegin(AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount));
 		     result.size() < output_count && attempts < 10000 && !cur.end(); cur.next(), ++attempts) {  // TODO - 10000
-			const char *be        = cur.get_suffix().data();
-			const char *en        = be + cur.get_suffix().size();
-			uint32_t global_index = common::integer_cast<uint32_t>(common::read_varint_sqlite4(be, en));
-			if (tried_or_added.count(global_index) != 0)
+			const size_t stack_index = common::integer_cast<size_t>(common::read_varint_sqlite4(cur.get_suffix()));
+			if (tried_or_added.count(stack_index) != 0)
 				continue;
-			UnlockTimePublickKeyHeightSpent unp;
-			seria::from_binary(unp, cur.get_value_array());
-			if (unp.auditable || unp.height > confirmed_height)
+			size_t global_index = 0;
+			seria::from_binary(global_index, cur.get_value_array());
+			OutputIndexData unp;
+			invariant(read_hidden_amount_output(global_index, &unp), "");
+			if (unp.height > confirmed_height)
 				continue;
 			if (!m_currency.is_transaction_unlocked(block_major_version, unp.unlock_block_or_timestamp,
 			        confirmed_height, block_timestamp, block_median_timestamp))
@@ -1216,17 +1221,18 @@ std::vector<api::Output> BlockChainState::get_random_outputs(uint8_t block_major
 				continue;  // We need only so much spent
 			api::Output item;
 			item.amount                    = amount;
-			item.index                     = global_index;
+			item.stack_index               = stack_index;
+			item.global_index              = global_index;
 			item.unlock_block_or_timestamp = unp.unlock_block_or_timestamp;
 			item.public_key                = unp.public_key;
 			item.height                    = unp.height;
 			(unp.spent ? spent_result : result).push_back(item);
 		}
 		// To satisfy minimum anonymity requirement for very rare coins, we add spent as a last resort
-		while (result.size() < output_count && !spent_result.empty()) {
-			result.push_back(spent_result.back());
-			spent_result.pop_back();
-		}
+		//		while (result.size() < output_count && !spent_result.empty()) {
+		//			result.push_back(spent_result.back());
+		//			spent_result.pop_back();
+		//		}
 	}
 	return result;
 }
@@ -1255,46 +1261,73 @@ bool BlockChainState::read_keyimage(const KeyImage &key_image, Height *height) c
 }
 
 size_t BlockChainState::push_amount_output(
-    Amount amount, BlockOrTimestamp unlock_time, Height block_height, const PublicKey &pk, bool is_auditable) {
-	auto my_gi = next_global_index_for_amount(amount);
-	auto key   = AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount) + common::write_varint_sqlite4(my_gi);
-	BinaryArray ba =
-	    seria::to_binary(UnlockTimePublickKeyHeightSpent{unlock_time, pk, block_height, is_auditable, false, {}});
+    Amount amount, BlockOrTimestamp unlock_time, Height block_height, const PublicKey &pk, bool is_amethyst) {
+	auto my_stack_index = next_stack_index_for_amount(amount);
+	if ((amount == 6299999999000000 && my_stack_index == 0) || (amount == 18899999999000000 && my_stack_index == 0))
+		m_log(logging::WARNING) << "double-spend " << amount << ":" << my_stack_index << " -> "
+		                        << m_next_global_key_output_index << std::endl;
+
+	auto key =
+	    AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount) + common::write_varint_sqlite4(my_stack_index);
+	BinaryArray ba = seria::to_binary(m_next_global_key_output_index);
 	m_db.put(key, ba, true);
-	m_next_gi_for_amount[amount] += 1;
-	return my_gi;
+	m_next_stack_index[amount] += 1;
+
+	key = OUTPUT_PREFIX + common::write_varint_sqlite4(m_next_global_key_output_index);
+	ba  = seria::to_binary(OutputIndexData{amount, unlock_time, pk, block_height, false, is_amethyst, {}});
+	m_db.put(key, ba, true);
+	m_next_global_key_output_index += 1;
+
+	return my_stack_index;
 }
 
-void BlockChainState::pop_amount_output(
-    Amount amount, BlockOrTimestamp unlock_time, const PublicKey &pk, bool is_auditable) {
-	auto next_gi = next_global_index_for_amount(amount);
-	invariant(next_gi != 0, "BlockChainState::pop_amount_output underflow");
-	next_gi -= 1;
-	m_next_gi_for_amount[amount] -= 1;
-	auto key = AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount) + common::write_varint_sqlite4(next_gi);
+void BlockChainState::pop_amount_output(Amount amount, BlockOrTimestamp unlock_time, const PublicKey &pk) {
+	auto my_stack_index = next_stack_index_for_amount(amount);
+	invariant(my_stack_index != 0, "BlockChainState::pop_amount_output underflow");
+	my_stack_index -= 1;
+	m_next_stack_index[amount] -= 1;
 
-	UnlockTimePublickKeyHeightSpent unp;
-	invariant(read_amount_output(amount, next_gi, &unp), "BlockChainState::pop_amount_output element does not exist");
-	invariant(!unp.spent && unp.unlock_block_or_timestamp == unlock_time && unp.public_key == pk &&
-	              unp.auditable == is_auditable,
+	invariant(m_next_global_key_output_index != 0, "BlockChainState::pop_amount_output hidden underflow");
+	m_next_global_key_output_index -= 1;
+
+	size_t should_be_global_index = 0;
+	invariant(read_hidden_amount_map(amount, my_stack_index, &should_be_global_index), "");
+	invariant(m_next_global_key_output_index == should_be_global_index, "");
+	OutputIndexData unp;
+	invariant(read_hidden_amount_output(m_next_global_key_output_index, &unp),
+	    "BlockChainState::pop_amount_output element does not exist");
+	invariant(
+	    !unp.spent && unp.amount == amount && unp.unlock_block_or_timestamp == unlock_time && unp.public_key == pk,
 	    "BlockChainState::pop_amount_output popping wrong element");
+	auto key =
+	    AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount) + common::write_varint_sqlite4(my_stack_index);
+	m_db.del(key, true);
+	key = OUTPUT_PREFIX + common::write_varint_sqlite4(m_next_global_key_output_index);
 	m_db.del(key, true);
 }
 
-size_t BlockChainState::next_global_index_for_amount(Amount amount) const {
-	auto it = m_next_gi_for_amount.find(amount);
-	if (it != m_next_gi_for_amount.end())
+size_t BlockChainState::next_stack_index_for_amount(Amount amount) const {
+	auto it = m_next_stack_index.find(amount);
+	if (it != m_next_stack_index.end())
 		return it->second;
 	std::string prefix = AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount);
 	DB::Cursor cur2    = m_db.rbegin(prefix);
 	size_t alt_in = cur2.end() ? 0 : common::integer_cast<size_t>(common::read_varint_sqlite4(cur2.get_suffix())) + 1;
-	m_next_gi_for_amount[amount] = alt_in;
+	m_next_stack_index[amount] = alt_in;
 	return alt_in;
 }
 
-bool BlockChainState::read_amount_output(
-    Amount amount, size_t global_index, UnlockTimePublickKeyHeightSpent *unp) const {
-	auto key = AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount) + common::write_varint_sqlite4(global_index);
+bool BlockChainState::read_hidden_amount_map(Amount amount, size_t stack_index, size_t *hidden_index) const {
+	auto key = AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount) + common::write_varint_sqlite4(stack_index);
+	BinaryArray rb;
+	if (!m_db.get(key, rb))
+		return false;
+	seria::from_binary(*hidden_index, rb);
+	return true;
+}
+
+bool BlockChainState::read_hidden_amount_output(size_t hidden_index, OutputIndexData *unp) const {
+	auto key = OUTPUT_PREFIX + common::write_varint_sqlite4(hidden_index);
 	BinaryArray rb;
 	if (!m_db.get(key, rb))
 		return false;
@@ -1302,14 +1335,20 @@ bool BlockChainState::read_amount_output(
 	return true;
 }
 
+bool BlockChainState::read_amount_output(Amount amount, size_t stack_index, OutputIndexData *unp) const {
+	size_t hidden_index = 0;
+	return read_hidden_amount_map(amount, stack_index, &hidden_index) && read_hidden_amount_output(hidden_index, unp);
+}
+
 void BlockChainState::process_input(const Hash &tid, size_t iid, const InputKey &input) {
 	if (chain_reaction == 0)
 		return;
 	if (input.output_indexes.size() == 1) {
-		UnlockTimePublickKeyHeightSpent unp;
-		invariant(read_amount_output(input.amount, input.output_indexes.at(0), &unp), "");
-		spend_output(
-		    std::move(unp), input.amount, input.output_indexes.at(0), std::numeric_limits<size_t>::max(), 0, true);
+		size_t hidden_index = 0;
+		invariant(read_hidden_amount_map(input.amount, input.output_indexes.at(0), &hidden_index), "");
+		OutputIndexData unp;
+		invariant(read_hidden_amount_output(hidden_index, &unp), "");
+		spend_output(std::move(unp), hidden_index, std::numeric_limits<size_t>::max(), 0, true);
 		return;
 	}
 	if (chain_reaction == 1)
@@ -1317,29 +1356,29 @@ void BlockChainState::process_input(const Hash &tid, size_t iid, const InputKey 
 	const auto input_index = m_next_nz_input_index;
 	auto din_key           = DIN_PREFIX + common::write_varint_sqlite4(m_next_nz_input_index);
 	m_next_nz_input_index += 1;
-	std::vector<size_t> global_indexes;
-	invariant(relative_output_offsets_to_absolute(&global_indexes, input.output_indexes), "");
+	std::vector<size_t> absolute_indexes;
+	invariant(relative_output_offsets_to_absolute(&absolute_indexes, input.output_indexes), "");
 	InputDesc din;
-	std::vector<UnlockTimePublickKeyHeightSpent> unspents;
-	for (size_t i = 0; i != global_indexes.size(); ++i) {
-		const auto global_index = global_indexes.at(i);
-		UnlockTimePublickKeyHeightSpent unp;
-		invariant(read_amount_output(input.amount, global_index, &unp), "");
+	std::vector<OutputIndexData> unspents;
+	for (size_t i = 0; i != absolute_indexes.size(); ++i) {
+		size_t hidden_index = 0;
+		invariant(read_hidden_amount_map(input.amount, absolute_indexes.at(i), &hidden_index), "");
+		OutputIndexData unp;
+		invariant(read_hidden_amount_output(hidden_index, &unp), "");
 		if (unp.spent)
 			continue;
-		din.first.push_back(global_index);
+		din.first.push_back(hidden_index);
 		unspents.push_back(std::move(unp));
 	}
 	if (din.first.size() > 1)
 		for (size_t i = 0; i != din.first.size(); ++i) {
 			unspents[i].dins.push_back(input_index);
-			auto key = AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(input.amount) +
-			           common::write_varint_sqlite4(din.first[i]);
+			auto key = OUTPUT_PREFIX + common::write_varint_sqlite4(din.first[i]);
 			m_db.put(key, seria::to_binary(unspents[i]), false);
 		}
 	m_db.put(din_key, seria::to_binary(din), true);
 	if (din.first.size() == 1) {
-		spend_output(std::move(unspents[0]), input.amount, din.first[0], input_index, 0, true);
+		spend_output(std::move(unspents[0]), din.first[0], input_index, 0, true);
 	}
 }
 
@@ -1347,10 +1386,11 @@ void BlockChainState::unprocess_input(const InputKey &input) {
 	if (chain_reaction == 0)
 		return;
 	if (input.output_indexes.size() == 1) {
-		UnlockTimePublickKeyHeightSpent unp;
-		invariant(read_amount_output(input.amount, input.output_indexes.at(0), &unp), "");
-		spend_output(
-		    std::move(unp), input.amount, input.output_indexes.at(0), std::numeric_limits<size_t>::max(), 0, false);
+		size_t hidden_index = 0;
+		invariant(read_hidden_amount_map(input.amount, input.output_indexes.at(0), &hidden_index), "");
+		OutputIndexData unp;
+		invariant(read_hidden_amount_output(hidden_index, &unp), "");
+		spend_output(std::move(unp), hidden_index, std::numeric_limits<size_t>::max(), 0, false);
 		return;
 	}
 	if (chain_reaction == 1)
@@ -1364,30 +1404,28 @@ void BlockChainState::unprocess_input(const InputKey &input) {
 	seria::from_binary(din, din_ba);
 	invariant(din.second.empty(), "");
 	if (din.first.size() > 1)
-		for (auto global_index : din.first) {
-			UnlockTimePublickKeyHeightSpent unp;
-			invariant(read_amount_output(input.amount, global_index, &unp), "");
+		for (auto hidden_index : din.first) {
+			OutputIndexData unp;
+			invariant(read_hidden_amount_output(hidden_index, &unp), "");
 			invariant(!unp.dins.empty() && unp.dins.back() == input_index, "");
 			unp.dins.pop_back();
-			auto key = AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(input.amount) +
-			           common::write_varint_sqlite4(global_index);
+			auto key = OUTPUT_PREFIX + common::write_varint_sqlite4(hidden_index);
 			m_db.put(key, seria::to_binary(unp), false);
 		}
 	m_db.del(din_key, true);
 	if (din.first.size() == 1) {
-		UnlockTimePublickKeyHeightSpent unp;
-		invariant(read_amount_output(input.amount, din.first[0], &unp), "");
-		spend_output(std::move(unp), input.amount, din.first[0], input_index, 0, false);
+		OutputIndexData unp;
+		invariant(read_hidden_amount_output(din.first[0], &unp), "");
+		spend_output(std::move(unp), din.first[0], input_index, 0, false);
 	}
 }
 
-void BlockChainState::spend_output(UnlockTimePublickKeyHeightSpent &&output, Amount amount, size_t global_index,
-    size_t trigger_input_index, size_t level, bool spent) {
+void BlockChainState::spend_output(
+    OutputIndexData &&output, size_t hidden_index, size_t trigger_input_index, size_t level, bool spent) {
 	if (level > 2)
-		std::cout << "Sure spent level=" << level << " am:gi=" << amount << ":" << global_index << std::endl;
-	auto key = AMOUNT_OUTPUT_PREFIX + common::write_varint_sqlite4(amount) + common::write_varint_sqlite4(global_index);
-	bool no_subgroup_check_aftermath =
-	    (amount == 6299999999000000 && global_index == 0) || (amount == 18899999999000000 && global_index == 0);
+		std::cout << "Sure spent level=" << level << " hi=" << hidden_index << std::endl;
+	auto key                         = OUTPUT_PREFIX + common::write_varint_sqlite4(hidden_index);
+	bool no_subgroup_check_aftermath = hidden_index == 35654297 || hidden_index == 35655016;
 	if (spent) {
 		invariant(no_subgroup_check_aftermath || output.spent == 0, "");
 		output.spent += 1;
@@ -1412,11 +1450,11 @@ void BlockChainState::spend_output(UnlockTimePublickKeyHeightSpent &&output, Amo
 		seria::from_binary(din, din_ba);
 		size_t only_index = std::numeric_limits<size_t>::max();
 		if (spent) {
-			size_t found_index = std::lower_bound(din.first.begin(), din.first.end(), global_index) - din.first.begin();
-			invariant(found_index != din.first.size() && din.first.at(found_index) == global_index, "");
+			size_t found_index = std::lower_bound(din.first.begin(), din.first.end(), hidden_index) - din.first.begin();
+			invariant(found_index != din.first.size() && din.first.at(found_index) == hidden_index, "");
 			din.first.erase(din.first.begin() + found_index);
-			din.second.push_back(global_index);
-			//			std::cout << "Removing spent " << amount << ":" << global_index << " from " << din.tid << ":" <<
+			din.second.push_back(hidden_index);
+			//			std::cout << "Removing hidden_index " << hidden_index << " from " << din.tid << ":" <<
 			// din.index << std::endl;
 			if (din.first.size() == 1) {
 				only_index = din.first.back();
@@ -1425,63 +1463,46 @@ void BlockChainState::spend_output(UnlockTimePublickKeyHeightSpent &&output, Amo
 			if (din.first.size() == 1) {
 				only_index = din.first.back();
 			}
-			invariant(!din.second.empty() && din.second.back() == global_index, "");
+			invariant(!din.second.empty() && din.second.back() == hidden_index, "");
 			din.second.pop_back();
 			size_t insert_index =
-			    std::lower_bound(din.first.begin(), din.first.end(), global_index) - din.first.begin();
-			din.first.insert(din.first.begin() + insert_index, global_index);
+			    std::lower_bound(din.first.begin(), din.first.end(), hidden_index) - din.first.begin();
+			din.first.insert(din.first.begin() + insert_index, hidden_index);
 		}
 		m_db.put(din_key, seria::to_binary(din), false);
 		if (only_index != std::numeric_limits<size_t>::max()) {
-			UnlockTimePublickKeyHeightSpent unp;
-			invariant(read_amount_output(amount, only_index, &unp), "");
-			spend_output(std::move(unp), amount, only_index, input_index, level + 1, spent);
+			OutputIndexData unp;
+			invariant(read_hidden_amount_output(only_index, &unp), "");
+			spend_output(std::move(unp), only_index, input_index, level + 1, spent);
 		}
 	}
 }
 
-void BlockChainState::test_print_outputs() {
-	Amount previous_amount   = (Amount)-1;
-	size_t next_global_index = 0;
-	int total_counter        = 0;
-	std::map<Amount, size_t> coins;
-	for (DB::Cursor cur = m_db.begin(AMOUNT_OUTPUT_PREFIX); !cur.end(); cur.next()) {
-		const char *be      = cur.get_suffix().data();
-		const char *en      = be + cur.get_suffix().size();
-		auto amount         = common::read_varint_sqlite4(be, en);
-		size_t global_index = common::integer_cast<size_t>(common::read_varint_sqlite4(be, en));
-		if (be != en)
-			std::cout << "Excess value bytes for amount=" << amount << " index=" << global_index << std::endl;
-		if (amount != previous_amount) {
-			if (previous_amount != (Amount)-1) {
-				if (!coins.insert(std::make_pair(previous_amount, next_global_index)).second) {
-					std::cout << "Duplicate amount for previous_amount=" << previous_amount
-					          << " next_global_index=" << next_global_index << std::endl;
-				}
-			}
-			previous_amount   = amount;
-			next_global_index = 0;
-		}
-		if (global_index != next_global_index) {
-			std::cout << "Bad output index for amount=" << amount << " index=" << global_index << std::endl;
-		}
-		next_global_index += 1;
-		if (++total_counter % 2000000 == 0)
-			std::cout << "Working on amount=" << amount << " index=" << global_index << std::endl;
+void BlockChainState::dump_outputs_quality(size_t max_count) const {
+	size_t total_spent     = 0;
+	size_t total_not_spent = 0;
+	std::vector<uint8_t> result(std::min(max_count, m_next_global_key_output_index) / 8);  // must be round down
+	for (DB::Cursor cur = m_db.begin(OUTPUT_PREFIX); !cur.end(); cur.next()) {
+		const size_t global_index = common::integer_cast<size_t>(common::read_varint_sqlite4(cur.get_suffix()));
+		OutputIndexData unp;
+		invariant(read_hidden_amount_output(global_index, &unp), "");
+		if (global_index / 8 >= result.size())
+			break;
+		if (unp.spent) {  // beware, unp.spent is counter
+			result.at(global_index / 8) |= (1 << global_index % 8);
+			total_spent += 1;
+		} else
+			total_not_spent += 1;
 	}
-	total_counter = 0;
-	std::cout << "Total coins=" << total_counter << " total stacks=" << coins.size() << std::endl;
-	for (auto &&co : coins) {
-		auto total_count = next_global_index_for_amount(co.first);
-		if (total_count != co.second)
-			std::cout << "Wrong next_global_index_for_amount amount=" << co.first << " total_count=" << total_count
-			          << " should be " << co.second << std::endl;
-		for (size_t i = 0; i != total_count; ++i) {
-			UnlockTimePublickKeyHeightSpent unp;
-			if (!read_amount_output(co.first, i, &unp))
-				std::cout << "Failed to read amount=" << co.first << " index=" << i << std::endl;
-			if (++total_counter % 1000000 == 0)
-				std::cout << "Working on amount=" << co.first << " index=" << i << std::endl;
-		}
+	std::cout << "spent=" << total_spent << " !spent=" << total_not_spent << std::endl;
+	std::cout << " constexpr size_t OUTPUT_QUALITY_SIZE=" << result.size() << ";" << std::endl;
+	std::cout << " const uint8_t output_quality[OUTPUT_QUALITY_SIZE]={" << std::endl;
+	for (size_t i = 0; i != result.size(); ++i) {
+		if (i != 0)
+			std::cout << ", ";
+		if (i % 16 == 0)
+			std::cout << std::endl;
+		std::cout << "0x" << common::to_hex(&result[i], 1);
 	}
+	std::cout << "};" << std::endl;
 }

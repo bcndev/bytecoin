@@ -83,11 +83,8 @@ namespace seria {
 void ser_members(api::Output &v, ISeria &s, bool only_bytecoind_fields) {
 	seria_kv("amount", v.amount, s);
 	seria_kv("public_key", v.public_key, s);
-	seria_kv("index", v.index, s);
-	if (dynamic_cast<seria::JsonOutputStream *>(&s))
-		seria_kv("global_index", v.index, s);  // deprecated
-	if (dynamic_cast<seria::JsonInputStream *>(&s))
-		seria_kv("global_index", v.index, s);  // deprecated
+	seria_kv("stack_index", v.stack_index, s);
+	seria_kv("global_index", v.global_index, s);
 	seria_kv("height", v.height, s);
 	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
 	if (dynamic_cast<seria::JsonOutputStream *>(&s))
@@ -130,6 +127,7 @@ void ser_members(api::BlockHeader &v, ISeria &s) {
 	seria_kv("transactions_size", v.transactions_size, s);
 	seria_kv("already_generated_coins", v.already_generated_coins, s);
 	seria_kv("already_generated_transactions", v.already_generated_transactions, s);
+	seria_kv("already_generated_key_outputs", v.already_generated_key_outputs, s);
 	seria_kv("block_capacity_vote", v.block_capacity_vote, s);
 	seria_kv("block_capacity_vote_median", v.block_capacity_vote_median, s);
 	seria_kv("size_median", v.size_median, s);
@@ -192,9 +190,8 @@ void ser_members(api::RawBlock &v, ISeria &s) {
 	seria_kv("header", v.header, s);
 	seria_kv("raw_header", v.raw_header, s);
 	seria_kv("raw_transactions", v.raw_transactions, s);
-	seria_kv("signatures", v.signatures, s);
 	seria_kv("transactions", v.transactions, s);
-	seria_kv("output_indexes", v.output_indexes, s);
+	seria_kv("output_stack_indexes", v.output_stack_indexes, s);
 }
 
 void ser_members(api::Balance &v, ISeria &s) {
@@ -227,9 +224,7 @@ void ser_members(cn::api::walletd::GetWalletInfo::Request &v, ISeria &s) {
 
 void ser_members(cn::api::walletd::GetWalletInfo::Response &v, ISeria &s) {
 	seria_kv("view_only", v.view_only, s);
-	seria_kv("deterministic", v.deterministic, s);
-	seria_kv("auditable", v.auditable, s);
-	seria_kv("unlinkable", v.unlinkable, s);
+	seria_kv("amethyst", v.amethyst, s);
 	seria_kv("can_view_outgoing_addresses", v.can_view_outgoing_addresses, s);
 	seria_kv("wallet_creation_timestamp", v.wallet_creation_timestamp, s);
 	seria_kv("total_address_count", v.total_address_count, s);
@@ -384,7 +379,6 @@ void ser_members(api::cnd::GetBlockHeader::Response &v, ISeria &s) {
 void ser_members(api::cnd::GetRawBlock::Request &v, ISeria &s) {
 	seria_kv("hash", v.hash, s);
 	seria_kv("height_or_depth", v.height_or_depth, s);
-	seria_kv("need_signatures", v.need_signatures, s);
 }
 
 void ser_members(api::cnd::GetRawBlock::Response &v, ISeria &s) {
@@ -398,7 +392,6 @@ void ser_members(api::cnd::SyncBlocks::Request &v, ISeria &s) {
 	seria_kv("first_block_timestamp", v.first_block_timestamp, s);
 	seria_kv("max_count", v.max_count, s);
 	seria_kv("max_size", v.max_size, s);
-	seria_kv("need_signatures", v.need_signatures, s);
 	seria_kv("need_redundant_data", v.need_redundant_data, s);
 }
 
@@ -408,15 +401,12 @@ void ser_members(api::cnd::SyncBlocks::Response &v, ISeria &s) {
 	seria_kv("status", v.status, s);
 }
 
-void ser_members(api::cnd::GetRawTransaction::Request &v, ISeria &s) {
-	seria_kv("hash", v.hash, s);
-	seria_kv("need_signatures", v.need_signatures, s);
-}
+void ser_members(api::cnd::GetRawTransaction::Request &v, ISeria &s) { seria_kv("hash", v.hash, s); }
 
 void ser_members(api::cnd::GetRawTransaction::Response &v, ISeria &s) {
 	seria_kv("transaction", v.transaction, s);
 	seria_kv("raw_transaction", v.raw_transaction, s);
-	seria_kv("signatures", v.signatures, s);
+	seria_kv("mixed_public_keys", v.mixed_public_keys, s);
 }
 
 void ser_members(api::cnd::SyncMemPool::Request &v, ISeria &s) {
@@ -426,7 +416,6 @@ void ser_members(api::cnd::SyncMemPool::Request &v, ISeria &s) {
 	if (s.is_input() && !std::is_sorted(v.known_hashes.begin(), v.known_hashes.end()))
 		throw std::runtime_error(
 		    "SyncMemPool::Request known_hashes must be sorted in increasing order (from [0000..] to [ffff..])");
-	seria_kv("need_signatures", v.need_signatures, s);
 	seria_kv("need_redundant_data", v.need_redundant_data, s);
 }
 

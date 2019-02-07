@@ -51,17 +51,17 @@ struct RingSignatureArg {
 	Hash tx_prefix_hash;
 	Height newest_referenced_height = 0;
 	KeyImage key_image;
-	bool key_image_subgroup_check = false;
 	std::vector<PublicKey> output_keys;
 	RingSignature input_signature;
 };
 
-struct RingSignatureArg3 {
+struct RingSignatureArgA {
 	Hash tx_prefix_hash;
 	Height newest_referenced_height = 0;
 	std::vector<KeyImage> key_images;
+	std::vector<PublicKey> ps;
 	std::vector<std::vector<PublicKey>> output_keys;
-	RingSignature3 input_signature;
+	RingSignatureAmethyst input_signature;
 };
 
 class RingCheckerMulticore {
@@ -76,7 +76,7 @@ class RingCheckerMulticore {
 	std::vector<ConsensusErrorBadOutputOrSignature> errors;
 
 	std::deque<RingSignatureArg> args;
-	std::deque<RingSignatureArg3> args3;
+	std::deque<RingSignatureArgA> argsa;
 	int work_counter = 0;
 	void thread_run();
 
@@ -85,8 +85,7 @@ public:
 	~RingCheckerMulticore();
 	void cancel_work();
 	void start_work(IBlockChainState *state, const Currency &currency, const Block &block, Height unlock_height,
-	    Timestamp block_timestamp, Timestamp block_median_timestamp,
-	    bool key_image_subgroup_check);  // can throw ConsensusError immediately
+	    Timestamp block_timestamp, Timestamp block_median_timestamp);  // can throw ConsensusError immediately
 	std::vector<ConsensusErrorBadOutputOrSignature> move_errors();
 };
 
@@ -95,8 +94,8 @@ struct PreparedWalletTransaction {
 	Hash prefix_hash;
 	Hash inputs_hash;
 	boost::optional<KeyDerivation> derivation;  // Will be assigned on first actual use
-	std::vector<PublicKey> spend_keys;
-	std::vector<SecretKey> output_secret_scalars;
+	std::vector<PublicKey> address_public_keys;
+	std::vector<SecretKey> output_spend_scalars;
 
 	PreparedWalletTransaction() = default;
 	PreparedWalletTransaction(TransactionPrefix &&tx, const Wallet::OutputHandler &o_handler);

@@ -34,6 +34,8 @@ extern const fe fe_fffb2;
 extern const fe fe_fffb3;
 extern const fe fe_fffb4;
 
+extern const struct cryptoEllipticCurveScalar crypto_L;
+
 #if defined(__cplusplus)
 }
 #endif

@@ -66,7 +66,7 @@ static void test_body(const Currency &currency, const std::string &path, const s
 	WalletContainerStorage wallet(currency, logger, tmp_name, password);
 	if (wallet.is_view_only() != view_only)
 		throw std::runtime_error("view_only test failed for " + path);
-	auto records = wallet.get_records();
+	auto records = wallet.test_get_records();
 	if (!crypto::keys_match(wallet.get_view_secret_key(), wallet.get_view_public_key()))
 		throw std::runtime_error("view keys do not match for " + path);
 	WalletRecord first_record = records.at(0);
@@ -76,11 +76,11 @@ static void test_body(const Currency &currency, const std::string &path, const s
 			throw std::runtime_error("failed to parse address " + a);
 		invariant(v_address.type() == typeid(AccountAddressSimple), "");
 		auto &address = boost::get<AccountAddressSimple>(v_address);
-		if (address.view_public_key != wallet.get_view_public_key())
+		if (address.V != wallet.get_view_public_key())
 			throw std::runtime_error("view_public_key test failed for " + path);
 		size_t pos = 0;
 		for (; pos != records.size(); ++pos)
-			if (records.at(pos).spend_public_key == address.spend_public_key)
+			if (records.at(pos).spend_public_key == address.S)
 				break;
 		if (pos == records.size())
 			throw std::runtime_error("spend_public_key not found for " + path);
@@ -88,7 +88,7 @@ static void test_body(const Currency &currency, const std::string &path, const s
 			throw std::runtime_error("non empty secret spend key for " + path);
 		if (!view_only && !crypto::keys_match(records.at(pos).spend_secret_key, records.at(pos).spend_public_key))
 			throw std::runtime_error("spend keys do not match for " + path);
-		if (address.spend_public_key != records.at(pos).spend_public_key)
+		if (address.S != records.at(pos).spend_public_key)
 			throw std::runtime_error("spend_public_key test failed for " + path);
 		records.erase(records.begin() + pos);
 	}
@@ -98,9 +98,10 @@ static void test_body(const Currency &currency, const std::string &path, const s
 		return;
 	const auto initial_oldest_timestamp = wallet.get_oldest_timestamp();
 	bool rescan_from_ct                 = false;
+	std::vector<AccountAddress> new_addresses;
 	try {
 		wallet.generate_new_addresses({first_record.spend_secret_key}, first_record.creation_timestamp + 1,
-		    first_record.creation_timestamp + 1, &rescan_from_ct);
+		    first_record.creation_timestamp + 1, &new_addresses, &rescan_from_ct);
 	} catch (const Wallet::Exception &) {
 		if (!view_only)
 			throw;
@@ -111,12 +112,12 @@ static void test_body(const Currency &currency, const std::string &path, const s
 	std::cout << "Oldest timestamp is " << wallet.get_oldest_timestamp() << std::endl;
 	if (rescan_from_ct || initial_oldest_timestamp != wallet.get_oldest_timestamp())
 		throw std::runtime_error("Increasing timestamp of exising address should not lead to rescan " + path);
-	wallet.generate_new_addresses({crypto::SecretKey{}}, 0, 1600000000, &rescan_from_ct);
+	wallet.generate_new_addresses({crypto::SecretKey{}}, 0, 1600000000, &new_addresses, &rescan_from_ct);
 	std::cout << "Oldest timestamp is " << wallet.get_oldest_timestamp() << std::endl;
 	if (rescan_from_ct || initial_oldest_timestamp != wallet.get_oldest_timestamp())
 		throw std::runtime_error("Adding new secret key should not lead to rescan " + path);
 	wallet.generate_new_addresses({first_record.spend_secret_key}, first_record.creation_timestamp - 1,
-	    first_record.creation_timestamp + 1, &rescan_from_ct);
+	    first_record.creation_timestamp + 1, &new_addresses, &rescan_from_ct);
 	std::cout << "Oldest timestamp is " << wallet.get_oldest_timestamp() << std::endl;
 	if (!rescan_from_ct || initial_oldest_timestamp == wallet.get_oldest_timestamp())
 		throw std::runtime_error("Reducing timestamp of exising address should lead to rescan " + path);

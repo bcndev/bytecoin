@@ -17,13 +17,21 @@ namespace crypto {
 #pragma pack(push, 1)
 struct Hash : public cryptoHash {
 	constexpr Hash() : cryptoHash{} {}
+
+	std::vector<uint8_t> as_binary_array() const { return std::vector<uint8_t>{std::begin(data), std::end(data)}; }
 };
 
 struct EllipticCurvePoint : public cryptoEllipticCurvePoint {
 	constexpr EllipticCurvePoint() : cryptoEllipticCurvePoint{} {}
+	// Default initialisation produces point outside main subgroup
+	// Good or bad, this is done so that Point{} can be used as "null value".
+
+	std::vector<uint8_t> as_binary_array() const { return std::vector<uint8_t>{std::begin(data), std::end(data)}; }
 };
 struct EllipticCurveScalar : public cryptoEllipticCurveScalar {
 	constexpr EllipticCurveScalar() : cryptoEllipticCurveScalar{} {}
+
+	std::vector<uint8_t> as_binary_array() const { return std::vector<uint8_t>{std::begin(data), std::end(data)}; }
 };
 
 struct PublicKey : public EllipticCurvePoint {};
@@ -61,9 +69,16 @@ struct KeyPair {
 
 typedef std::vector<Signature> RingSignature;
 
-struct RingSignature3 {                               // New half-size signatures
-	EllipticCurveScalar c0;                           // c0
-	std::vector<std::vector<EllipticCurveScalar>> r;  // r[i, j]
+struct RingSignatureAmethyst {  // New auditable signatures
+	std::vector<PublicKey> p;
+	EllipticCurveScalar c0;
+	std::vector<std::vector<EllipticCurveScalar>> ra;
+	std::vector<EllipticCurveScalar> rb;
+	std::vector<EllipticCurveScalar> rc;
+};
+
+struct SendproofSignatureAmethyst {
+	EllipticCurveScalar c0, rb, rc;
 };
 
 std::ostream &operator<<(std::ostream &out, const EllipticCurvePoint &v);

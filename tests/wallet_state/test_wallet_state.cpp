@@ -16,15 +16,12 @@ class WalletStateTest : public WalletStateBasic {
 public:
 	std::map<crypto::EllipticCurvePoint, int> memory_spent;
 	explicit WalletStateTest(logging::ILogger &log, const Config &config, const Currency &currency)
-	    : WalletStateBasic(log, config, currency, "test_wallet_state", false) {}
+	    : WalletStateBasic(log, config, currency, "test_wallet_state") {}
 	Amount add_incoming_output(const api::Output &output, const Hash &tid) override {
 		return WalletStateBasic::add_incoming_output(output, tid);
 	}
 	Amount add_incoming_keyimage(Height block_height, const KeyImage &ki) override {
 		return WalletStateBasic::add_incoming_keyimage(block_height, ki);
-	}
-	Amount add_incoming_deterministic_input(Height block_height, Amount am, size_t gi, const PublicKey &pk) override {
-		return 0;  // TODO
 	}
 	bool try_add_incoming_output(const api::Output &output, Amount *confirmed_balance_delta) const {
 		return WalletStateBasic::try_add_incoming_output(output, confirmed_balance_delta);
@@ -41,10 +38,10 @@ public:
 };
 
 static bool less_output(const api::Output &a, const api::Output &b) {
-	return std::tie(a.height, a.amount, a.index) < std::tie(b.height, b.amount, b.index);
+	return std::tie(a.height, a.global_index) < std::tie(b.height, b.global_index);
 }
 static bool eq_output(const api::Output &a, const api::Output &b) {
-	return std::tie(a.height, a.amount, a.index) == std::tie(b.height, b.amount, b.index);
+	return std::tie(a.height, a.global_index) == std::tie(b.height, b.global_index);
 }
 
 // We will check that WalletStateBasic and model have the same behaviour
@@ -61,14 +58,13 @@ public:
 	const Currency &m_currency;
 
 	explicit WalletStateModel(const Currency &currency) : m_currency(currency) {}
-	std::map<KeyImage, std::pair<Amount, size_t>> all_keyimages;
-	std::map<std::pair<Amount, size_t>, api::Output> outputs;
+	std::map<KeyImage, size_t> all_keyimages;
+	std::map<size_t, api::Output> outputs;
 	//	std::map<Height, std::vector<api::Transaction>> transactions;
 	std::map<Height, api::Block> transfers;
 
 	std::vector<api::Output> locked_outputs;
-	std::map<std::pair<Amount, size_t>, std::pair<Height, Amount>>
-	    unlocked_outputs;  // height of unlock and adjusted amount
+	std::map<size_t, std::pair<Height, Amount>> unlocked_outputs;  // height of unlock and adjusted amount
 
 	Amount add_incoming_output(Height block_height, const api::Output &output, bool just_unlocked) {
 		bool ki_exists      = all_keyimages.count(output.key_image) != 0;
@@ -81,16 +77,16 @@ public:
 		}
 		Amount added_amount = output.amount;
 		if (ki_exists) {
-			auto existing_output = outputs.at(all_keyimages.at(output.key_image));
-			if (output.amount <= existing_output.amount || output.address != existing_output.address)
-				return 0;
-			added_amount = output.amount - existing_output.amount;
-			invariant(outputs.erase(all_keyimages.at(output.key_image)) == 1, "");
+			return 0;
+			//			auto existing_output = outputs.at(all_keyimages.at(output.key_image));
+			//			if (output.amount <= existing_output.amount || output.address != existing_output.address)
+			//				return 0;
+			//			added_amount = output.amount - existing_output.amount;
+			//			invariant(outputs.erase(all_keyimages.at(output.key_image)) == 1, "");
 		}
-		auto pa = std::make_pair(output.amount, output.index);
-		invariant(outputs.insert(std::make_pair(pa, output)).second, "");
+		invariant(outputs.insert(std::make_pair(output.global_index, output)).second, "");
 		if (output.key_image != KeyImage{})
-			all_keyimages[output.key_image] = pa;
+			all_keyimages[output.key_image] = output.global_index;
 		//		if(!just_unlocked) {
 		if (transfers.count(block_height) == 0) {
 			transfers[block_height].header.height = block_height;
@@ -107,15 +103,17 @@ public:
 	}
 	void unlock(Height block_height, const api::Output &output) {
 		for (size_t i = 0; i != locked_outputs.size(); ++i) {
-			if (locked_outputs.at(i).amount == output.amount && locked_outputs.at(i).index == output.index) {
+			if (locked_outputs.at(i).amount == output.amount &&
+			    locked_outputs.at(i).global_index == output.global_index) {
 				locked_outputs.erase(locked_outputs.begin() + i);
 				--i;
 			}
 		}
 		Amount adjusted_amount = add_incoming_output(block_height, output, true);
-		auto pa                = std::make_pair(output.amount, output.index);
 		invariant(
-		    unlocked_outputs.insert(std::make_pair(pa, std::make_pair(block_height, adjusted_amount))).second, "");
+		    unlocked_outputs.insert(std::make_pair(output.global_index, std::make_pair(block_height, adjusted_amount)))
+		        .second,
+		    "");
 	}
 
 public:
@@ -137,7 +135,7 @@ public:
 		for (auto &&unl : to_unlock)
 			unlock(height, unl);
 	}
-	virtual Amount add_incoming_keyimage(Height block_height, const KeyImage &ki) override {
+	Amount add_incoming_keyimage(Height block_height, const KeyImage &ki) override {
 		if (ki == KeyImage{})
 			return 0;
 		std::vector<api::Output> to_unlock;
@@ -164,9 +162,6 @@ public:
 		transfer.ours    = true;
 		transfers[block_height].transactions.back().transfers.push_back(transfer);
 		return existing_output.amount;
-	}
-	Amount add_incoming_deterministic_input(Height block_height, Amount am, size_t gi, const PublicKey &pk) override {
-		return 0;  // TODO
 	}
 	void add_transaction(
 	    Height height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override {
@@ -255,7 +250,8 @@ void test_wallet_state(common::CommandLine &cmd) {
 	WalletStateTest ws(logger, config, currency);
 	WalletStateModel wm(currency);
 
-	std::map<Amount, size_t> next_gi;
+	std::map<Amount, size_t> next_si;
+	size_t next_gi = 0;
 	std::set<KeyImage> used_keyimages;
 	std::set<KeyImage> output_keyimages;
 
@@ -284,8 +280,6 @@ void test_wallet_state(common::CommandLine &cmd) {
 	for (Height ha = 1; ha != TEST_HEIGHT; ++ha) {
 		api::Transaction ptx;
 		size_t spend_outputs = (random() % 16);
-		if (ha == 36)
-			std::cout << "Aha";
 		if (spend_outputs < 10 && ha != TEST_HEIGHT - 1) {
 			for (size_t j = 0; j != spend_outputs; ++j) {
 				KeyImage ki;
@@ -323,14 +317,16 @@ void test_wallet_state(common::CommandLine &cmd) {
 				output.height = ha;
 				output.amount = am * Currency::DECIMAL_PLACES.at(dc);
 				//				output.dust    = currency.is_dust(output.amount);
-				output.index   = next_gi[output.amount];
+				output.stack_index  = next_si[output.amount];
+				output.global_index = next_gi;
+				next_si[output.amount] += 1;
+				next_gi += 1;
 				output.address = addresses.at(random() % (addresses.size() - 1));  // last one is empty
 				if (random() % 20 == 0)
 					output.unlock_block_or_timestamp = (3 * ha / 4) + random() % (TEST_HEIGHT / 2);
 				else if (random() % 20 == 1)
 					output.unlock_block_or_timestamp =
 					    TEST_TIMESTAMP + currency.difficulty_target * ((3 * ha / 4) + random() % (TEST_HEIGHT / 2));
-				next_gi[output.amount] += 1;
 				if (!VIEW_ONLY) {
 					output.key_image.data[0] = random() % 256;
 					output.key_image.data[1] = random() % 16;
@@ -381,8 +377,6 @@ void test_wallet_state(common::CommandLine &cmd) {
 		for (Height wi = 0; wi != 25; ++wi) {  // [-20..5) range around tip
 			if (ha + wi < 20)
 				continue;
-			//			if(ha == 19 && wi == 1)
-			//				std::cout << "Aha";
 			for (const auto &addr : addresses) {
 				auto ba1 = wm.get_balance(addr, ha + wi - 20);
 				auto ba2 = ws.get_balance(addr, ha + wi - 20);

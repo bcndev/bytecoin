@@ -3,13 +3,13 @@
 
 #pragma once
 
+#include <boost/optional.hpp>
 #include <set>
 #include <unordered_map>
 #include "CryptoNote.hpp"
 #include "Currency.hpp"
-//#include "Multicore.hpp"
-#include <boost/optional.hpp>
 #include "crypto/chacha.hpp"
+#include "hw/HardwareWallet.hpp"
 #include "logging/LoggerMessage.hpp"
 #include "platform/DBsqlite3.hpp"
 #include "platform/Files.hpp"
@@ -47,6 +47,9 @@ protected:
 
 	Hash m_seed;                // Main seed, never used directly
 	Hash m_tx_derivation_seed;  // Hashed from seed
+
+	virtual AccountAddress record_to_address(size_t index) const = 0;
+
 public:
 	class Exception : public std::runtime_error {
 	public:
@@ -54,31 +57,30 @@ public:
 		explicit Exception(int rc, const std::string &what) : std::runtime_error(what), return_code(rc) {}
 	};
 	Wallet(const Currency &currency, logging::ILogger &log, const std::string &path);
-	virtual ~Wallet()                                      = default;
+	virtual ~Wallet() = default;
+	virtual const hw::HardwareWallet *get_hw() const { return nullptr; }
 	virtual void set_password(const std::string &password) = 0;
 	virtual void export_wallet(const std::string &export_path, const std::string &new_password, bool view_only,
 	    bool view_outgoing_addresses) const                = 0;
 	virtual bool is_view_only() const { return m_wallet_records.at(0).spend_secret_key == SecretKey{}; }
-	bool can_view_outgoing_addresses() const { return m_tx_derivation_seed != Hash{}; }
-	virtual bool is_deterministic() const { return false; }
-	virtual bool is_unlinkable() const { return false; }
-	virtual bool is_auditable() const { return false; }
-	bool is_det_viewonly() const { return is_view_only() && is_deterministic(); }
+	virtual bool can_view_outgoing_addresses() const { return m_tx_derivation_seed != Hash{}; }
+	virtual bool is_amethyst() const { return false; }
+	virtual std::string get_hardware_type() const { return std::string(); }
 	virtual std::string export_keys() const = 0;
 	const PublicKey &get_view_public_key() const { return m_view_public_key; }
 	const SecretKey &get_view_secret_key() const { return m_view_secret_key; }
-	const std::vector<WalletRecord> &get_records() const { return m_wallet_records; }
+	const std::vector<WalletRecord> &test_get_records() const { return m_wallet_records; }
 	virtual size_t get_actual_records_count() const { return m_wallet_records.size(); }
-	virtual bool get_record(WalletRecord *record, const AccountAddress &) const = 0;
+	virtual bool get_record(const AccountAddress &, size_t *index, WalletRecord *record) const = 0;
 	virtual void create_look_ahead_records(size_t count) {}
-	bool get_look_ahead_record(WalletRecord &record, const PublicKey &);
+	bool get_record(size_t index, WalletRecord *record, AccountAddress *) const;  // address can be null if not needed
+	bool get_look_ahead_record(const PublicKey &, size_t *index, WalletRecord *record, AccountAddress *);
 
 	bool is_our_address(const AccountAddress &) const;
 	AccountAddress get_first_address() const;
-	virtual AccountAddress record_to_address(const WalletRecord &record) const = 0;
 
 	virtual std::vector<WalletRecord> generate_new_addresses(const std::vector<SecretKey> &sks, Timestamp ct,
-	    Timestamp now,
+	    Timestamp now, std::vector<AccountAddress> *addresses,
 	    bool *rescan_from_ct) = 0;  // set secret_key to SecretKey{} to generate
 
 	std::string get_cache_name() const;
@@ -102,14 +104,15 @@ public:
 	virtual void set_label(const std::string &address, const std::string &label) = 0;
 	virtual std::string get_label(const std::string &address) const              = 0;
 
-	typedef std::function<void(const PublicKey &tx_public_key, boost::optional<KeyDerivation> *,
+	typedef std::function<void(uint8_t tx_version, const PublicKey &tx_public_key, boost::optional<KeyDerivation> *,
 	    const Hash &tx_inputs_hash, size_t out_index, const OutputKey &, PublicKey *, SecretKey *)>
 	    OutputHandler;
 	// Self-contain functor with all info copied to be called from other threads
-	virtual OutputHandler get_output_handler() const                                                            = 0;
-	virtual bool detect_our_output(const Hash &tid, const Hash &tx_inputs_hash,
-	    const boost::optional<KeyDerivation> &kd, size_t out_index, const PublicKey &spend_public_key,
-	    const SecretKey &secret_scalar, const OutputKey &, Amount *, KeyPair *output_keypair, AccountAddress *) = 0;
+	virtual OutputHandler get_output_handler() const                                                = 0;
+	virtual bool detect_our_output(uint8_t tx_version, const Hash &tid, const Hash &tx_inputs_hash,
+	    const boost::optional<KeyDerivation> &kd, size_t out_index, const PublicKey &address_S,
+	    const SecretKey &secret_scalar, const OutputKey &, Amount *, SecretKey *output_secret_key_s,
+	    SecretKey *output_secret_key_a, AccountAddress *, size_t *record_index, KeyImage *keyimage) = 0;
 };
 
 // stores at most 1 view secret key. 1 or more spend secret keys
@@ -117,6 +120,7 @@ public:
 // File formats are opened as is, and saved to V2 when changing something
 class WalletContainerStorage : public Wallet {
 	std::unique_ptr<platform::FileStream> m_file;
+	SecretKey m_inv_view_secret_key;  // for new linkable crypto
 
 	crypto::chacha_key m_history_key;  // Hashed from seed
 	Hash m_history_filename_seed;      // Hashed from seed
@@ -137,15 +141,17 @@ class WalletContainerStorage : public Wallet {
 	WalletContainerStorage(
 	    const Currency &currency, logging::ILogger &log, const std::string &path, const crypto::chacha_key &wallet_key);
 
+protected:
+	AccountAddress record_to_address(size_t index) const override;
+
 public:
 	WalletContainerStorage(
 	    const Currency &currency, logging::ILogger &log, const std::string &path, const std::string &password);
 	WalletContainerStorage(const Currency &currency, logging::ILogger &log, const std::string &path,
 	    const std::string &password, const std::string &import_keys, Timestamp creation_timestamp);
-	std::vector<WalletRecord> generate_new_addresses(
-	    const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now, bool *rescan_from_ct) override;
-	AccountAddress record_to_address(const WalletRecord &record) const override;
-	bool get_record(WalletRecord *record, const AccountAddress &) const override;
+	std::vector<WalletRecord> generate_new_addresses(const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now,
+	    std::vector<AccountAddress> *addresses, bool *rescan_from_ct) override;
+	bool get_record(const AccountAddress &, size_t *index, WalletRecord *record) const override;
 	void set_password(const std::string &password) override;
 	void export_wallet(const std::string &export_path, const std::string &new_password, bool view_only,
 	    bool view_outgoing_addresses) const override;
@@ -168,24 +174,30 @@ public:
 	std::string get_label(const std::string &address) const override { return std::string(); }
 
 	OutputHandler get_output_handler() const override;
-	bool detect_our_output(const Hash &tid, const Hash &tx_inputs_hash, const boost::optional<KeyDerivation> &kd,
-	    size_t out_index, const PublicKey &spend_public_key, const SecretKey &secret_scalar, const OutputKey &,
-	    Amount *, KeyPair *output_keypair, AccountAddress *) override;
+	bool detect_our_output(uint8_t tx_version, const Hash &tid, const Hash &tx_inputs_hash,
+	    const boost::optional<KeyDerivation> &kd, size_t out_index, const PublicKey &address_S,
+	    const SecretKey &secret_scalar, const OutputKey &, Amount *, SecretKey *output_secret_key_s,
+	    SecretKey *output_secret_key_a, AccountAddress *, size_t *record_index, KeyImage *keyimage) override;
 };
 
 // stores either mnemonic or some seeds if view-only
 // stores number of used addresses, (per net) creation timestamp, (per net) payment queue
 class WalletHD : public Wallet {
 	platform::sqlite::Dbi m_db_dbi;
-	uint8_t m_address_type = 0;
-	KeyPair m_spend_key_base;
+	SecretKey m_spend_secret_key;
+	KeyPair m_audit_key_base;
+	PublicKey m_A_plus_SH;
+	PublicKey m_v_mul_A_plus_SH;
 	size_t m_used_address_count = 1;
 	std::map<std::string, std::string> m_labels;
+	std::unique_ptr<hw::HardwareWallet> m_hw;  // quick prototyping, will refactor later
 
 	static BinaryArray encrypt_data(const crypto::chacha_key &wallet_key, const BinaryArray &data);
 	static BinaryArray decrypt_data(const crypto::chacha_key &wallet_key, const uint8_t *value_data, size_t value_size);
 	void put_salt(const BinaryArray &salt);
 	BinaryArray get_salt() const;
+	void put_is_hardware(bool ha);
+	bool get_is_hardware() const;
 	void commit();
 
 	void put(const std::string &key, const common::BinaryArray &value, bool nooverwrite);
@@ -200,26 +212,32 @@ class WalletHD : public Wallet {
 	std::vector<std::pair<std::string, BinaryArray>> parameters_get() const;
 	std::vector<std::tuple<Hash, std::string, BinaryArray>> payment_queue_get2() const;
 	void payment_queue_add(const Hash &tid, const std::string &net, const BinaryArray &binary_transaction);
+	Signature generate_view_secrets_signature(const PublicKey &sH) const;
+	static bool check_view_signatures(const SecretKey &audit_secret_key, const PublicKey &sH,
+	    const SecretKey &view_secret_key, const Signature &view_secrets_signature);
+
+protected:
+	AccountAddress record_to_address(size_t index) const override;
 
 public:
-	static std::string generate_mnemonic(size_t bits, uint32_t version);
+	//	static std::string generate_mnemonic(size_t bits, uint32_t version);
 	static bool is_sqlite(const std::string &full_path);
 	// In contrast with WalletContainerStorage, we must know read_only flag, because otherwise
 	// inability to save address count will lead to wallet losing track of funds due to skipping outputs
 	WalletHD(const Currency &currency, logging::ILogger &log, const std::string &path, const std::string &password,
 	    bool readonly);
 	WalletHD(const Currency &currency, logging::ILogger &log, const std::string &path, const std::string &password,
-	    const std::string &mnemonic, uint8_t address_type, Timestamp creation_timestamp,
-	    const std::string &mnemonic_password);
-	bool is_view_only() const override { return m_spend_key_base.secret_key == SecretKey{}; }
-	bool is_deterministic() const override { return true; }
-	bool is_unlinkable() const override { return true; }
-	bool is_auditable() const override { return m_address_type == AccountAddressUnlinkable::type_tag_auditable; }
+	    const std::string &mnemonic, Timestamp creation_timestamp, const std::string &mnemonic_password,
+	    bool hardware_wallet);
+	const hw::HardwareWallet *get_hw() const override { return m_hw.get(); }
+	bool is_view_only() const override { return !m_hw && m_spend_secret_key == SecretKey{}; }
+	bool is_amethyst() const override { return true; }
+	bool can_view_outgoing_addresses() const override;
+	std::string get_hardware_type() const override { return m_hw ? m_hw->get_hardware_type() : std::string(); }
 	size_t get_actual_records_count() const override { return m_used_address_count; }
-	std::vector<WalletRecord> generate_new_addresses(
-	    const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now, bool *rescan_from_ct) override;
-	AccountAddress record_to_address(const WalletRecord &record) const override;
-	bool get_record(WalletRecord *record, const AccountAddress &) const override;
+	std::vector<WalletRecord> generate_new_addresses(const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now,
+	    std::vector<AccountAddress> *addresses, bool *rescan_from_ct) override;
+	bool get_record(const AccountAddress &, size_t *index, WalletRecord *record) const override;
 	void set_password(const std::string &password) override;
 	void export_wallet(const std::string &export_path, const std::string &new_password, bool view_only,
 	    bool view_outgoing_addresses) const override;
@@ -242,9 +260,10 @@ public:
 	std::string get_label(const std::string &address) const override;
 
 	OutputHandler get_output_handler() const override;
-	bool detect_our_output(const Hash &tid, const Hash &tx_inputs_hash, const boost::optional<KeyDerivation> &kd,
-	    size_t out_index, const PublicKey &spend_public_key, const SecretKey &secret_scalar, const OutputKey &,
-	    Amount *, KeyPair *output_keypair, AccountAddress *) override;
+	bool detect_our_output(uint8_t tx_version, const Hash &tid, const Hash &tx_inputs_hash,
+	    const boost::optional<KeyDerivation> &kd, size_t out_index, const PublicKey &address_S,
+	    const SecretKey &secret_scalar, const OutputKey &, Amount *, SecretKey *output_secret_key_s,
+	    SecretKey *output_secret_key_a, AccountAddress *, size_t *record_index, KeyImage *keyimage) override;
 };
 
 }  // namespace cn

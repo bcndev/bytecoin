@@ -146,6 +146,7 @@ void Node::getblocktemplate(const api::cnd::GetBlockTemplate::Request &req, api:
 	res.top_block_hash           = m_block_chain.get_tip_bid();
 	res.transaction_pool_version = m_block_chain.get_tx_pool_version();
 	res.previous_block_hash      = m_block_chain.get_tip().previous_block_hash;
+#if bytecoin_ALLOW_CM
 	// Experimental, a bit hacky
 	if (block_template.major_version >= m_block_chain.get_currency().amethyst_block_version) {
 		try {
@@ -156,6 +157,7 @@ void Node::getblocktemplate(const api::cnd::GetBlockTemplate::Request &req, api:
 		} catch (const std::exception &) {
 		}
 	}
+#endif
 }
 
 bool Node::on_get_currency_id(http::Client *, http::RequestBody &&, json_rpc::Request &&,

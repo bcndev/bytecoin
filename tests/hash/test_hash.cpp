@@ -4,11 +4,7 @@
 
 #include "test_hash.hpp"
 
-//#include <cstddef>
 #include <fstream>
-//#include <iomanip>
-//#include <ios>
-//#include <string>
 
 #include "../io.hpp"
 #include "common/Invariant.hpp"
@@ -18,10 +14,6 @@
 #include "crypto/hash.hpp"
 
 static crypto::CryptoNightContext context;
-
-//#ifdef _MSC_VER
-//#pragma warning(disable : 4297)
-//#endif
 
 static void hash_tree(const void *vdata, size_t vlength, cryptoHash *hash) {
 	if (vlength % 32 != 0)
@@ -73,9 +65,6 @@ void test_hash(const char *test_fun_name, const std::string &test_vectors_filena
 			break;
 		}
 	}
-	//  if (f == slow_hash) {
-	//    context = new Crypto::cn_context();
-	//  }
 	input.open(test_vectors_filename, std::ios_base::in);
 	for (;;) {
 		++test;
@@ -99,7 +88,48 @@ void test_hash(const char *test_fun_name, const std::string &test_vectors_filena
 	}
 }
 
+void keccak_any(const void *in, size_t inlen, unsigned char *md, size_t mdlen, uint8_t delim) {
+	cryptoKeccakHasher hasher;
+	crypto_keccak_init(&hasher, mdlen, delim);
+	crypto_keccak_update(&hasher, in, inlen);
+	crypto_keccak_final(&hasher, md, mdlen / 8);
+}
 void test_hashes(const std::string &test_vectors_folder) {
+	std::string any_string("Keccak family)");
+	unsigned char md[64];
+	keccak_any(any_string.data(), any_string.size(), md, 128, 0x1f);
+	invariant(common::to_hex(md, 16) == "db647745ba790814315c70e0768eb9db", "");
+	keccak_any(any_string.data(), any_string.size(), md, 256, 0x1f);
+	invariant(common::to_hex(md, 32) == "65e6c908348094fe28ac73387c6975edccaf31eb69ff69c78051203c088e7af9", "");
+
+	keccak_any(any_string.data(), any_string.size(), md, 224, 0x01);
+	invariant(common::to_hex(md, 28) == "4275c0dde3fd65def5e4e3073b48e4a8a4e7d54f40967f144e2bc222", "");
+	keccak_any(any_string.data(), any_string.size(), md, 256, 0x01);
+	invariant(common::to_hex(md, 32) == "24c9a98982d55a9c0012e751f7fb3c745d4c99b1a16318f828f58fd342bed3d0", "");
+	keccak_any(any_string.data(), any_string.size(), md, 384, 0x01);
+	invariant(common::to_hex(md, 48) ==
+	              "bd3b8b6548e9a450d160a019b7fadb23ed61f0ac2ecbecd5458ba40af3a67dc9c01cbae9b962e4e76836f7642d3468f3",
+	    "");
+	keccak_any(any_string.data(), any_string.size(), md, 512, 0x01);
+	invariant(
+	    common::to_hex(md, 64) ==
+	        "45e07a8ad2f7da730573cea596d232dd1b2cfe7ac6ef1ec610732bada98464d99513dfb0712705963f82c998e529d185aff2368b68e12f8e6228d72bc8b58f3f",
+	    "");
+
+	keccak_any(any_string.data(), any_string.size(), md, 224, 0x06);
+	invariant(common::to_hex(md, 28) == "92d1903aec6144f655d8a169398c36425db0260184a58ea32a0d79e2", "");
+	keccak_any(any_string.data(), any_string.size(), md, 256, 0x06);
+	invariant(common::to_hex(md, 32) == "e9492b5c4fed0ee624e8bddc79ac1a998493fd8c222e54f65555a6ba4c9539e8", "");
+	keccak_any(any_string.data(), any_string.size(), md, 384, 0x06);
+	invariant(common::to_hex(md, 48) ==
+	              "fcb0edcb07f67859ce296b53731602d974dc0ff4e355e696a8c3a3cb0cfef6fdc7d9d600089eacad240879a238b8362f",
+	    "");
+	keccak_any(any_string.data(), any_string.size(), md, 512, 0x06);
+	invariant(
+	    common::to_hex(md, 64) ==
+	        "53fdfee3ee9f749c8132df285e2ab5ef31cda10b9ad36dab70d75bb6ea79d3325b63662e9ef054167827f41468877a37cf2099a5ec40fd5619c199c1b4c99c31",
+	    "");
+
 	size_t depths[17] = {0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4};
 	for (size_t i = 1; i < sizeof(depths) / sizeof(*depths); ++i)
 		invariant(crypto_coinbase_tree_depth(i) == depths[i], "");

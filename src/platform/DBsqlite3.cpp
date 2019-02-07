@@ -2,9 +2,9 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "DBsqlite3.hpp"
-#include <common/Invariant.hpp>
 #include <iostream>
 #include "PathTools.hpp"
+#include "common/Invariant.hpp"
 #include "common/Math.hpp"
 #include "common/string.hpp"
 
