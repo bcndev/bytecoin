@@ -226,17 +226,17 @@ inline ge_p3 ge_double_scalarmult_precomp_vartime3(
 }
 
 /*inline ge_p2 ge_double_scalarmult_base_vartime(
-		const EllipticCurveScalar &a, const ge_p3 &A, const EllipticCurveScalar &b) {
-	ge_p2 tmp3;
-	ge_double_scalarmult_base_vartime(&tmp3, &a, &A, &b);
-	return tmp3;
+        const EllipticCurveScalar &a, const ge_p3 &A, const EllipticCurveScalar &b) {
+    ge_p2 tmp3;
+    ge_double_scalarmult_base_vartime(&tmp3, &a, &A, &b);
+    return tmp3;
 }
 
 inline ge_p2 ge_double_scalarmult_precomp_vartime(
-		const EllipticCurveScalar &a, const ge_p3 &A, const EllipticCurveScalar &b, const ge_dsmp &B) {
-	ge_p2 tmp3;
-	ge_double_scalarmult_precomp_vartime(&tmp3, &a, &A, &b, &B);
-	return tmp3;
+        const EllipticCurveScalar &a, const ge_p3 &A, const EllipticCurveScalar &b, const ge_dsmp &B) {
+    ge_p2 tmp3;
+    ge_double_scalarmult_precomp_vartime(&tmp3, &a, &A, &b, &B);
+    return tmp3;
 }*/
 
 inline bool ge_dsm_frombytes_vartime(ge_dsmp *image_dsm, const EllipticCurvePoint &image) {

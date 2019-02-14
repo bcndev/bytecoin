@@ -52,7 +52,7 @@ public:
 	static bool detect_not_our_output(const Wallet *wallet, bool tx_amethyst, const Hash &tid,
 	    const Hash &tx_inputs_hash, boost::optional<Wallet::History> *, KeyPair *tx_keys, size_t out_index,
 	    const OutputKey &, AccountAddress *);
-	static bool detect_not_our_output_amethyst(const Hash &tx_inputs_hash, const PublicKey &output_det_public_key,
+	static bool detect_not_our_output_amethyst(const Hash &tx_inputs_hash, const PublicKey &output_seed,
 	    size_t out_index, const OutputKey &, AccountAddress *);
 };
 

@@ -27,15 +27,15 @@ void update_global_result(const void *data, size_t size) {
 		global_result ^= reinterpret_cast<const uint8_t *>(data)[i];
 }
 
-#define CLOCK(X)                                                                                                 \
-	auto start = std::chrono::high_resolution_clock::now();                                                      \
-	for (int i = 0; i < count; ++i) {                                                                            \
-		X;                                                                                                       \
-		update_global_result(&result, sizeof(result));                                                           \
-		static_assert(std::is_trivially_copyable<decltype(result)>::value, "result must be trivially copyable"); \
-	}                                                                                                            \
-	auto finish     = std::chrono::high_resolution_clock::now();                                                 \
-	auto time_delta = std::chrono::duration_cast<std::chrono::nanoseconds>(finish - start).count();              \
+#define CLOCK(X)                                                                                                       \
+	auto start = std::chrono::high_resolution_clock::now();                                                            \
+	for (int i = 0; i < count; ++i) {                                                                                  \
+		X;                                                                                                             \
+		update_global_result(&result, sizeof(result));                                                                 \
+		static_assert(std::is_trivially_copyable<decltype(result)>::value, "result must be trivially copyable");       \
+	}                                                                                                                  \
+	auto finish     = std::chrono::high_resolution_clock::now();                                                       \
+	long time_delta = static_cast<long>(std::chrono::duration_cast<std::chrono::nanoseconds>(finish - start).count()); \
 	return time_delta;
 
 Point p2_to_p3(const ge_p2 &p) {

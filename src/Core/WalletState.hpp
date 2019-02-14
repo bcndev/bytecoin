@@ -22,32 +22,32 @@ class Config;
 class WalletState : public WalletStateBasic {
 	class DeltaState : public IWalletState {
 		typedef std::map<PublicKey, std::vector<api::Output>> Unspents;
-
+		// TODO - change PublicKey to KeyImage in 3.5
 	public:
 		struct DeltaStateTransaction {
 			TransactionPrefix tx;
 			api::Transaction atx;
-			std::set<crypto::EllipticCurvePoint> used_ki_or_pk;
+			std::set<KeyImage> used_keyimages;
 		};
 		explicit DeltaState() {}
 		void clear();
 
 		const Unspents &get_unspents() const { return m_unspents; }
-		const std::map<crypto::EllipticCurvePoint, int> &get_used_kis_or_pks() const { return m_used_kis_or_pks; }
+		const std::map<KeyImage, int> &get_used_keyimages() const { return m_used_keyimages; }
 
 		const std::map<Hash, DeltaStateTransaction> &get_transactions() const { return m_transactions; }
 
-		void undo_transaction(const Hash &tid);  // For mem pool
+		void undo_transaction(const Hash &tid);                       // For mem pool
+		void apply(IWalletState *parent_state, Height height) const;  // For redoing blocks
 
-		Amount add_incoming_output(const api::Output &, const Hash &tid) override;  // added amount may be lower
+		bool add_incoming_output(const api::Output &) override;  // added amount may be lower
 		Amount add_incoming_keyimage(Height, const KeyImage &) override;
 		void add_transaction(
 		    Height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override;
 
 	private:
 		Unspents m_unspents;
-		std::map<crypto::EllipticCurvePoint, int>
-		    m_used_kis_or_pks;  // counter, because double spends are allowed in pool
+		std::map<KeyImage, int> m_used_keyimages;  // counter, because double spends are allowed in pool
 		std::map<Hash, DeltaStateTransaction> m_transactions;
 		Hash m_last_added_transaction;
 	};
@@ -100,8 +100,8 @@ protected:
 	    Height block_heights) const;
 	bool redo_transaction(const PreparedWalletTransaction &pwtx, const std::vector<size_t> &global_indices,
 	    size_t start_global_key_output_index, IWalletState *delta_state, bool is_base, Hash tid, Height block_height,
-	    Hash bid, Timestamp tx_timestamp);
-	const std::map<crypto::EllipticCurvePoint, int> &get_mempool_kis_or_pks() const override;
+	    Hash bid, Timestamp tx_timestamp) const;
+	const std::map<KeyImage, int> &get_mempool_keyimages() const override;
 	void on_first_transaction_found(Timestamp ts) override;
 
 	struct QueueEntry {

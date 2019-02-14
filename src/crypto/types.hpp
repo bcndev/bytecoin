@@ -77,9 +77,9 @@ struct RingSignatureAmethyst {  // New auditable signatures
 	std::vector<EllipticCurveScalar> rc;
 };
 
-struct SendproofSignatureAmethyst {
-	EllipticCurveScalar c0, rb, rc;
-};
+// struct SendproofSignatureAmethyst {
+//	EllipticCurveScalar c0, rb, rc;
+//};
 
 std::ostream &operator<<(std::ostream &out, const EllipticCurvePoint &v);
 std::ostream &operator<<(std::ostream &out, const EllipticCurveScalar &v);

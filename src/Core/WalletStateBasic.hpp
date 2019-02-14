@@ -25,7 +25,7 @@ class IWalletState {
 public:
 	virtual ~IWalletState() = default;
 
-	virtual Amount add_incoming_output(const api::Output &, const Hash &tid)    = 0;  // added amount may be lower
+	virtual bool add_incoming_output(const api::Output &)                       = 0;  // added amount may be lower
 	virtual Amount add_incoming_keyimage(Height block_height, const KeyImage &) = 0;
 	virtual void add_transaction(
 	    Height block_height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) = 0;
@@ -98,30 +98,27 @@ protected:
 	api::BlockHeader read_chain(Height) const;
 
 	bool is_memory_spent(const api::Output &output) const {
-		return get_mempool_kis_or_pks().count(output.key_image) != 0;
+		return get_mempool_keyimages().count(output.key_image) != 0;
 	}
-	virtual const std::map<crypto::EllipticCurvePoint, int> &get_mempool_kis_or_pks() const;
+	virtual const std::map<KeyImage, int> &get_mempool_keyimages() const;
 	virtual void on_first_transaction_found(Timestamp ts) {}
 	void unlock(Height now_height, Timestamp now);
 
 	bool read_from_unspent_index(const HeightGi &value, api::Output *) const;
-	bool read_by_keyimage(const crypto::EllipticCurvePoint &ki, HeightGi *value) const;
+	bool read_by_keyimage(const KeyImage &ki, HeightGi *value) const;
 
-	bool try_add_incoming_output(const api::Output &, Amount *confirmed_balance_delta) const;
+	bool try_add_incoming_output(const api::Output &) const;
 	bool try_adding_incoming_keyimage(const KeyImage &, api::Output *spending_output) const;
 	// returns true if our keyimage
 
 	// methods to add incoming tx
-	Amount add_incoming_output(const api::Output &, const Hash &tid) override;  // added amount may be lower
+	bool add_incoming_output(const api::Output &) override;  // added amount may be lower
 	Amount add_incoming_keyimage(Height block_height, const KeyImage &) override;
 	void add_transaction(Height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override;
 
 	std::string format_output(const api::Output &output);
 
 private:
-	bool try_adding_incoming_ki_or_pk(const crypto::EllipticCurvePoint &, api::Output *spending_output) const;
-	Amount add_incoming_ki_or_pk(Height block_height, const crypto::EllipticCurvePoint &);
-
 	Height m_tip_height  = -1;
 	Height m_tail_height = 0;
 	api::BlockHeader m_tip;
@@ -139,10 +136,10 @@ private:
 	void undo_db_state(Height state);
 
 	// indices implemenation
-	Amount add_incoming_output(const api::Output &, const Hash &tid, bool just_unlocked);
+	bool add_incoming_output(const api::Output &, bool just_unlocked);
 	void modify_balance(const api::Output &output, int locked_op, int spendable_op);
 	// lock/unlock
-	void add_to_lock_index(const api::Output &, const Hash &tid);
+	void add_to_lock_index(const api::Output &);
 	void remove_from_lock_index(const api::Output &);
 
 	void unlock(Height now_height, api::Output &&output);
@@ -156,7 +153,7 @@ private:
 	void remove_from_unspent_index(const api::Output &);
 	bool for_each_in_unspent_index(
 	    const std::string &address, Height from, Height to, std::function<bool(api::Output &&)> fun) const;
-	void update_keyimage(const crypto::EllipticCurvePoint &m, const HeightGi &value);
+	void update_keyimage(const KeyImage &m, const HeightGi &value);
 };
 
 }  // namespace cn

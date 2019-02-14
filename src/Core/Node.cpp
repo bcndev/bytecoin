@@ -786,9 +786,9 @@ void Node::check_sendproof(const BinaryArray &data_inside_base58, api::cnd::Chec
 		    api::cnd::CheckSendproof::FAILED_TO_PARSE, "Failed to parse proof object - too many bytes");
 
 	const auto proof_body = seria::to_binary(sp);
-//	std::cout << "Proof body: " << common::to_hex(proof_body) << std::endl;
+	//	std::cout << "Proof body: " << common::to_hex(proof_body) << std::endl;
 	const auto proof_prefix_hash = crypto::cn_fast_hash(proof_body);
-//	std::cout << "Proof hash: " << proof_prefix_hash << std::endl;
+	//	std::cout << "Proof hash: " << proof_prefix_hash << std::endl;
 
 	std::vector<KeyImage> all_keyimages{in.key_image};
 	std::vector<std::vector<PublicKey>> all_output_keys{m_block_chain.get_mixed_public_keys(in)};

@@ -93,13 +93,15 @@ struct PreparedWalletTransaction {
 	TransactionPrefix tx;
 	Hash prefix_hash;
 	Hash inputs_hash;
-	boost::optional<KeyDerivation> derivation;  // Will be assigned on first actual use
+	KeyDerivation derivation;  // Will be KeyDerivation{} if invalid or no tx_public_key
 	std::vector<PublicKey> address_public_keys;
-	std::vector<SecretKey> output_spend_scalars;
+	std::vector<SecretKey> output_secret_hashes;
 
 	PreparedWalletTransaction() = default;
-	PreparedWalletTransaction(TransactionPrefix &&tx, const Wallet::OutputHandler &o_handler);
-	PreparedWalletTransaction(Transaction &&tx, const Wallet::OutputHandler &o_handler);
+	PreparedWalletTransaction(
+	    TransactionPrefix &&tx, const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
+	PreparedWalletTransaction(
+	    Transaction &&tx, const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
 };
 
 struct PreparedWalletBlock {
@@ -109,7 +111,7 @@ struct PreparedWalletBlock {
 	std::vector<PreparedWalletTransaction> transactions;
 	PreparedWalletBlock() = default;
 	PreparedWalletBlock(BlockTemplate &&bc_header, std::vector<TransactionPrefix> &&raw_transactions,
-	    Hash base_transaction_hash, const Wallet::OutputHandler &o_handler);
+	    Hash base_transaction_hash, const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
 };
 
 class WalletPreparatorMulticore {
@@ -123,13 +125,15 @@ class WalletPreparatorMulticore {
 	api::cnd::SyncBlocks::Response work;
 	int work_counter = 0;
 	Wallet::OutputHandler m_o_handler;
+	SecretKey m_view_secret_key;
 	void thread_run();
 
 public:
 	WalletPreparatorMulticore();
 	~WalletPreparatorMulticore();
 	void cancel_work();
-	void start_work(const api::cnd::SyncBlocks::Response &new_work, Wallet::OutputHandler &&o_handler);
+	void start_work(const api::cnd::SyncBlocks::Response &new_work, Wallet::OutputHandler &&o_handler,
+	    const SecretKey &view_secret_key);
 	PreparedWalletBlock get_ready_work(Height height);
 };
 }  // namespace cn

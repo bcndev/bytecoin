@@ -1,0 +1,22 @@
+# IDEs/editors
+.idea/
+.vs/
+xcuserdata
+/bytecoin.cbp
+*swp
+WorkspaceSettings.xcsettings
+
+# cmake specific
+CMakeLists.txt.user*
+cmake-build-*
+
+# Build
+bin/
+libs/
+build/
+
+# Tests
+tests/scratchpad/
+
+# Mac specific
+.DS_Store

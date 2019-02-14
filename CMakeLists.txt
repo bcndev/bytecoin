@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 11)
 set(CRYPTONOTE_NAME bytecoin)
 add_definitions(-DCRYPTONOTE_NAME=\"${CRYPTONOTE_NAME}\")
+option(WITH_TREZOR "Builds with support of Trezor hardware wallets" ON)
+option(WITH_LEDGER "Builds with support of Ledger hardware wallets" OFF)
 option(USE_INSTRUMENTATION "For testing - builds with address sanitizer instrument" OFF)
 option(WITH_THREAD_SANITIZER "For testing - builds with thread sanitizer instrument, USE_INSTRUMENTATION must be also set" OFF)
 option(BETTER_DEBUG "Disables optimizations. We do not use standard debug/realease configurations because they change too much" OFF)
@@ -86,18 +88,24 @@ file(GLOB SRC_COMMON src/common/*.cpp src/common/*.hpp)
 file(GLOB SRC_SERIA src/seria/*.cpp src/seria/*.hpp)
 file(GLOB SRC_LOGGING src/logging/*.cpp src/logging/*.hpp)
 file(GLOB SRC_P2P src/p2p/*.cpp src/p2p/*.hpp)
-file(GLOB SRC_CORE src/Core/*.cpp src/Core/*.hpp src/Core/hw/*.cpp src/Core/hw/*.hpp  src/CryptoNote.hpp src/CryptoNote.cpp src/rpc_api.hpp src/rpc_api.cpp)
+file(GLOB SRC_CORE src/Core/*.cpp src/Core/*.hpp
+        src/Core/hardware/*.cpp src/Core/hardware/*.hpp
+        src/CryptoNote.hpp src/CryptoNote.cpp
+        src/rpc_api.hpp src/rpc_api.cpp)
 file(GLOB SRC_HTTP src/http/*.cpp src/http/*.hpp)
 file(GLOB SRC_PLATFORM
-    src/platform/ExclusiveLock.cpp src/platform/ExclusiveLock.hpp
-    src/platform/Files.cpp src/platform/Files.hpp
-    src/platform/Ledger.cpp src/platform/Ledger.hpp
-    src/platform/Time.cpp src/platform/Time.hpp
-    src/platform/Network.cpp src/platform/Network.hpp
-    src/platform/PathTools.cpp src/platform/PathTools.hpp
-    src/platform/PreventSleep.cpp src/platform/PreventSleep.hpp
-    src/platform/Windows.hpp src/platform/DB.hpp
-)
+        src/platform/ExclusiveLock.cpp src/platform/ExclusiveLock.hpp
+        src/platform/Files.cpp src/platform/Files.hpp
+        src/platform/Ledger.cpp src/platform/Ledger.hpp
+        src/platform/Time.cpp src/platform/Time.hpp
+        src/platform/Network.cpp src/platform/Network.hpp
+        src/platform/PathTools.cpp src/platform/PathTools.hpp
+        src/platform/PreventSleep.cpp src/platform/PreventSleep.hpp
+        src/platform/Windows.hpp src/platform/DB.hpp
+        )
+#file(GLOB SRC_HARDWARE
+#        src/Core/hw/trezor/protob/*.cpp src/Core/hw/trezor/protob/*.hpp
+#        )
 # We compile those folders with full optimization even in debug mode, otherwise binaries will run much slower in debug
 if(WIN32)
     set_property(SOURCE ${SRC_CRYPTO} PROPERTY COMPILE_FLAGS -Ot)
@@ -129,11 +137,41 @@ set(SOURCE_FILES
     src/rpc_api.hpp
     src/version.hpp
 )
+
+
+if(WITH_TREZOR)
+    include_directories(${PARENT_DIR}/trezor-core/vendor/trezor-common)
+    add_definitions(-Dcn_WITH_TREZOR=1)
+    # howto not working, best attempt at https://stackoverflow.com/questions/20824194/cmake-with-google-protocol-buffers
+    # file(GLOB ProtoFiles "../trezor-core/vendor/trezor-common/protob/*.proto")
+    #protobuf_generate(LANGUAGE cpp TARGET bytecoin-core PROTOS ${ProtoFiles})
+    set(Protobuf_USE_STATIC_LIBS ON)
+    find_package(Protobuf REQUIRED)
+    file(GLOB SRC_PROTOB ../trezor-core/vendor/trezor-common/protob/*.h ../trezor-core/vendor/trezor-common/protob/*.cc)
+    include_directories(${PROTOBUF_INCLUDE_DIR})
+    message(STATUS "Protobuf version " ${Protobuf_VERSION} " protoc is " ${Protobuf_PROTOC_EXECUTABLE} " headers are in  " ${PROTOBUF_INCLUDE_DIR} " and static libs are in " ${PROTOBUF_LIBRARY})
+    message(STATUS "Proto files found " ${ProtoFiles})
+else()
+endif()
+if(WITH_LEDGER)
+    # on Linux - apt-get install libusb-1.0-0-dev
+    # permission problem - https://raw.githubusercontent.com/LedgerHQ/udev-rules/master/add_udev_rules.sh
+    add_definitions(-Dcn_WITH_LEDGER=1)
+if(WIN32)
+    set(USBLIB_LIBRARY ${PARENT_DIR}/libusb/x64/Release/lib/libusb-1.0.lib)
+else()
+    set(USBLIB_LIBRARY "usb-1.0")
+endif()
+    message(STATUS "With ledger " ${USBLIB_LIBRARY})
+    include_directories(${PARENT_DIR}/libusb)
+else()
+endif()
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/libs")
 add_library(bytecoin-crypto ${SRC_CRYPTO})
-add_library(bytecoin-core ${SOURCE_FILES})
-target_link_libraries(bytecoin-core bytecoin-crypto)
+add_library(bytecoin-core ${SOURCE_FILES} ${SRC_PROTOB})
+target_link_libraries(bytecoin-core bytecoin-crypto  ${PROTOBUF_LIBRARY} ${USBLIB_LIBRARY})
 if(WIN32)
     add_executable(walletd src/main_walletd.cpp src/bytecoin.rc) # .rc works only if referenced directly in add_executable
     add_executable(${CRYPTONOTE_NAME}d src/main_bytecoind.cpp src/bytecoin.rc) # .rc works only if referenced directly in add_executable
@@ -141,6 +179,7 @@ else()
     add_executable(walletd src/main_walletd.cpp)
     add_executable(${CRYPTONOTE_NAME}d src/main_bytecoind.cpp)
 endif()
+
 add_executable(tests src/main_tests.cpp tests/io.hpp tests/Random.hpp
         tests/blockchain/test_blockchain.cpp tests/blockchain/test_blockchain.hpp
         tests/crypto/test_crypto.cpp tests/crypto/test_crypto.hpp
@@ -165,9 +204,9 @@ else()
 endif()
 include_directories(${Boost_INCLUDE_DIRS})
 
-target_link_libraries(walletd bytecoin-crypto bytecoin-core)
-target_link_libraries(${CRYPTONOTE_NAME}d bytecoin-crypto bytecoin-core)
-target_link_libraries(tests bytecoin-crypto bytecoin-core)
+target_link_libraries(walletd bytecoin-crypto bytecoin-core ${PROTOBUF_LIBRARY})
+target_link_libraries(${CRYPTONOTE_NAME}d bytecoin-crypto bytecoin-core ${PROTOBUF_LIBRARY})
+target_link_libraries(tests bytecoin-crypto bytecoin-core ${PROTOBUF_LIBRARY})
 
 if(NOT WIN32)
     if(APPLE)

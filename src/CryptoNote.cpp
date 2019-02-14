@@ -25,6 +25,7 @@ void ser(SecretKey &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
 void ser(KeyDerivation &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
 void ser(Signature &v, ISeria &s) { s.binary(reinterpret_cast<uint8_t *>(&v), sizeof(Signature)); }
 void ser(crypto::EllipticCurveScalar &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
+void ser(crypto::EllipticCurvePoint &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
 
 void ser_members(cn::AccountAddressSimple &v, ISeria &s) {
 	seria_kv("spend", v.S, s);
@@ -34,63 +35,63 @@ void ser_members(cn::AccountAddressUnlinkable &v, ISeria &s) {
 	seria_kv("spend", v.S, s);
 	seria_kv("spend_view", v.Sv, s);
 }
-void ser_members(AccountAddress &v, ISeria &s) {
-	if (s.is_input()) {
-		uint8_t type = 0;
-		s.object_key("type");
-		if (dynamic_cast<seria::JsonInputStream *>(&s)) {
-			std::string str_type_tag;
-			ser(str_type_tag, s);
-			if (str_type_tag == AccountAddressSimple::str_type_tag())
-				type = AccountAddressSimple::type_tag;
-			else if (str_type_tag == AccountAddressUnlinkable::str_type_tag())
-				type = AccountAddressUnlinkable::type_tag;
-			else
-				throw std::runtime_error("Deserialization error - unknown address type " + str_type_tag);
-		} else
-			s.binary(&type, 1);
-		switch (type) {
-		case AccountAddressSimple::type_tag: {
-			AccountAddressSimple in{};
-			ser_members(in, s);
-			v = in;
-			break;
-		}
-		case AccountAddressUnlinkable::type_tag: {
-			AccountAddressUnlinkable in{};
-			ser_members(in, s);
-			v = in;
-			break;
-		}
-		default:
-			throw std::runtime_error("Deserialization error - unknown address type " + common::to_string(type));
-		}
-		return;
-	}
-	if (v.type() == typeid(AccountAddressSimple)) {
-		auto &in = boost::get<AccountAddressSimple>(v);
-		s.object_key("type");
-		if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
-			std::string str_type_tag = AccountAddressSimple::str_type_tag();
-			ser(str_type_tag, s);
-		} else {
-			uint8_t type = AccountAddressSimple::type_tag;
-			s.binary(&type, 1);
-		}
-		ser_members(in, s);
-	} else if (v.type() == typeid(AccountAddressUnlinkable)) {
-		auto &in = boost::get<AccountAddressUnlinkable>(v);
-		s.object_key("type");
-		if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
-			std::string str_type_tag = AccountAddressUnlinkable::str_type_tag();
-			ser(str_type_tag, s);
-		} else {
-			uint8_t type = AccountAddressUnlinkable::type_tag;
-			s.binary(&type, 1);
-		}
-		ser_members(in, s);
-	}
-}
+/*void ser_members(AccountAddress &v, ISeria &s) {
+    if (s.is_input()) {
+        uint8_t type = 0;
+        s.object_key("type");
+        if (dynamic_cast<seria::JsonInputStream *>(&s)) {
+            std::string str_type_tag;
+            ser(str_type_tag, s);
+            if (str_type_tag == AccountAddressSimple::str_type_tag())
+                type = AccountAddressSimple::type_tag;
+            else if (str_type_tag == AccountAddressUnlinkable::str_type_tag())
+                type = AccountAddressUnlinkable::type_tag;
+            else
+                throw std::runtime_error("Deserialization error - unknown address type " + str_type_tag);
+        } else
+            s.binary(&type, 1);
+        switch (type) {
+        case AccountAddressSimple::type_tag: {
+            AccountAddressSimple in{};
+            ser_members(in, s);
+            v = in;
+            break;
+        }
+        case AccountAddressUnlinkable::type_tag: {
+            AccountAddressUnlinkable in{};
+            ser_members(in, s);
+            v = in;
+            break;
+        }
+        default:
+            throw std::runtime_error("Deserialization error - unknown address type " + common::to_string(type));
+        }
+        return;
+    }
+    if (v.type() == typeid(AccountAddressSimple)) {
+        auto &in = boost::get<AccountAddressSimple>(v);
+        s.object_key("type");
+        if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
+            std::string str_type_tag = AccountAddressSimple::str_type_tag();
+            ser(str_type_tag, s);
+        } else {
+            uint8_t type = AccountAddressSimple::type_tag;
+            s.binary(&type, 1);
+        }
+        ser_members(in, s);
+    } else if (v.type() == typeid(AccountAddressUnlinkable)) {
+        auto &in = boost::get<AccountAddressUnlinkable>(v);
+        s.object_key("type");
+        if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
+            std::string str_type_tag = AccountAddressUnlinkable::str_type_tag();
+            ser(str_type_tag, s);
+        } else {
+            uint8_t type = AccountAddressUnlinkable::type_tag;
+            s.binary(&type, 1);
+        }
+        ser_members(in, s);
+    }
+}*/
 void ser_members(cn::SendproofKey &v, ISeria &s) {
 	Amount amount = 0;
 	seria_kv("transaction_hash", v.transaction_hash, s);
@@ -282,11 +283,11 @@ void ser_members(cn::RingSignatureAmethyst &v, ISeria &s) {
 	seria_kv("rb", v.rb, s);
 	seria_kv("rc", v.rc, s);
 }
-void ser_members(cn::SendproofSignatureAmethyst &v, ISeria &s) {
-	seria_kv("c0", v.c0, s);
-	seria_kv("rb", v.rb, s);
-	seria_kv("rc", v.rc, s);
-}
+// void ser_members(cn::SendproofSignatureAmethyst &v, ISeria &s) {
+//	seria_kv("c0", v.c0, s);
+//	seria_kv("rb", v.rb, s);
+//	seria_kv("rc", v.rc, s);
+//}
 
 /*
 enum { ring_signature_blank_tag = 0xff, ring_signature_normal_tag = 1, ring_signature_auditable_tag = 4 };

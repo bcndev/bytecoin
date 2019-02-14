@@ -3,13 +3,12 @@
 
 #pragma once
 
-#include <boost/optional.hpp>
 #include <set>
 #include <unordered_map>
 #include "CryptoNote.hpp"
 #include "Currency.hpp"
 #include "crypto/chacha.hpp"
-#include "hw/HardwareWallet.hpp"
+#include "hardware/HardwareWallet.hpp"
 #include "logging/LoggerMessage.hpp"
 #include "platform/DBsqlite3.hpp"
 #include "platform/Files.hpp"
@@ -58,7 +57,9 @@ public:
 	};
 	Wallet(const Currency &currency, logging::ILogger &log, const std::string &path);
 	virtual ~Wallet() = default;
-	virtual const hw::HardwareWallet *get_hw() const { return nullptr; }
+	virtual hardware::HardwareWallet *get_hw() const { return nullptr; }
+	bool scan_outputs_via_hw() const { return get_hw() && m_view_secret_key == SecretKey{}; }
+	virtual void import_view_key() {}
 	virtual void set_password(const std::string &password) = 0;
 	virtual void export_wallet(const std::string &export_path, const std::string &new_password, bool view_only,
 	    bool view_outgoing_addresses) const                = 0;
@@ -104,15 +105,19 @@ public:
 	virtual void set_label(const std::string &address, const std::string &label) = 0;
 	virtual std::string get_label(const std::string &address) const              = 0;
 
-	typedef std::function<void(uint8_t tx_version, const PublicKey &tx_public_key, boost::optional<KeyDerivation> *,
-	    const Hash &tx_inputs_hash, size_t out_index, const OutputKey &, PublicKey *, SecretKey *)>
+	typedef std::function<void(uint8_t tx_version, const KeyDerivation &, const Hash &tx_inputs_hash, size_t out_index,
+	    const OutputKey &, PublicKey *, SecretKey *)>
 	    OutputHandler;
 	// Self-contain functor with all info copied to be called from other threads
-	virtual OutputHandler get_output_handler() const                                                = 0;
-	virtual bool detect_our_output(uint8_t tx_version, const Hash &tid, const Hash &tx_inputs_hash,
-	    const boost::optional<KeyDerivation> &kd, size_t out_index, const PublicKey &address_S,
-	    const SecretKey &secret_scalar, const OutputKey &, Amount *, SecretKey *output_secret_key_s,
-	    SecretKey *output_secret_key_a, AccountAddress *, size_t *record_index, KeyImage *keyimage) = 0;
+	virtual OutputHandler get_output_handler() const = 0;
+	virtual bool detect_our_output(uint8_t tx_version, const KeyDerivation &kd, size_t out_index,
+	    const PublicKey &address_S, const SecretKey &output_secret_hash, const OutputKey &, Amount *,
+	    SecretKey *output_secret_key_s, SecretKey *output_secret_key_a, AccountAddress *, size_t *record_index,
+	    KeyImage *keyimage)                          = 0;
+
+	bool prepare_input_for_spend(uint8_t tx_version, const KeyDerivation &kd, const Hash &tx_inputs_hash,
+	    size_t out_index, const OutputKey &, SecretKey *output_secret_hash, SecretKey *output_secret_key_s,
+	    SecretKey *output_secret_key_a, size_t *record_index);
 };
 
 // stores at most 1 view secret key. 1 or more spend secret keys
@@ -174,9 +179,8 @@ public:
 	std::string get_label(const std::string &address) const override { return std::string(); }
 
 	OutputHandler get_output_handler() const override;
-	bool detect_our_output(uint8_t tx_version, const Hash &tid, const Hash &tx_inputs_hash,
-	    const boost::optional<KeyDerivation> &kd, size_t out_index, const PublicKey &address_S,
-	    const SecretKey &secret_scalar, const OutputKey &, Amount *, SecretKey *output_secret_key_s,
+	bool detect_our_output(uint8_t tx_version, const KeyDerivation &kd, size_t out_index, const PublicKey &address_S,
+	    const SecretKey &output_secret_hash, const OutputKey &, Amount *, SecretKey *output_secret_key_s,
 	    SecretKey *output_secret_key_a, AccountAddress *, size_t *record_index, KeyImage *keyimage) override;
 };
 
@@ -186,11 +190,11 @@ class WalletHD : public Wallet {
 	platform::sqlite::Dbi m_db_dbi;
 	SecretKey m_spend_secret_key;
 	KeyPair m_audit_key_base;
-	PublicKey m_A_plus_SH;
-	PublicKey m_v_mul_A_plus_SH;
+	PublicKey m_A_plus_sH;
+	PublicKey m_v_mul_A_plus_sH;
 	size_t m_used_address_count = 1;
 	std::map<std::string, std::string> m_labels;
-	std::unique_ptr<hw::HardwareWallet> m_hw;  // quick prototyping, will refactor later
+	std::unique_ptr<hardware::HardwareWallet> m_hw;  // quick prototyping, will refactor later
 
 	static BinaryArray encrypt_data(const crypto::chacha_key &wallet_key, const BinaryArray &data);
 	static BinaryArray decrypt_data(const crypto::chacha_key &wallet_key, const uint8_t *value_data, size_t value_size);
@@ -229,7 +233,8 @@ public:
 	WalletHD(const Currency &currency, logging::ILogger &log, const std::string &path, const std::string &password,
 	    const std::string &mnemonic, Timestamp creation_timestamp, const std::string &mnemonic_password,
 	    bool hardware_wallet);
-	const hw::HardwareWallet *get_hw() const override { return m_hw.get(); }
+	hardware::HardwareWallet *get_hw() const override { return m_hw.get(); }
+	void import_view_key() override;
 	bool is_view_only() const override { return !m_hw && m_spend_secret_key == SecretKey{}; }
 	bool is_amethyst() const override { return true; }
 	bool can_view_outgoing_addresses() const override;
@@ -243,8 +248,8 @@ public:
 	    bool view_outgoing_addresses) const override;
 	std::string export_keys() const override;
 
-	// Date first unlinkable addresses appeared in stagenet blockchain
-	Timestamp get_oldest_timestamp() const override { return std::max<Timestamp>(m_oldest_timestamp, 1540489975); }
+	// Date first amethyst addresses appeared in stagenet blockchain - Thursday, February 7, 2019 4:05:55 UTC
+	Timestamp get_oldest_timestamp() const override { return std::max<Timestamp>(m_oldest_timestamp, 1540555555); }
 	void on_first_output_found(Timestamp ts) override;
 	void create_look_ahead_records(size_t count) override;
 
@@ -260,9 +265,8 @@ public:
 	std::string get_label(const std::string &address) const override;
 
 	OutputHandler get_output_handler() const override;
-	bool detect_our_output(uint8_t tx_version, const Hash &tid, const Hash &tx_inputs_hash,
-	    const boost::optional<KeyDerivation> &kd, size_t out_index, const PublicKey &address_S,
-	    const SecretKey &secret_scalar, const OutputKey &, Amount *, SecretKey *output_secret_key_s,
+	bool detect_our_output(uint8_t tx_version, const KeyDerivation &kd, size_t out_index, const PublicKey &address_S,
+	    const SecretKey &output_secret_hash, const OutputKey &, Amount *, SecretKey *output_secret_key_s,
 	    SecretKey *output_secret_key_a, AccountAddress *, size_t *record_index, KeyImage *keyimage) override;
 };
 

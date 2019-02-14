@@ -345,11 +345,40 @@ void strange_add() {
 	}
 }
 
+void reduce64_alt(struct cryptoEllipticCurveScalar *aa, const unsigned char s[64]) {
+	SecretKey sk1;
+	sk1.data[31] = 8;
+	SecretKey sk2;
+	sk2.data[0] = 32;
+	invariant(sc_isvalid_vartime(&sk1) && sc_isvalid_vartime(&sk2), "");
+	SecretKey s2_256 = sk1 * sk2;
+	std::cout << "skk " << s2_256 << std::endl;
+
+	SecretKey left;
+	sc_reduce32(&left, s);
+	SecretKey right;
+	sc_reduce32(&right, s + 32);
+
+	SecretKey mu;
+	sc_mul(&mu, &right, &s2_256);
+	sc_add(aa, &mu, &left);
+}
+
 void test_crypto(const std::string &test_vectors_filename) {
 	//	strange_add();
 	std::cout << "G=" << crypto::get_G() << std::endl;
 	std::cout << "H=" << crypto::get_H() << std::endl;
 	invariant(crypto::get_H() == crypto::test_get_H(), "");
+
+	uint8_t tmp[64]{};
+	generate_random_bytes(tmp, sizeof(tmp));
+
+	SecretKey res1;
+	SecretKey res2;
+	sc_reduce64(&res1, tmp);
+	reduce64_alt(&res2, tmp);
+	std::cout << "res1=" << res1 << std::endl;
+	std::cout << "res2=" << res2 << std::endl;
 
 	//	SecretKey sk;
 	//	sk.data[0] = 8;

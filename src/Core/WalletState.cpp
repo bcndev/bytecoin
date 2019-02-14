@@ -21,17 +21,17 @@ static const std::string ADDRESSES_PREFIX = "a";  // this is not undone
 using namespace cn;
 using namespace platform;
 
-Amount WalletState::DeltaState::add_incoming_output(const api::Output &output, const Hash &tid) {
+bool WalletState::DeltaState::add_incoming_output(const api::Output &output) {
 	m_unspents[output.public_key].push_back(output);
-	return output.amount;
+	return true;
 }
 
 Amount WalletState::DeltaState::add_incoming_keyimage(Height height, const KeyImage &key_image) {
 	auto tit = m_transactions.find(m_last_added_transaction);
 	if (tit == m_transactions.end())
 		return 0;
-	if (tit->second.used_ki_or_pk.insert(key_image).second)
-		m_used_kis_or_pks[key_image] += 1;
+	if (tit->second.used_keyimages.insert(key_image).second)
+		m_used_keyimages[key_image] += 1;
 	return 0;  // It does not know
 }
 
@@ -62,19 +62,32 @@ void WalletState::DeltaState::undo_transaction(const Hash &tid) {
 				uit = m_unspents.erase(uit);
 		}
 	}
-	for (const auto &ki_or_pk : tit->second.used_ki_or_pk) {
-		auto kit = m_used_kis_or_pks.find(ki_or_pk);
-		invariant(kit != m_used_kis_or_pks.end(), "");
+	for (const auto &ki_or_pk : tit->second.used_keyimages) {
+		auto kit = m_used_keyimages.find(ki_or_pk);
+		invariant(kit != m_used_keyimages.end(), "");
 		kit->second -= 1;
 		invariant(kit->second >= 0, "");
 		if (kit->second == 0)
-			kit = m_used_kis_or_pks.erase(kit);
+			kit = m_used_keyimages.erase(kit);
 	}
 	tit = m_transactions.erase(tit);
 }
 
+void WalletState::DeltaState::apply(IWalletState *parent_state, Height height) const {
+	for (const auto &tx : m_transactions)
+		parent_state->add_transaction(height, tx.first, tx.second.tx, tx.second.atx);
+	for (const auto &pk : m_unspents)
+		for (const auto &output : pk.second)
+			parent_state->add_incoming_output(output);
+	for (const auto &ki : m_used_keyimages) {
+		invariant(ki.second > 0, "DeltaState keyimages index corrupted");
+		parent_state->add_incoming_keyimage(height, ki.first);
+	}
+	// TODO test before 3.5
+}
+
 void WalletState::DeltaState::clear() {
-	m_used_kis_or_pks.clear();
+	m_used_keyimages.clear();
 	m_unspents.clear();
 	m_transactions.clear();
 }
@@ -287,23 +300,11 @@ void WalletState::add_transaction_to_mempool(Hash tid, Transaction &&tx, bool fr
 	                     << " is in MS size before adding=" << m_memory_state.get_transactions().size() << std::endl;
 	std::vector<size_t> global_indices(tx.outputs.size(), 0);
 	PreparedWalletTransaction pwtx;
-	if (m_wallet.get_hw()) {
-		// TODO - very inefficient code for now
-		std::vector<PublicKey> output_public_keys;
-		fill_tx_output_public_keys(&output_public_keys, tx);
-		auto P_v           = m_wallet.get_hw()->mul_by_view_secret_key(output_public_keys);
-		size_t key_counter = 0;
-		pwtx               = PreparedWalletTransaction(std::move(tx),
-            [&](bool is_tx_amethyst, const PublicKey &tx_public_key, boost::optional<KeyDerivation> *kd,
-                const Hash &tx_inputs_hash, size_t output_index, const OutputKey &key_output, PublicKey *address_S,
-                SecretKey *secret_scalar) {
-                *address_S = crypto::unlinkable_underive_address_S_step2(P_v.at(key_counter++), tx_inputs_hash,
-                    output_index, key_output.public_key, key_output.encrypted_secret, secret_scalar);
-            });
-
-	} else {
-		pwtx = PreparedWalletTransaction(std::move(tx), m_wallet.get_output_handler());
-	}
+	std::vector<PublicKey> output_public_keys;
+	fill_tx_output_public_keys(&output_public_keys, tx);
+	if (m_wallet.scan_outputs_via_hw())
+		m_wallet.get_hw()->precache_mul_by_view_secret_key(output_public_keys);
+	pwtx = PreparedWalletTransaction(std::move(tx), m_wallet.get_output_handler(), m_wallet.get_view_secret_key());
 	if (!redo_transaction(pwtx, global_indices, 0, &m_memory_state, false, tid, get_tip_height() + 1, Hash{}, now)) {
 	}  // just ignore result
 }
@@ -346,9 +347,9 @@ bool WalletState::sync_with_blockchain(api::cnd::SyncBlocks::Response &resp) {
 			}
 		if (empty_chain())
 			reset_chain(resp.start_height);
-		if (!m_wallet.get_hw()) {
+		if (!m_wallet.scan_outputs_via_hw()) {
 			preparator.cancel_work();
-			preparator.start_work(resp, m_wallet.get_output_handler());
+			preparator.start_work(resp, m_wallet.get_output_handler(), m_wallet.get_view_secret_key());
 		}
 		while (get_tip_height() + 1 < resp.start_height + resp.blocks.size()) {
 			size_t bin         = get_tip_height() + 1 - resp.start_height;
@@ -359,24 +360,17 @@ bool WalletState::sync_with_blockchain(api::cnd::SyncBlocks::Response &resp) {
 				auto &sync_block     = resp.blocks.at(bin);
 				const auto &block_gi = sync_block.output_stack_indexes;
 				PreparedWalletBlock pb;
-				if (m_wallet.get_hw()) {
+				if (m_wallet.scan_outputs_via_hw()) {
 					// TODO - very inefficient code for now
 					// Also will repeat getting blocks for sync indefinetely when hw is disconnected
 					std::vector<PublicKey> output_public_keys;
 					fill_tx_output_public_keys(&output_public_keys, sync_block.raw_header.base_transaction);
 					for (const auto &tx : sync_block.raw_transactions)
 						fill_tx_output_public_keys(&output_public_keys, tx);
-					auto P_v           = m_wallet.get_hw()->mul_by_view_secret_key(output_public_keys);
-					size_t key_counter = 0;
+					m_wallet.get_hw()->precache_mul_by_view_secret_key(output_public_keys);
 					pb = PreparedWalletBlock(std::move(sync_block.raw_header), std::move(sync_block.raw_transactions),
-					    sync_block.transactions.at(0).hash,
-					    [&](bool is_tx_amethyst, const PublicKey &tx_public_key, boost::optional<KeyDerivation> *kd,
-					        const Hash &tx_inputs_hash, size_t output_index, const OutputKey &key_output,
-					        PublicKey *address_S, SecretKey *secret_scalar) {
-						    *address_S =
-						        crypto::unlinkable_underive_address_S_step2(P_v.at(key_counter++), tx_inputs_hash,
-						            output_index, key_output.public_key, key_output.encrypted_secret, secret_scalar);
-					    });
+					    sync_block.transactions.at(0).hash, m_wallet.get_output_handler(),
+					    m_wallet.get_view_secret_key());
 				} else
 					pb = preparator.get_ready_work(get_tip_height() + 1);
 				//					pb = PreparedWalletBlock(std::move(sync_block.raw_header),
@@ -443,9 +437,10 @@ bool WalletState::redo_block(const api::BlockHeader &header, const PreparedWalle
 	size_t key_outputs_count = get_tx_key_outputs_count(pb.base_transaction.tx);
 	for (const auto &tx : pb.transactions)
 		key_outputs_count += get_tx_key_outputs_count(tx.tx);
+	DeltaState delta_state;
 	size_t start_global_key_output_index = header.already_generated_key_outputs - key_outputs_count;
-	if (!redo_transaction(pb.base_transaction, global_indices[0], start_global_key_output_index, this, true, base_hash,
-	        get_tip_height() + 1, header.hash, pb.header.timestamp)) {
+	if (!redo_transaction(pb.base_transaction, global_indices[0], start_global_key_output_index, &delta_state, true,
+	        base_hash, get_tip_height() + 1, header.hash, pb.header.timestamp)) {
 	}  // Just ignore - TODO
 	start_global_key_output_index += get_tx_key_outputs_count(pb.base_transaction.tx);
 	for (size_t tx_index = 0; tx_index != pb.transactions.size(); ++tx_index) {
@@ -454,13 +449,16 @@ bool WalletState::redo_block(const api::BlockHeader &header, const PreparedWalle
 			remove_transaction_from_mempool(tid, false);
 		m_memory_state.undo_transaction(tid);
 		if (!redo_transaction(pb.transactions.at(tx_index), global_indices.at(tx_index + 1),
-		        start_global_key_output_index, this, false, tid, get_tip_height() + 1, header.hash,
+		        start_global_key_output_index, &delta_state, false, tid, get_tip_height() + 1, header.hash,
 		        pb.header.timestamp)) {
 		}  // just ignore - TODO
 		start_global_key_output_index += get_tx_key_outputs_count(pb.transactions.at(tx_index).tx);
 	}
 	invariant(header.already_generated_key_outputs == start_global_key_output_index, "");
+	// no exceptions starting from here
+	delta_state.apply(this, get_tip_height() + 1);
 	unlock(height, header.timestamp_median);
+	// till here
 	// If ex has lock_time in the past, it will be added to lock index in redo, then immediately unlocked here
 	return true;
 }
@@ -525,9 +523,9 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction *ptx,
 		const auto &output = tx.outputs.at(out_index);
 		if (output.type() != typeid(OutputKey))
 			continue;
-		const auto &key_output   = boost::get<OutputKey>(output);
-		const auto &address_S    = pwtx.address_public_keys.at(out_index);
-		const auto &spend_scalar = pwtx.output_spend_scalars.at(out_index);
+		const auto &key_output         = boost::get<OutputKey>(output);
+		const auto &address_S          = pwtx.address_public_keys.at(out_index);
+		const auto &output_secret_hash = pwtx.output_secret_hashes.at(out_index);
 		if (!add_amount(output_amount, key_output.amount))
 			return false;
 		api::Output out;
@@ -545,17 +543,16 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction *ptx,
 		size_t record_index = 0;
 		SecretKey output_secret_key_s;
 		SecretKey output_secret_key_a;
-		if (m_wallet.detect_our_output(tx.version, tid, pwtx.inputs_hash, pwtx.derivation, out_index, address_S,
-		        spend_scalar, key_output, &out.amount, &output_secret_key_s, &output_secret_key_a, &address,
-		        &record_index, &out.key_image)) {
+		if (m_wallet.detect_our_output(tx.version, pwtx.derivation, out_index, address_S, output_secret_hash,
+		        key_output, &out.amount, &output_secret_key_s, &output_secret_key_a, &address, &record_index,
+		        &out.key_image)) {
 			//			out.dust = m_currency.is_dust(key_output.amount);
 			api::Transfer &transfer = transfer_map_outputs[true][address];
 			if (transfer.address.empty())
 				transfer.address = m_currency.account_address_as_string(address);
-			out.address                    = transfer.address;
-			Amount confirmed_balance_delta = 0;
-			if (try_add_incoming_output(out, &confirmed_balance_delta)) {
-				transfer.amount += confirmed_balance_delta;
+			out.address = transfer.address;
+			if (try_add_incoming_output(out)) {
+				transfer.amount += out.amount;
 				transfer.outputs.push_back(out);
 			}
 			our_outputs = true;
@@ -600,23 +597,11 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction &ptx, Tra
 	std::vector<size_t> global_indices(tx.outputs.size(), 0);
 	Amount unrecognized_inputs_amount = 0;
 	PreparedWalletTransaction pwtx;
-	if (m_wallet.get_hw()) {
-		// TODO - very inefficient code for now
-		std::vector<PublicKey> output_public_keys;
-		fill_tx_output_public_keys(&output_public_keys, tx);
-		auto P_v           = m_wallet.get_hw()->mul_by_view_secret_key(output_public_keys);
-		size_t key_counter = 0;
-		pwtx               = PreparedWalletTransaction(std::move(tx),
-            [&](bool is_tx_amethyst, const PublicKey &tx_public_key, boost::optional<KeyDerivation> *kd,
-                const Hash &tx_inputs_hash, size_t output_index, const OutputKey &key_output, PublicKey *address_S,
-                SecretKey *secret_scalar) {
-                *address_S = crypto::unlinkable_underive_address_S_step2(P_v.at(key_counter++), tx_inputs_hash,
-                    output_index, key_output.public_key, key_output.encrypted_secret, secret_scalar);
-            });
-
-	} else {
-		pwtx = PreparedWalletTransaction(std::move(tx), m_wallet.get_output_handler());
-	}
+	std::vector<PublicKey> output_public_keys;
+	fill_tx_output_public_keys(&output_public_keys, tx);
+	if (m_wallet.scan_outputs_via_hw())
+		m_wallet.get_hw()->precache_mul_by_view_secret_key(output_public_keys);
+	pwtx = PreparedWalletTransaction(std::move(tx), m_wallet.get_output_handler(), m_wallet.get_view_secret_key());
 	std::vector<api::Transfer> input_transfers;
 	std::vector<api::Transfer> output_transfers;
 	parse_raw_transaction(is_base, &ptx, &input_transfers, &output_transfers, &unrecognized_inputs_amount, pwtx, tid,
@@ -633,15 +618,15 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction &ptx, Tra
 	return true;
 }
 
-const std::map<crypto::EllipticCurvePoint, int> &WalletState::get_mempool_kis_or_pks() const {
-	return m_memory_state.get_used_kis_or_pks();
+const std::map<KeyImage, int> &WalletState::get_mempool_keyimages() const {
+	return m_memory_state.get_used_keyimages();
 }
 
 void WalletState::on_first_transaction_found(Timestamp ts) { m_wallet.on_first_output_found(ts); }
 
 bool WalletState::redo_transaction(const PreparedWalletTransaction &pwtx, const std::vector<size_t> &global_indices,
     size_t start_global_key_output_index, IWalletState *delta_state, bool is_base, Hash tid, Height block_height,
-    Hash bid, Timestamp tx_timestamp) {
+    Hash bid, Timestamp tx_timestamp) const {
 	api::Transaction ptx;
 	Amount unrecognized_inputs_amount = 0;
 	std::vector<api::Transfer> input_transfers;
@@ -658,8 +643,7 @@ bool WalletState::redo_transaction(const PreparedWalletTransaction &pwtx, const 
 		if (!tr.ours)
 			continue;
 		for (auto &&out : tr.outputs) {
-			Amount adjusted_amount = delta_state->add_incoming_output(out, tid);
-			out.amount             = adjusted_amount;
+			invariant(delta_state->add_incoming_output(out), "");  // TODO - double check before 3.5
 		}
 	}
 	for (auto &&tr : input_transfers) {
@@ -759,27 +743,27 @@ std::string WalletState::api_create_proof(const TransactionPrefix &tx,
 		if (output.type() != typeid(OutputKey))
 			continue;
 		const auto &key_output = boost::get<OutputKey>(output);
-		KeyPair output_det_keys;
+		KeyPair output_seed_keys;
 		if (m_wallet.get_hw()) {
-			m_wallet.get_hw()->generate_output_secret(tx_inputs_hash, out_index, &output_det_keys.public_key);
+			m_wallet.get_hw()->generate_output_seed(tx_inputs_hash, out_index, &output_seed_keys.public_key);
 		} else {
-			output_det_keys = TransactionBuilder::deterministic_keys_from_seed(
+			output_seed_keys = TransactionBuilder::deterministic_keys_from_seed(
 			    tx_inputs_hash, m_wallet.get_tx_derivation_seed(), common::get_varint_data(out_index));
 		}
 		OutputKey should_be_output = TransactionBuilder::create_output(
-		    true, address, SecretKey{}, tx_inputs_hash, out_index, output_det_keys.public_key);
+		    true, address, SecretKey{}, tx_inputs_hash, out_index, output_seed_keys.public_key);
 		if (should_be_output.public_key != key_output.public_key ||
 		    should_be_output.encrypted_secret != key_output.encrypted_secret ||
 		    should_be_output.encrypted_address_type != key_output.encrypted_address_type)
 			continue;  // output to different address or crypto protocol violated
-		sp.elements.push_back(SendproofAmethyst::Element{out_index, output_det_keys.public_key});
-		all_output_det_keys.push_back(output_det_keys);
+		sp.elements.push_back(SendproofAmethyst::Element{out_index, output_seed_keys.public_key});
+		all_output_det_keys.push_back(output_seed_keys);
 		total_amount += key_output.amount;
 	}
 	const auto proof_body = seria::to_binary(sp);
-//	std::cout << "Proof body: " << common::to_hex(proof_body) << std::endl;
+	//	std::cout << "Proof body: " << common::to_hex(proof_body) << std::endl;
 	const auto proof_prefix_hash = crypto::cn_fast_hash(proof_body);
-//	std::cout << "Proof hash: " << proof_prefix_hash << std::endl;
+	//	std::cout << "Proof hash: " << proof_prefix_hash << std::endl;
 	if (tx.inputs.empty() || tx.inputs.at(0).type() != typeid(InputKey) || mixed_public_keys.empty())
 		return std::string();  // TODO - throw?
 	const InputKey &in = boost::get<InputKey>(tx.inputs.at(0));
@@ -796,58 +780,50 @@ std::string WalletState::api_create_proof(const TransactionPrefix &tx,
 		return std::string();
 	const auto &key_output = boost::get<OutputKey>(other_tx.outputs.at(heamgi.index_in_transaction));
 	Hash other_inputs_hash = get_transaction_inputs_hash(other_tx);
-	size_t sec_index =
-	    std::find(mixed_public_keys.at(0).begin(), mixed_public_keys.at(0).end(), key_output.public_key) -
-	    mixed_public_keys.at(0).begin();
-	if (sec_index == mixed_public_keys.size())
+	size_t sec_index       = static_cast<size_t>(
+        std::find(mixed_public_keys.at(0).begin(), mixed_public_keys.at(0).end(), key_output.public_key) -
+        mixed_public_keys.at(0).begin());
+	if (sec_index == mixed_public_keys.at(0).size())
 		return std::string();
 
-	std::vector<SecretKey> all_secret_keys_s;  // empty if hw
-	std::vector<SecretKey> all_secret_keys_a;  // empty if hw
+	KeyDerivation other_kd = crypto::generate_key_derivation(other_atx.public_key, m_wallet.get_view_secret_key());
+	size_t record_index    = 0;
+	SecretKey output_secret_key_s;
+	SecretKey output_secret_key_a;
+	SecretKey output_secret_hash;
+	if (!m_wallet.prepare_input_for_spend(other_tx.version, other_kd, other_inputs_hash, heamgi.index_in_transaction,
+	        key_output, &output_secret_hash, &output_secret_key_s, &output_secret_key_a, &record_index)) {
+		throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "No keys in wallet to sign sendproof");
+	}
+
+	std::vector<SecretKey> all_secret_keys_s{output_secret_key_s};
+	std::vector<SecretKey> all_secret_keys_a{output_secret_key_a};
 	std::vector<size_t> all_sec_indexes{sec_index};
 	std::vector<KeyImage> all_keyimages{in.key_image};
 	std::vector<std::vector<PublicKey>> all_output_keys{mixed_public_keys.at(0)};
-	std::vector<SecretKey> spend_scalars;  // for hw
-	std::vector<size_t> address_indexes;
-	PublicKey address_S;
-	SecretKey spend_scalar;
-	boost::optional<KeyDerivation> kd;
-	if (m_wallet.get_hw()) {
-		auto mulled_key = m_wallet.get_hw()->mul_by_view_secret_key({key_output.public_key});
-		crypto::unlinkable_underive_address_S_step2(mulled_key.at(0), other_inputs_hash, heamgi.index_in_transaction,
-		    key_output.public_key, key_output.encrypted_secret, &spend_scalar);
-		// TODO
-	} else {
-		m_wallet.get_output_handler()(other_tx.version, other_atx.public_key, &kd, other_inputs_hash,
-		    heamgi.index_in_transaction, key_output, &address_S, &spend_scalar);
-	}
-	Amount other_amount = 0;
-	AccountAddress other_address;
-	size_t record_index = 0;
-	KeyImage other_key_image;
-	SecretKey output_secret_key_s;
-	SecretKey output_secret_key_a;
-	if (!m_wallet.detect_our_output(other_tx.version, other_atx.hash, other_inputs_hash, kd,
-	        heamgi.index_in_transaction, address_S, spend_scalar, key_output, &other_amount, &output_secret_key_s,
-	        &output_secret_key_a, &other_address, &record_index, &other_key_image))
-		return std::string();
-	if (other_key_image != in.key_image)
-		return std::string();
-	spend_scalars.push_back(spend_scalar);
-	all_secret_keys_s.push_back(output_secret_key_s);
-	all_secret_keys_a.push_back(output_secret_key_a);
-	address_indexes.push_back(record_index);
+	std::vector<SecretKey> output_secret_hashes{output_secret_hash};
+	std::vector<size_t> address_indexes{record_index};
 
-	const RingSignatureAmethyst rsa = generate_ring_signature_auditable(
-	    proof_prefix_hash, all_keyimages, all_output_keys, all_secret_keys_s, all_secret_keys_a, all_sec_indexes);
+	RingSignatureAmethyst rsa;
+	if (m_wallet.get_hw()) {
+		if (proof_body.empty())
+			return std::string();
+		BinaryArray body_minus_guard(proof_body.begin() + 1, proof_body.end());
+		m_wallet.get_hw()->proof_start(body_minus_guard);
+		rsa = m_wallet.get_hw()->generate_ring_signature_auditable(
+		    proof_prefix_hash, output_secret_hashes, address_indexes, all_keyimages, all_output_keys, all_sec_indexes);
+	} else {
+		rsa = generate_ring_signature_auditable(
+		    proof_prefix_hash, all_keyimages, all_output_keys, all_secret_keys_s, all_secret_keys_a, all_sec_indexes);
+	}
+
 	invariant(crypto::check_ring_signature_auditable(proof_prefix_hash, all_keyimages, all_output_keys, rsa), "");
 	TransactionPrefix fake_prefix;
 	fake_prefix.version = tx.version;
 	fake_prefix.inputs.push_back(in);
 	BinaryArray sig_body = seria::to_binary(rsa, fake_prefix);
-//	std::cout << "Sig body: " << common::to_hex(sig_body) << std::endl;
+	//	std::cout << "Sig body: " << common::to_hex(sig_body) << std::endl;
 
-	// TODO - refactor, common code with TransactionBuilder
 	BinaryArray total_body = proof_body;
 	common::append(total_body, sig_body);
 

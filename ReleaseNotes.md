@@ -1,5 +1,15 @@
 ## Release Notes
 
+### hardware-wallets-alpha-20190214
+
+- Added an early support for hardware wallets.
+- Fully working Trezor Model T prototype.
+- Partial support for Ledger Nano.
+
+*Current Limitations*
+- If you disconnect a hardware wallet while `walletd` is running, it will immediately crash.
+- Works in the stagenet only.
+
 ### v3.4.0 (Amethyst)
 
 - Sendproofs are now in base58 format, which eases copying and sharing.

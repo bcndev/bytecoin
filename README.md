@@ -77,6 +77,12 @@ To go futher you have to have a number of packages and utilities. You need at le
     Please note, we use LMDB only when building 64-bit daemons. For 32-bit daemons SQLite is used instead.
     ```
     $bcndev> git clone https://github.com/bcndev/lmdb.git
+
+    ```
+
+* Protobuf (if building walletd with Trezor support)
+    ```
+    $bcndev> sudo apt-get install libprotobuf-dev
     ```
 
 Git-clone (or git-pull) Bytecoin source code in that folder:
@@ -238,3 +244,13 @@ Currently bytecoin does not work out of the box on any Big-Endian platform, due 
 ## Building with parameters
 
 If you want to use tools like `clang-tidy`, run `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..` instead of `cmake ..`
+
+## Building daemons with hardware wallet support on Linux 64-bit
+
+1. Clone `trezor-core` repository into the same folder where `bytecoin` resides.
+2. Install all Google protobuf stuff:
+```
+sudo apt install protobuf-compiler libprotobuf-dev
+```
+3. If your version of proto buffers library is not `3.0.0`, you should run `protoc` on proto files in `trezor-core/vendor/trezor-common/protob` overwriting `bytecoin/src/Core/hardware/trezor/protob`.
+4. Clean your `bytecoin/build` folder if you have built the Bytecoin source code before.

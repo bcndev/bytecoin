@@ -9,6 +9,7 @@
 //#include <boost/program_options.hpp>
 #include <map>
 
+#include "Core/hardware/HardwareWallet.hpp"
 #include "common/BIPs.hpp"
 #include "common/Base58.hpp"
 #include "common/CommandLine.hpp"
@@ -24,6 +25,73 @@
 #include "../tests/json/test_json.hpp"
 #include "../tests/wallet_file/test_wallet_file.hpp"
 #include "../tests/wallet_state/test_wallet_state.hpp"
+
+/*struct MemoryRecord {
+    std::string key;
+
+    std::string parent_key;
+    std::string children_key[2];
+    std::string value;
+    bool dirty = false;
+    Hash hash;
+    size_t level = 0;
+};
+
+class SignedState {
+//	platform::DB m_db;
+    std::string mega_root;
+    std::map<std::string, MemoryRecord> mem;
+    void make_dirty(const std::string & key){
+        MemoryRecord & rec = mem.at(key);
+        if(rec.dirty)
+            return;
+        rec.dirty = true;
+        if(rec.parent_key.empty())
+            return;
+        make_dirty(rec.parent_key);
+    }
+    std::string jsw_insert(const std::string & root, const std::string &key, const std::string &value){
+        if(root.empty()){
+            MemoryRecord & rec = mem[key];
+            rec.key = key;
+            rec.dirty = true;
+            rec.value = value;
+            rec.level = 1;
+            return key;
+        }
+        MemoryRecord & root_rec = mem.at(root);
+        int dir = root_rec.value < value;
+        root_rec.children_key.at(dir) = jsw_insert(root_rec.children_key.at(dir), key, value);
+    }
+public:
+//	explicit SignedState(const std::string &full_path):m_db(platform::O_OPEN_ALWAYS, full_path){
+//	}
+    explicit SignedState(){
+
+    }
+    void commit_db_txn(){
+
+    }
+    void put(const std::string &key, const std::string &value, bool nooverwrite){
+        auto mit = mem.find(key);
+        if(mit != mem.end()){
+            if(nooverwrite)
+                throw std::runtime_error("nooverwrite");
+            mit->second.value = value;
+            make_dirty(key);
+            return;
+        }
+        mega_root = jsw_insert(mega_root, key, value);
+    }
+    bool get(const std::string &key, std::string &value) const{
+
+    }
+    void del(const std::string &key, bool mustexist){
+
+    }
+};*/
+
+void test_signed_state() {}
 
 // namespace po = boost::program_options;
 
@@ -43,6 +111,9 @@ std::string format_test_name(const std::string &name) {
 void test_bip32();
 
 int main(int argc, const char *argv[]) {
+	auto co = cn::hardware::HardwareWallet::get_connected();
+
+	test_signed_state();
 	/*    const std::string USAGE(
 	            "Execute subsystem tests. Return code 0 means success.\n"
 	            "Uses relative paths and should be run from the {PROJECT_ROOT}/bin folder. "

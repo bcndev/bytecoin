@@ -119,8 +119,8 @@ int main(int argc, const char *argv[]) try {
 		std::cin >> max_height;
 		return 0;
 	}
-	//	block_chain.test_undo_everything(0);
-	//	return 0;
+	//		block_chain.test_undo_everything(0);
+	//		return 0;
 	//	block_chain.test_print_tips();
 	//	while(block_chain.test_prune_oldest()){
 	//		block_chain.test_print_tips();
@@ -146,6 +146,9 @@ int main(int argc, const char *argv[]) try {
 } catch (const platform::ExclusiveLock::FailedToLock &ex) {
 	std::cout << "Bytecoind already running - " << common::what(ex) << std::endl;
 	return api::BYTECOIND_ALREADY_RUNNING;
+} catch (const cn::BlockChainState::Exception &ex) {
+	std::cout << common::what(ex) << std::endl;
+	return api::BYTECOIND_DATABASE_FORMAT_TOO_NEW;
 } catch (const platform::TCPAcceptor::AddressInUse &ex) {
 	std::cout << common::what(ex) << std::endl;
 	return api::BYTECOIND_BIND_PORT_IN_USE;

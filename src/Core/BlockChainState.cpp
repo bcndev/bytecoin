@@ -229,8 +229,8 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
 	}
 	// Upgrades from 5 should restart internal import if m_internal_import_chain is not empty
 	if (version != version_current)
-		throw std::runtime_error("Blockchain database format unknown (version=" + version + "), please delete " +
-		                         config.get_data_folder() + "/blockchain");
+		throw Exception("Blockchain database format too new (version=" + version + "), please delete " +
+		                config.get_data_folder() + "/blockchain");
 	if (get_tip_height() == (Height)-1) {
 		//		Block genesis_block;
 		//		genesis_block.header = currency.genesis_block_template;
@@ -522,8 +522,11 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 
 	b->previous_block_hash                = parent_bid;
 	const Timestamp next_median_timestamp = calculate_next_median_timestamp(parent_info);
-	b->root_block.timestamp               = std::max(platform::now_unix_timestamp(), next_median_timestamp);
-	b->timestamp                          = b->root_block.timestamp;
+	auto now                              = platform::now_unix_timestamp();
+	if (*height < 100)  // Tweak for testnet so first 100 blocks are mined quickly
+		now -= (100 - *height) * m_currency.difficulty_target;
+	b->root_block.timestamp = std::max(now, next_median_timestamp);
+	b->timestamp            = b->root_block.timestamp;
 
 	size_t max_txs_size          = 0;
 	size_t effective_size_median = 0;

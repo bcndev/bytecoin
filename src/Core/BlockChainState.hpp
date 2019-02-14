@@ -37,6 +37,10 @@ public:
 
 class BlockChainState : public BlockChain, private IBlockChainState {
 public:
+	class Exception : public std::runtime_error {
+	public:
+		using std::runtime_error::runtime_error;
+	};
 	BlockChainState(logging::ILogger &, const Config &, const Currency &, bool read_only);
 
 	std::vector<api::Output> get_random_outputs(uint8_t block_major_version, Amount, size_t output_count, Height,

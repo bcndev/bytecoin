@@ -26,7 +26,7 @@ using crypto::PublicKey;
 using crypto::RingSignature;
 using crypto::RingSignatureAmethyst;
 using crypto::SecretKey;
-using crypto::SendproofSignatureAmethyst;
+// using crypto::SendproofSignatureAmethyst;
 using crypto::Signature;
 
 using common::BinaryArray;
@@ -241,10 +241,11 @@ void ser(cn::SecretKey &v, ISeria &s);
 void ser(cn::KeyDerivation &v, ISeria &s);
 void ser(cn::Signature &v, ISeria &s);
 void ser(crypto::EllipticCurveScalar &v, ISeria &s);
+void ser(crypto::EllipticCurvePoint &v, ISeria &s);
 
 void ser_members(cn::AccountAddressSimple &v, ISeria &s);
 void ser_members(cn::AccountAddressUnlinkable &v, ISeria &s);
-void ser_members(cn::AccountAddress &v, ISeria &s);
+// void ser_members(cn::AccountAddress &v, ISeria &s);
 void ser_members(cn::SendproofKey &v, ISeria &s);
 void ser_members(cn::SendproofAmethyst::Element &v, ISeria &s);
 void ser_members(cn::SendproofAmethyst &v, ISeria &s);
@@ -255,7 +256,7 @@ void ser_members(cn::InputCoinbase &v, ISeria &s);
 void ser_members(cn::InputKey &v, ISeria &s);
 void ser_members(cn::RingSignatures &v, ISeria &s);
 void ser_members(cn::RingSignatureAmethyst &v, ISeria &s);
-void ser_members(cn::SendproofSignatureAmethyst &v, ISeria &s);
+// void ser_members(cn::SendproofSignatureAmethyst &v, ISeria &s);
 
 // void ser_members(cn::TransactionSignatures &v, ISeria &s);
 void ser_members(cn::RingSignatureAmethyst &v, ISeria &s, const cn::TransactionPrefix &prefix);

@@ -447,8 +447,8 @@ RingSignatureAmethyst generate_ring_signature_auditable(const Hash &prefix_hash,
 		sig.rb[i] = kb - sig.c0 * secs_spend[i];
 		sig.rc[i] = kc + sig.c0 * secs_audit[i];
 
-		DEBUG_PRINT(std::cout << "aha=" << to_bytes(sig.rb[i] * H + sig.rc[i] * b_coin_p3) << " " << to_bytes(sig.c0 * p_p3)
-		          << std::endl);
+		DEBUG_PRINT(std::cout << "aha=" << to_bytes(sig.rb[i] * H + sig.rc[i] * b_coin_p3) << " "
+		                      << to_bytes(sig.c0 * p_p3) << std::endl);
 
 		DEBUG_PRINT(std::cout << "rb[" << i << "]=" << sig.rb[i] << std::endl);
 		DEBUG_PRINT(std::cout << "rc[" << i << "]=" << sig.rc[i] << std::endl);
@@ -531,71 +531,76 @@ bool check_ring_signature_auditable(const Hash &prefix_hash, const std::vector<K
 	return sc_iszero(&c) != 0;
 }
 
-SendproofSignatureAmethyst generate_sendproof_signature_auditable(
+/*SendproofSignatureAmethyst generate_sendproof_signature_auditable(
     const Hash &prefix_hash, const KeyImage &image, const SecretKey &sec_spend, const SecretKey &sec_audit) {
-	check_scalar(sec_spend);
-	check_scalar(sec_audit);
-	DEBUG_PRINT(std::cout << "generate_sendproof_signature_auditable" << std::endl);
+    check_scalar(sec_spend);
+    check_scalar(sec_audit);
+    DEBUG_PRINT(std::cout << "generate_sendproof_signature_auditable" << std::endl);
 
-	KeccakStream buf;
-	buf << prefix_hash;
+    KeccakStream buf;
+    buf << prefix_hash;
 
-	DEBUG_PRINT(std::cout << "prefix_hash=" << prefix_hash << std::endl);
+    DEBUG_PRINT(std::cout << "prefix_hash=" << prefix_hash << std::endl);
 
-	DEBUG_PRINT(std::cout << "image=" << image << std::endl);
+    DEBUG_PRINT(std::cout << "image=" << image << std::endl);
 
-	const P3 b_coin_p3(hash_to_good_point_p3(image));
-	//	b_coins[i] = to_bytes(b_coin_p3);
-	//	DEBUG_PRINT(std::cout << "b_coin[" << i << "]=" << b_coins[i] << std::endl);
-	const P3 p_p3 = H * sec_spend - b_coin_p3 * sec_audit;
-	auto ps       = to_bytes(p_p3);
-	buf << ps;
-	DEBUG_PRINT(std::cout << "p[" << i << "]=" << ps << std::endl);
+    const P3 b_coin_p3(hash_to_good_point_p3(image));
+    //	b_coins[i] = to_bytes(b_coin_p3);
+    //	DEBUG_PRINT(std::cout << "b_coin[" << i << "]=" << b_coins[i] << std::endl);
+    const P3 p_p3 = H * sec_spend - b_coin_p3 * sec_audit;
+    auto ps       = to_bytes(p_p3);
+    buf << ps;
+    DEBUG_PRINT(std::cout << "p[" << i << "]=" << ps << std::endl);
 
-	const EllipticCurveScalar kb = random_scalar();
-	const EllipticCurveScalar kc = random_scalar();
+    const EllipticCurveScalar kb = random_scalar();
+    const EllipticCurveScalar kc = random_scalar();
 
-	const PublicKey z = to_bytes(kb * H + kc * b_coin_p3);
-	buf << z;
-	DEBUG_PRINT(std::cout << "z[" << i << "]=" << z << std::endl);
+    const PublicKey z = to_bytes(kb * H + kc * b_coin_p3);
+    buf << z;
+    DEBUG_PRINT(std::cout << "z[" << i << "]=" << z << std::endl);
 
-	SendproofSignatureAmethyst result;
-	result.c0 = buf.hash_to_scalar();
-	DEBUG_PRINT(std::cout << "c0=" << result.c0 << std::endl);
+    SendproofSignatureAmethyst result;
+    result.c0 = buf.hash_to_scalar();
+    DEBUG_PRINT(std::cout << "c0=" << result.c0 << std::endl);
 
-	result.rb = kb - result.c0 * sec_spend;
-	result.rc = kc + result.c0 * sec_audit;
+    result.rb = kb - result.c0 * sec_spend;
+    result.rc = kc + result.c0 * sec_audit;
 
-	DEBUG_PRINT(std::cout << "rb[" << i << "]=" << result.rb << std::endl);
-	DEBUG_PRINT(std::cout << "rc[" << i << "]=" << result.rc << std::endl);
+    DEBUG_PRINT(std::cout << "rb[" << i << "]=" << result.rb << std::endl);
+    DEBUG_PRINT(std::cout << "rc[" << i << "]=" << result.rc << std::endl);
 
-	return result;
+    return result;
 }
 
 bool check_sendproof_signature_auditable(
     const Hash &prefix_hash, const KeyImage &image, const PublicKey &ps, const SendproofSignatureAmethyst &sig) {
-	// sanity checks
-	if (!sc_isvalid_vartime(&sig.c0) || !sc_isvalid_vartime(&sig.rb) || !sc_isvalid_vartime(&sig.rc))
-		return false;
-	DEBUG_PRINT(std::cout << "check_sendproof_signature_auditable" << std::endl);
+    // sanity checks
+    if (!sc_isvalid_vartime(&sig.c0) || !sc_isvalid_vartime(&sig.rb) || !sc_isvalid_vartime(&sig.rc))
+        return false;
+    DEBUG_PRINT(std::cout << "check_sendproof_signature_auditable" << std::endl);
 
-	DEBUG_PRINT(std::cout << "prefix_hash=" << prefix_hash << std::endl);
-	KeccakStream buf;
-	buf << prefix_hash << ps;
-	const P3 b_coin_p3(hash_to_good_point_p3(image));
-	const PublicKey z = to_bytes(P3(sig.c0 * P3(ps)) + P3(sig.rb * H) + P3(sig.rc * b_coin_p3));
-	DEBUG_PRINT(std::cout << "z[" << i << "]=" << z << std::endl);
-	buf << z;
-	const auto c = buf.hash_to_scalar() - sig.c0;
-	return sc_iszero(&c) != 0;
-}
+    DEBUG_PRINT(std::cout << "prefix_hash=" << prefix_hash << std::endl);
+    KeccakStream buf;
+    buf << prefix_hash << ps;
+    const P3 b_coin_p3(hash_to_good_point_p3(image));
+    const PublicKey z = to_bytes(P3(sig.c0 * P3(ps)) + P3(sig.rb * H) + P3(sig.rc * b_coin_p3));
+    DEBUG_PRINT(std::cout << "z[" << i << "]=" << z << std::endl);
+    buf << z;
+    const auto c = buf.hash_to_scalar() - sig.c0;
+    return sc_iszero(&c) != 0;
+}*/
 
 KeyDerivation generate_key_derivation(const PublicKey &tx_public_key, const SecretKey &view_secret_key) {
 	check_scalar(view_secret_key);
-	const ge_p3 tx_public_key_p3 = ge_frombytes_vartime(tx_public_key);
-	const ge_p3 point3           = ge_scalarmult3(view_secret_key, tx_public_key_p3);
 	KeyDerivation derivation;
-	static_cast<EllipticCurvePoint &>(derivation) = ge_tobytes(ge_p1p1_to_p2(ge_mul8(point3)));
+	// tx public key is not checked by node, so can be invalid
+	// it is convenient to compare derivation with KeyDerivation{} outside this function to detect the fact
+	try {
+		const ge_p3 tx_public_key_p3                  = ge_frombytes_vartime(tx_public_key);
+		const ge_p3 point3                            = ge_scalarmult3(view_secret_key, tx_public_key_p3);
+		static_cast<EllipticCurvePoint &>(derivation) = ge_tobytes(ge_p1p1_to_p2(ge_mul8(point3)));
+	} catch (const std::exception &) {
+	}
 	return derivation;
 }
 
@@ -773,8 +778,8 @@ PublicKey secret_keys_to_public_key(const SecretKey &a, const SecretKey &s) {
 PublicKey linkable_derive_output_public_key(const SecretKey &output_secret, const Hash &tx_inputs_hash,
     size_t output_index, const PublicKey &address_S, const PublicKey &address_V, PublicKey *encrypted_output_secret) {
 	check_scalar(output_secret);
-	const ge_p3 view_secret_key_p3 = ge_frombytes_vartime(address_V);
-	*encrypted_output_secret       = ge_tobytes(ge_scalarmult3(output_secret, view_secret_key_p3));
+	const ge_p3 address_V_p3 = ge_frombytes_vartime(address_V);
+	*encrypted_output_secret = ge_tobytes(ge_scalarmult3(output_secret, address_V_p3));
 
 	const EllipticCurvePoint derivation = ge_tobytes(ge_scalarmult_base(output_secret));
 	//	std::cout << "derivation=" << derivation << std::endl;
@@ -794,7 +799,7 @@ PublicKey linkable_derive_output_public_key(const SecretKey &output_secret, cons
 
 PublicKey linkable_underive_address_S(const SecretKey &inv_view_secret_key, const Hash &tx_inputs_hash,
     size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
-    SecretKey *spend_scalar) {
+    SecretKey *output_secret_hash) {
 	check_scalar(inv_view_secret_key);
 	const ge_p3 encrypted_output_secret_p3 = ge_frombytes_vartime(encrypted_output_secret);
 	const EllipticCurvePoint derivation = ge_tobytes(ge_scalarmult3(inv_view_secret_key, encrypted_output_secret_p3));
@@ -802,21 +807,21 @@ PublicKey linkable_underive_address_S(const SecretKey &inv_view_secret_key, cons
 
 	KeccakStream cr_comm;
 	cr_comm << derivation << tx_inputs_hash << output_index;
-	*spend_scalar = cr_comm.hash_to_scalar();
-	//	std::cout << "derivation_hash=" << *spend_scalar << std::endl;
+	*output_secret_hash = cr_comm.hash_to_scalar();
+	//	std::cout << "derivation_hash=" << *output_secret_hash << std::endl;
 
 	const ge_p3 output_public_key_g3 = ge_frombytes_vartime(output_public_key);
-	const ge_cached point3           = ge_p3_to_cached(ge_scalarmult_base(*spend_scalar));
+	const ge_cached point3           = ge_p3_to_cached(ge_scalarmult_base(*output_secret_hash));
 	ge_p1p1 point_diff;
 	ge_sub(&point_diff, &output_public_key_g3, &point3);
 	return ge_tobytes(ge_p1p1_to_p2(point_diff));
 }
 
-SecretKey linkable_derive_output_secret_key(const SecretKey &address_s, const SecretKey &spend_scalar) {
+SecretKey linkable_derive_output_secret_key(const SecretKey &address_s, const SecretKey &output_secret_hash) {
 	check_scalar(address_s);
-	check_scalar(spend_scalar);
+	check_scalar(output_secret_hash);
 	SecretKey output_secret_key;
-	sc_add(&output_secret_key, &address_s, &spend_scalar);
+	sc_add(&output_secret_key, &address_s, &output_secret_hash);
 	return output_secret_key;
 }
 
@@ -855,12 +860,12 @@ void test_linkable() {
 	PublicKey output_public_key = linkable_derive_output_public_key(output_secret, tx_inputs_hash, output_index,
 	    spend_keypair.public_key, view_keypair.public_key, &encrypted_output_secret);
 
-	SecretKey spend_scalar;
-	PublicKey address_S2 = linkable_underive_address_S(
-	    inv_view_secret_key, tx_inputs_hash, output_index, output_public_key, encrypted_output_secret, &spend_scalar);
+	SecretKey output_secret_hash;
+	PublicKey address_S2 = linkable_underive_address_S(inv_view_secret_key, tx_inputs_hash, output_index,
+	    output_public_key, encrypted_output_secret, &output_secret_hash);
 	if (address_S2 != spend_keypair.public_key)
 		throw Error("Aha");
-	SecretKey output_secret_key2 = linkable_derive_output_secret_key(spend_keypair.secret_key, spend_scalar);
+	SecretKey output_secret_key2 = linkable_derive_output_secret_key(spend_keypair.secret_key, output_secret_hash);
 	PublicKey output_public_key2;
 	if (!secret_key_to_public_key(output_secret_key2, &output_public_key2) || output_public_key2 != output_public_key)
 		throw Error("Oho");
@@ -881,14 +886,15 @@ PublicKey unlinkable_derive_output_public_key(const PublicKey &output_secret, co
 
 	KeccakStream cr_comm;
 	cr_comm << output_secret << tx_inputs_hash << output_index;
-	const SecretKey spend_scalar = cr_comm.hash_to_scalar();
-	DEBUG_PRINT(std::cout << "spend_scalar=" << spend_scalar << std::endl);
+	const SecretKey output_secret_hash = cr_comm.hash_to_scalar();
+	DEBUG_PRINT(std::cout << "output_secret_hash=" << output_secret_hash << std::endl);
 
-	const SecretKey inv_spend_scalar = sc_invert(spend_scalar);
-	DEBUG_PRINT(std::cout << "inv_spend_scalar=" << inv_spend_scalar << std::endl);
-	PublicKey output_public_key = ge_tobytes(ge_scalarmult3(inv_spend_scalar, address_s_p3));
+	const SecretKey inv_output_secret_hash = sc_invert(output_secret_hash);
+	DEBUG_PRINT(std::cout << "inv_output_secret_hash=" << inv_output_secret_hash << std::endl);
+	PublicKey output_public_key = ge_tobytes(ge_scalarmult3(inv_output_secret_hash, address_s_p3));
 
-	*encrypted_output_secret = ge_tobytes(ge_add(output_secret_p3, ge_scalarmult3(inv_spend_scalar, address_sv_p3)));
+	*encrypted_output_secret =
+	    ge_tobytes(ge_add(output_secret_p3, ge_scalarmult3(inv_output_secret_hash, address_sv_p3)));
 	return output_public_key;
 }
 
@@ -901,7 +907,7 @@ PublicKey unlinkable_derive_output_public_key(const PublicKey &output_secret, co
 
 PublicKey unlinkable_underive_address_S(const SecretKey &view_secret_key, const Hash &tx_inputs_hash,
     size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
-    SecretKey *spend_scalar) {
+    SecretKey *output_secret_hash) {
 	check_scalar(view_secret_key);
 	const ge_p3 output_public_key_p3       = ge_frombytes_vartime(output_public_key);
 	const ge_p3 encrypted_output_secret_p3 = ge_frombytes_vartime(encrypted_output_secret);
@@ -915,16 +921,16 @@ PublicKey unlinkable_underive_address_S(const SecretKey &view_secret_key, const 
 
 	KeccakStream cr_comm;
 	cr_comm << output_secret << tx_inputs_hash << output_index;
-	*spend_scalar = cr_comm.hash_to_scalar();
-	DEBUG_PRINT(std::cout << "spend_scalar=" << *spend_scalar << std::endl);
+	*output_secret_hash = cr_comm.hash_to_scalar();
+	DEBUG_PRINT(std::cout << "output_secret_hash=" << *output_secret_hash << std::endl);
 
-	PublicKey result = ge_tobytes(ge_scalarmult3(*spend_scalar, output_public_key_p3));
+	PublicKey result = ge_tobytes(ge_scalarmult3(*output_secret_hash, output_public_key_p3));
 	{
 		PublicKey P_v2 = unlinkable_underive_address_S_step1(view_secret_key, output_public_key);
-		SecretKey spend_scalar2;
+		SecretKey output_main_hash2;
 		PublicKey result2 = unlinkable_underive_address_S_step2(
-		    P_v2, tx_inputs_hash, output_index, output_public_key, encrypted_output_secret, &spend_scalar2);
-		if (result != result2 || *spend_scalar != spend_scalar2)
+		    P_v2, tx_inputs_hash, output_index, output_public_key, encrypted_output_secret, &output_main_hash2);
+		if (result != result2 || *output_secret_hash != output_main_hash2)
 			throw Error("unlinkable_underive_public_key steps error");
 	}
 	return result;
@@ -936,12 +942,12 @@ PublicKey unlinkable_underive_address_S_step1(const SecretKey &view_secret_key, 
 	return ge_tobytes(ge_scalarmult3(view_secret_key, output_public_key_p3));
 }
 
-PublicKey unlinkable_underive_address_S_step2(const PublicKey &P_v, const Hash &tx_inputs_hash, size_t output_index,
-    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, SecretKey *spend_scalar) {
-	const ge_p3 p_v_p3                     = ge_frombytes_vartime(P_v);
+PublicKey unlinkable_underive_address_S_step2(const PublicKey &Pv, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, SecretKey *output_secret_hash) {
+	const ge_p3 Pv_p3                      = ge_frombytes_vartime(Pv);
 	const ge_p3 output_public_key_p3       = ge_frombytes_vartime(output_public_key);
 	const ge_p3 encrypted_output_secret_p3 = ge_frombytes_vartime(encrypted_output_secret);
-	const ge_cached p_v_cached             = ge_p3_to_cached(p_v_p3);
+	const ge_cached p_v_cached             = ge_p3_to_cached(Pv_p3);
 	ge_p1p1 point_diff;
 	ge_sub(&point_diff, &encrypted_output_secret_p3, &p_v_cached);
 
@@ -950,17 +956,17 @@ PublicKey unlinkable_underive_address_S_step2(const PublicKey &P_v, const Hash &
 
 	KeccakStream cr_comm;
 	cr_comm << output_secret << tx_inputs_hash << output_index;
-	*spend_scalar = cr_comm.hash_to_scalar();
-	//	std::cout << "spend_scalar=" << *spend_scalar << std::endl;
+	*output_secret_hash = cr_comm.hash_to_scalar();
+	//	std::cout << "output_secret_hash=" << *output_secret_hash << std::endl;
 
-	return ge_tobytes(ge_scalarmult3(*spend_scalar, output_public_key_p3));
+	return ge_tobytes(ge_scalarmult3(*output_secret_hash, output_public_key_p3));
 }
 
-SecretKey unlinkable_derive_output_secret_key(const SecretKey &address_secret, const SecretKey &spend_scalar) {
+SecretKey unlinkable_derive_output_secret_key(const SecretKey &address_secret, const SecretKey &output_secret_hash) {
 	check_scalar(address_secret);
-	check_scalar(spend_scalar);
-	const SecretKey inv_spend_scalar = sc_invert(spend_scalar);
-	return sc_mul(inv_spend_scalar, address_secret);
+	check_scalar(output_secret_hash);
+	const SecretKey inv_output_secret_hash = sc_invert(output_secret_hash);
+	return sc_mul(inv_output_secret_hash, address_secret);
 }
 
 void unlinkable_underive_address(PublicKey *address_S, PublicKey *address_Sv, const PublicKey &output_secret,
@@ -972,9 +978,9 @@ void unlinkable_underive_address(PublicKey *address_S, PublicKey *address_Sv, co
 
 	KeccakStream cr_comm;
 	cr_comm << output_secret << tx_inputs_hash << output_index;
-	const SecretKey spend_scalar = cr_comm.hash_to_scalar();
+	const SecretKey output_secret_hash = cr_comm.hash_to_scalar();
 
-	*address_S = ge_tobytes(ge_scalarmult3(spend_scalar, output_public_key_p3));
+	*address_S = ge_tobytes(ge_scalarmult3(output_secret_hash, output_public_key_p3));
 
 	const ge_cached p_v = ge_p3_to_cached(output_secret_p3);
 	ge_p1p1 point_diff;
@@ -982,7 +988,7 @@ void unlinkable_underive_address(PublicKey *address_S, PublicKey *address_Sv, co
 
 	const ge_p3 t_minus_k = ge_p1p1_to_p3(point_diff);
 
-	*address_Sv = ge_tobytes(ge_scalarmult3(spend_scalar, t_minus_k));
+	*address_Sv = ge_tobytes(ge_scalarmult3(output_secret_hash, t_minus_k));
 }
 
 void test_unlinkable() {
@@ -999,7 +1005,7 @@ void test_unlinkable() {
 
 	//	std::vector<KeyPair> key_result;
 	//	key_result.resize(result.size());
-	//	crypto::generate_hd_spendkeys(m_audit_key_base.secret_key, m_A_plus_SH, counter, &key_result);
+	//	crypto::generate_hd_spendkeys(m_audit_key_base.secret_key, m_A_plus_sH, counter, &key_result);
 
 	const PublicKey address_S  = A_plus_b_H(audit_key_base_pair.public_key, spend_keypair.secret_key);
 	const PublicKey address_Sv = A_mul_b(address_S, view_keypair.secret_key);
@@ -1011,15 +1017,16 @@ void test_unlinkable() {
 	PublicKey output_public_key = unlinkable_derive_output_public_key(
 	    output_secret, tx_inputs_hash, output_index, address_S, address_Sv, &encrypted_output_secret);
 
-	SecretKey spend_scalar;
+	SecretKey output_secret_hash;
 	PublicKey address_S2 = unlinkable_underive_address_S(view_keypair.secret_key, tx_inputs_hash, output_index,
-	    output_public_key, encrypted_output_secret, &spend_scalar);
+	    output_public_key, encrypted_output_secret, &output_secret_hash);
 	std::cout << "address_s2=" << address_S2 << std::endl;
 	if (address_S2 != address_S)
 		throw Error("Aha");
-	SecretKey output_secret_key2_s = unlinkable_derive_output_secret_key(spend_keypair.secret_key, spend_scalar);
-	SecretKey output_secret_key2_a = unlinkable_derive_output_secret_key(audit_key_base_pair.secret_key, spend_scalar);
-	PublicKey output_public_key2   = secret_keys_to_public_key(output_secret_key2_a, output_secret_key2_s);
+	SecretKey output_secret_key2_s = unlinkable_derive_output_secret_key(spend_keypair.secret_key, output_secret_hash);
+	SecretKey output_secret_key2_a =
+	    unlinkable_derive_output_secret_key(audit_key_base_pair.secret_key, output_secret_hash);
+	PublicKey output_public_key2 = secret_keys_to_public_key(output_secret_key2_a, output_secret_key2_s);
 	if (output_public_key2 != output_public_key)
 		throw Error("Oho");
 	const auto keyimage = generate_key_image(output_public_key, output_secret_key2_a);
@@ -1048,25 +1055,5 @@ void test_unlinkable() {
 	if (check_ring_signature_auditable(tx_prefix_hash, images, pubs, sig))
 		throw Error("Xhx");
 }
-
-// outputs_count protects against splitting proof into valid proofs with smaller amounts
-// of course, send proof creator can choose to include any set of outputs
-/*Signature amethyst_generate_sendproof(const KeyPair &output_det_keys, const Hash &tid, const Hash &message_hash,
-    const std::string &address, size_t outputs_count) {
-    KeccakStream cr_comm;
-    cr_comm << tid << message_hash << outputs_count;
-    cr_comm.append(address.data(), address.size());
-    const Hash hash = cr_comm.cn_fast_hash();
-    return generate_signature(hash, output_det_keys.public_key, output_det_keys.secret_key);
-}
-
-bool amethyst_check_sendproof(const PublicKey &output_det_key, const Hash &tid, const Hash &message_hash,
-    const std::string &address, size_t outputs_count, const Signature &sig) {
-    KeccakStream cr_comm;
-    cr_comm << tid << message_hash << outputs_count;
-    cr_comm.append(address.data(), address.size());
-    const Hash hash = cr_comm.cn_fast_hash();
-    return check_signature(hash, output_det_key, sig);
-}*/
 
 }  // namespace crypto

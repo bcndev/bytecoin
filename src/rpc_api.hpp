@@ -163,16 +163,17 @@ struct Balance {
 };
 
 enum return_code {
-	BYTECOIND_DATABASE_ERROR    = 101,  // We hope we are out of disk space, otherwise blockchain DB is corrupted.
-	BYTECOIND_ALREADY_RUNNING   = 102,
-	WALLETD_BIND_PORT_IN_USE    = 103,
-	BYTECOIND_BIND_PORT_IN_USE  = 104,
-	BYTECOIND_WRONG_ARGS        = 105,
-	WALLET_FILE_READ_ERROR      = 205,
-	WALLET_FILE_UNKNOWN_VERSION = 206,
-	WALLET_FILE_DECRYPT_ERROR   = 207,
-	WALLET_FILE_WRITE_ERROR     = 208,
-	WALLET_FILE_EXISTS          = 209,  // Daemon never overwrites file during --generate-wallet.
+	BYTECOIND_DATABASE_ERROR          = 101,  // We hope we are out of disk space, otherwise blockchain DB is corrupted.
+	BYTECOIND_ALREADY_RUNNING         = 102,
+	WALLETD_BIND_PORT_IN_USE          = 103,
+	BYTECOIND_BIND_PORT_IN_USE        = 104,
+	BYTECOIND_WRONG_ARGS              = 105,
+	BYTECOIND_DATABASE_FORMAT_TOO_NEW = 106,
+	WALLET_FILE_READ_ERROR            = 205,
+	WALLET_FILE_UNKNOWN_VERSION       = 206,
+	WALLET_FILE_DECRYPT_ERROR         = 207,
+	WALLET_FILE_WRITE_ERROR           = 208,
+	WALLET_FILE_EXISTS                = 209,  // Daemon never overwrites file during --generate-wallet.
 	WALLET_WITH_SAME_KEYS_IN_USE =
 	    210,  // Another walletd instance is using the same or another wallet file with the same keys.
 	WALLETD_WRONG_ARGS             = 211,
@@ -617,7 +618,7 @@ struct GetRawTransaction {
 	struct Response {
 		api::Transaction transaction;  // contain only info known to bytecoind
 		TransactionPrefix raw_transaction;
-		std::vector<std::vector<PublicKey>> mixed_public_keys; // not documented yet
+		std::vector<std::vector<PublicKey>> mixed_public_keys;  // not documented yet
 		// TransactionPrefix contains only indexes, we need public keys to sign sendproof
 	};
 	enum {

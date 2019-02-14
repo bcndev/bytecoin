@@ -250,38 +250,42 @@ WalletPreparatorMulticore::~WalletPreparatorMulticore() {
 		th.join();
 }
 
-PreparedWalletTransaction::PreparedWalletTransaction(TransactionPrefix &&ttx, const Wallet::OutputHandler &o_handler)
+PreparedWalletTransaction::PreparedWalletTransaction(
+    TransactionPrefix &&ttx, const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key)
     : tx(std::move(ttx)) {
 	// We ignore results of most crypto calls here and absence of tx_public_key
-	// All errors will lead to spend_key not found in our wallet
+	// All errors will lead to spend_key not found in our wallet for legacy crypto
 	PublicKey tx_public_key = extra_get_transaction_public_key(tx.extra);
-	prefix_hash             = get_transaction_prefix_hash(tx);
-	inputs_hash             = get_transaction_inputs_hash(tx);
+	derivation              = generate_key_derivation(tx_public_key, view_secret_key);
+
+	prefix_hash = get_transaction_prefix_hash(tx);
+	inputs_hash = get_transaction_inputs_hash(tx);
 
 	KeyPair tx_keys;
 	address_public_keys.resize(tx.outputs.size());
-	output_spend_scalars.resize(tx.outputs.size());
+	output_secret_hashes.resize(tx.outputs.size());
 	for (size_t out_index = 0; out_index != tx.outputs.size(); ++out_index) {
 		const auto &output = tx.outputs.at(out_index);
 		if (output.type() != typeid(OutputKey))
 			continue;
 		const auto &key_output = boost::get<OutputKey>(output);
-		o_handler(tx.version, tx_public_key, &derivation, inputs_hash, out_index, key_output,
-		    &address_public_keys.at(out_index), &output_spend_scalars.at(out_index));
+		o_handler(tx.version, derivation, inputs_hash, out_index, key_output, &address_public_keys.at(out_index),
+		    &output_secret_hashes.at(out_index));
 	}
 }
 
-PreparedWalletTransaction::PreparedWalletTransaction(Transaction &&tx, const Wallet::OutputHandler &o_handler)
-    : PreparedWalletTransaction(std::move(static_cast<TransactionPrefix &&>(tx)), o_handler) {}
+PreparedWalletTransaction::PreparedWalletTransaction(
+    Transaction &&tx, const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key)
+    : PreparedWalletTransaction(std::move(static_cast<TransactionPrefix &&>(tx)), o_handler, view_secret_key) {}
 
 PreparedWalletBlock::PreparedWalletBlock(BlockTemplate &&bc_header, std::vector<TransactionPrefix> &&raw_transactions,
-    Hash base_transaction_hash, const Wallet::OutputHandler &o_handler)
+    Hash base_transaction_hash, const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key)
     : base_transaction_hash(base_transaction_hash) {
 	header           = bc_header;
-	base_transaction = PreparedWalletTransaction(std::move(bc_header.base_transaction), o_handler);
+	base_transaction = PreparedWalletTransaction(std::move(bc_header.base_transaction), o_handler, view_secret_key);
 	transactions.reserve(raw_transactions.size());
 	for (size_t tx_index = 0; tx_index != raw_transactions.size(); ++tx_index) {
-		transactions.emplace_back(std::move(raw_transactions.at(tx_index)), o_handler);
+		transactions.emplace_back(std::move(raw_transactions.at(tx_index)), o_handler, view_secret_key);
 	}
 }
 
@@ -308,7 +312,7 @@ void WalletPreparatorMulticore::thread_run() {
 			work.blocks.erase(work.blocks.begin());
 		}
 		PreparedWalletBlock result(std::move(sync_block.raw_header), std::move(sync_block.raw_transactions),
-		    sync_block.transactions.at(0).hash, o_handler);
+		    sync_block.transactions.at(0).hash, o_handler, m_view_secret_key);
 		{
 			std::unique_lock<std::mutex> lock(mu);
 			if (local_work_counter == work_counter) {
@@ -326,11 +330,12 @@ void WalletPreparatorMulticore::cancel_work() {
 	work_counter += 1;
 }
 
-void WalletPreparatorMulticore::start_work(
-    const api::cnd::SyncBlocks::Response &new_work, Wallet::OutputHandler &&o_handler) {
+void WalletPreparatorMulticore::start_work(const api::cnd::SyncBlocks::Response &new_work,
+    Wallet::OutputHandler &&o_handler, const SecretKey &view_secret_key) {
 	std::unique_lock<std::mutex> lock(mu);
-	work        = new_work;
-	m_o_handler = std::move(o_handler);
+	work              = new_work;
+	m_o_handler       = std::move(o_handler);
+	m_view_secret_key = view_secret_key;
 	work_counter += 1;
 	have_work.notify_all();
 }
