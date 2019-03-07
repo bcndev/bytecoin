@@ -69,16 +69,14 @@ struct KeyPair {
 
 typedef std::vector<Signature> RingSignature;
 
-struct RingSignatureAmethyst {  // New auditable signatures
-	std::vector<PublicKey> p;
-	EllipticCurveScalar c0;
-	std::vector<std::vector<EllipticCurveScalar>> ra;
-	std::vector<EllipticCurveScalar> rb;
-	std::vector<EllipticCurveScalar> rc;
-};
+typedef std::vector<uint8_t> BinaryArray;
 
-struct SendproofSignatureAmethyst {
-	EllipticCurveScalar c0, rb, rc;
+struct RingSignatureAmethyst {  // New amethyst signatures
+	std::vector<PublicKey> pp;
+	EllipticCurveScalar c0;
+	std::vector<std::vector<EllipticCurveScalar>> rr;
+	std::vector<EllipticCurveScalar> rs;
+	std::vector<EllipticCurveScalar> ra;
 };
 
 std::ostream &operator<<(std::ostream &out, const EllipticCurvePoint &v);

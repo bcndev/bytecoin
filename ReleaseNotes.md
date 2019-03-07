@@ -1,5 +1,26 @@
 ## Release Notes
 
+### v3.4.1 (Amethyst)
+
+- New cryptography reviewed, some important tweaks added - thanks for all feedback to those who contributed.
+- Derivation paths of wallet secrets modified. Now dishonest modification of any secret in view-only wallet is immediately clear to auditor.
+- Output seed generation simplified.
+- Proof of sH ~ H contained in view-only wallet is simplified.
+
+*API additions*
+
+- Added `has_view_secret_key` field in the `get_wallet_info` method of `walletd`.
+
+### hardware-wallets-alpha-20190214
+
+- Added an early support for hardware wallets.
+- Fully working Trezor Model T prototype.
+- Partial support for Ledger Nano.
+
+*Current Limitations*
+- If you disconnect a hardware wallet while `walletd` is running, it will immediately crash.
+- Works in the stagenet only.
+
 ### v3.4.0 (Amethyst)
 
 - Sendproofs are now in base58 format, which eases copying and sharing.

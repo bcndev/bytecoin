@@ -103,8 +103,8 @@ bool keys_match(const SecretKey &secret_key, const PublicKey &expected_public_ke
 Signature generate_signature(const Hash &prefix_hash, const PublicKey &pub, const SecretKey &sec);
 bool check_signature(const Hash &prefix_hash, const PublicKey &pub, const Signature &sig);
 
-Signature generate_signature_H(const Hash &prefix_hash, const PublicKey &sec_H, const SecretKey &sec);
-bool check_signature_H(const Hash &prefix_hash, const PublicKey &sec_H, const Signature &sig);
+Signature generate_proof_H(const SecretKey &s);
+bool check_proof_H(const PublicKey &sH, const Signature &sig);
 
 // To send money to a key:
 // The sender generates an ephemeral key and includes it in transaction output.
@@ -122,17 +122,14 @@ RingSignature generate_ring_signature(const Hash &prefix_hash, const KeyImage &i
 bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey pubs[], size_t pubs_count,
     const RingSignature &sig);
 
-RingSignatureAmethyst generate_ring_signature_auditable(const Hash &prefix_hash, const std::vector<KeyImage> &images,
+RingSignatureAmethyst generate_ring_signature_amethyst(const Hash &prefix_hash, const std::vector<KeyImage> &images,
     const std::vector<std::vector<PublicKey>> &pubs, const std::vector<SecretKey> &secs_spend,
-    const std::vector<SecretKey> &secs_audit, const std::vector<size_t> &sec_indexes);
-bool check_ring_signature_auditable(const Hash &prefix_hash, const std::vector<KeyImage> &images,
+    const std::vector<SecretKey> &secs_audit, const std::vector<size_t> &sec_indexes,
+    const Hash *random_seed = nullptr);
+bool check_ring_signature_amethyst(const Hash &prefix_hash, const std::vector<KeyImage> &images,
     const std::vector<std::vector<PublicKey>> &pubs, const RingSignatureAmethyst &sig);
 
-SendproofSignatureAmethyst generate_sendproof_signature_auditable(
-    const Hash &prefix_hash, const KeyImage &image, const SecretKey &sec_spend, const SecretKey &sec_audit);
-bool check_sendproof_signature_auditable(
-    const Hash &prefix_hash, const KeyImage &image, const PublicKey &ps, const SendproofSignatureAmethyst &sig);
-
+SecretKey bytes_to_scalar(const Hash &h);
 SecretKey hash_to_scalar(const void *data, size_t length);
 SecretKey hash_to_scalar64(const void *data, size_t length);
 
@@ -142,6 +139,7 @@ PublicKey bytes_to_bad_point(const Hash &h);
 PublicKey hash_to_bad_point(const void *data, size_t length);
 
 // hash of (data, length) into valid point (inside main subgroup)
+PublicKey bytes_to_good_point(const Hash &h);
 PublicKey hash_to_good_point(const void *data, size_t length);
 inline PublicKey hash_to_good_point(const PublicKey &key) { return hash_to_good_point(key.data, sizeof(key.data)); }
 
@@ -173,7 +171,7 @@ Signature generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_
 bool check_sendproof(const PublicKey &txkey_pub, const PublicKey &receiver_address_V, const KeyDerivation &derivation,
     const Hash &message_hash, const Signature &proof);
 
-// Linkable crypto, spend_scalar is temporary value that is expensive to calc, we pass it around
+// Linkable crypto, output_secret_hash is temporary value that is expensive to calc, we pass it around
 // Old addresses use improved crypto in amethyst, because we need to enforce unique output public keys
 // on crypto level. Enforcing on daemon DB index level does not work (each of 2 solutions is vulnerable attack).
 
@@ -181,13 +179,13 @@ bool check_sendproof(const PublicKey &txkey_pub, const PublicKey &receiver_addre
 PublicKey linkable_derive_output_public_key(const SecretKey &output_secret, const Hash &tx_inputs_hash,
     size_t output_index, const PublicKey &address_S, const PublicKey &address_V, PublicKey *encrypted_output_secret);
 
-// receiver lloking for outputs
+// receiver looking for outputs
 PublicKey linkable_underive_address_S(const SecretKey &inv_view_secret_key, const Hash &tx_inputs_hash,
     size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
-    SecretKey *spend_scalar);
+    BinaryArray *output_secret_hash_arg);
 
 // receiver
-SecretKey linkable_derive_output_secret_key(const SecretKey &address_s, const SecretKey &spend_scalar);
+SecretKey linkable_derive_output_secret_key(const SecretKey &address_s, const SecretKey &output_secret_hash);
 
 // sender, restoring destination address
 void linkable_underive_address(const SecretKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
@@ -195,7 +193,7 @@ void linkable_underive_address(const SecretKey &output_secret, const Hash &tx_in
     PublicKey *address_V);
 void test_linkable();
 
-// Unlinkable crypto, spend_scalar is temporary value that is expensive to calc, we pass it around
+// Unlinkable crypto, output_secret_hash is temporary value that is expensive to calc, we pass it around
 
 // result size should be set to number of desired spend keys
 void generate_hd_spendkeys(const SecretKey &a0, const PublicKey &A_plus_SH, size_t index, std::vector<KeyPair> *result);
@@ -220,26 +218,19 @@ PublicKey unlinkable_derive_output_public_key(const PublicKey &output_secret, co
 // receiver looking for outputs
 PublicKey unlinkable_underive_address_S(const SecretKey &view_secret_key, const Hash &tx_inputs_hash,
     size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
-    SecretKey *spend_scalar);
+    BinaryArray *output_secret_hash_arg);
 
 // 2-step functions emulate hardware wallet
 PublicKey unlinkable_underive_address_S_step1(const SecretKey &view_secret_key, const PublicKey &output_public_key);
-PublicKey unlinkable_underive_address_S_step2(const PublicKey &P_v, const Hash &tx_inputs_hash, size_t output_index,
-    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, SecretKey *spend_scalar);
+PublicKey unlinkable_underive_address_S_step2(const PublicKey &Pv, const Hash &tx_inputs_hash, size_t output_index,
+    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, BinaryArray *output_secret_hash_org);
 
-SecretKey unlinkable_derive_output_secret_key(const SecretKey &address_secret, const SecretKey &spend_scalar);
+SecretKey unlinkable_derive_output_secret_key(const SecretKey &address_secret, const SecretKey &output_secret_hash);
 // address_secret can be audit_secret_key or spend_secret_key
 
 // sender, restoring destination address
 void unlinkable_underive_address(PublicKey *address_S, PublicKey *address_Sv, const PublicKey &output_secret,
     const Hash &tx_inputs_hash, size_t output_index, const PublicKey &output_public_key,
     const PublicKey &encrypted_output_secret);
-void test_unlinkable();
 
-/*Signature amethyst_generate_sendproof(const KeyPair &output_det_keys, const Hash &tid, const Hash &message_hash,
-    const std::string &address, size_t outputs_count);
-
-bool amethyst_check_sendproof(const PublicKey &output_det_key, const Hash &tid, const Hash &message_hash,
-    const std::string &address, size_t outputs_count, const Signature &sig);
-*/
 }  // namespace crypto

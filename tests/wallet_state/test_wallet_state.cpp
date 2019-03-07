@@ -14,17 +14,17 @@ using namespace cn;
 
 class WalletStateTest : public WalletStateBasic {
 public:
-	std::map<crypto::EllipticCurvePoint, int> memory_spent;
+	std::map<KeyImage, int> memory_spent;
 	explicit WalletStateTest(logging::ILogger &log, const Config &config, const Currency &currency)
 	    : WalletStateBasic(log, config, currency, "test_wallet_state") {}
-	Amount add_incoming_output(const api::Output &output, const Hash &tid) override {
-		return WalletStateBasic::add_incoming_output(output, tid);
+	bool add_incoming_output(const api::Output &output) override {
+		return WalletStateBasic::add_incoming_output(output);
 	}
 	Amount add_incoming_keyimage(Height block_height, const KeyImage &ki) override {
 		return WalletStateBasic::add_incoming_keyimage(block_height, ki);
 	}
-	bool try_add_incoming_output(const api::Output &output, Amount *confirmed_balance_delta) const {
-		return WalletStateBasic::try_add_incoming_output(output, confirmed_balance_delta);
+	bool try_add_incoming_output(const api::Output &output) const {
+		return WalletStateBasic::try_add_incoming_output(output);
 	}
 	bool try_adding_incoming_keyimage(const KeyImage &ki, api::Output *spending_output) const {
 		return WalletStateBasic::try_adding_incoming_keyimage(ki, spending_output);
@@ -34,7 +34,7 @@ public:
 		WalletStateBasic::add_transaction(height, tid, tx, ptx);
 	}
 	void unlock(Height height, Timestamp ts) { WalletStateBasic::unlock(height, ts); }
-	const std::map<crypto::EllipticCurvePoint, int> &get_mempool_kis_or_pks() const override { return memory_spent; }
+	const std::map<KeyImage, int> &get_mempool_keyimages() const override { return memory_spent; }
 };
 
 static bool less_output(const api::Output &a, const api::Output &b) {
@@ -66,18 +66,17 @@ public:
 	std::vector<api::Output> locked_outputs;
 	std::map<size_t, std::pair<Height, Amount>> unlocked_outputs;  // height of unlock and adjusted amount
 
-	Amount add_incoming_output(Height block_height, const api::Output &output, bool just_unlocked) {
+	bool add_incoming_output(Height block_height, const api::Output &output, bool just_unlocked) {
 		bool ki_exists      = all_keyimages.count(output.key_image) != 0;
 		bool unspent_exists = ki_exists && outputs.count(all_keyimages.at(output.key_image)) != 0;
 		if (ki_exists && !unspent_exists)
-			return 0;                                                   // second unspent after first spent
+			return false;                                               // second unspent after first spent
 		if (output.unlock_block_or_timestamp != 0 && !just_unlocked) {  // incoming
 			locked_outputs.push_back(output);
-			return output.amount;
+			return true;
 		}
-		Amount added_amount = output.amount;
 		if (ki_exists) {
-			return 0;
+			return false;
 			//			auto existing_output = outputs.at(all_keyimages.at(output.key_image));
 			//			if (output.amount <= existing_output.amount || output.address != existing_output.address)
 			//				return 0;
@@ -94,12 +93,12 @@ public:
 		}
 		api::Transfer transfer;
 		transfer.outputs.push_back(output);
-		transfer.amount  = added_amount;
+		transfer.amount  = output.amount;
 		transfer.address = output.address;
 		transfer.ours    = true;
 		transfers[block_height].transactions.back().transfers.push_back(transfer);
 		//		}
-		return added_amount;
+		return true;
 	}
 	void unlock(Height block_height, const api::Output &output) {
 		for (size_t i = 0; i != locked_outputs.size(); ++i) {
@@ -109,18 +108,19 @@ public:
 				--i;
 			}
 		}
-		Amount adjusted_amount = add_incoming_output(block_height, output, true);
+		if(!add_incoming_output(block_height, output, true))
+			return;
 		invariant(
-		    unlocked_outputs.insert(std::make_pair(output.global_index, std::make_pair(block_height, adjusted_amount)))
+		    unlocked_outputs.insert(std::make_pair(output.global_index, std::make_pair(block_height, output.amount)))
 		        .second,
 		    "");
 	}
 
 public:
-	virtual Amount add_incoming_output(const api::Output &output, const Hash &tid) override {
+	virtual bool add_incoming_output(const api::Output &output) override {
 		return add_incoming_output(output.height, output, false);
 	}
-	std::map<crypto::EllipticCurvePoint, int> memory_spent;
+	std::map<KeyImage, int> memory_spent;
 	bool is_memory_spent(const api::Output &output) const { return memory_spent.count(output.key_image) != 0; }
 	void unlock(Height height, Timestamp timestamp) {
 		std::vector<api::Output> to_unlock;
@@ -333,18 +333,17 @@ void test_wallet_state(common::CommandLine &cmd) {
 					output.key_image.data[2] = 1;
 					output_keyimages.insert(output.key_image);
 				}
-				Amount confirmed_balance_delta = 0;
-				if (ws.try_add_incoming_output(output, &confirmed_balance_delta)) {
+				if (ws.try_add_incoming_output(output)) {
 					api::Transfer transfer;
-					transfer.amount += confirmed_balance_delta;
+					transfer.amount += output.amount;
 					transfer.address = output.address;
 					transfer.ours    = true;
 					transfer.locked  = output.unlock_block_or_timestamp != 0;
 					transfer.outputs.push_back(output);
 					ptx.transfers.push_back(transfer);
 				}
-				auto inc1 = wm.add_incoming_output(output, Hash{});
-				auto inc2 = ws.add_incoming_output(output, Hash{});
+				auto inc1 = wm.add_incoming_output(output);
+				auto inc2 = ws.add_incoming_output(output);
 				invariant(inc1 == inc2, "");
 			}
 		}

@@ -37,20 +37,13 @@ static const std::string INDEX_ADDRESS_to_BALANCE = "ba";  // for get_balance
 // (ki) -> (he, gi, tid, iit) <- find largest coin from same ki group (can be spent or not)
 static const std::string INDEX_KEYIMAGE_to_HE_GI = "ki";  // ki->output_key, if !view_only
 
-// (gi) -> (he, pk)          <- find coin by  gi (can be spent or not)
-// static const std::string INDEX_GI_to_HE_PK = "g";
-// (am, si) -> (gi, he, pk)          <- find coin by  am, si (can be spent or not)
-// static const std::string INDEX_AM_SI_to_HE_PK = "s";
-
 // (he, gi) -> output       <- find available unspents         (never locked or already unlocked)
 // (addr, he, gi) -> ()     <- find available unspents by addr (never locked or already unlocked)
 static const std::string INDEX_HE_GI_to_OUTPUT = "un";
 static const std::string INDEX_ADDRESS_HE_GI   = "uh";
 
-// (real_he, gi) -> (output) <- find unlocked transfers by height (only those originally locked) Balance here is
-// adjusted, might become "crazy"
-static const std::string UNLOCKED_INDEX_REALHE_GI_to_OUTPUT =
-    "ul";  // Amount here can be adjusted if not first in the ki group
+// (real_he, gi) -> (output) <- find unlocked transfers by height (only those originally locked)
+static const std::string UNLOCKED_INDEX_REALHE_GI_to_OUTPUT = "ul";
 
 // (ki, gi) -> (unl_mom)    <- find in locked by key_image
 static const std::string LOCKED_INDEX_KI_GI = "li";
@@ -122,39 +115,6 @@ WalletStateBasic::WalletStateBasic(
 		fix_empty_chain();
 	}
 }
-
-/*void WalletStateBasic::put_am_gi_he(const api::Output &output) {
-    std::string unkey = INDEX_GI_to_HE_PK + common::write_varint_sqlite4(output.global_index);
-    BinaryArray ba    = seria::to_binary(std::make_pair(output.height, output.public_key));
-    put_with_undo(unkey, ba, true);
-    unkey = INDEX_AM_SI_to_HE_PK + common::write_varint_sqlite4(output.amount) +
-            common::write_varint_sqlite4(output.stack_index);
-    ba = seria::to_binary(GiHeightPk{output.global_index, output.height, output.public_key});
-    put_with_undo(unkey, ba, true);
-}
-bool WalletStateBasic::get_gi_he(size_t gi, Height *he, PublicKey *pk) const {
-    std::string unkey = INDEX_GI_to_HE_PK + common::write_varint_sqlite4(gi);
-    BinaryArray ba;
-    if (!m_db.get(unkey, ba))
-        return false;
-    std::pair<Height, PublicKey> pa;
-    seria::from_binary(pa, ba);
-    *he = pa.first;
-    *pk = pa.second;
-    return true;
-}
-bool WalletStateBasic::get_am_si_he(Amount am, size_t si, size_t *gi, Height *he, PublicKey *pk) const {
-    std::string unkey = INDEX_AM_SI_to_HE_PK + common::write_varint_sqlite4(am) + common::write_varint_sqlite4(si);
-    BinaryArray ba;
-    if (!m_db.get(unkey, ba))
-        return false;
-    GiHeightPk pa;
-    seria::from_binary(pa, ba);
-    *gi = pa.global_index;
-    *he = pa.height;
-    *pk = pa.public_key;
-    return true;
-}*/
 
 void WalletStateBasic::combine_balance(
     api::Balance &balance, const api::Output &output, int locked_op, int spendable_op) {
@@ -300,7 +260,7 @@ void WalletStateBasic::undo_db_state(Height state) {
 	}
 }
 
-bool WalletStateBasic::try_add_incoming_output(const api::Output &output, Amount *confirmed_balance_delta) const {
+bool WalletStateBasic::try_add_incoming_output(const api::Output &output) const {
 	HeightGi heamgi;
 	bool ki_exists = read_by_keyimage(output.key_image, &heamgi);
 	api::Output existing_output;
@@ -308,61 +268,50 @@ bool WalletStateBasic::try_add_incoming_output(const api::Output &output, Amount
 	if (ki_exists && !is_existing_unspent)
 		return false;
 	if (output.unlock_block_or_timestamp != 0) {
-		*confirmed_balance_delta = output.amount;  // It will be locked by transfer.locked == true
 		return true;
 	}
-	*confirmed_balance_delta = output.amount;
 	return !ki_exists;  // We fixed problem on crypto level, but retain code to keep indexes invariants
 }
 
-Amount WalletStateBasic::add_incoming_output(const api::Output &output, const Hash &tid, bool just_unlocked) {
+bool WalletStateBasic::add_incoming_output(const api::Output &output, bool just_unlocked) {
 	HeightGi heamgi;
 	bool ki_exists = read_by_keyimage(output.key_image, &heamgi);
 	api::Output existing_output;
 	bool is_existing_unspent = ki_exists && read_from_unspent_index(heamgi, &existing_output);
 	if (ki_exists && !is_existing_unspent) {
 		m_log(logging::WARNING) << "  Duplicate key_output attack, ignoring output because already spent" << std::endl;
-		return 0;
+		return false;
 	}
 	if (output.unlock_block_or_timestamp != 0 && !just_unlocked) {  // incoming
 		                                                            //		if (is_det_viewonly)
 		                                                            //			put_am_gi_he(output);
-		add_to_lock_index(output, tid);
-		return output.amount;
+		add_to_lock_index(output);
+		return true;
 	}
-	Amount added_amount = output.amount;
 	if (ki_exists) {
 		// We fixed problem on crypto level, but retain code to keep indexes invariants
 		m_log(logging::WARNING)
 		    << "  Duplicate key_output attack, ignoring output because have another one unspent with same or larger amount or different address, "
 		    << format_output(existing_output) << std::endl;
-		return 0;
+		return false;
 	}
 	add_to_unspent_index(output);
 	heamgi.height               = output.height;
 	heamgi.global_index         = output.global_index;
 	heamgi.transaction_hash     = output.transaction_hash;
 	heamgi.index_in_transaction = output.index_in_transaction;
-	update_keyimage(output.key_image, heamgi);
-	//	if (is_det_viewonly)
-	//		put_am_gi_he(output);
-	return added_amount;
+	add_keyimage(output.key_image, heamgi);
+	return true;
 }
 
-Amount WalletStateBasic::add_incoming_output(const api::Output &output, const Hash &tid) {
+bool WalletStateBasic::add_incoming_output(const api::Output &output) {
 	m_log(LEVEL) << "Incoming output " << format_output(output) << std::endl;
-	return add_incoming_output(output, tid, false);
+	return add_incoming_output(output, false);
 }
 
 Amount WalletStateBasic::add_incoming_keyimage(Height block_height, const KeyImage &key_image) {
-	//	if (is_det_viewonly)
-	//		return 0;
-	return add_incoming_ki_or_pk(block_height, key_image);
-}
-
-Amount WalletStateBasic::add_incoming_ki_or_pk(Height block_height, const crypto::EllipticCurvePoint &ki_or_pk) {
-	m_log(LEVEL) << "Incoming ki_or_pk " << ki_or_pk << std::endl;
-	std::string prefix = LOCKED_INDEX_KI_GI + DB::to_binary_key(ki_or_pk.data, sizeof(ki_or_pk.data));
+	m_log(LEVEL) << "Incoming ki_or_pk " << key_image << std::endl;
+	std::string prefix = LOCKED_INDEX_KI_GI + DB::to_binary_key(key_image.data, sizeof(key_image.data));
 	// find and remove in locked
 	std::vector<api::Output> found_in_locked;
 	for (DB::Cursor cur = m_db.begin(prefix); !cur.end(); cur.next()) {
@@ -382,7 +331,7 @@ Amount WalletStateBasic::add_incoming_ki_or_pk(Height block_height, const crypto
 	}
 	Amount removed_amount = 0;
 	HeightGi heamgi;
-	bool ki_exists = read_by_keyimage(ki_or_pk, &heamgi);
+	bool ki_exists = read_by_keyimage(key_image, &heamgi);
 	api::Output existing_output;
 	if (ki_exists && read_from_unspent_index(heamgi, &existing_output)) {
 		removed_amount = existing_output.amount;
@@ -392,20 +341,13 @@ Amount WalletStateBasic::add_incoming_ki_or_pk(Height block_height, const crypto
 }
 
 bool WalletStateBasic::try_adding_incoming_keyimage(const KeyImage &key_image, api::Output *spending_output) const {
-	//	if (is_det_viewonly)
-	//		return false;
-	return try_adding_incoming_ki_or_pk(key_image, spending_output);
-}
-
-bool WalletStateBasic::try_adding_incoming_ki_or_pk(
-    const crypto::EllipticCurvePoint &ki_or_pk, api::Output *spending_output) const {
 	bool candidate_found = false;
 	HeightGi heamgi;
-	bool ki_exists = read_by_keyimage(ki_or_pk, &heamgi);
+	bool ki_exists = read_by_keyimage(key_image, &heamgi);
 	if (ki_exists && read_from_unspent_index(heamgi, spending_output)) {
 		candidate_found = true;
 	}
-	std::string prefix = LOCKED_INDEX_KI_GI + DB::to_binary_key(ki_or_pk.data, sizeof(ki_or_pk.data));
+	std::string prefix = LOCKED_INDEX_KI_GI + DB::to_binary_key(key_image.data, sizeof(key_image.data));
 	for (DB::Cursor cur = m_db.begin(prefix); !cur.end(); cur.next()) {
 		size_t gi = common::integer_cast<size_t>(common::read_varint_sqlite4(cur.get_suffix()));
 		if (candidate_found)
@@ -577,7 +519,7 @@ api::Balance WalletStateBasic::get_balance(const std::string &address, Height co
 		if (lou.second.height <= confirmed_height)
 			combine_balance(balance, existing_output, 1, -1);
 	}
-	for (auto &&kit : get_mempool_kis_or_pks()) {
+	for (auto &&kit : get_mempool_keyimages()) {
 		HeightGi heamgi;
 		bool ki_exists = read_by_keyimage(kit.first, &heamgi);
 		api::Output existing_output;
@@ -699,25 +641,27 @@ void WalletStateBasic::modify_balance(const api::Output &output, int locked_op, 
 		put_with_undo(bakey2, seria::to_binary(balance2), false);
 }
 
-static const std::map<crypto::EllipticCurvePoint, int> empty_kis_or_pks;
-const std::map<crypto::EllipticCurvePoint, int> &WalletStateBasic::get_mempool_kis_or_pks() const {
-	return empty_kis_or_pks;
-}
+static const std::map<KeyImage, int> empty_kis_or_pks;
+const std::map<KeyImage, int> &WalletStateBasic::get_mempool_keyimages() const { return empty_kis_or_pks; }
 
 void WalletStateBasic::unlock(Height now_height, api::Output &&output) {
 	remove_from_lock_index(output);
-	Amount adjusted_amount = add_incoming_output(output, Hash{}, true);
-	//		if( adjusted_amount == 0) // Unlocked and have coin with the same ki and amount
-	//			continue; // We decided to put in DB anyway, so that we know we did not miss unlock
-	// We add into index with original amount as a key because otherwise there could be ambiguity in index
+	if(!add_incoming_output(output, true)) // Unlocked and have coin with the same ki
+		return;
+	// Only first output from ki group will be unlocked (and spent in instantly), all others will remain locked forever
+	// This will definitely lead to loss of locked balance invariant.
+	// We cannot express behaviour in API, because we unlock more funds than we spend.
+	// For example we could unlock coins of 100, 1000 and 3, then spend 100 coin.
+	// If we add all of them to unlock index, payment processor will incorrectly add 1103 to balance
+	// TODO - add only first coin from ki group to lock index in 3.5
 	auto unkey = UNLOCKED_INDEX_REALHE_GI_to_OUTPUT + common::write_varint_sqlite4(now_height) +
 	             common::write_varint_sqlite4(output.global_index);
-	output.amount  = adjusted_amount;
+	//	output.amount  = adjusted_amount;
 	BinaryArray ba = seria::to_binary(output);
 	put_with_undo(unkey, ba, true);
 }
 
-void WalletStateBasic::add_to_lock_index(const api::Output &output, const Hash &tid) {
+void WalletStateBasic::add_to_lock_index(const api::Output &output) {
 	m_log(LEVEL) << "  Adding output to lock index, " << format_output(output) << std::endl;
 	//	put_am_gi_tid(output.amount, output.index, tid);
 
@@ -819,7 +763,7 @@ void WalletStateBasic::remove_from_unspent_index(const api::Output &output) {
 	del_with_undo(keyun, true);
 }
 
-bool WalletStateBasic::read_by_keyimage(const crypto::EllipticCurvePoint &ki, HeightGi *value) const {
+bool WalletStateBasic::read_by_keyimage(const KeyImage &ki, HeightGi *value) const {
 	auto keyun = INDEX_KEYIMAGE_to_HE_GI + DB::to_binary_key(ki.data, sizeof(ki.data));
 	BinaryArray ba;
 	if (!m_db.get(keyun, ba))
@@ -827,7 +771,7 @@ bool WalletStateBasic::read_by_keyimage(const crypto::EllipticCurvePoint &ki, He
 	seria::from_binary(*value, ba);
 	return true;
 }
-void WalletStateBasic::update_keyimage(const crypto::EllipticCurvePoint &ki, const HeightGi &value) {
+void WalletStateBasic::add_keyimage(const KeyImage &ki, const HeightGi &value) {
 	if (ki == KeyImage{})  // linkable view-only wallet cannot calculate keyimages
 		return;
 	auto keyun = INDEX_KEYIMAGE_to_HE_GI + DB::to_binary_key(ki.data, sizeof(ki.data));
@@ -842,7 +786,7 @@ void WalletStateBasic::test_undo_blocks() {
 	std::cout << "---- After undo everything ---- " << std::endl;
 	counter = 0;
 	for (DB::Cursor cur = m_db.begin(std::string()); !cur.end(); cur.next()) {
-		if (cur.get_suffix().find("ad/") == 0)
+		if (cur.get_suffix().find("a") == 0)
 			continue;
 		std::cout << DB::clean_key(cur.get_suffix()) << std::endl;
 		if (counter++ > 2000)

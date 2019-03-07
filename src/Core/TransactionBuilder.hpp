@@ -40,20 +40,17 @@ public:
 	Transaction sign(
 	    const WalletStateBasic &wallet_state, Wallet *wallet, const std::set<AccountAddress> *only_records);
 
-	static KeyPair transaction_keys_from_seed(const Hash &tx_inputs_hash, const Hash &tx_derivation_seed);
-	static KeyPair deterministic_keys_from_seed(
-	    const Hash &tx_inputs_hash, const Hash &tx_derivation_seed, const BinaryArray &add);
-	static KeyPair deterministic_keys_from_seed(
-	    const TransactionPrefix &tx, const Hash &tx_derivation_seed, const BinaryArray &add);
-	static void generate_output_secrets(const PublicKey &output_det_key, crypto::SecretKey *output_secret_scalar,
-	    crypto::PublicKey *output_secret_point, crypto::Hash *output_secret_address_type);
+	static KeyPair transaction_keys_from_seed(const Hash &tx_inputs_hash, const Hash &view_seed);
+	static Hash generate_output_seed(const Hash &tx_inputs_hash, const Hash &view_seed, const size_t &out_index);
+	static void generate_output_secrets(const Hash &output_seed, crypto::SecretKey *output_secret_scalar,
+	    crypto::PublicKey *output_secret_point, uint8_t *output_secret_address_type);
 	static OutputKey create_output(bool tx_amethyst, const AccountAddress &to, const SecretKey &tx_secret_key,
-	    const Hash &tx_inputs_hash, size_t output_index, const PublicKey &output_det_key);
+	    const Hash &tx_inputs_hash, size_t output_index, const Hash &output_seed);
 	static bool detect_not_our_output(const Wallet *wallet, bool tx_amethyst, const Hash &tid,
 	    const Hash &tx_inputs_hash, boost::optional<Wallet::History> *, KeyPair *tx_keys, size_t out_index,
 	    const OutputKey &, AccountAddress *);
-	static bool detect_not_our_output_amethyst(const Hash &tx_inputs_hash, const PublicKey &output_det_public_key,
-	    size_t out_index, const OutputKey &, AccountAddress *);
+	static bool detect_not_our_output_amethyst(
+	    const Hash &tx_inputs_hash, const Hash &output_seed, size_t out_index, const OutputKey &, AccountAddress *);
 };
 
 class UnspentSelector {

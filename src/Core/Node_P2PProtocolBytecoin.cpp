@@ -17,6 +17,13 @@
 
 using namespace cn;
 
+static bool greater_fee_per_byte(const TransactionDesc &a, const TransactionDesc &b) {
+	invariant(a.size != 0 && b.size != 0, "");
+	const auto afb = a.fee / a.size;
+	const auto bfb = b.fee / b.size;
+	return std::tie(afb, a.hash) > std::tie(bfb, b.hash);
+}
+
 Node::P2PProtocolBytecoin::P2PProtocolBytecoin(Node *node, P2PClient *client)
     : P2PProtocolBasic(node->m_config, node->m_p2p.get_unique_number(), client)
     , m_node(node)
@@ -191,41 +198,46 @@ void Node::P2PProtocolBytecoin::advance_transactions() {
 bool Node::P2PProtocolBytecoin::on_transaction_descs(const std::vector<TransactionDesc> &descs) {
 	const auto &pool   = m_node->m_block_chain.get_memory_state_transactions();
 	Amount minimum_fee = m_node->m_block_chain.minimum_pool_fee_per_byte(true);
-	std::vector<Hash> request_transaction_ids;
-	Amount previous_fee_per_byte = std::numeric_limits<Amount>::max();
-	Hash previous_hash;
+	//	Amount previous_fee_per_byte = std::numeric_limits<Amount>::max();
+	//	Hash previous_hash;
 	// TODO - check that descs are in limits set at request
+	std::vector<TransactionDesc> request_transaction_descs;
 	for (const auto &desc : descs) {
 		if (desc.size == 0) {
 			disconnect("SyncPool desc size == 0");
 			return false;
 		}
 		Amount fee_per_byte = desc.fee / desc.size;
-		if (fee_per_byte > previous_fee_per_byte ||
-		    (fee_per_byte == previous_fee_per_byte && desc.hash >= previous_hash)) {
-			disconnect("SyncPool descs not sorted");
-			return false;
-		}
-		previous_hash         = desc.hash;
-		previous_fee_per_byte = fee_per_byte;
+		//		TODO - uncomment when no 3.4.0 version is running in the wild
+		//		if (fee_per_byte > previous_fee_per_byte ||
+		//		    (fee_per_byte == previous_fee_per_byte && desc.hash >= previous_hash)) {
+		//			disconnect("SyncPool descs not sorted");
+		//			return false;
+		//		}
+		//		previous_hash         = desc.hash;
+		//		previous_fee_per_byte = fee_per_byte;
 		if (fee_per_byte < minimum_fee)
 			continue;
 		if (!m_node->m_block_chain.in_chain(desc.newest_referenced_block))
 			continue;
 		if (pool.count(desc.hash) != 0 || m_node->m_block_chain.has_transaction(desc.hash))
 			continue;
-		if (!m_transaction_descs.insert(std::make_pair(desc.hash, desc)).second)
+		if (m_transaction_descs.count(desc.hash) != 0)
 			continue;  // Already have
-		if (!m_node->downloading_transactions.insert(std::make_pair(desc.hash, this)).second)
-			continue;
-		request_transaction_ids.push_back(desc.hash);
+		if (m_node->downloading_transactions.count(desc.hash) != 0)
+			continue;  // Already downloading
+		request_transaction_descs.push_back(desc);
 	}
-	if (!request_transaction_ids.empty())
+	//	TODO - remove sort when no 3.4.0 version is running in the wild
+	std::sort(request_transaction_descs.begin(), request_transaction_descs.end(), greater_fee_per_byte);
+	if (!request_transaction_descs.empty())
 		m_download_transactions_timer.once(m_node->m_config.download_transaction_timeout);
-	m_downloading_transaction_count += request_transaction_ids.size();
-	for (const auto &tid : request_transaction_ids) {
+	m_downloading_transaction_count += request_transaction_descs.size();
+	for (const auto &desc : request_transaction_descs) {
+		invariant(m_transaction_descs.insert(std::make_pair(desc.hash, desc)).second, "");
+		invariant(m_node->downloading_transactions.insert(std::make_pair(desc.hash, this)).second, "");
 		p2p::GetObjectsRequest::Notify msg;
-		msg.txs.push_back(tid);
+		msg.txs.push_back(desc.hash);
 		send(LevinProtocol::send(msg));
 	}
 	return true;
@@ -497,7 +509,8 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_objects(p2p::GetObjectsRes
 					desc.size                    = btx.size();
 					desc.fee                     = my_fee;
 					desc.newest_referenced_block = tit->second.newest_referenced_block;
-					msg_v4.transaction_descs.push_back(desc);
+					if (desc.size != 0)  // Should always be true, but will exit process if not, so we double-check
+						msg_v4.transaction_descs.push_back(desc);
 				}
 			} catch (const ConsensusErrorOutputDoesNotExist &ex) {
 				// We are safe to ban for bad output reference, because we have newest referenced block
@@ -519,7 +532,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_objects(p2p::GetObjectsRes
 			if (who != this)
 				who->transaction_download_finished(tid, true);
 	}
-	for (auto &&tid : req.missed_ids) {  // Here should be only transactions, we ask only block peer alwasy has
+	for (auto &&tid : req.missed_ids) {  // Here should be only transactions, we ask only block peer always has
 		auto cit = m_node->downloading_transactions.find(tid);
 		if (cit == m_node->downloading_transactions.end() || cit->second != this) {
 			m_node->m_log(logging::INFO) << "GetObjectsResponse received stray missed_id from " << get_address()
@@ -546,6 +559,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_objects(p2p::GetObjectsRes
 		m_download_transactions_timer.cancel();
 	if (!msg.txs.empty()) {
 		BinaryArray raw_msg = LevinProtocol::send(msg);
+		std::sort(msg_v4.transaction_descs.begin(), msg_v4.transaction_descs.end(), greater_fee_per_byte);
 		// Too much descs can happen only transaitional period when relaying transactions got from
 		// V1 client to V4 client. We are ok with very unlinkely transactions loss here
 		if (msg_v4.transaction_descs.size() > p2p::RelayTransactions::Notify::MAX_DESC_COUNT)
@@ -679,7 +693,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_new_block(p2p::RelayBlock::Notify 
 		}
 		// We reassembled full block, can now broadcast it to V1 or V4 clients
 	}
-	PreparedBlock pb{RawBlock{req.b}, m_node->m_block_chain.get_currency(), nullptr};
+	PreparedBlock pb{RawBlock(req.b), m_node->m_block_chain.get_currency(), nullptr};
 	if (get_peer_version() >= P2PProtocolVersion::AMETHYST && req.top_id != pb.bid)
 		return disconnect("RelayBlock lied about top_id");
 	api::BlockHeader info;

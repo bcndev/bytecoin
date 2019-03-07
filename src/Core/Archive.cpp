@@ -46,24 +46,19 @@ Archive::Archive(bool read_only, const std::string &path) : m_read_only(read_onl
 	//	commit_timer.once(DB_COMMIT_PERIOD);
 }
 
-// struct Record {
-//	std::string type;
-//	BinaryArray data;
-//	Timestamp timestamp;
-//};
-
 void Archive::add(const std::string &type,
     const BinaryArray &data,
     const Hash &hash,
     const std::string &source_address) {
 	if (!m_db || m_read_only || source_address.empty())
 		return;
-	std::cout << "Adding to archive: " << type << " hash=" << hash << " size=" << data.size()
-	          << " source_address=" << source_address << std::endl;
 	auto hash_key = HASHES_PREFIX + DB::to_binary_key(hash.data, sizeof(hash.data));
 	DB::Value value;
-	if (!m_db->get(hash_key, value))
+	if (!m_db->get(hash_key, value)) {
+		//		std::cout << "Adding to archive: " << type << " hash=" << hash << " size=" << data.size()
+		//				  << " source_address=" << source_address << std::endl;
 		m_db->put(hash_key, data, true);
+	}
 	api::cnd::GetArchive::ArchiveRecord rec;
 	rec.timestamp      = now_unix_timestamp(&rec.timestamp_usec);
 	rec.type           = type;

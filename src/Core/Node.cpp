@@ -142,6 +142,7 @@ bool Node::check_trust(const p2p::ProofOfTrust &tr) {
 	m_last_stat_request_time = tr.time;
 	return true;
 }
+
 void Node::advance_long_poll() {
 	const auto now = m_p2p.get_local_time();
 	if (!m_prevent_sleep && m_block_chain.get_tip().timestamp < now - 86400)
@@ -156,12 +157,7 @@ void Node::advance_long_poll() {
 	for (auto lit = m_long_poll_http_clients.begin(); lit != m_long_poll_http_clients.end();) {
 		const bool method_status = lit->original_json_request.get_method() == api::cnd::GetStatus::method() ||
 		                           lit->original_json_request.get_method() == api::cnd::GetStatus::method2();
-		if (method_status && !resp.ready_for_longpoll(lit->original_get_status)) {
-			++lit;
-			continue;
-		}
-		if (!method_status && lit->original_get_status.top_block_hash == resp.top_block_hash &&
-		    lit->original_get_status.transaction_pool_version == resp.transaction_pool_version) {
+		if (!resp.ready_for_longpoll(lit->original_get_status)) {
 			++lit;
 			continue;
 		}
@@ -786,14 +782,14 @@ void Node::check_sendproof(const BinaryArray &data_inside_base58, api::cnd::Chec
 		    api::cnd::CheckSendproof::FAILED_TO_PARSE, "Failed to parse proof object - too many bytes");
 
 	const auto proof_body = seria::to_binary(sp);
-//	std::cout << "Proof body: " << common::to_hex(proof_body) << std::endl;
+	//	std::cout << "Proof body: " << common::to_hex(proof_body) << std::endl;
 	const auto proof_prefix_hash = crypto::cn_fast_hash(proof_body);
-//	std::cout << "Proof hash: " << proof_prefix_hash << std::endl;
+	//	std::cout << "Proof hash: " << proof_prefix_hash << std::endl;
 
 	std::vector<KeyImage> all_keyimages{in.key_image};
 	std::vector<std::vector<PublicKey>> all_output_keys{m_block_chain.get_mixed_public_keys(in)};
 
-	if (!crypto::check_ring_signature_auditable(proof_prefix_hash, all_keyimages, all_output_keys, rsa)) {
+	if (!crypto::check_ring_signature_amethyst(proof_prefix_hash, all_keyimages, all_output_keys, rsa)) {
 		throw api::cnd::CheckSendproof::Error(
 		    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object does not match transaction or was tampered with");
 	}
@@ -815,7 +811,7 @@ void Node::check_sendproof(const BinaryArray &data_inside_base58, api::cnd::Chec
 		const auto &el = sp.elements.back();
 		AccountAddress output_address;
 		if (!TransactionBuilder::detect_not_our_output_amethyst(
-		        tx_inputs_hash, el.deterministic_public_key, out_index, key_output, &output_address)) {
+		        tx_inputs_hash, el.output_seed, out_index, key_output, &output_address)) {
 			throw api::cnd::CheckSendproof::Error(
 			    api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION, "Cannot underive address for proof output");
 		}

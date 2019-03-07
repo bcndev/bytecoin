@@ -85,6 +85,7 @@ bool Node::on_getblocktemplate(http::Client *who, http::RequestBody &&raw_reques
 	api::cnd::GetStatus::Request sta;
 	sta.top_block_hash           = req.top_block_hash;
 	sta.transaction_pool_version = req.transaction_pool_version;
+	api::cnd::GetStatus::Response status_res = create_status_response();
 	m_log(logging::INFO) << "Node received getblocktemplate REQ transaction_pool_version="
 	                     << (req.transaction_pool_version ? common::to_string(req.transaction_pool_version.get())
 	                                                      : "empty")
@@ -93,9 +94,7 @@ bool Node::on_getblocktemplate(http::Client *who, http::RequestBody &&raw_reques
 	m_log(logging::INFO) << "Node received getblocktemplate CUR transaction_pool_version="
 	                     << m_block_chain.get_tx_pool_version() << " top_block_hash=" << m_block_chain.get_tip_bid()
 	                     << std::endl;
-	if ((!sta.top_block_hash || sta.top_block_hash.get() == m_block_chain.get_tip_bid()) &&
-	    (!sta.transaction_pool_version || sta.transaction_pool_version.get() == m_block_chain.get_tx_pool_version()) &&
-	    (sta.top_block_hash || sta.transaction_pool_version)) {
+	if (!status_res.ready_for_longpoll(sta)) {
 		LongPollClient lpc;
 		lpc.original_who          = who;
 		lpc.original_request      = raw_request;

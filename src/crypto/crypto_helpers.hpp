@@ -20,10 +20,16 @@ struct P3MulResult {
 };
 struct P3MulResultG {
 	const EllipticCurveScalar &s;
-	P3MulResultG(const EllipticCurveScalar &s) : s(s) {}
+	explicit P3MulResultG(const EllipticCurveScalar &s) : s(s) {}
 };
 
 struct G3_type {};
+
+constexpr ge_p3 G_p3{
+    {-14297830, -7645148, 16144683, -16471763, 27570974, -2696100, -26142465, 8378389, 20764389, 8758491},
+    {-26843541, -6710886, 13421773, -13421773, 26843546, 6710886, -13421773, 13421773, -26843546, -6710886},
+    {1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+    {28827062, -6116119, -27349572, 244363, 8635006, 11264893, 19351346, 13413597, 16611511, -6414980}};
 
 struct P3 {
 	ge_p3 p3;
@@ -31,11 +37,7 @@ struct P3 {
 	constexpr P3() : p3{{0}, {1, 0}, {1, 0}, {0}} {  // identity point
 	}
 	constexpr P3(const ge_p3 &other) : p3(other) {}
-	P3(const G3_type &other) {  // TODO - better impl
-		SecretKey one;
-		sc_1(&one);
-		ge_scalarmult_base(&p3, &one);
-	}
+	P3(const G3_type &other) : p3(G_p3) {}
 	explicit P3(const EllipticCurvePoint &other) {
 		if (ge_frombytes_vartime(&p3, &other) != 0)
 			throw Error("Public Key Invalid");
@@ -103,18 +105,18 @@ inline P3 &operator+=(P3 &a, const P3 &b) {
 	return a;
 }
 inline P3 operator+(const P3MulResult &r1, const P3MulResult &r2) {
-	//	return P3(r1) + P3(r2);
-	ge_dsmp dsm;
-	ge_dsm_precomp(&dsm, &r2.p3);
-	P3 res_p3;
-	ge_double_scalarmult_precomp_vartime3(&res_p3.p3, &r1.s, &r1.p3, &r2.s, &dsm);
-	return res_p3;
+	return P3(r1) + P3(r2);
+	//	ge_dsmp dsm;
+	//	ge_dsm_precomp(&dsm, &r2.p3);
+	//	P3 res_p3;
+	//	ge_double_scalarmult_precomp_vartime3(&res_p3.p3, &r1.s, &r1.p3, &r2.s, &dsm);
+	//	return res_p3;
 }
-// TODO ge_double_scalarmult_base_vartime3
 inline P3 operator+(const P3MulResultG &r1, const P3MulResult &r2) {
-	P3 res_p3;
-	ge_double_scalarmult_base_vartime3(&res_p3.p3, &r2.s, &r2.p3, &r1.s);
-	return res_p3;
+	return P3(r1) + P3(r2);
+	//	P3 res_p3;
+	//	ge_double_scalarmult_base_vartime3(&res_p3.p3, &r2.s, &r2.p3, &r1.s);
+	//	return res_p3;
 }
 inline P3 operator+(const P3MulResult &r1, const P3MulResultG &r2) { return r2 + r1; }
 
@@ -164,10 +166,9 @@ inline EllipticCurveScalar &operator+=(EllipticCurveScalar &a, const EllipticCur
 	return a;
 }
 
-PublicKey get_G();        // slow, for reference only
-PublicKey get_H();        // slow, for reference only
-const ge_p3 &get_H_p3();  // fast
-PublicKey test_get_H();   // performs actual steps to calc H_p3
+PublicKey get_G();       // slow, for reference only
+PublicKey get_H();       // slow, for reference only
+PublicKey test_get_H();  // performs actual steps to calc H_p3
 
 inline SecretKey sc_invert(const EllipticCurveScalar &sec) {
 	SecretKey result;
@@ -225,20 +226,6 @@ inline ge_p3 ge_double_scalarmult_precomp_vartime3(
 	return tmp3;
 }
 
-/*inline ge_p2 ge_double_scalarmult_base_vartime(
-		const EllipticCurveScalar &a, const ge_p3 &A, const EllipticCurveScalar &b) {
-	ge_p2 tmp3;
-	ge_double_scalarmult_base_vartime(&tmp3, &a, &A, &b);
-	return tmp3;
-}
-
-inline ge_p2 ge_double_scalarmult_precomp_vartime(
-		const EllipticCurveScalar &a, const ge_p3 &A, const EllipticCurveScalar &b, const ge_dsmp &B) {
-	ge_p2 tmp3;
-	ge_double_scalarmult_precomp_vartime(&tmp3, &a, &A, &b, &B);
-	return tmp3;
-}*/
-
 inline bool ge_dsm_frombytes_vartime(ge_dsmp *image_dsm, const EllipticCurvePoint &image) {
 	ge_p3 image_p3;
 	if (ge_frombytes_vartime(&image_p3, &image) != 0)
@@ -274,17 +261,22 @@ inline ge_p2 ge_p3_to_p2(const ge_p3 &p3) {
 	ge_p3_to_p2(&p2, &p3);
 	return p2;
 }
+
 inline ge_cached ge_p3_to_cached(const ge_p3 &p3) {
 	ge_cached ca;
 	ge_p3_to_cached(&ca, &p3);
 	return ca;
 }
 
-inline ge_p3 hash_to_good_point_p3(const void *data, size_t length) {
+inline ge_p3 bytes_to_good_point_p3(const Hash &h) {
 	ge_p2 point_p2;
-	const Hash h = cn_fast_hash(data, length);
 	ge_fromfe_frombytes_vartime(&point_p2, h.data);
 	return ge_p1p1_to_p3(ge_mul8_p2(point_p2));
+}
+
+inline ge_p3 hash_to_good_point_p3(const void *data, size_t length) {
+	const Hash h = cn_fast_hash(data, length);
+	return bytes_to_good_point_p3(h);
 }
 
 inline ge_p3 hash_to_good_point_p3(const EllipticCurvePoint &key) {
@@ -305,17 +297,12 @@ inline ge_p3 ge_sub(const ge_p3 &a, const ge_p3 &b) {
 	return ge_p1p1_to_p3(result);
 }
 
-inline SecretKey sc_mul(const struct cryptoEllipticCurveScalar &aa, const struct cryptoEllipticCurveScalar &bb) {
-	SecretKey rr;
-	sc_mul(&rr, &aa, &bb);
-	return rr;
-}
+void generate_ring_signature_amethyst_loop1(size_t i, const P3 &image_p3, const P3 &p_p3, const P3 &G_plus_B_p3,
+    size_t sec_index, const std::vector<PublicKey> &pubs, std::vector<EllipticCurveScalar> *rr, EllipticCurvePoint *y,
+    EllipticCurvePoint *z, const Hash *random_seed = nullptr);
 
-void generate_ring_signature_auditable_loop1(size_t i, const Hash &prefix_hash, const P3 &image_p3, const P3 &p_p3,
-    const P3 &G_plus_B_p3, size_t sec_index, const std::vector<PublicKey> &pubs, std::vector<EllipticCurveScalar> *ra,
-    EllipticCurvePoint *x, EllipticCurvePoint *y);
-void generate_ring_signature_auditable_loop2(size_t i, const Hash &prefix_hash, const P3 &image_p3, const P3 &p_p3,
-    const P3 &G_plus_B_p3, size_t sec_index, const std::vector<PublicKey> &pubs, std::vector<EllipticCurveScalar> *ra,
-    EllipticCurveScalar *next_c);
+void generate_ring_signature_amethyst_loop2(size_t i, const P3 &image_p3, const P3 &p_p3, const P3 &G_plus_B_p3,
+    size_t sec_index, const std::vector<PublicKey> &pubs, std::vector<EllipticCurveScalar> *rr,
+    EllipticCurveScalar *next_c, const Hash *random_seed = nullptr);
 
 }  // namespace crypto

@@ -193,6 +193,7 @@ bool WalletNode::on_get_wallet_info(http::Client *, http::RequestBody &&, json_r
 	response.view_only                   = wa.is_view_only();
 	response.amethyst                    = wa.is_amethyst();
 	response.can_view_outgoing_addresses = wa.can_view_outgoing_addresses();
+	response.has_view_secret_key         = wa.get_view_secret_key() != SecretKey{};
 	response.total_address_count         = wa.get_actual_records_count();
 	response.wallet_creation_timestamp   = wa.get_oldest_timestamp();
 	response.first_address = m_wallet_state.get_currency().account_address_as_string(wa.get_first_address());
@@ -363,10 +364,6 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 	if (request.transaction.anonymity > 100)  // Arbitrary value
 		throw json_rpc::Error(api::walletd::CreateTransaction::TOO_MUCH_ANONYMITY,
 		    "Wallet will not create transactions with anonymity > 100 because large anonymity values actually reduce anonymity due to tiny number of similar transactions");
-	//	if (request.transaction.anonymity != 0 && m_wallet_state.get_wallet().is_auditable())
-	//		request.transaction.anonymity = 0;
-	//		throw json_rpc::Error(api::walletd::CreateTransaction::TOO_MUCH_ANONYMITY,
-	//		    "Auditable wallet requires 0 anonymity when sending (checked and enforced by consensus)");
 	const auto min_anonymity  = m_wallet_state.get_currency().minimum_anonymity(m_wallet_state.get_tip().major_version);
 	const auto good_anonymity = std::max(min_anonymity, request.transaction.anonymity);
 	Height confirmed_height   = api::ErrorWrongHeight::fix_height_or_depth(

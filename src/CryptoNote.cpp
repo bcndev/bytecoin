@@ -25,6 +25,7 @@ void ser(SecretKey &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
 void ser(KeyDerivation &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
 void ser(Signature &v, ISeria &s) { s.binary(reinterpret_cast<uint8_t *>(&v), sizeof(Signature)); }
 void ser(crypto::EllipticCurveScalar &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
+void ser(crypto::EllipticCurvePoint &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
 
 void ser_members(cn::AccountAddressSimple &v, ISeria &s) {
 	seria_kv("spend", v.S, s);
@@ -33,63 +34,6 @@ void ser_members(cn::AccountAddressSimple &v, ISeria &s) {
 void ser_members(cn::AccountAddressUnlinkable &v, ISeria &s) {
 	seria_kv("spend", v.S, s);
 	seria_kv("spend_view", v.Sv, s);
-}
-void ser_members(AccountAddress &v, ISeria &s) {
-	if (s.is_input()) {
-		uint8_t type = 0;
-		s.object_key("type");
-		if (dynamic_cast<seria::JsonInputStream *>(&s)) {
-			std::string str_type_tag;
-			ser(str_type_tag, s);
-			if (str_type_tag == AccountAddressSimple::str_type_tag())
-				type = AccountAddressSimple::type_tag;
-			else if (str_type_tag == AccountAddressUnlinkable::str_type_tag())
-				type = AccountAddressUnlinkable::type_tag;
-			else
-				throw std::runtime_error("Deserialization error - unknown address type " + str_type_tag);
-		} else
-			s.binary(&type, 1);
-		switch (type) {
-		case AccountAddressSimple::type_tag: {
-			AccountAddressSimple in{};
-			ser_members(in, s);
-			v = in;
-			break;
-		}
-		case AccountAddressUnlinkable::type_tag: {
-			AccountAddressUnlinkable in{};
-			ser_members(in, s);
-			v = in;
-			break;
-		}
-		default:
-			throw std::runtime_error("Deserialization error - unknown address type " + common::to_string(type));
-		}
-		return;
-	}
-	if (v.type() == typeid(AccountAddressSimple)) {
-		auto &in = boost::get<AccountAddressSimple>(v);
-		s.object_key("type");
-		if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
-			std::string str_type_tag = AccountAddressSimple::str_type_tag();
-			ser(str_type_tag, s);
-		} else {
-			uint8_t type = AccountAddressSimple::type_tag;
-			s.binary(&type, 1);
-		}
-		ser_members(in, s);
-	} else if (v.type() == typeid(AccountAddressUnlinkable)) {
-		auto &in = boost::get<AccountAddressUnlinkable>(v);
-		s.object_key("type");
-		if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
-			std::string str_type_tag = AccountAddressUnlinkable::str_type_tag();
-			ser(str_type_tag, s);
-		} else {
-			uint8_t type = AccountAddressUnlinkable::type_tag;
-			s.binary(&type, 1);
-		}
-		ser_members(in, s);
-	}
 }
 void ser_members(cn::SendproofKey &v, ISeria &s) {
 	Amount amount = 0;
@@ -102,8 +46,8 @@ void ser_members(cn::SendproofKey &v, ISeria &s) {
 		seria_kv("amount", amount, s);
 }
 void ser_members(cn::SendproofAmethyst::Element &v, ISeria &s) {
-	seria_kv("out_index", v.out_index, s);
-	seria_kv("deterministic_public_key", v.deterministic_public_key, s);
+	seria_kv("output_index", v.out_index, s);
+	seria_kv("output_seed", v.output_seed, s);
 }
 void ser_members(cn::SendproofAmethyst &v, ISeria &s) {
 	uint8_t guard_byte = 0;
@@ -112,63 +56,18 @@ void ser_members(cn::SendproofAmethyst &v, ISeria &s) {
 		throw std::runtime_error("Sendproof disambiguition fails");
 	seria_kv("version", v.version, s);
 	seria_kv("transaction_hash", v.transaction_hash, s);
-	seria_kv("message", v.message, s);
-	if (v.version == 1) {
+	if (v.version == 1 || v.version == 2 || v.version == 3) {
 		seria_kv("address", v.address_simple, s);
 		seria_kv("derivation", v.derivation, s);
 		seria_kv("signature", v.signature, s);
-		return;
-	}
-	if (v.version == 4) {
+	} else if (v.version == 4) {
 		seria_kv("elements", v.elements, s);
-		return;
-	}
+	} else
+		throw std::runtime_error(
+		    "Unknown version of amethyst sendproof, version = " + common::to_string(int(v.version)));
+	seria_kv("message", v.message, s);
 }
-/*void ser_members(Sendproof &v, ISeria &s, const Currency &currency) {
-    std::string addr;
-    if (!s.is_input())
-        addr = currency.account_address_as_string(v.address);
-    seria_kv("address", addr, s);
-    if (s.is_input() && (!currency.parse_account_address_string(addr, &v.address)))
-        throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse wallet address", addr);
-    seria_kv("transaction_hash", v.transaction_hash, s);
-    seria_kv("message", v.message, s);
-    seria_kv("amount", v.amount, s);
-    std::string proof;
-    BinaryArray binary_proof;
-    if (!s.is_input()) {
-        if (v.proof.type() == typeid(SendproofKey)) {
-            auto type = SendproofKey::str_type_tag();
-            seria_kv("type", type, s);
-            auto &var    = boost::get<SendproofKey>(v.proof);
-            binary_proof = seria::to_binary(var);
-        } else if (v.proof.type() == typeid(SendproofAmethyst)) {
-            auto type = SendproofAmethyst::str_type_tag();
-            seria_kv("type", type, s);
-            auto &var    = boost::get<SendproofAmethyst>(v.proof);
-            binary_proof = seria::to_binary(var);
-        } else
-            throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Unknown address type", addr);
-        proof = common::base58::encode(binary_proof);
-    }
-    seria_kv("proof", proof, s);
-    if (s.is_input()) {
-        if (!common::base58::decode(proof, &binary_proof))
-            throw std::runtime_error("Wrong proof format - " + proof);
-        std::string type = SendproofKey::str_type_tag();
-        seria_kv("type", type, s);
-        if (type == SendproofKey::str_type_tag()) {
-            SendproofKey sp;
-            seria::from_binary(sp, binary_proof);
-            v.proof = sp;
-        } else if (type == SendproofAmethyst::str_type_tag()) {
-            SendproofAmethyst sp;
-            seria::from_binary(sp, binary_proof);
-            v.proof = sp;
-        } else
-            throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Unknown address type", addr);
-    }
-}*/
+
 void ser_members(TransactionInput &v, ISeria &s) {
 	if (s.is_input()) {
 		uint8_t type = 0;
@@ -276,150 +175,62 @@ void ser_members(InputKey &v, ISeria &s) {
 }
 void ser_members(cn::RingSignatures &v, ISeria &s) { seria_kv("signatures", v.signatures, s); }
 void ser_members(cn::RingSignatureAmethyst &v, ISeria &s) {
-	seria_kv("p", v.p, s);
+	seria_kv("pp", v.pp, s);
 	seria_kv("c0", v.c0, s);
+	seria_kv("rr", v.rr, s);
+	seria_kv("rs", v.rs, s);
 	seria_kv("ra", v.ra, s);
-	seria_kv("rb", v.rb, s);
-	seria_kv("rc", v.rc, s);
 }
-void ser_members(cn::SendproofSignatureAmethyst &v, ISeria &s) {
-	seria_kv("c0", v.c0, s);
-	seria_kv("rb", v.rb, s);
-	seria_kv("rc", v.rc, s);
-}
-
-/*
-enum { ring_signature_blank_tag = 0xff, ring_signature_normal_tag = 1, ring_signature_auditable_tag = 4 };
-const char ring_signature_blank_tag_str[]     = "blank";
-const char ring_signature_normal_tag_str[]    = "normal";
-const char ring_signature_auditable_tag_str[] = "auditable";
-
-// Usually signatures are parsed in the context of transaction where type is known
-// but sometimes we need to send just signatures, so we need to seria them independently
-
-void ser_members(cn::TransactionSignatures &v, ISeria &s) {
-    if (s.is_input()) {
-        uint8_t type = 0;
-        s.object_key("type");
-        if (dynamic_cast<seria::JsonInputStream *>(&s)) {
-            std::string str_type_tag;
-            ser(str_type_tag, s);
-            if (str_type_tag == ring_signature_blank_tag_str)
-                type = ring_signature_blank_tag;
-            else if (str_type_tag == ring_signature_normal_tag_str)
-                type = ring_signature_normal_tag;
-            else if (str_type_tag == ring_signature_auditable_tag_str)
-                type = ring_signature_auditable_tag;
-            else
-                throw std::runtime_error("Deserialization error - unknown ring signature type " + str_type_tag);
-        } else
-            s.binary(&type, 1);
-        switch (type) {
-        case ring_signature_blank_tag: {
-            v = boost::blank{};
-            break;
-        }
-        case ring_signature_normal_tag: {
-            RingSignatures ring_sig;
-            ser_members(ring_sig, s);
-            v = ring_sig;
-            break;
-        }
-        case ring_signature_auditable_tag: {
-            RingSignatureAmethyst ring_sig;
-            ser_members(ring_sig, s);
-            v = ring_sig;
-            break;
-        }
-        default:
-            throw std::runtime_error("Deserialization error - unknown ring signature type " + common::to_string(type));
-        }
-        return;
-    }
-    if (v.type() == typeid(boost::blank)) {
-        s.object_key("type");
-        if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
-            std::string str_type_tag = ring_signature_blank_tag_str;
-            ser(str_type_tag, s);
-        } else {
-            uint8_t type = ring_signature_blank_tag;
-            s.binary(&type, 1);
-        }
-    } else if (v.type() == typeid(RingSignatures)) {
-        auto &in = boost::get<RingSignatures>(v);
-        s.object_key("type");
-        if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
-            std::string str_type_tag = ring_signature_normal_tag_str;
-            ser(str_type_tag, s);
-        } else {
-            uint8_t type = ring_signature_normal_tag;
-            s.binary(&type, 1);
-        }
-        ser_members(in, s);
-    } else if (v.type() == typeid(RingSignatureAmethyst)) {
-        auto &in = boost::get<RingSignatureAmethyst>(v);
-        s.object_key("type");
-        if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
-            std::string str_type_tag = ring_signature_auditable_tag_str;
-            ser(str_type_tag, s);
-        } else {
-            uint8_t type = ring_signature_auditable_tag;
-            s.binary(&type, 1);
-        }
-        ser_members(in, s);
-    } else
-        throw std::runtime_error("Serialization error - unknown ring signature type");
-}*/
 
 // Serializing in the context of transaction - sizes and types are known from transaction prefix
 void ser_members(cn::RingSignatureAmethyst &sigs, ISeria &s, const cn::TransactionPrefix &prefix) {
 	size_t sig_size = prefix.inputs.size();
 	if (s.is_input()) {
-		sigs.p.resize(sig_size);
+		sigs.pp.resize(sig_size);
+		sigs.rr.resize(sig_size);
+		sigs.rs.resize(sig_size);
 		sigs.ra.resize(sig_size);
-		sigs.rb.resize(sig_size);
-		sigs.rc.resize(sig_size);
 	}
 	s.object_key("p");
 	s.begin_array(sig_size, true);
-	for (auto &sig : sigs.p) {
+	for (auto &sig : sigs.pp) {
 		ser(sig, s);
 	}
 	s.end_array();
 	s.object_key("c0");
 	ser(sigs.c0, s);
-	s.object_key("ra");
+	s.object_key("rr");
 	s.begin_array(sig_size, true);
 	for (size_t i = 0; i < sig_size; ++i) {
 		invariant(prefix.inputs[i].type() == typeid(InputKey),
 		    "Serialization error: input type wrong for transaction version");
 		size_t signature_size = boost::get<InputKey>(prefix.inputs[i]).output_indexes.size();
 		if (s.is_input()) {
-			sigs.ra[i].resize(signature_size);
+			sigs.rr[i].resize(signature_size);
 			s.begin_array(signature_size, true);
-			for (crypto::EllipticCurveScalar &sig : sigs.ra[i]) {
+			for (crypto::EllipticCurveScalar &sig : sigs.rr[i]) {
 				ser(sig, s);
 			}
 			s.end_array();
 		} else {
-			invariant(signature_size == sigs.ra[i].size(), "Serialization error: unexpected signatures size");
+			invariant(signature_size == sigs.rr[i].size(), "Serialization error: unexpected signatures size");
 			s.begin_array(signature_size, true);
-			for (crypto::EllipticCurveScalar &sig : sigs.ra[i]) {
+			for (crypto::EllipticCurveScalar &sig : sigs.rr[i]) {
 				ser(sig, s);
 			}
 			s.end_array();
 		}
 	}
 	s.end_array();
-	s.object_key("rb");
+	s.object_key("rs");
 	s.begin_array(sig_size, true);
-	for (auto &sig : sigs.rb) {
+	for (auto &sig : sigs.rs) {
 		ser(sig, s);
 	}
 	s.end_array();
-	s.object_key("rc");
+	s.object_key("ra");
 	s.begin_array(sig_size, true);
-	for (auto &sig : sigs.rc) {
+	for (auto &sig : sigs.ra) {
 		ser(sig, s);
 	}
 	s.end_array();
@@ -572,48 +383,7 @@ void ser_members(RootBlock &v, ISeria &s, BlockSeriaType seria_type) {
 	}
 	s.end_array();
 }
-/*
-    We commented code below (for now) which uses bitmask to save space on enconding
-    zero hashes (space saved depends on how many collisions in coins currency ids)
 
-    size_t length = v.cm_merkle_branch.size();
-    seria_kv("cm_merkle_branch_length", length, s);
-    std::vector<unsigned char> mask((length + 7) / 8);
-    if (s.is_input()) {
-        v.cm_merkle_branch.resize(length);
-        s.object_key("cm_merkle_branch_mask");
-        s.binary(mask.data(), mask.size());
-        size_t non_zero_count = 0;
-        for (size_t i = 0; i != length; ++i)
-            if ((mask.at(i / 8) & (1U << (i % 8))) != 0)
-                non_zero_count += 1;
-        s.object_key("cm_merkle_branch");
-        s.begin_array(non_zero_count, true);
-        for (size_t i = 0; i != length; ++i) {
-            if ((mask.at(i / 8) & (1U << (i % 8))) != 0)
-                ser(v.cm_merkle_branch.at(i), s);
-            else
-                v.cm_merkle_branch.at(i) = Hash{};
-        }
-        s.end_array();
-    } else {
-        std::vector<Hash> non_zero_hashes;
-        for (size_t i = 0; i != length; ++i)
-            if (v.cm_merkle_branch.at(i) != Hash{}) {
-                mask.at(i / 8) |= (1U << (i % 8));
-                non_zero_hashes.push_back(v.cm_merkle_branch.at(i));
-            }
-        s.object_key("cm_merkle_branch_mask");
-        s.binary(mask.data(), mask.size());
-        s.object_key("cm_merkle_branch");
-        size_t non_zero_count = non_zero_hashes.size();
-        s.begin_array(non_zero_count, true);
-        for (Hash &hash : non_zero_hashes) {
-            ser(hash, s);
-        }
-        s.end_array();
-    }
-*/
 void ser_members(crypto::CMBranchElement &v, ISeria &s) {
 	seria_kv_binary("depth", &v.depth, 1, s);
 	seria_kv("hash", v.hash, s);

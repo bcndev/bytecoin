@@ -4,6 +4,7 @@
 #include "BIPs.hpp"
 #include <iostream>
 
+#include <hmac_sha2.h>
 #include <openssl/bn.h>
 #include <openssl/ec.h>
 #include <openssl/evp.h>
@@ -11,6 +12,7 @@
 #include <openssl/obj_mac.h>
 #include <openssl/sha.h>
 #include <algorithm>
+#include <boost/multiprecision/cpp_int.hpp>
 #include <string>
 #include <vector>
 #include "common/Invariant.hpp"
@@ -18,6 +20,62 @@
 #include "common/Varint.hpp"
 #include "common/Words.hpp"
 #include "crypto/crypto.hpp"
+
+void pkcs5_pbkdf2_hmac_sha512(const uint8_t *pass, size_t passlen, const uint8_t *salt, size_t saltlen, size_t iter,
+    size_t keylen, uint8_t *out) {
+	constexpr size_t hashLen = 64;
+	const auto numBlocks     = (keylen + hashLen - 1) / hashLen;
+	hmac_sha512_ctx ctx;
+
+	hmac_sha512_init(&ctx, pass, static_cast<int>(passlen));
+	memset(out, 0, keylen);
+	for (size_t b = 0; b < numBlocks; ++b) {
+		hmac_sha512_reinit(&ctx);
+		hmac_sha512_update(&ctx, salt, static_cast<int>(saltlen));
+		unsigned char bb[4]{};
+		common::uint_be_to_bytes(bb, 4, b + 1);
+		unsigned char U[hashLen]{};
+		hmac_sha512_update(&ctx, bb, 4);
+		hmac_sha512_final(&ctx, U, hashLen);
+		size_t cou = std::min<size_t>(hashLen, keylen - b * hashLen);
+		for (size_t j = 0; j != cou; ++j)
+			out[b * hashLen + j] = U[j];
+		for (size_t i = 1; i < iter; ++i) {
+			hmac_sha512_reinit(&ctx);
+			hmac_sha512_update(&ctx, U, hashLen);
+			hmac_sha512_final(&ctx, U, hashLen);
+			for (size_t j = 0; j != cou; ++j)
+				out[b * hashLen + j] ^= U[j];
+		}
+	}
+}
+
+void pkcs5_pbkdf2_hmac_sha512_checked(
+    const uint8_t *pass, size_t passlen, const uint8_t *salt, size_t saltlen, size_t iter, uint8_t *out) {
+	pkcs5_pbkdf2_hmac_sha512(pass, passlen, salt, saltlen, iter, 64, out);
+	unsigned char out2[64]{};
+	PKCS5_PBKDF2_HMAC(reinterpret_cast<const char *>(pass), static_cast<int>(passlen), salt, static_cast<int>(saltlen),
+	    static_cast<int>(iter), EVP_sha512(), 64, out2);
+	invariant(memcmp(out, out2, 64) == 0, "");
+}
+
+void hmac_sha512_checked(
+    const uint8_t *key, size_t key_size, const uint8_t *message, size_t message_len, uint8_t *out) {
+	hmac_sha512(key, static_cast<int>(key_size), message, static_cast<int>(message_len), out, 64);
+	auto out2 = HMAC(EVP_sha512(), reinterpret_cast<const char *>(key), static_cast<int>(key_size), message,
+	    message_len, nullptr, nullptr);
+	invariant(memcmp(out, out2, 64) == 0, "");
+}
+
+void sha256_checked(const unsigned char *message, size_t len, unsigned char *digest) {
+	sha256(message, static_cast<int>(len), digest);
+	unsigned char digest2[32]{};
+	SHA256_CTX sha256;
+	SHA256_Init(&sha256);
+	SHA256_Update(&sha256, message, len);
+	SHA256_Final(digest2, &sha256);
+	invariant(memcmp(digest, digest2, 32) == 0, "");
+}
 
 struct EC_GROUPw {
 	EC_GROUP *pgroup = nullptr;
@@ -57,7 +115,161 @@ using namespace cn;
 
 const bool debug_print = false;
 
+namespace mp = boost::multiprecision;
+
+const mp::cpp_int group_p = mp::pow(mp::cpp_int(2), 256) - mp::pow(mp::cpp_int(2), 32) - mp::cpp_int(977);
+const mp::cpp_int group_n("0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
+
+static mp::cpp_int pos_mod(const mp::cpp_int &val, const mp::cpp_int &p2) {
+	mp::cpp_int r = val % p2;
+	if (r < 0)
+		r += p2;
+	return r;
+}
+
+static mp::cpp_int inverse(mp::cpp_int x) {
+	mp::cpp_int p2 = group_p;
+	mp::cpp_int inv1(1);
+	mp::cpp_int inv2(0);
+	//	std::cout << "x0=" << x << std::endl;
+	//	std::cout << "p0=" << p << std::endl;
+	while (p2 != mp::cpp_int(1) && p2 != mp::cpp_int(0)) {
+		auto inv1prev = inv1;
+		auto inv2prev = inv2;
+		inv1          = inv2prev;
+		inv2          = inv1prev - inv2prev * (x / p2);
+		auto xprev    = x;
+		auto pprev    = p2;
+		x             = pprev;
+		p2            = pos_mod(xprev, pprev);
+		//		std::cout << "x=" << x << std::endl;
+		//		std::cout << "p=" << p << std::endl;
+		//		std::cout << "inv1=" << inv1 << std::endl;
+		//		std::cout << "inv2=" << inv2 << std::endl;
+	}
+	return inv2;
+}
+
+struct mppoint {
+	mp::cpp_int x{0};
+	mp::cpp_int y{0};
+};
+
+static const mppoint g{mp::cpp_int("0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798"),
+    mp::cpp_int("0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8")};
+
+static bool is_zero(const mppoint &pt) { return pt.x == 0 && pt.y == 0; }
+
+static mppoint dblpt(const mppoint &pt) {
+	if (is_zero(pt))
+		return pt;
+	if (pt.y == 0)  // Never on sec256k1
+		return mppoint{};
+	mp::cpp_int slope = 3 * pt.x * pt.x * inverse(2 * pt.y);
+	mp::cpp_int xsum  = slope * slope - 2 * pt.x;
+	mp::cpp_int ysum  = slope * (pt.x - xsum) - pt.y;
+	return mppoint{pos_mod(xsum, group_p), pos_mod(ysum, group_p)};
+}
+
+static mppoint addpt(const mppoint &p1, const mppoint &p2) {
+	if (is_zero(p1))
+		return p2;
+	if (is_zero(p2))
+		return p1;
+	if (p1.x == p2.x) {
+		if (p1.y == p2.y)
+			return dblpt(p1);
+		return mppoint{};  // (x, y) + (x, -y) = 0
+	}
+	mp::cpp_int slope = (p1.y - p2.y) * inverse(p1.x - p2.x);
+	mp::cpp_int xsum  = slope * slope - (p1.x + p2.x);
+	mp::cpp_int ysum  = slope * (p1.x - xsum) - p1.y;
+	return mppoint{pos_mod(xsum, group_p), pos_mod(ysum, group_p)};
+}
+
+static mppoint ptmul(const mppoint &pt, mp::cpp_int a) {
+	mppoint scale = pt;
+	mppoint acc;  // pt ^ 0 == 0
+	while (a != 0) {
+		if (a % 2 == 1) {
+			acc = addpt(acc, scale);
+		}
+		scale = dblpt(scale);
+		a /= 2;
+	}
+	return acc;
+}
+
+// https://crypto.stackexchange.com/questions/8914/ecdsa-compressed-public-key-point-back-to-uncompressed-public-key-point
+// https://bitcoin.stackexchange.com/questions/3059/what-is-a-compressed-bitcoin-key
+
+static common::BinaryArray bitcoin_Gn(const common::BinaryArray &n) {
+	//	std::cout << "p=" << std::hex << p << std::dec << std::endl;
+	//	std::cout << "g=" << std::hex << g.x << " " << g.y << std::dec << std::endl;
+	//	mppoint g2 = dblpt(g);
+	//	std::cout << "g2=" << std::hex << g2.x << " " << g2.y << std::dec << std::endl;
+	//	mppoint g3 = addpt(g2, g);
+
+	//	std::cout << "g3=" << std::hex << g3.x << " " << g3.y << std::dec << std::endl;
+	//	mp::cpp_int priv_key_mp("0xf8ef380d6c05116dbed78bfdd6e6625e57426af9a082b81c2fa27b06984c11f3");
+
+	//	mppoint pub_key_mp = ptmul(g, priv_key_mp);
+	//	std::cout << "pub_key=" << std::hex << pub_key_mp.x << " " << pub_key_mp.y << std::dec << std::endl;
+
+	mp::cpp_int priv_key;
+	import_bits(priv_key, std::begin(n), std::end(n));
+	if (debug_print)
+		std::cout << "priv_key=" << std::hex << priv_key << std::dec << std::endl;
+	mppoint pub_key = ptmul(g, priv_key);
+	if (debug_print)
+		std::cout << "pub_key=" << std::hex << pub_key.x << " " << pub_key.y << std::dec << std::endl;
+	if (is_zero(pub_key))
+		return common::BinaryArray(1, uint8_t{0});
+	const uint8_t first_byte = (pub_key.y % 2) == 1 ? uint8_t(0x03) : uint8_t(0x02);
+	common::BinaryArray result(1, first_byte);
+	export_bits(pub_key.x, std::back_inserter(result), 8);
+	if (result.size() < 33)
+		result.insert(result.begin() + 1, 33 - result.size(), uint8_t{0});
+	//	std::cout << "pub_key=" << common::to_hex(result) << std::endl;
+	return result;
+}
+
+static common::BinaryArray bitcoin_sc_add(const common::BinaryArray &a, const common::BinaryArray &b) {
+	EC_GROUPw group;
+	BN_CTXw bn_ctx;
+	BIGNUMw priv_bn(a.data(), a.size());
+	BIGNUMw priv_bn2(b.data(), b.size());
+	BIGNUMw priv_order;
+	invariant(BN_add(priv_bn.pbn, priv_bn.pbn, priv_bn2.pbn), "BN_add failed");
+
+	invariant(EC_GROUP_get_order(group.pgroup, priv_order.pbn, bn_ctx.ctx), "EC_GROUP_get_order failed");
+	invariant(BN_mod(priv_bn.pbn, priv_bn.pbn, priv_order.pbn, bn_ctx.ctx), "BN_mod failed");
+	common::BinaryArray sum(32);
+	//	invariant(BN_bn2binpad(priv_order.pbn, sum.data(), 32), "BN_bn2binpad failed");
+	//	std::cout << common::to_hex(sum) << std::endl;
+	invariant(BN_bn2binpad(priv_bn.pbn, sum.data(), 32), "BN_bn2binpad failed");
+
+	mp::cpp_int priv_a;
+	import_bits(priv_a, std::begin(a), std::end(a));
+	mp::cpp_int priv_b;
+	import_bits(priv_b, std::begin(b), std::end(b));
+
+	mp::cpp_int priv_sum = pos_mod(priv_a + priv_b, group_n);
+	common::BinaryArray sum2;
+	export_bits(priv_sum, std::back_inserter(sum2), 8);
+	if (sum2.size() < 32)
+		sum2.insert(sum2.begin(), 32 - sum2.size(), uint8_t{0});
+	invariant(sum == sum2, "");
+	return sum;
+}
+
 void Bip32Key::make_pub() {
+	//	boost::multiprecision::cpp_int pow("8912627233012800753578052027888001981");
+
+	if (debug_print)
+		std::cout << "priv_key=" << common::to_hex(priv_key) << std::endl;
+
+	//	common::BinaryArray priv_key_zero(priv_key.size());
 	EC_GROUPw group;
 	BIGNUMw priv_bn(priv_key.data(), priv_key.size());
 
@@ -68,20 +280,23 @@ void Bip32Key::make_pub() {
 	    EC_POINT_point2oct(group.pgroup, pkey.p, POINT_CONVERSION_COMPRESSED, pub_buf, sizeof(pub_buf), nullptr);
 	invariant(si != 0, "EC_POINT_point2oct failed");
 	pub_key.assign(pub_buf, pub_buf + si);
-	if (debug_print)
+	auto pub_key2 = bitcoin_Gn(priv_key);
+	invariant(pub_key == pub_key2, "");
+	if (debug_print) {
 		std::cout << "   pub_key=" << common::to_hex(pub_key) << std::endl;
+	}
 }
 
 Bip32Key Bip32Key::create_master_key(const std::string &bip39_mnemonic, const std::string &passphrase) {
 	Bip32Key result;
-	unsigned char bip39_seed[64];
+	unsigned char bip39_seed[64]{};
 	std::string hmac_salt    = "mnemonic" + passphrase;
 	std::string bitcoin_seed = "Bitcoin seed";
-	PKCS5_PBKDF2_HMAC(bip39_mnemonic.data(), static_cast<int>(bip39_mnemonic.size()),
-	    reinterpret_cast<const uint8_t *>(hmac_salt.data()), static_cast<int>(hmac_salt.size()), 2048, EVP_sha512(), 64,
-	    bip39_seed);
-	auto master = HMAC(
-	    EVP_sha512(), bitcoin_seed.data(), static_cast<int>(bitcoin_seed.size()), bip39_seed, 64, nullptr, nullptr);
+	pkcs5_pbkdf2_hmac_sha512_checked(reinterpret_cast<const uint8_t *>(bip39_mnemonic.data()), bip39_mnemonic.size(),
+	    reinterpret_cast<const uint8_t *>(hmac_salt.data()), hmac_salt.size(), 2048, bip39_seed);
+	unsigned char master[64]{};
+	hmac_sha512_checked(
+	    reinterpret_cast<const uint8_t *>(bitcoin_seed.data()), bitcoin_seed.size(), bip39_seed, 64, master);
 	if (debug_print) {
 		std::cout << "bip39 seed=" << common::to_hex(bip39_seed, 64) << std::endl;
 		std::cout << "bip39 master chain code=" << common::to_hex(master + 32, 32) << std::endl;
@@ -141,11 +356,8 @@ std::string Bip32Key::create_random_bip39_mnemonic(size_t bits) {
 	std::vector<uint8_t> ent_data(bits / 8);
 	crypto::generate_random_bytes(ent_data.data(), ent_data.size());
 
-	unsigned char hash[SHA256_DIGEST_LENGTH];
-	SHA256_CTX sha256;
-	SHA256_Init(&sha256);
-	SHA256_Update(&sha256, ent_data.data(), ent_data.size());
-	SHA256_Final(hash, &sha256);
+	unsigned char hash[32];
+	sha256_checked(ent_data.data(), ent_data.size(), hash);
 	const size_t crc = size_t(hash[0]) >> (8 - cs_bits);
 	bool crc_added   = false;
 
@@ -241,11 +453,8 @@ std::string Bip32Key::check_bip39_mnemonic(const std::string &bip39_mnemonic) {
 	//	std::cout << common::to_hex(ent_data) << std::endl;
 	if (remaining_value_bits != cs_bits)
 		throw Exception("Mnemonic invalid format");
-	unsigned char hash[SHA256_DIGEST_LENGTH];
-	SHA256_CTX sha256;
-	SHA256_Init(&sha256);
-	SHA256_Update(&sha256, ent_data.data(), ent_data.size());
-	SHA256_Final(hash, &sha256);
+	unsigned char hash[32];
+	sha256_checked(ent_data.data(), ent_data.size(), hash);
 	const size_t crc = size_t(hash[0]) >> (8 - cs_bits);
 	if (crc != remaining_value)
 		throw Exception("Mnemonic wrong CRC");
@@ -253,8 +462,6 @@ std::string Bip32Key::check_bip39_mnemonic(const std::string &bip39_mnemonic) {
 }
 
 Bip32Key Bip32Key::derive_key(uint32_t child_num) const {
-	EC_GROUPw group;
-	BN_CTXw bn_ctx;
 	unsigned char numbuf[4]{};
 	common::uint_be_to_bytes(numbuf, 4, child_num);
 	Bip32Key result;
@@ -267,20 +474,22 @@ Bip32Key Bip32Key::derive_key(uint32_t child_num) const {
 		common::append(buf, pub_key.begin(), pub_key.end());
 	}
 	common::append(buf, numbuf, numbuf + 4);
-	auto master = HMAC(EVP_sha512(), chain_code.data(), static_cast<int>(chain_code.size()), buf.data(),
-	    static_cast<int>(buf.size()), nullptr, nullptr);
+	uint8_t master[64]{};
+	hmac_sha512_checked(chain_code.data(), chain_code.size(), buf.data(), buf.size(), master);
 	result.chain_code.assign(master + 32, master + 64);
 	if (debug_print)
 		std::cout << "chain code=" << common::to_hex(result.chain_code) << std::endl;
-	BIGNUMw priv_bn(master, 32);
-	BIGNUMw priv_bn2(priv_key.data(), priv_key.size());
-	BIGNUMw priv_order;
-	invariant(BN_add(priv_bn.pbn, priv_bn.pbn, priv_bn2.pbn), "BN_add failed");
+	//	EC_GROUPw group;
+	//	BN_CTXw bn_ctx;
+	//	BIGNUMw priv_bn(master, 32);
+	//	BIGNUMw priv_bn2(priv_key.data(), priv_key.size());
+	//	BIGNUMw priv_order;
+	//	invariant(BN_add(priv_bn.pbn, priv_bn.pbn, priv_bn2.pbn), "BN_add failed");
 
-	invariant(EC_GROUP_get_order(group.pgroup, priv_order.pbn, bn_ctx.ctx), "EC_GROUP_get_order failed");
-	invariant(BN_mod(priv_bn.pbn, priv_bn.pbn, priv_order.pbn, bn_ctx.ctx), "BN_mod failed");
-	result.priv_key.resize(32);
-	invariant(BN_bn2binpad(priv_bn.pbn, result.priv_key.data(), 32), "BN_bn2binpad failed");
+	//	invariant(EC_GROUP_get_order(group.pgroup, priv_order.pbn, bn_ctx.ctx), "EC_GROUP_get_order failed");
+	//	invariant(BN_mod(priv_bn.pbn, priv_bn.pbn, priv_order.pbn, bn_ctx.ctx), "BN_mod failed");
+	result.priv_key = bitcoin_sc_add(priv_key, common::BinaryArray(master, master + 32));
+	//	invariant(BN_bn2binpad(priv_bn.pbn, result.priv_key.data(), 32), "BN_bn2binpad failed");
 	if (debug_print)
 		std::cout << "  priv_key=" << common::to_hex(result.priv_key) << std::endl;
 	result.make_pub();

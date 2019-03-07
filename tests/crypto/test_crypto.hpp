@@ -6,4 +6,7 @@
 
 #include <string>
 
-void test_crypto(const std::string &test_vectors_filename);
+typedef bool (*test_case)(std::istream &);
+
+void test_crypto(const std::string &test_vectors_folder, const std::vector<std::string> &selected_test_cases,
+    const std::string &test_results_log, bool break_on_failure);

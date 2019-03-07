@@ -9,6 +9,6 @@
 
 #include <ostream>
 
-void benchmark_crypto_ops(int count, std::ostream &out);
+void benchmark_crypto_ops(size_t count, std::ostream &out);
 
 #endif  // BYTECOIN_BENCHMARKS_HPP

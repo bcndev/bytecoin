@@ -71,7 +71,7 @@ bool BlockChainState::DeltaState::read_keyimage(const KeyImage &key_image, Heigh
 
 size_t BlockChainState::DeltaState::push_amount_output(
     Amount amount, BlockOrTimestamp unlock_time, Height block_height, const PublicKey &pk, bool is_amethyst) {
-	m_ordered_global_amounts.push_back(OutputIndexData{amount, unlock_time, pk, 0, false, is_amethyst, {}});
+	m_ordered_global_amounts.push_back(OutputIndexData{amount, unlock_time, pk, 0, 0, is_amethyst, {}});
 	auto pg  = m_parent_state->next_stack_index_for_amount(amount);
 	auto &ga = m_global_amounts[amount];
 	ga.push_back(std::make_tuple(unlock_time, pk, is_amethyst));
@@ -94,6 +94,8 @@ size_t BlockChainState::DeltaState::next_stack_index_for_amount(Amount amount) c
 	return (git == m_global_amounts.end()) ? pg : git->second.size() + pg;
 }
 
+// We do not allow reading outputs added in the context of this delta state
+// Thus we enforce no dependent transactions in the same block (order can still affect future blocks)
 bool BlockChainState::DeltaState::read_amount_output(Amount amount, size_t stack_index, OutputIndexData *unp) const {
 	//	uint32_t pg = m_parent_state->next_stack_index_for_amount(amount);
 	//	if (stack_index < pg)
@@ -109,9 +111,6 @@ bool BlockChainState::DeltaState::read_amount_output(Amount amount, size_t stack
 	//	unp->spent = false;  // Spending just created outputs inside mempool or block is prohibited, simplifying logic
 	//	return true;
 }
-// void BlockChainState::DeltaState::spend_output(Amount amount, size_t stack_index) {
-//	m_spent_outputs.push_back(std::make_pair(amount, stack_index));
-//}
 
 void BlockChainState::DeltaState::apply(IBlockChainState *parent_state) const {
 	for (auto &&ki : m_keyimages)
@@ -119,15 +118,12 @@ void BlockChainState::DeltaState::apply(IBlockChainState *parent_state) const {
 	for (auto &&amp : m_ordered_global_amounts)
 		parent_state->push_amount_output(
 		    amp.amount, amp.unlock_block_or_timestamp, m_block_height, amp.public_key, amp.is_amethyst);
-	//	for (auto &&mo : m_spent_outputs)
-	//		parent_state->spend_output(mo.first, mo.second);
 }
 
 void BlockChainState::DeltaState::clear(Height new_block_height) {
 	m_block_height = new_block_height;
 	m_keyimages.clear();
 	m_global_amounts.clear();
-	//	m_spent_outputs.clear();
 }
 
 api::BlockHeader BlockChainState::fill_genesis(Hash genesis_bid, const BlockTemplate &g) {
@@ -155,9 +151,9 @@ static Amount validate_semantic(const Currency &currency, uint8_t block_major_ve
 		throw ConsensusError(common::to_string(
 		    "Wrong transaction version", int(tx.version), "in block version", int(block_major_version)));
 	// Subgroup check policy is as following:
-	// 1. output keys are checked here, encrypted output secrets not checked at all
-	// 2. keyimage and blinding coin commitment are checked here
-	// 3. hps will be checked as a part of signature
+	// 1. output keys and encrypted output secrets are checked here
+	// 2. keyimage is checked here (this is changed in amethyst)
+	// 3. p' will be checked as a part of signature
 	Amount summary_output_amount = 0;
 	for (const auto &output : tx.outputs) {
 		Amount amount = 0;
@@ -169,7 +165,7 @@ static Amount validate_semantic(const Currency &currency, uint8_t block_major_ve
 			if (check_keys && key_image_subgroup_check && !key_in_main_subgroup(key_output.public_key)) {
 				throw ConsensusError(common::to_string("Output key not valid elliptic point", key_output.public_key));
 			}
-			if (check_keys && is_tx_amethyst && !key_isvalid(key_output.encrypted_secret))
+			if (check_keys && is_tx_amethyst && !key_in_main_subgroup(key_output.encrypted_secret))
 				throw ConsensusError(
 				    common::to_string("Output encrypted secret not valid elliptic point", key_output.encrypted_secret));
 			// encrypted_secret can be outside main subgroup
@@ -229,8 +225,8 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
 	}
 	// Upgrades from 5 should restart internal import if m_internal_import_chain is not empty
 	if (version != version_current)
-		throw std::runtime_error("Blockchain database format unknown (version=" + version + "), please delete " +
-		                         config.get_data_folder() + "/blockchain");
+		throw Exception("Blockchain database format too new (version=" + version + "), please delete " +
+		                config.get_data_folder() + "/blockchain");
 	if (get_tip_height() == (Height)-1) {
 		//		Block genesis_block;
 		//		genesis_block.header = currency.genesis_block_template;
@@ -522,8 +518,11 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 
 	b->previous_block_hash                = parent_bid;
 	const Timestamp next_median_timestamp = calculate_next_median_timestamp(parent_info);
-	b->root_block.timestamp               = std::max(platform::now_unix_timestamp(), next_median_timestamp);
-	b->timestamp                          = b->root_block.timestamp;
+	auto now                              = platform::now_unix_timestamp();
+	if (*height < 100)  // Tweak for testnet so first 100 blocks are mined quickly
+		now -= (100 - *height) * m_currency.difficulty_target;
+	b->root_block.timestamp = std::max(now, next_median_timestamp);
+	b->timestamp            = b->root_block.timestamp;
 
 	size_t max_txs_size          = 0;
 	size_t effective_size_median = 0;
@@ -545,31 +544,26 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 		pool_hashes.push_back(msf.second);
 	size_t txs_size = 0;
 	Amount txs_fee  = 0;
-	DeltaState memory_state(*height, b->timestamp, next_median_timestamp, this);
-	//	Amount base_reward = m_currency.get_block_reward(
-	//	    b->major_version, *height, effective_size_median, 0, parent_info.already_generated_coins, 0);
+	//	DeltaState memory_state(*height, b->timestamp, next_median_timestamp, this);
 
 	for (; !pool_hashes.empty(); pool_hashes.pop_back()) {
 		auto tit = m_memory_state_tx.find(pool_hashes.back());
 		if (tit == m_memory_state_tx.end()) {
 			m_log(logging::ERROR) << "Transaction " << pool_hashes.back() << " is in pool index, but not in pool";
-			//			assert(false);
 			continue;
 		}
 		const size_t tx_size = tit->second.binary_tx.size();
 		const Amount tx_fee  = tit->second.fee;
 		if (txs_size + tx_size > max_txs_size)
 			continue;
-		BlockGlobalIndices global_indices;
-		Height conflict_height = 0;
-		try {  // double-check that transcations can be added to block
-			redo_transaction(b->major_version, false, tit->second.tx, &memory_state, &global_indices, nullptr, true);
-		} catch (const ConsensusError &ex) {
-			m_log(logging::ERROR) << "Transaction " << tit->first
-			                      << " is in pool, but could not be redone what=" << common::what(ex)
-			                      << " Conflict height=" << conflict_height << std::endl;
-			continue;
-		}
+		//		BlockGlobalIndices global_indices;
+		//		try {  // double-check that transcations can be added to block
+		//			redo_transaction(b->major_version, false, tit->second.tx, &memory_state, &global_indices, nullptr,
+		// true); 		} catch (const ConsensusError &ex) { 			m_log(logging::ERROR) << "Transaction " <<
+		// tit->first
+		//			                      << " is in pool, but could not be redone what=" << common::what(ex) <<
+		// std::endl; 			continue;
+		//		}
 		if (!is_amethyst && txs_size + tx_size > effective_size_median)
 			continue;  // Effective median size will not grow anyway
 		txs_size += tx_size;
@@ -579,6 +573,8 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 		m_mining_transactions.insert(std::make_pair(tit->first, std::make_pair(tit->second.binary_tx, *height)));
 		m_log(logging::TRACE) << "Transaction " << tit->first << " included to block template";
 	}
+	if (crypto::rand<unsigned>() % 2 == 1)
+		std::reverse(b->transaction_hashes.begin(), b->transaction_hashes.end());
 
 	if (is_amethyst) {
 		// Vote for larger blocks if pool is full of expensive transactions
@@ -967,8 +963,8 @@ void BlockChainState::redo_transaction(uint8_t major_block_version, bool generat
 	my_indices.reserve(transaction.outputs.size());
 
 	Height newest_referenced_height = 0;
-	std::vector<std::vector<PublicKey>> all_output_keys;  // For auditable sigs
-	std::vector<KeyImage> all_keyimages;                  // For auditable sigs
+	std::vector<std::vector<PublicKey>> all_output_keys;  // For amethyst sigs
+	std::vector<KeyImage> all_keyimages;                  // For amethyst sigs
 	for (size_t input_index = 0; input_index != transaction.inputs.size(); ++input_index) {
 		const auto &input = transaction.inputs.at(input_index);
 		if (input.type() == typeid(InputKey)) {
@@ -1026,7 +1022,7 @@ void BlockChainState::redo_transaction(uint8_t major_block_version, bool generat
 	if (!all_output_keys.empty()) {
 		invariant(transaction.signatures.type() == typeid(RingSignatureAmethyst), "");
 		auto &signatures = boost::get<RingSignatureAmethyst>(transaction.signatures);
-		if (!crypto::check_ring_signature_auditable(tx_prefix_hash, all_keyimages, all_output_keys, signatures))
+		if (!crypto::check_ring_signature_amethyst(tx_prefix_hash, all_keyimages, all_output_keys, signatures))
 			throw ConsensusErrorBadOutputOrSignature{
 			    "Bad signature or output reference changed", newest_referenced_height};
 	}
@@ -1274,7 +1270,7 @@ size_t BlockChainState::push_amount_output(
 	m_next_stack_index[amount] += 1;
 
 	key = OUTPUT_PREFIX + common::write_varint_sqlite4(m_next_global_key_output_index);
-	ba  = seria::to_binary(OutputIndexData{amount, unlock_time, pk, block_height, false, is_amethyst, {}});
+	ba  = seria::to_binary(OutputIndexData{amount, unlock_time, pk, block_height, 0, is_amethyst, {}});
 	m_db.put(key, ba, true);
 	m_next_global_key_output_index += 1;
 

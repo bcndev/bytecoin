@@ -74,20 +74,19 @@ Currency::Currency(const std::string &net)
     , amethyst_block_version(BLOCK_VERSION_AMETHYST)
     , amethyst_transaction_version(TRANSACTION_VERSION_AMETHYST)
     , upgrade_from_major_version(3)
-    , upgrade_indicator_minor_version(6)
-    , upgrade_desired_major_version(0)
+    , upgrade_indicator_minor_version(7)
+    , upgrade_desired_major_version(4)
     , upgrade_voting_window(UPGRADE_VOTING_WINDOW)
     , upgrade_window(UPGRADE_WINDOW)
     , sendproof_base58_prefix(SENDPROOF_BASE58_PREFIX) {
 	if (net == "test") {
-		upgrade_heights               = {1, 1};  // block 1 is already V3
-		upgrade_desired_major_version = 4;
-		upgrade_voting_window         = 30;
-		upgrade_window                = 10;
+		upgrade_heights       = {1, 1};  // block 1 is already V3
+		upgrade_voting_window = 30;
+		upgrade_window        = 10;
 	}
 	if (net == "stage") {
-		upgrade_heights               = {1, 1};  // block 1 is already V3
-		upgrade_desired_major_version = 4;
+		upgrade_heights = {1, 1};  // block 1 is already V3
+		upgrade_window  = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;
 	}
 	{
 		BinaryArray miner_tx_blob;
@@ -169,7 +168,6 @@ bool Currency::is_upgrade_vote(uint8_t major, uint8_t minor) const {
 	if (major == upgrade_from_major_version)
 		return minor == upgrade_indicator_minor_version;
 #if bytecoin_ALLOW_CM
-	// TODO - line below is "statement can be simplified", how?
 	if (upgrade_from_major_version >= amethyst_block_version && major == upgrade_from_major_version + 1)
 		return minor == upgrade_indicator_minor_version;
 #endif
@@ -314,9 +312,9 @@ Transaction Currency::construct_miner_tx(
 
 	Amount summary_amounts = 0;
 	for (size_t out_index = 0; out_index < out_amounts.size(); out_index++) {
-		const KeyPair output_det_keys = crypto::random_keypair();
-		OutputKey tk                  = TransactionBuilder::create_output(
-            is_tx_amethyst, miner_address, txkey.secret_key, tx_inputs_hash, out_index, output_det_keys.public_key);
+		const Hash output_seed = crypto::rand<Hash>();
+		OutputKey tk           = TransactionBuilder::create_output(
+            is_tx_amethyst, miner_address, txkey.secret_key, tx_inputs_hash, out_index, output_seed);
 		tk.amount = out_amounts.at(out_index);
 		summary_amounts += tk.amount;
 		tx.outputs.push_back(tk);
@@ -575,9 +573,9 @@ Hash cn::get_transaction_hash(const Transaction &tx) {
 		BinaryArray binary_sigs = seria::to_binary(tx.signatures, static_cast<const TransactionPrefix &>(tx));
 		ha.second               = crypto::cn_fast_hash(binary_sigs.data(), binary_sigs.size());
 		BinaryArray ba          = seria::to_binary(ha);
-//		BinaryArray tx_body = seria::to_binary(static_cast<const TransactionPrefix&>(tx));
-//		common::append(tx_body, binary_sigs);
-//		invariant(tx_body == seria::to_binary(tx), "");
+		//		BinaryArray tx_body = seria::to_binary(static_cast<const TransactionPrefix&>(tx));
+		//		common::append(tx_body, binary_sigs);
+		//		invariant(tx_body == seria::to_binary(tx), "");
 		return crypto::cn_fast_hash(ba.data(), ba.size());
 	}
 	BinaryArray ba = seria::to_binary(tx);

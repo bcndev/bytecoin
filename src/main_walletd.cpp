@@ -38,11 +38,12 @@ Options:
   --mnemonic-strength=<bits>            Used with --create-mnemonic, [default: 256].
   --secrets-via-api                     Specify to allow getting secrets using 'get_wallet_info' json RPC method (off by default for security reasons).
   --set-password                        Read new password as a line from stdin (twice) and re-encrypt wallet file, then exit.
-  --launch-after-command                Instead of exiting, continue launching after --create-wallet and --set-password commands
+  --launch-after-command                Instead of exiting, continue launching after --create-wallet, --set-password commands and --import-view-key
   --export-view-only=<file-path>        Export view-only version of wallet file, then exit. Add --set-password to export with different password.
   --view-outgoing-addresses             Used only with --export-view-only=<> and HD wallet. if set, exported view-only wallet will be able to see destination addresses in tracked transactions.
   --export-keys                         Export unencrypted wallet keys to stdout, then exit. (Only for legacy wallets)
   --export-mnemonic                     Export mnemonic to stdout, then exit. (Only for deterministic wallets)
+  --import-view-key                     Import view key from hardware wallet into wallet file, greatly increasing blockchain scan speed (Only for hardware wallets).
   --walletd-bind-address=<ip:port>      IP and port for walletd RPC API [default: 127.0.0.1:8070].
   --data-folder=<folder-path>           Folder for wallet cache, blockchain, logs and peer DB [default: )" platform_DEFAULT_DATA_FOLDER_PATH_PREFIX
                             R"(bytecoin].
@@ -67,6 +68,12 @@ static const bool separate_thread_for_bytecoind = true;
 int main(int argc, const char *argv[]) try {
 	common::console::UnicodeConsoleSetup console_setup;
 	auto idea_start = std::chrono::high_resolution_clock::now();
+
+	//	Visual Studio does not support passing cmake args in IDE
+	//	const char *argv2[] = {"walletd", "--create-wallet", "--wallet-type=hardware", "--wallet-file=test.wallet"};
+	//	const char argc2    = sizeof(argv2) / sizeof(*argv2);
+	//  common::CommandLine cmd(argc2, argv2);
+
 	common::CommandLine cmd(argc, argv);
 
 	if (cmd.get_bool("--create-mnemonic")) {
@@ -127,10 +134,11 @@ int main(int argc, const char *argv[]) try {
 	}
 	if (const char *pa = cmd.get("--walletd-http-auth"))  // Undocumented, used for debugging
 		walletd_http_auth = pa;
-	const bool create_wallet          = cmd.get_bool("--create-wallet");
-	const bool set_password           = cmd.get_bool("--set-password");
-	const bool export_keys            = cmd.get_bool("--export-keys");
-	const bool export_mnemonic        = cmd.get_bool("--export-mnemonic");
+	const bool create_wallet   = cmd.get_bool("--create-wallet");
+	const bool set_password    = cmd.get_bool("--set-password");
+	const bool import_view_key = cmd.get_bool("--import-view-key");
+	const bool export_keys     = cmd.get_bool("--export-keys");
+	const bool export_mnemonic = cmd.get_bool("--export-mnemonic");
 	std::string export_view_only;
 	if (const char *pa = cmd.get("--export-view-only"))
 		export_view_only = pa;
@@ -144,14 +152,14 @@ int main(int argc, const char *argv[]) try {
 	// create_wallet export_keys | export_view_only | backup_wallet_data
 	// set_password can be used by itself or with export_view_only | backup_wallet_data
 
-	const bool import_keys = cmd.get_bool("--import-keys");
+	const bool import_keys             = cmd.get_bool("--import-keys");
 	const bool view_outgoing_addresses = cmd.get_bool("--view-outgoing-addresses");
 	if (view_outgoing_addresses && export_view_only.empty()) {
 		std::cout << "--view-outgoing-addresses can only be used with --export-view-only" << std::endl;
 		return api::WALLETD_WRONG_ARGS;
 	}
 	const bool launch_after_command = cmd.get_bool("--launch-after-command");  // undocumented, used by GUI
-	if (launch_after_command && !(create_wallet || set_password)) {
+	if (launch_after_command && !(create_wallet || set_password || import_view_key)) {
 		std::cout << "--launch-after-command can only be used with commands" << std::endl;
 		return api::WALLETD_WRONG_ARGS;
 	}
@@ -162,7 +170,7 @@ int main(int argc, const char *argv[]) try {
 			return api::WALLETD_WRONG_ARGS;
 		}
 		wallet_type = pa;
-		if(wallet_type != "amethyst" && wallet_type != "legacy" && wallet_type != "hardware"){
+		if (wallet_type != "amethyst" && wallet_type != "legacy" && wallet_type != "hardware") {
 			std::cout << "--wallet-type= value can be 'amethyst', 'legacy' or 'hardware'" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
@@ -182,7 +190,7 @@ int main(int argc, const char *argv[]) try {
 	}
 	size_t address_count = 0;
 	if (const char *pa = cmd.get("--address-count")) {
-		if (!create_wallet || wallet_type == "legacy" ) {
+		if (!create_wallet || wallet_type == "legacy") {
 			std::cout << "--address-count cannot be used with --wallet-type=legacy" << std::endl;
 			return api::WALLETD_WRONG_ARGS;
 		}
@@ -193,7 +201,7 @@ int main(int argc, const char *argv[]) try {
 	Currency currency(config.net);
 
 	if (const char *pa = cmd.get("--emulate-hardware-wallet"))  // Undocumented, used by devs
-		hw::Emulator::debug_set_mnemonic(pa);
+		hardware::HardwareWallet::debug_set_mnemonic(pa);
 
 	if (int r = cmd.should_quit(Config::prepare_usage(USAGE).c_str(), cn::app_version()))
 		return r == 1 ? 0 : api::WALLETD_WRONG_ARGS;
@@ -275,8 +283,8 @@ int main(int argc, const char *argv[]) try {
 	logging::LoggerManager logManagerWalletNode;
 	logManagerWalletNode.configure_default(config.get_data_folder("logs"), "walletd-", cn::app_version());
 
-	if (!config.bytecoind_remote_port && !create_wallet &&
-	    !set_password && !export_keys && !export_mnemonic && export_view_only.empty() && backup_wallet_data.empty()) {
+	if (!config.bytecoind_remote_port && !create_wallet && !set_password && !import_view_key && !export_keys &&
+	    !export_mnemonic && export_view_only.empty() && backup_wallet_data.empty()) {
 		common::console::set_text_color(common::console::BrightRed);
 		std::cout << "Warning: inproc " CRYPTONOTE_NAME "d is deprecated and will be removed soon." << std::endl;
 		std::cout << "  Please run bytecoind separately, then specify --remote-" CRYPTONOTE_NAME
@@ -287,6 +295,9 @@ int main(int argc, const char *argv[]) try {
 		          << std::endl;
 		common::console::set_text_color(common::console::Default);
 	}
+	boost::asio::io_service io;
+	platform::EventLoop run_loop(io);  // must be before Wallet (trezor uses io)
+
 	std::unique_ptr<Wallet> wallet;
 	try {
 		if (create_wallet && wallet_type == "hardware") {
@@ -321,8 +332,20 @@ int main(int argc, const char *argv[]) try {
 	if (create_wallet) {
 		std::cout << "Successfully created wallet with first address "
 		          << currency.account_address_as_string(wallet->get_first_address()) << std::endl;
-		if (!launch_after_command)
-			return 0;
+	}
+	if (import_view_key) {
+		if (!wallet->get_hw()) {
+			std::cout << "--import-view-key can be used only with hardware wallet" << std::endl;
+			return api::WALLETD_WRONG_ARGS;
+		}
+		if (wallet->get_view_secret_key() != SecretKey{}) {
+			std::cout << "Wallet file already contains view key, please remove --import-view-key argument" << std::endl;
+			return api::WALLETD_WRONG_ARGS;
+		}
+		wallet->import_view_key();
+	}
+	if ((create_wallet || import_view_key) && !launch_after_command) {
+		return 0;
 	}
 	std::cout << "Opened wallet with first address " << currency.account_address_as_string(wallet->get_first_address())
 	          << std::endl;
@@ -443,8 +466,7 @@ int main(int argc, const char *argv[]) try {
 	}
 	WalletState wallet_state(*wallet, logManagerWalletNode, config, currency);
 	//	wallet_state.test_undo_blocks();
-	boost::asio::io_service io;
-	platform::EventLoop run_loop(io);
+	//	return 0;
 
 	std::unique_ptr<BlockChainState> block_chain;
 	std::unique_ptr<Node> node;
@@ -498,6 +520,11 @@ int main(int argc, const char *argv[]) try {
 			if (bytecoind_thread.joinable())
 				bytecoind_thread.join();  // otherwise terminate will be called in ~thread
 			return api::BYTECOIND_BIND_PORT_IN_USE;
+		} catch (const BlockChainState::Exception &ex) {
+			std::cout << common::what(ex) << std::endl;
+			if (bytecoind_thread.joinable())
+				bytecoind_thread.join();  // otherwise terminate will be called in ~thread
+			return api::BYTECOIND_DATABASE_FORMAT_TOO_NEW;
 		} catch (const std::exception &ex) {  // On Windows what() is not printed if thrown from main
 			std::cout << "Uncaught Exception in main() - " << common::what(ex) << std::endl;
 			// TODO - check that ..joinable()..join().. code from above does not apply also

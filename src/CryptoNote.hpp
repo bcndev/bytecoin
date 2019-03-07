@@ -26,7 +26,6 @@ using crypto::PublicKey;
 using crypto::RingSignature;
 using crypto::RingSignatureAmethyst;
 using crypto::SecretKey;
-using crypto::SendproofSignatureAmethyst;
 using crypto::Signature;
 
 using common::BinaryArray;
@@ -162,17 +161,15 @@ struct SendproofKey {
 struct SendproofAmethyst {
 	uint8_t version = 0;
 	Hash transaction_hash;
-	std::string message;
-	// fields for version 1-3
-	AccountAddressSimple address_simple;
-	KeyDerivation derivation;
-	Signature signature;
-	// fields for version amethyst
+	AccountAddressSimple address_simple;  // for version 1-3
+	KeyDerivation derivation;             // for version 1-3
+	Signature signature;                  // for version 1-3
 	struct Element {
 		size_t out_index = 0;
-		PublicKey deterministic_public_key;
+		Hash output_seed;
 	};
-	std::vector<Element> elements;
+	std::vector<Element> elements;  // for version amethyst
+	std::string message;
 	// followed by RingSignatureAmethyst signature in serialization.
 };
 
@@ -188,8 +185,6 @@ public:
 
 	Block() = default;
 	explicit Block(const RawBlock &rb);
-	//	bool from_raw_block(const RawBlock &);
-	//	bool to_raw_block(RawBlock &) const;
 };
 
 struct HardCheckpoint {
@@ -227,7 +222,6 @@ inline bool operator<(const AccountAddressUnlinkable &a, const AccountAddressUnl
 	return std::tie(a.S, a.Sv) < std::tie(b.S, b.Sv);
 }
 
-class Currency;  // For ser_members of cn::Sendproof
 }  // namespace cn
 
 // Serialization is part of CryptoNote standard, not problem to put it here
@@ -241,10 +235,10 @@ void ser(cn::SecretKey &v, ISeria &s);
 void ser(cn::KeyDerivation &v, ISeria &s);
 void ser(cn::Signature &v, ISeria &s);
 void ser(crypto::EllipticCurveScalar &v, ISeria &s);
+void ser(crypto::EllipticCurvePoint &v, ISeria &s);
 
 void ser_members(cn::AccountAddressSimple &v, ISeria &s);
 void ser_members(cn::AccountAddressUnlinkable &v, ISeria &s);
-void ser_members(cn::AccountAddress &v, ISeria &s);
 void ser_members(cn::SendproofKey &v, ISeria &s);
 void ser_members(cn::SendproofAmethyst::Element &v, ISeria &s);
 void ser_members(cn::SendproofAmethyst &v, ISeria &s);
@@ -255,9 +249,7 @@ void ser_members(cn::InputCoinbase &v, ISeria &s);
 void ser_members(cn::InputKey &v, ISeria &s);
 void ser_members(cn::RingSignatures &v, ISeria &s);
 void ser_members(cn::RingSignatureAmethyst &v, ISeria &s);
-void ser_members(cn::SendproofSignatureAmethyst &v, ISeria &s);
 
-// void ser_members(cn::TransactionSignatures &v, ISeria &s);
 void ser_members(cn::RingSignatureAmethyst &v, ISeria &s, const cn::TransactionPrefix &prefix);
 void ser_members(cn::TransactionSignatures &v, ISeria &s, const cn::TransactionPrefix &prefix);
 

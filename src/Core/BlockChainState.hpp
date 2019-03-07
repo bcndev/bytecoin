@@ -37,6 +37,10 @@ public:
 
 class BlockChainState : public BlockChain, private IBlockChainState {
 public:
+	class Exception : public std::runtime_error {
+	public:
+		using std::runtime_error::runtime_error;
+	};
 	BlockChainState(logging::ILogger &, const Config &, const Currency &, bool read_only);
 
 	std::vector<api::Output> get_random_outputs(uint8_t block_major_version, Amount, size_t output_count, Height,
@@ -89,7 +93,6 @@ private:
 		std::map<KeyImage, Height> m_keyimages;  // sorted to speed up bulk saving to DB
 		std::map<Amount, std::vector<std::tuple<uint64_t, PublicKey, bool>>> m_global_amounts;
 		std::vector<OutputIndexData> m_ordered_global_amounts;
-		//		std::vector<std::pair<Amount, size_t>> m_spent_outputs;
 		Height m_block_height;  // Every delta state corresponds to some height
 		Timestamp m_block_timestamp;
 		Timestamp m_block_median_timestamp;

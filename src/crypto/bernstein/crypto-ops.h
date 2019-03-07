@@ -88,7 +88,6 @@ void ge_p3_to_cached(ge_cached *, const ge_p3 *);
 /* From ge_p3_to_p2.c */
 
 void ge_p3_to_p2(ge_p2 *, const ge_p3 *);
-//void ge_p2_to_p3(ge_p3 *, const ge_p2 *);
 
 /* From ge_p3_tobytes.c */
 
@@ -114,7 +113,6 @@ void sc_reduce64(struct cryptoEllipticCurveScalar *, const unsigned char[64]);
 
 //void ge_scalarmult(ge_p2 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *);
 void ge_scalarmult3(ge_p3 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *);
-// TODO - ge_scalarmult3 is quick fix. conversion of p2 -> p1p1 would also work
 
 //void ge_double_scalarmult_precomp_vartime(ge_p2 *, const struct cryptoEllipticCurveScalar *, const ge_p3 *, const struct cryptoEllipticCurveScalar *, const ge_dsmp *);
 void ge_double_scalarmult_precomp_vartime3(ge_p3 *r, const struct cryptoEllipticCurveScalar *aa, const ge_p3 *A, const struct cryptoEllipticCurveScalar *bb, const ge_dsmp *Bi);
