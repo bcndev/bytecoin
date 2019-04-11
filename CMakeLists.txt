@@ -218,32 +218,3 @@ if(NOT WIN32)
     target_link_libraries(tests ${LINK_OPENSSL} dl pthread)
 endif()
 
-### DevTeam tools below ###
-add_executable(crawler src/main_crawler.cpp)
-add_executable(seednode src/main_seednode.cpp)
-add_executable(artagnand src/main_artagnand.cpp)
-
-# 
-target_link_libraries(crawler bytecoin-crypto bytecoin-core)
-target_link_libraries(seednode bytecoin-crypto bytecoin-core)
-target_link_libraries(artagnand bytecoin-crypto bytecoin-core)
-
-if(NOT WIN32)
-    target_link_libraries(crawler ${LINK_OPENSSL} dl pthread)
-    target_link_libraries(seednode ${LINK_OPENSSL} dl pthread)
-    target_link_libraries(artagnand ${LINK_OPENSSL} dl pthread)
-endif()
-
-# af section, will be removed after walletd2 finished and good
-if(WIN32)
-    add_executable(walletd2 src/main_walletd2.cpp src/bytecoin.rc) # .rc works only if referenced directly in add_executable
-else()
-    add_executable(walletd2 src/main_walletd2.cpp)
-endif()
-target_link_libraries(walletd2 bytecoin-crypto bytecoin-core ${USBLIB_LIBRARY})
-if(NOT WIN32)
-    if(APPLE)
-        target_link_libraries(walletd2 "-framework Foundation" "-framework IOKit")
-    endif()
-    target_link_libraries(walletd2 ${LINK_OPENSSL} dl pthread)
-endif()
