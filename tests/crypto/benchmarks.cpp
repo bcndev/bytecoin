@@ -124,9 +124,11 @@ long test_double_scalarmult_simple(size_t count, const Scalar *scalars, const Po
 	CLOCK(const Point &p = points[i]; const Scalar &s = scalars[i]; Scalar s2{};
 
 	      sc_add(&s2, &s, &s);
-	      auto pmul1  = crypto::ge_scalarmult3(s, p);
-	      auto pmul2  = crypto::ge_scalarmult3(s2, p);
-	      auto result = crypto::ge_add(pmul1, pmul2);)
+	      ge_p3 pmul1;
+	      ge_scalarmult3(&pmul1, &s, &p);
+	      ge_p3 pmul2;
+	      ge_scalarmult3(&pmul2, &s2, &p);
+	      ge_p3 result = (crypto::P3(pmul1) + crypto::P3(pmul2)).p3;)
 }
 
 long test_double_scalarmult_simple_opt(size_t count, const Scalar *scalars, const Point *points) {
@@ -135,9 +137,11 @@ long test_double_scalarmult_simple_opt(size_t count, const Scalar *scalars, cons
 	CLOCK(const Scalar &s = scalars[i]; const Point &p = points[i]; Scalar s2{};
 
 	      sc_add(&s2, &s, &s);
-	      auto pmul1  = crypto::ge_double_scalarmult_base_vartime3(s, p, sc0);
-	      auto pmul2  = crypto::ge_double_scalarmult_base_vartime3(s2, p, sc0);
-	      auto result = crypto::ge_add(pmul1, pmul2);)
+	      ge_p3 pmul1;
+	      ge_double_scalarmult_base_vartime3(&pmul1, &s, &p, &sc0);
+	      ge_p3 pmul2;
+	      ge_double_scalarmult_base_vartime3(&pmul2, &s2, &p, &sc0);
+	      ge_p3 result = (crypto::P3(pmul1) + crypto::P3(pmul2)).p3;)
 }
 
 long test_double_scalarmult_simple_aligned(size_t count,
@@ -146,15 +150,17 @@ long test_double_scalarmult_simple_aligned(size_t count,
 	sc_0(&sc0);
 	CLOCK(Scalar s1; Scalar s2; Point p1; Point p2; std::tie(s1, s2, p1, p2) = merged_double_points[i];
 
-	      auto pmul1  = crypto::ge_double_scalarmult_base_vartime3(s1, p1, sc0);
-	      auto pmul2  = crypto::ge_double_scalarmult_base_vartime3(s2, p2, sc0);
-	      auto result = crypto::ge_add(pmul1, pmul2);)
+	      ge_p3 pmul1;
+	      ge_double_scalarmult_base_vartime3(&pmul1, &s1, &p1, &sc0);
+	      ge_p3 pmul2;
+	      ge_double_scalarmult_base_vartime3(&pmul2, &s2, &p2, &sc0);
+	      ge_p3 result = (crypto::P3(pmul1) + crypto::P3(pmul2)).p3;)
 }
 
 long test_frombytes(size_t count, const EllipticCurvePoint *bytes) {
 	CLOCK(auto &b = bytes[i];
 
-	      auto result = ge_frombytes_vartime(b);)
+	      ge_p3 result = crypto::P3(b).p3;)
 }
 
 long test_fromfe_frombytes(size_t count, const EllipticCurvePoint *bytes) {
@@ -233,7 +239,7 @@ void benchmark_crypto_ops(size_t count, std::ostream &out) {
 		KeyPair k      = random_keypair();
 		bytes[i]       = k.public_key;
 		auto s         = k.secret_key;
-		auto p         = ge_frombytes_vartime(k.public_key);
+		auto p         = crypto::P3(k.public_key).p3;
 		scalars[i]     = s;
 		points[i]      = p;
 		public_keys[i] = to_bytes(p);
@@ -242,7 +248,7 @@ void benchmark_crypto_ops(size_t count, std::ostream &out) {
 
 		k                             = random_keypair();
 		auto s2                       = k.secret_key;
-		auto p2                       = ge_frombytes_vartime(k.public_key);
+		auto p2                       = crypto::P3(k.public_key).p3;
 		merged_double_points.get()[i] = std::make_tuple(s, s2, p, p2);
 
 		ge_dsm_precomp(&precomp[i], &p);

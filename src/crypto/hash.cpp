@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <new>
 
+#include "crypto.hpp"  // KeccakStream
 #include "hash.hpp"
 
 #if defined(_WIN32)
@@ -77,13 +78,6 @@ Hash fill_merge_mining_branches(MergeMiningItem items[], size_t count) {
 	return fill_merge_mining_branches(pitems, 0);
 }
 
-#pragma pack(push, 1)
-struct HashingBranch {
-	Hash hashes[2];
-	unsigned char depth;
-};
-#pragma pack(pop)
-
 static Hash fill_cm_branches(const std::vector<CMTreeItem *> &pitems, size_t depth) {
 	if (depth >= 256)
 		throw std::logic_error("fill_cm_branches same currency ids");  // "Same currency ids"
@@ -98,14 +92,18 @@ static Hash fill_cm_branches(const std::vector<CMTreeItem *> &pitems, size_t dep
 		return fill_cm_branches(halves[1], depth + 1);
 	if (halves[1].empty())
 		return fill_cm_branches(halves[0], depth + 1);
-	HashingBranch buffer;
-	buffer.hashes[0] = fill_cm_branches(halves[0], depth + 1);
-	buffer.hashes[1] = fill_cm_branches(halves[1], depth + 1);
-	buffer.depth     = static_cast<uint8_t>(depth);
+	Hash buffer_hashes[2];
+	buffer_hashes[0] = fill_cm_branches(halves[0], depth + 1);
+	buffer_hashes[1] = fill_cm_branches(halves[1], depth + 1);
+	uint8_t depth8   = static_cast<uint8_t>(depth);
 	for (size_t ha = 0; ha != 2; ++ha)
 		for (auto pitem : halves[ha])
-			pitem->branch.push_back(CMBranchElement{buffer.depth, buffer.hashes[1 - ha]});
-	return cn_fast_hash(&buffer, sizeof(buffer));
+			pitem->branch.push_back(CMBranchElement{depth8, buffer_hashes[1 - ha]});
+	KeccakStream hasher;
+	hasher.append(buffer_hashes[0]);
+	hasher.append(buffer_hashes[1]);
+	hasher.append_byte(depth8);
+	return hasher.cn_fast_hash();
 }
 
 Hash fill_cm_branches(CMTreeItem items[], size_t count) {
@@ -141,14 +139,19 @@ Hash tree_hash_from_cm_branch(const std::vector<CMBranchElement> &branch, const 
 	for (size_t i = branch.size(); i-- > 0;) {
 		const auto &br = branch[i];
 		if (br.depth >= last_depth)
-			throw std::logic_error("CM branch invalid");
-		size_t leaf_path = (path.data[br.depth >> 3] & (1 << (br.depth & 7))) != 0 ? 1 : 0;
-		HashingBranch buffer;
-		buffer.hashes[leaf_path]     = last_hash;
-		buffer.hashes[1 - leaf_path] = br.hash;
-		buffer.depth                 = br.depth;
-		last_hash                    = cn_fast_hash(&buffer, sizeof(buffer));
-		last_depth                   = br.depth;
+			throw std::runtime_error("CM branch invalid");
+		const bool leaf_path = (path.data[br.depth >> 3] & (1 << (br.depth & 7))) != 0;
+		KeccakStream hasher;
+		if (leaf_path) {
+			hasher.append(br.hash);
+			hasher.append(last_hash);
+		} else {
+			hasher.append(last_hash);
+			hasher.append(br.hash);
+		}
+		hasher.append_byte(br.depth);
+		last_hash  = hasher.cn_fast_hash();
+		last_depth = br.depth;
 	}
 	return last_hash;
 }

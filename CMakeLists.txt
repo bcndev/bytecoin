@@ -6,7 +6,7 @@ project(bytecoin)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 11)
 set(CRYPTONOTE_NAME bytecoin)
-add_definitions(-DCRYPTONOTE_NAME=\"${CRYPTONOTE_NAME}\")
+add_definitions(-DCRYPTONOTE_NAME=\"${CRYPTONOTE_NAME}\" -DNDEBUG=1)
 option(WITH_LEDGER "Builds with support of Ledger hardware wallets" OFF)
 option(USE_INSTRUMENTATION "For testing - builds with address sanitizer instrument" OFF)
 option(WITH_THREAD_SANITIZER "For testing - builds with thread sanitizer instrument, USE_INSTRUMENTATION must be also set" OFF)
@@ -20,9 +20,13 @@ else()
     option(USE_SQLITE "Builds with sqlite instead of LMDB. 4x slower, but works on 32-bit and mobile platforms" ON)
     set(OPENSSL_ROOT ${PARENT_DIR}/openssl32)
 endif()
+
 if(WIN32)
     add_definitions(-D_SCL_SECURE_NO_WARNINGS=1 -D_CRT_SECURE_NO_WARNINGS=1 -D_WIN32_WINNT=0x0501)
 else()
+	if(APPLE)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.11")
+    endif()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -g -Wall -Wextra -Werror=return-type -Wno-unused-parameter")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -maes -g -Wall -Wextra -Werror=return-type -Wno-unused-parameter")
     # We can use -Wshadow with clang occasionally
@@ -139,13 +143,22 @@ if(WITH_LEDGER)
     # on Linux - apt-get install libusb-1.0-0-dev
     # permission problem - https://raw.githubusercontent.com/LedgerHQ/udev-rules/master/add_udev_rules.sh
     add_definitions(-Dcn_WITH_LEDGER=1)
+    set(LIBUSB_ROOT ${PARENT_DIR}/libusb)
 if(WIN32)
-    set(USBLIB_LIBRARY ${PARENT_DIR}/libusb/x64/Release/lib/libusb-1.0.lib)
+    # Link libusb dynamically.
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(USBLIB_LIBRARY ${LIBUSB_ROOT}/MS64/dll/libusb-1.0.lib)
+    else()
+        set(USBLIB_LIBRARY ${LIBUSB_ROOT}/MS32/dll/libusb-1.0.lib)
+    endif()
+elseif(APPLE)
+    # Link libusb statically.
+    set(USBLIB_LIBRARY ${LIBUSB_ROOT}/lib/libusb-1.0.a "-framework Foundation" "-framework IOKit")
 else()
     set(USBLIB_LIBRARY "usb-1.0")
 endif()
     message(STATUS "With ledger " ${USBLIB_LIBRARY})
-    include_directories(${PARENT_DIR}/libusb)
+    include_directories(${LIBUSB_ROOT}/include)
 else()
 endif()
 
@@ -187,16 +200,17 @@ else()
 endif()
 include_directories(${Boost_INCLUDE_DIRS})
 
-target_link_libraries(walletd bytecoin-crypto bytecoin-core)
+target_link_libraries(walletd bytecoin-crypto bytecoin-core ${USBLIB_LIBRARY})
 target_link_libraries(${CRYPTONOTE_NAME}d bytecoin-crypto bytecoin-core)
 target_link_libraries(minerd bytecoin-crypto bytecoin-core)
 target_link_libraries(tests bytecoin-crypto bytecoin-core)
 
 if(NOT WIN32)
     if(APPLE)
-        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.11")
-        target_link_libraries(walletd "-framework Foundation" "-framework IOKit")
-        target_link_libraries(${CRYPTONOTE_NAME}d "-framework Foundation" "-framework IOKit")
+        target_link_libraries(walletd "-framework Foundation" "-framework IOKit" -dead_strip ) # -dead_strip_dylibs
+        target_link_libraries(${CRYPTONOTE_NAME}d "-framework Foundation" "-framework IOKit" -dead_strip ) # -dead_strip_dylibs
+        target_link_libraries(minerd -dead_strip ) # -dead_strip_dylibs
+        target_link_libraries(tests -dead_strip ) # -dead_strip_dylibs
     endif()
     target_link_libraries(walletd ${LINK_OPENSSL} dl pthread)
     target_link_libraries(${CRYPTONOTE_NAME}d ${LINK_OPENSSL} dl pthread)
@@ -204,3 +218,32 @@ if(NOT WIN32)
     target_link_libraries(tests ${LINK_OPENSSL} dl pthread)
 endif()
 
+### DevTeam tools below ###
+add_executable(crawler src/main_crawler.cpp)
+add_executable(seednode src/main_seednode.cpp)
+add_executable(artagnand src/main_artagnand.cpp)
+
+# 
+target_link_libraries(crawler bytecoin-crypto bytecoin-core)
+target_link_libraries(seednode bytecoin-crypto bytecoin-core)
+target_link_libraries(artagnand bytecoin-crypto bytecoin-core)
+
+if(NOT WIN32)
+    target_link_libraries(crawler ${LINK_OPENSSL} dl pthread)
+    target_link_libraries(seednode ${LINK_OPENSSL} dl pthread)
+    target_link_libraries(artagnand ${LINK_OPENSSL} dl pthread)
+endif()
+
+# af section, will be removed after walletd2 finished and good
+if(WIN32)
+    add_executable(walletd2 src/main_walletd2.cpp src/bytecoin.rc) # .rc works only if referenced directly in add_executable
+else()
+    add_executable(walletd2 src/main_walletd2.cpp)
+endif()
+target_link_libraries(walletd2 bytecoin-crypto bytecoin-core ${USBLIB_LIBRARY})
+if(NOT WIN32)
+    if(APPLE)
+        target_link_libraries(walletd2 "-framework Foundation" "-framework IOKit")
+    endif()
+    target_link_libraries(walletd2 ${LINK_OPENSSL} dl pthread)
+endif()

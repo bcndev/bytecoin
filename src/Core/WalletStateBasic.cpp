@@ -90,11 +90,14 @@ WalletStateBasic::WalletStateBasic(
 		if (!version.empty())
 			m_log(logging::INFO) << "Data format, wallet seed or genesis bid different, old version=" << version
 			                     << " current version=" << version_current << ", clearing wallet cache..." << std::endl;
-		size_t total_items = m_db.get_approximate_items_count();
-		size_t erased      = 0;
+		const size_t total_items          = m_db.get_approximate_items_count();
+		const std::string total_items_str = (total_items == std::numeric_limits<size_t>::max())
+		                                        ? "unknown"
+		                                        : common::to_string((total_items + 999999) / 1000000);
+		size_t erased = 0;
 		for (DB::Cursor cur = m_db.rbegin(std::string()); !cur.end(); cur.erase()) {
 			if (erased % 1000000 == 0)
-				m_log(logging::INFO) << "Processing " << erased / 1000000 << "/" << (total_items + 999999) / 1000000
+				m_log(logging::INFO) << "Processing " << erased / 1000000 << "/" << total_items_str
 				                     << " million DB records" << std::endl;
 			erased += 1;
 		}
@@ -370,12 +373,12 @@ bool WalletStateBasic::try_adding_incoming_keyimage(const KeyImage &key_image, a
 }
 
 void WalletStateBasic::add_transaction(
-    Height height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) {
+    Height height, const Hash &tid, const PreparedWalletTransaction &pwtx, const api::Transaction &ptx) {
 	auto cur = m_db.begin(INDEX_TID_to_TRANSACTIONS);
 	if (cur.end())
 		on_first_transaction_found(ptx.timestamp);
 	auto trkey         = INDEX_TID_to_TRANSACTIONS + DB::to_binary_key(tid.data, sizeof(tid.data));
-	BinaryArray str_pa = seria::to_binary(std::make_pair(tx, ptx));
+	BinaryArray str_pa = seria::to_binary(std::make_pair(pwtx.tx, ptx));
 	put_with_undo(trkey, str_pa, true);
 	std::set<std::string> addresses;
 	addresses.insert(std::string());
@@ -396,7 +399,7 @@ bool WalletStateBasic::api_add_unspent(std::vector<api::Output> *result, Amount 
 	return for_each_in_unspent_index(address, 0, confirmed_height + 1, [&](api::Output &&output) -> bool {
 		if (!is_memory_spent(output) && recently_unlocked.count(output.global_index) == 0) {
 			//			if (!output.dust)  // We ensure total can be spent with non-zero anonymity
-			//				*total_amount += output.amount;
+			*total_amount += output.amount;
 			result->push_back(std::move(output));
 			if (*total_amount >= max_amount && result->size() >= min_count)
 				return false;  // Stop looking for
@@ -641,12 +644,14 @@ void WalletStateBasic::modify_balance(const api::Output &output, int locked_op, 
 		put_with_undo(bakey2, seria::to_binary(balance2), false);
 }
 
-static const std::map<KeyImage, int> empty_kis_or_pks;
-const std::map<KeyImage, int> &WalletStateBasic::get_mempool_keyimages() const { return empty_kis_or_pks; }
+static const std::map<KeyImage, std::vector<Hash>> empty_kis_or_pks;
+const std::map<KeyImage, std::vector<Hash>> &WalletStateBasic::get_mempool_keyimages() const {
+	return empty_kis_or_pks;
+}
 
 void WalletStateBasic::unlock(Height now_height, api::Output &&output) {
 	remove_from_lock_index(output);
-	if(!add_incoming_output(output, true)) // Unlocked and have coin with the same ki
+	if (!add_incoming_output(output, true))  // Unlocked and have coin with the same ki
 		return;
 	// Only first output from ki group will be unlocked (and spent in instantly), all others will remain locked forever
 	// This will definitely lead to loss of locked balance invariant.

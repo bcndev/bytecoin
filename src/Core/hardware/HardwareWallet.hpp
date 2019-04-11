@@ -11,12 +11,15 @@ namespace cn { namespace hardware {
 
 // Prototype - max simplified synchronous calls
 
-// All funs including constructor throw std::runtime_error when connection to hardware wallet lost before end of fun.
-// All funs must quickly try reestablishing connection at the start if it was lost during previous call
-// Calls might be from different threads, but will be externally synchronized
+// All funs including constructor throw HardwareWallet::Exception when connection to hardware wallet lost before end of
+// fun. Calls might be from different threads, but will be externally synchronized
 
 class HardwareWallet {
 public:
+	class Exception : public std::runtime_error {
+	public:
+		using std::runtime_error::runtime_error;
+	};
 	virtual ~HardwareWallet()                     = default;
 	virtual std::string get_hardware_type() const = 0;
 
@@ -27,12 +30,13 @@ public:
 	virtual PublicKey get_public_view_key() const = 0;
 
 	// We multiply in batches, because we have lots of them (for all outputs)
-	// Hardware is expected to divide into chunks of size that fit
+	virtual size_t get_scan_outputs_max_batch() const                                             = 0;
 	virtual std::vector<PublicKey> scan_outputs(const std::vector<PublicKey> &output_public_keys) = 0;
+
 	// We generate key images by one because we have a few of them (only for 'our' outputs)
 	// output_secret_hash_arg - max 32+32+10 bytes
 	virtual KeyImage generate_keyimage(const common::BinaryArray &output_secret_hash_arg, size_t address_index) = 0;
-	virtual void generate_output_seed(const Hash &tx_inputs_hash, size_t out_index, Hash *output_seed)          = 0;
+	virtual Hash generate_output_seed(const Hash &tx_inputs_hash, size_t out_index)                             = 0;
 	virtual void sign_start(
 	    size_t version, uint64_t ut, size_t inputs_size, size_t outputs_size, size_t extra_size) = 0;
 	virtual void sign_add_input(uint64_t amount, const std::vector<size_t> &output_indexes,
@@ -52,12 +56,6 @@ public:
 	virtual void export_view_only(SecretKey *audit_key_base_secret_key, SecretKey *view_secret_key, Hash *view_seed,
 	    Signature *view_secrets_signature)                                                               = 0;
 	virtual void proof_start(const common::BinaryArray &data)                                            = 0;
-
-	virtual void precache_scan_outputs(const std::vector<PublicKey> &output_public_keys) {
-		// this method is optional, will be used for future latency optimization - TBD
-	}
-
-	static void debug_set_mnemonic(const std::string &mnemonic);
 
 	void test_all_methods();
 

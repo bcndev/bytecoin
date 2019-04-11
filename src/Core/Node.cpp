@@ -405,6 +405,8 @@ void Node::fill_transaction_info(
 	api_tx->extra                     = tx.extra;
 	api_tx->anonymity                 = std::numeric_limits<size_t>::max();
 	api_tx->public_key                = extra_get_transaction_public_key(tx.extra);
+	api_tx->prefix_hash               = get_transaction_prefix_hash(tx);
+	api_tx->inputs_hash               = get_transaction_inputs_hash(tx);
 	extra_get_payment_id(tx.extra, api_tx->payment_id);
 	Amount input_amount = 0;
 	for (const auto &input : tx.inputs) {
@@ -427,12 +429,9 @@ void Node::fill_transaction_info(
 bool Node::on_sync_blocks(http::Client *, http::RequestBody &&, json_rpc::Request &&json_req,
     api::cnd::SyncBlocks::Request &&req, api::cnd::SyncBlocks::Response &res) {
 	if (req.sparse_chain.empty())
-		throw std::runtime_error("Empty sparse chain - must include at least genesis block");
+		throw std::runtime_error("Empty sparse chain - must include at least 1 block (usually genesis)");
 	if (req.sparse_chain.back() == Hash{})  // We allow to ask for "whatever genesis bid. Useful for explorer, etc."
 		req.sparse_chain.back() = m_block_chain.get_genesis_bid();
-	if (req.sparse_chain.back() != m_block_chain.get_genesis_bid())
-		throw std::runtime_error(
-		    "Wrong currency - different genesis block. Must be " + common::pod_to_hex(m_block_chain.get_genesis_bid()));
 	if (req.max_count > m_config.rpc_sync_blocks_max_count)
 		req.max_count = m_config.rpc_sync_blocks_max_count;
 	auto first_block_timestamp = req.first_block_timestamp < m_block_chain.get_currency().block_future_time_limit
@@ -440,7 +439,15 @@ bool Node::on_sync_blocks(http::Client *, http::RequestBody &&, json_rpc::Reques
 	                                 : req.first_block_timestamp - m_block_chain.get_currency().block_future_time_limit;
 	Height full_offset = m_block_chain.get_timestamp_lower_bound_height(first_block_timestamp);
 	Height start_height;
-	std::vector<Hash> subchain = m_block_chain.get_sync_headers_chain(req.sparse_chain, &start_height, req.max_count);
+	std::vector<Hash> subchain =
+	    m_block_chain.get_sync_headers_chain(req.sparse_chain, &start_height, req.max_count + 1);
+	// Will throw if no common subchain
+	if (!subchain.empty() && start_height != 0) {
+		subchain.erase(subchain.begin());  // Caller never needs common block she already has
+		start_height += 1;                 // Except if genesis (caller knows hash, but has no block)
+	} else if (subchain.size() > req.max_count) {
+		subchain.pop_back();
+	}
 	if (full_offset >= start_height + subchain.size()) {
 		start_height = full_offset;
 		subchain.clear();
@@ -615,16 +622,20 @@ bool Node::on_get_raw_transaction(http::Client *, http::RequestBody &&, json_rpc
 	size_t index_in_block = 0;
 	if (m_block_chain.get_transaction(
 	        req.hash, &binary_tx, &res.transaction.block_height, &res.transaction.block_hash, &index_in_block)) {
-		res.transaction.size = binary_tx.size();
+		api::BlockHeader bh;
+		invariant(m_block_chain.get_header(res.transaction.block_hash, &bh, res.transaction.block_height), "");
+		res.transaction.timestamp = bh.timestamp;
+		res.transaction.size      = binary_tx.size();
 		seria::from_binary(tx, binary_tx);
 		res.raw_transaction = static_cast<const TransactionPrefix &>(tx);
 		fill_transaction_info(tx, &res.transaction, &res.mixed_public_keys);
-		res.transaction.hash = req.hash;
-		res.transaction.fee  = get_tx_fee(res.raw_transaction);  // 0 for coinbase
+		res.transaction.coinbase = (index_in_block == 0);
+		res.transaction.hash     = req.hash;
+		res.transaction.fee      = get_tx_fee(res.raw_transaction);
 		return true;
 	}
 	throw api::ErrorHashNotFound(
-	    "Transaction not found in main chain. You cannot get transactions from side chains with this method.",
+	    "Transaction not found in main chain or memory pool. You cannot get transactions from side chains with this method.",
 	    req.hash);
 }
 
@@ -821,6 +832,7 @@ void Node::check_sendproof(const BinaryArray &data_inside_base58, api::cnd::Chec
 		}
 		all_addresses = output_address;
 		total_amount += key_output.amount;
+		response.output_indexes.push_back(out_index);
 		sp.elements.pop_back();
 	}
 	if (!sp.elements.empty())

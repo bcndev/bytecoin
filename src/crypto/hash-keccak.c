@@ -48,20 +48,20 @@ void crypto_keccak_into_state(const uint8_t *buf, size_t count, struct cryptoKec
 }
 
 void crypto_cn_fast_hash(const void *data, size_t length, struct cryptoHash *hash) {
-	struct cryptoHash hash2;
+	//	struct cryptoHash hash2;
 	struct cryptoKeccakHasher hasher;
 	crypto_keccak_init(&hasher, 256, 1);
 	crypto_keccak_update(&hasher, data, length);
-	crypto_keccak_final(&hasher, hash2.data, sizeof(hash2.data));
+	crypto_keccak_final(&hasher, hash->data, sizeof(hash->data));
 
-	struct cryptoKeccakState state;
-	crypto_keccak_into_state(data, length, &state);
-	memcpy(hash->data, &state, sizeof(struct cryptoHash));
+	//	struct cryptoKeccakState state;
+	//	crypto_keccak_into_state(data, length, &state);
+	//	memcpy(hash->data, &state, sizeof(struct cryptoHash));
 
-	if (memcmp(hash->data, hash2.data, sizeof(hash2.data)) != 0) {
-		fprintf(stderr, "keccak stream failure for data length %d", (int)length);
-		exit(-1);
-	}
+	//	if (memcmp(hash->data, hash2.data, sizeof(hash2.data)) != 0) {
+	//		fprintf(stderr, "keccak stream failure for data length %d", (int)length);
+	//		exit(-1);
+	//	}
 }
 
 void crypto_keccak_init(struct cryptoKeccakHasher *hasher, size_t mdlen, uint8_t delim) {

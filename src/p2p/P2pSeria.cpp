@@ -93,6 +93,7 @@ void ser_members(CoreStatistics &v, seria::ISeria &s) {
 	seria_kv("peer_list_white", v.peer_list_white, s);
 	seria_kv("peer_list_gray", v.peer_list_gray, s);
 	seria_kv("connected_peers", v.connected_peers, s);
+	seria_kv("node_database_size", v.node_database_size, s);
 }
 
 void ser_members(BasicNodeData &v, seria::ISeria &s) {
@@ -232,8 +233,7 @@ void ser(NetworkAddress &v, seria::ISeria &s) {
 	} else if (dynamic_cast<seria::JsonInputStream *>(&s)) {
 		std::string str;
 		ser(str, s);
-		if (!common::parse_ip_address_and_port(str, &v.ip, &v.port))
-			throw std::runtime_error("Failed to parse ip address and port from " + str);
+		common::parse_ip_address_and_port(str, &v.ip, &v.port);
 	} else {
 		s.begin_object();
 		seria_kv("ip", v.ip, s);

@@ -484,7 +484,7 @@ JsonValue JsonValue::from_string(const std::string &source) {
 	JsonValue json_value;
 	std::istringstream stream(source);
 	StreamContext ctx(stream);
-	json_value.read_json(ctx);
+	json_value.read_json(0, ctx);
 	if (stream.fail())
 		ctx.throw_error("Stream error");
 	ctx.eat_all_whitespace();
@@ -722,11 +722,11 @@ std::string JsonValue::StreamContext::read_string_token() {
 	return std::string();
 }
 
-void JsonValue::read_json(StreamContext &ctx) {
+void JsonValue::read_json(size_t level, StreamContext &ctx) {
 	char c = ctx.read_non_ws_char();
 
 	if (c == '[') {
-		read_array(ctx);
+		read_array(level + 1, ctx);
 	} else if (c == 't') {
 		read_true(ctx);
 	} else if (c == 'f') {
@@ -736,7 +736,7 @@ void JsonValue::read_json(StreamContext &ctx) {
 	} else if (c == 'n') {
 		read_null(ctx);
 	} else if (c == '{') {
-		read_object(ctx);
+		read_object(level + 1, ctx);
 	} else if (c == '"') {
 		read_string(ctx);
 	} else {
@@ -761,7 +761,9 @@ void JsonValue::destruct_value() {
 	type = NIL;
 }
 
-void JsonValue::read_array(StreamContext &ctx) {
+void JsonValue::read_array(size_t level, StreamContext &ctx) {
+	if (level > 100)
+		ctx.throw_error("Depth too big");
 	JsonValue::Array value;
 	char c = ctx.peek_non_ws_char();
 
@@ -770,7 +772,7 @@ void JsonValue::read_array(StreamContext &ctx) {
 	else {
 		for (;;) {
 			value.resize(value.size() + 1);
-			value.back().read_json(ctx);
+			value.back().read_json(level, ctx);
 			c = ctx.read_non_ws_char();
 
 			if (c == ']')
@@ -872,7 +874,9 @@ void JsonValue::read_number(StreamContext &ctx, char c) {
 	}
 }
 
-void JsonValue::read_object(StreamContext &ctx) {
+void JsonValue::read_object(size_t level, StreamContext &ctx) {
+	if (level > 100)
+		ctx.throw_error("Depth too big");
 	char c = ctx.read_non_ws_char();
 	JsonValue::Object value;
 
@@ -885,7 +889,7 @@ void JsonValue::read_object(StreamContext &ctx) {
 
 			ctx.expect(c, ':');
 
-			value[name].read_json(ctx);
+			value[name].read_json(level, ctx);
 			c = ctx.read_non_ws_char();
 
 			if (c == '}')

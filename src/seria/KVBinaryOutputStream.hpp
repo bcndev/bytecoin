@@ -13,8 +13,6 @@ class KVBinaryOutputStream : public ISeria {
 public:
 	explicit KVBinaryOutputStream(common::IOutputStream &target);
 
-	bool is_input() const override { return false; }
-
 	void begin_object() override;
 	bool object_key(common::StringView name, bool optional) override;
 	void end_object() override;
@@ -26,15 +24,10 @@ public:
 	void next_map_key(std::string &name) override;
 	void end_map() override { end_object(); }
 
-	void seria_v(uint8_t &value) override;
-	void seria_v(int16_t &value) override;
-	void seria_v(uint16_t &value) override;
-	void seria_v(int32_t &value) override;
-	void seria_v(uint32_t &value) override;
-	void seria_v(int64_t &value) override;
-	void seria_v(uint64_t &value) override;
-	//	void seria_v(double &value) override;
-	void seria_v(bool &value) override;
+	bool seria_v(int64_t &value) override;
+	bool seria_v(uint64_t &value) override;
+
+	bool seria_v(bool &value) override;
 	bool seria_v(std::string &value) override;
 	bool seria_v(common::BinaryArray &value) override;
 	bool binary(void *value, size_t size) override;
@@ -44,7 +37,7 @@ private:
 
 	common::VectorStream &stream();
 
-	enum class State { Root, Object, ArrayPrefix, Array };
+	enum class State { Object, ArrayPrefix, Array };
 
 	struct Level {
 		std::string name;

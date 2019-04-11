@@ -32,55 +32,49 @@ bool find_field_in_extra(const BinaryArray &extra, T &field) {
 			int c = iss.read_byte();
 			switch (c) {
 			case TransactionExtraPadding::tag: {
-				size_t size = 1;  // tag is itself '0', counts towards max count
-				for (; !iss.empty() && size <= TransactionExtraPadding::MAX_COUNT; ++size) {
-					if (iss.read_byte() != 0)
-						return false;  // all bytes should be zero
-				}
-				if (size > TransactionExtraPadding::MAX_COUNT)
-					return false;
-				TransactionExtraPadding padding;
-				padding.size = size;
-				return set_field_good(padding, field);  // last field
+				TransactionExtraPadding value{1 + iss.size()};
+				// tag is itself '0', counts towards padding size
+				// bytes usually set be zero, but we do not care
+				return set_field_good(value, field);  // last field
 			}
 			case TransactionExtraPublicKey::tag: {
-				TransactionExtraPublicKey extra_pk;
-				iss.read(extra_pk.public_key.data, sizeof(extra_pk.public_key.data));
-				if (set_field_good(extra_pk, field))
+				TransactionExtraPublicKey value;
+				iss.read(value.public_key.data, sizeof(value.public_key.data));
+				if (set_field_good(value, field))
 					return true;
 				break;
 			}
 			case TransactionExtraNonce::tag: {
-				TransactionExtraNonce extra_nonce;
-				uint8_t size = iss.read_byte();  // TODO - turn into varint <= 127?
-				extra_nonce.nonce.resize(size);
-				iss.read(extra_nonce.nonce.data(), extra_nonce.nonce.size());
+				TransactionExtraNonce value;
+				uint8_t size = iss.read_byte();  // TODO - turn into varint after Amethyst fork
+				value.nonce.resize(size);
+				iss.read(value.nonce.data(), value.nonce.size());
 				// We have some base transactions (like in blocks 558479, 558984)
 				// which have wrong extra nonce size, so they will not parse and
 				// throw here from iss.read
-				if (set_field_good(extra_nonce, field))
+				if (set_field_good(value, field))
 					return true;
 				break;
 			}
 			case TransactionExtraMergeMiningTag::tag: {
-				TransactionExtraMergeMiningTag mm_tag;
+				TransactionExtraMergeMiningTag value;
 				std::string field_data;
 				ser(field_data, ar);
 				common::MemoryInputStream stream(field_data.data(), field_data.size());
 				seria::BinaryInputStream input(stream);
-				ser(mm_tag, input);
-				if (set_field_good(mm_tag, field))
+				ser(value, input);
+				if (set_field_good(value, field))
 					return true;
 				break;
 			}
 			case TransactionExtraBlockCapacityVote::tag: {
-				TransactionExtraBlockCapacityVote bsv;
+				TransactionExtraBlockCapacityVote value;
 				std::string field_data;
 				ser(field_data, ar);
 				common::MemoryInputStream stream(field_data.data(), field_data.size());
 				seria::BinaryInputStream input(stream);
-				ser(bsv, input);
-				if (set_field_good(bsv, field))
+				ser(value, input);
+				if (set_field_good(value, field))
 					return true;
 				break;
 			}

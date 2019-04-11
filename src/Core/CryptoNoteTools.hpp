@@ -18,7 +18,7 @@ Hash get_object_hash(const T &object, size_t *size = nullptr) {
 	return crypto::cn_fast_hash(ba.data(), ba.size());
 }
 
-Hash get_root_block_base_transaction_hash(const BaseTransaction &tx);
+Hash get_root_block_base_transaction_hash(const RootBaseTransaction &tx);
 
 void set_root_extra_to_solo_mining_tag(BlockTemplate &block);  // MM headers must still have valid mm_tag if solo mining
 

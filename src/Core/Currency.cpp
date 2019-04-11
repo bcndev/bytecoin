@@ -286,8 +286,8 @@ Height Currency::largest_window() const {
 	            std::max(BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW, BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW_V1_3))));
 }
 
-Transaction Currency::construct_miner_tx(
-    uint8_t block_major_version, Height height, Amount block_reward, const AccountAddress &miner_address) const {
+Transaction Currency::construct_miner_tx(const Hash &miner_secret, uint8_t block_major_version, Height height,
+    Amount block_reward, const AccountAddress &miner_address) const {
 	Transaction tx;
 	const bool is_tx_amethyst = miner_address.type() != typeid(AccountAddressSimple);
 	const size_t max_outs     = get_max_coinbase_outputs();
@@ -297,7 +297,9 @@ Transaction Currency::construct_miner_tx(
 	tx.inputs.push_back(InputCoinbase{height});
 
 	Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
-	KeyPair txkey       = crypto::random_keypair();
+	KeyPair txkey       = miner_secret == Hash{}
+	                    ? crypto::random_keypair()
+	                    : TransactionBuilder::transaction_keys_from_seed(tx_inputs_hash, miner_secret);
 
 	if (!is_tx_amethyst)
 		extra_add_transaction_public_key(tx.extra, txkey.public_key);
@@ -312,9 +314,11 @@ Transaction Currency::construct_miner_tx(
 
 	Amount summary_amounts = 0;
 	for (size_t out_index = 0; out_index < out_amounts.size(); out_index++) {
-		const Hash output_seed = crypto::rand<Hash>();
-		OutputKey tk           = TransactionBuilder::create_output(
-            is_tx_amethyst, miner_address, txkey.secret_key, tx_inputs_hash, out_index, output_seed);
+		const Hash output_seed =
+		    miner_secret == Hash{} ? crypto::rand<Hash>()
+		                           : TransactionBuilder::generate_output_seed(tx_inputs_hash, miner_secret, out_index);
+		OutputKey tk = TransactionBuilder::create_output(
+		    is_tx_amethyst, miner_address, txkey.secret_key, tx_inputs_hash, out_index, output_seed);
 		tk.amount = out_amounts.at(out_index);
 		summary_amounts += tk.amount;
 		tx.outputs.push_back(tk);
@@ -402,6 +406,57 @@ bool Currency::parse_account_address_string(const std::string &str, AccountAddre
 	return false;
 }
 
+// We used C-style here to have same code on Ledger
+static void c_ffw(Amount am, size_t digs, char * buf) {
+	for(;digs > 0; digs -= 1 ) {
+		Amount d = am % 10;
+		am = am / 10;
+		buf[digs - 1] = '0' + d;
+	}
+}
+
+size_t c_format_amount(Amount amount, char * buffer, size_t len){
+	const size_t COIN = 100000000;
+	const size_t CENT = COIN / 100;
+	Amount ia = amount / COIN;
+	Amount fa = amount - ia * COIN;
+	size_t pos = 0;
+	while (ia >= 1000) {
+		pos += 4;
+		memmove(buffer + 4, buffer, pos);
+		buffer[0] = '\'';
+		c_ffw(ia % 1000, 3, buffer + 1);
+		ia /= 1000;
+	}
+	while(true){
+		Amount d = ia % 10;
+		ia = ia / 10;
+		pos += 1;
+		memmove(buffer + 1, buffer, pos);
+		buffer[0] = '0' + d;
+		if(ia == 0)
+			break;
+	}
+	if (fa != 0) {  // cents
+		buffer[pos++] = '.';
+		c_ffw(fa / CENT, 2, buffer + pos);
+		pos += 2;
+		fa %= CENT;
+	}
+	if (fa != 0) {
+//		buffer[pos++] = '\'';
+		c_ffw(fa / 1000, 3, buffer + pos);
+		pos += 3;
+		fa %= 1000;
+	}
+	if (fa != 0) {
+//		buffer[pos++] = '\'';
+		c_ffw(fa, 3, buffer + pos);
+		pos += 3;
+	}
+	return pos;
+}
+
 static std::string ffw(Amount am, size_t digs) {
 	std::string result = common::to_string(am);
 	if (result.size() < digs)
@@ -423,11 +478,15 @@ std::string Currency::format_amount(size_t number_of_decimal_places, Amount amou
 		fa %= DECIMAL_PLACES.at(number_of_decimal_places - 2);
 	}
 	if (fa != 0) {
-		result += "'" + ffw(fa / 1000, 3);
+		result += ffw(fa / 1000, 3); // "'" +
 		fa %= 1000;
 	}
 	if (fa != 0)
-		result += "'" + ffw(fa, 3);
+		result += ffw(fa, 3); // "'" +
+//	char buffer[64]{};
+//	std::string res2(buffer, c_format_amount(amount, buffer, sizeof(buffer)));
+//	invariant(res2 == result, "");
+//	std::cout << amount << " -> " << result << std::endl;
 	return result;
 }
 
@@ -523,13 +582,7 @@ Difficulty Currency::next_effective_difficulty(uint8_t block_major_version, std:
 }
 
 BinaryArray Currency::get_block_long_hashing_data(const BlockHeader &bh, const BlockBodyProxy &body_proxy) const {
-	common::BinaryArray result;
-	common::VectorOutputStream stream(result);
-	seria::BinaryOutputStream ba(stream);
-	ba.begin_object();
-	ser_members(const_cast<BlockHeader &>(bh), ba, BlockSeriaType::LONG_BLOCKHASH, body_proxy, genesis_block_hash);
-	ba.end_object();
-	return result;
+	return cn::get_block_long_hashing_data(bh, body_proxy, genesis_block_hash);
 }
 
 bool Currency::amount_allowed_in_output(uint8_t block_major_version, Amount amount) const {
@@ -541,60 +594,4 @@ bool Currency::amount_allowed_in_output(uint8_t block_major_version, Amount amou
 	if (amount > min_dust_threshold)  // "crazy" amounts
 		return false;
 	return amount < 1000 || amount % 1000 == 0;  // 3-digit dust
-}
-
-/*bool Currency::is_dust(Amount amount) const {
-    auto pretty_it = std::lower_bound(std::begin(PRETTY_AMOUNTS), std::end(PRETTY_AMOUNTS), amount);
-    if (pretty_it != std::end(Currency::PRETTY_AMOUNTS) && *pretty_it == amount)
-        return amount > max_dust_threshold;  // We have just a couple of large coins
-    if (amount > min_dust_threshold)
-        return true;
-    return amount > 1000 && amount % 1000 != 0;
-    // We changed dust definition - rebuilding wallet caches will rearrange spendable and spendable_dust balances
-}*/
-
-Hash cn::get_transaction_inputs_hash(const TransactionPrefix &tx) {
-	//	const bool is_tx_amethyst = (tx.version >= parameters::TRANSACTION_VERSION_AMETHYST);
-	BinaryArray ba = seria::to_binary(tx.inputs);
-	//	std::cout << "get_transaction_inputs_hash body=" << common::to_hex(ba) << std::endl;
-	return crypto::cn_fast_hash(ba.data(), ba.size());
-}
-
-Hash cn::get_transaction_prefix_hash(const TransactionPrefix &tx) {
-	BinaryArray ba = seria::to_binary(tx);
-	//	std::cout << "get_transaction_prefix_hash body=" << common::to_hex(ba) << std::endl;
-	return crypto::cn_fast_hash(ba.data(), ba.size());
-}
-
-Hash cn::get_transaction_hash(const Transaction &tx) {
-	if (tx.version >= TRANSACTION_VERSION_AMETHYST) {
-		std::pair<Hash, Hash> ha;
-		ha.first                = get_transaction_prefix_hash(tx);
-		BinaryArray binary_sigs = seria::to_binary(tx.signatures, static_cast<const TransactionPrefix &>(tx));
-		ha.second               = crypto::cn_fast_hash(binary_sigs.data(), binary_sigs.size());
-		BinaryArray ba          = seria::to_binary(ha);
-		//		BinaryArray tx_body = seria::to_binary(static_cast<const TransactionPrefix&>(tx));
-		//		common::append(tx_body, binary_sigs);
-		//		invariant(tx_body == seria::to_binary(tx), "");
-		return crypto::cn_fast_hash(ba.data(), ba.size());
-	}
-	BinaryArray ba = seria::to_binary(tx);
-	return crypto::cn_fast_hash(ba.data(), ba.size());
-}
-
-Hash cn::get_block_hash(const BlockHeader &bh, const BlockBodyProxy &body_proxy) {
-	// get_object_hash prepends array size before hashing.
-	// this was a mistake of initial cryptonote developers
-	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::BLOCKHASH, body_proxy));
-	//	std::cout << "ha: " << ha2 << " ba: " << common::to_hex(seria::to_binary(bh, BlockSeriaType::BLOCKHASH,
-	// body_proxy)) << std::endl;
-	return ha2;
-}
-
-Hash cn::get_auxiliary_block_header_hash(const BlockHeader &bh, const BlockBodyProxy &body_proxy) {
-	// get_object_hash prepends array size before hashing.
-	// this was a mistake of initial cryptonote developers
-	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::PREHASH, body_proxy));
-	//	std::cout << "ha: " << ha2 << " ba: " << common::to_hex(result.data(), result.size()) << std::endl;
-	return ha2;
 }

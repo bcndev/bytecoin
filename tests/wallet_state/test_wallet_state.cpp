@@ -14,7 +14,7 @@ using namespace cn;
 
 class WalletStateTest : public WalletStateBasic {
 public:
-	std::map<KeyImage, int> memory_spent;
+	std::map<KeyImage, std::vector<Hash>> memory_spent;
 	explicit WalletStateTest(logging::ILogger &log, const Config &config, const Currency &currency)
 	    : WalletStateBasic(log, config, currency, "test_wallet_state") {}
 	bool add_incoming_output(const api::Output &output) override {
@@ -30,11 +30,11 @@ public:
 		return WalletStateBasic::try_adding_incoming_keyimage(ki, spending_output);
 	}
 	void add_transaction(
-	    Height height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override {
-		WalletStateBasic::add_transaction(height, tid, tx, ptx);
+	    Height height, const Hash &tid, const PreparedWalletTransaction &pwtx, const api::Transaction &ptx) override {
+		WalletStateBasic::add_transaction(height, tid, pwtx, ptx);
 	}
 	void unlock(Height height, Timestamp ts) { WalletStateBasic::unlock(height, ts); }
-	const std::map<KeyImage, int> &get_mempool_keyimages() const override { return memory_spent; }
+	const std::map<KeyImage, std::vector<Hash>> &get_mempool_keyimages() const override { return memory_spent; }
 };
 
 static bool less_output(const api::Output &a, const api::Output &b) {
@@ -108,7 +108,7 @@ public:
 				--i;
 			}
 		}
-		if(!add_incoming_output(block_height, output, true))
+		if (!add_incoming_output(block_height, output, true))
 			return;
 		invariant(
 		    unlocked_outputs.insert(std::make_pair(output.global_index, std::make_pair(block_height, output.amount)))
@@ -120,7 +120,7 @@ public:
 	virtual bool add_incoming_output(const api::Output &output) override {
 		return add_incoming_output(output.height, output, false);
 	}
-	std::map<KeyImage, int> memory_spent;
+	std::map<KeyImage, std::vector<Hash>> memory_spent;
 	bool is_memory_spent(const api::Output &output) const { return memory_spent.count(output.key_image) != 0; }
 	void unlock(Height height, Timestamp timestamp) {
 		std::vector<api::Output> to_unlock;
@@ -164,7 +164,7 @@ public:
 		return existing_output.amount;
 	}
 	void add_transaction(
-	    Height height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override {
+	    Height height, const Hash &tid, const PreparedWalletTransaction &pwtx, const api::Transaction &ptx) override {
 		//		transactions[height].push_back(ptx);
 	}
 
@@ -266,8 +266,12 @@ void test_wallet_state(common::CommandLine &cmd) {
 			ki.data[0] = random() % 256;
 			ki.data[1] = random() % 16;
 			ki.data[2] = 1;
+			Hash ha;
+			ha.data[0] = ki.data[0];
+			ha.data[1] = ki.data[1];
+			ha.data[2] = ki.data[2];
 			if (ki != KeyImage{})
-				wm.memory_spent[ki] += 1;
+				wm.memory_spent[ki].push_back(ha);
 		}
 	ws.memory_spent = wm.memory_spent;
 	//	for(auto && ki : wm.memory_spent)
@@ -368,7 +372,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 				//				}
 			}
 		}
-		ws.add_transaction(ha, crypto::cn_fast_hash(&ha, sizeof(ha)), TransactionPrefix{}, ptx);
+		ws.add_transaction(ha, crypto::cn_fast_hash(&ha, sizeof(ha)), PreparedWalletTransaction{}, ptx);
 		const Timestamp uti =
 		    TEST_TIMESTAMP + ha * currency.difficulty_target + random() % currency.block_future_time_limit;
 		wm.unlock(ha, uti);

@@ -48,7 +48,7 @@ public:
 	template<typename T>
 	void load_params(T &v) const {
 		if (params)
-			seria::from_json_value(v, params.get());
+			seria::from_json_value_strict(v, params.get());
 	}
 	const std::string &get_method() const { return method; }
 	const OptionalJsonValue &get_id() const { return jid; }

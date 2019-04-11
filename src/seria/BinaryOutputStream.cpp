@@ -26,27 +26,20 @@ void BinaryOutputStream::begin_array(size_t &size, bool fixed_size) {
 		stream.write_varint(size);
 }
 
-void BinaryOutputStream::seria_v(uint8_t &value) { stream.write_varint(value); }
-
-void BinaryOutputStream::seria_v(uint16_t &value) { stream.write_varint(value); }
-
-void BinaryOutputStream::seria_v(int16_t &value) {
-	stream.write_varint(static_cast<uint64_t>(static_cast<int64_t>(value)));
+bool BinaryOutputStream::seria_v(int64_t &value) {
+	stream.write_varint(static_cast<uint64_t>(value));
+	return true;
 }
 
-void BinaryOutputStream::seria_v(uint32_t &value) { stream.write_varint(value); }
-
-void BinaryOutputStream::seria_v(int32_t &value) {
-	stream.write_varint(static_cast<uint64_t>(static_cast<int64_t>(value)));
+bool BinaryOutputStream::seria_v(uint64_t &value) {
+	stream.write_varint(value);
+	return true;
 }
 
-void BinaryOutputStream::seria_v(int64_t &value) { stream.write_varint(static_cast<uint64_t>(value)); }
-
-void BinaryOutputStream::seria_v(uint64_t &value) { stream.write_varint(value); }
-
-void BinaryOutputStream::seria_v(bool &value) {
+bool BinaryOutputStream::seria_v(bool &value) {
 	char bool_val = value;
 	stream.write(&bool_val, 1);
+	return true;
 }
 
 bool BinaryOutputStream::seria_v(std::string &value) {
@@ -64,8 +57,3 @@ bool BinaryOutputStream::binary(void *value, size_t size) {
 	stream.write(value, size);
 	return true;
 }
-
-// void BinaryOutputStream::seria_v(double &value) {
-//	assert(false);  // the method is not supported for this type of serialization
-//	throw std::logic_error("double serialization is not supported in BinaryOutputStreamSeria");
-//}

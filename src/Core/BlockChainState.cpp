@@ -235,7 +235,7 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
 		//		invariant(genesis_block.to_raw_block(raw_block), "Genesis block failed to convert into raw block");
 		PreparedBlock pb(std::move(raw_block), m_currency, nullptr);
 		api::BlockHeader info;
-		invariant(add_block(pb, &info, std::string()), "Genesis block failed to add");
+		invariant(add_block(pb, &info, false, std::string()), "Genesis block failed to add");
 	}
 	BlockChainState::tip_changed();
 	m_log(logging::INFO) << "BlockChainState::BlockChainState height=" << get_tip_height()
@@ -429,8 +429,12 @@ void BlockChainState::check_standalone_consensus(
 		auto ba   = m_currency.get_block_long_hashing_data(block.header, body_proxy);
 		long_hash = m_hash_crypto_context.cn_slow_hash(ba.data(), ba.size());
 	}
-	if (!check_hash(long_hash, info->difficulty))
-		throw ConsensusError("Proof of work too weak");
+	if (!check_hash(long_hash, info->difficulty)) {
+		auto prehash = get_auxiliary_block_header_hash(block.header, body_proxy);
+		auto ba      = m_currency.get_block_long_hashing_data(block.header, body_proxy);
+		throw ConsensusError(common::to_string("Proof of work too weak long_hash=", long_hash, " prehash=", prehash,
+		    " difficulty=", info->difficulty, " long hashing data=", common::to_hex(ba)));
+	}
 }
 void BlockChainState::fill_statistics(api::cnd::GetStatistics::Response &res) const {
 	BlockChain::fill_statistics(res);
@@ -438,6 +442,7 @@ void BlockChainState::fill_statistics(api::cnd::GetStatistics::Response &res) co
 	res.transaction_pool_size                = m_memory_state_total_size;
 	res.transaction_pool_max_size            = m_max_pool_size;
 	res.transaction_pool_lowest_fee_per_byte = minimum_pool_fee_per_byte(false);
+	res.node_database_size                   = m_db.test_get_approximate_size();
 }
 
 Timestamp BlockChainState::calculate_next_median_timestamp(const api::BlockHeader &prev_info) const {
@@ -479,7 +484,7 @@ void BlockChainState::tip_changed() {
 }
 
 void BlockChainState::create_mining_block_template(const Hash &parent_bid, const AccountAddress &adr,
-    const BinaryArray &extra_nonce, BlockTemplate *b, Difficulty *difficulty, Height *height,
+    const BinaryArray &extra_nonce, const Hash &miner_secret, BlockTemplate *b, Difficulty *difficulty, Height *height,
     size_t *reserved_back_offset) const {
 	api::BlockHeader parent_info;
 	if (!get_header(parent_bid, &parent_info))
@@ -509,9 +514,11 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 	}
 	b->nonce.resize(4);
 	if (b->is_merge_mined()) {
-		b->root_block.major_version     = 1;
-		b->root_block.minor_version     = 0;
-		b->root_block.transaction_count = 1;
+		// Code similar to set_root_extra_to_solo_mining_tag, but with empty MM tag
+		// We do not set valid prehash in MM because client will need to parse/process whole blob anyway
+		b->root_block.major_version            = 1;
+		b->root_block.transaction_count        = 1;
+		b->root_block.base_transaction.version = 1;
 
 		extra_add_merge_mining_tag(b->root_block.base_transaction.extra, TransactionExtraMergeMiningTag{});
 	}
@@ -592,7 +599,7 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 		block_capacity_vote = std::min(block_capacity_vote, m_currency.block_capacity_vote_max);
 		Amount block_reward =
 		    txs_fee + m_currency.get_base_block_reward(b->major_version, *height, parent_info.already_generated_coins);
-		b->base_transaction = m_currency.construct_miner_tx(b->major_version, *height, block_reward, adr);
+		b->base_transaction = m_currency.construct_miner_tx(miner_secret, b->major_version, *height, block_reward, adr);
 		extra_add_block_capacity_vote(b->base_transaction.extra, block_capacity_vote);
 		if (!extra_nonce.empty())
 			extra_add_nonce(b->base_transaction.extra, extra_nonce);
@@ -610,7 +617,7 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 	for (size_t try_count = 0; try_count < TRIES_COUNT; ++try_count) {
 		Amount block_reward = m_currency.get_block_reward(b->major_version, *height, effective_size_median,
 		    cumulative_size, parent_info.already_generated_coins, txs_fee);
-		b->base_transaction = m_currency.construct_miner_tx(b->major_version, *height, block_reward, adr);
+		b->base_transaction = m_currency.construct_miner_tx(miner_secret, b->major_version, *height, block_reward, adr);
 		if (!extra_nonce.empty())
 			extra_add_nonce(b->base_transaction.extra, extra_nonce);
 		size_t extra_size_without_delta = b->base_transaction.extra.size();
@@ -655,7 +662,7 @@ bool BlockChainState::add_mined_block(
     const BinaryArray &raw_block_template, RawBlock *raw_block, api::BlockHeader *info) {
 	BlockTemplate block_template;
 	seria::from_binary(block_template, raw_block_template);
-	raw_block->block = std::move(raw_block_template);
+	raw_block->block = raw_block_template;
 
 	raw_block->transactions.reserve(block_template.transaction_hashes.size());
 	raw_block->transactions.clear();
@@ -677,7 +684,7 @@ bool BlockChainState::add_mined_block(
 	}
 	PreparedBlock pb(std::move(*raw_block), m_currency, nullptr);
 	*raw_block = pb.raw_block;
-	return add_block(pb, info, "json_rpc");
+	return add_block(pb, info, true, "json_rpc");
 }
 
 void BlockChainState::clear_mining_transactions() const {
@@ -727,7 +734,7 @@ void BlockChainState::on_reorganization(
 		} catch (const std::exception &) {  // Just skip now invalid transactions
 		}
 	}
-	m_tx_pool_version = 2;  // add_transaction will erroneously increase
+	m_tx_pool_version = 0;  // add_transaction will erroneously increase
 }
 
 std::vector<TransactionDesc> BlockChainState::sync_pool(
@@ -760,7 +767,6 @@ bool BlockChainState::add_transaction(const Hash &tid, const Transaction &tx, co
 		m_archive.add(Archive::TRANSACTION, binary_tx, tid, source_address);
 		return false;  // AddTransactionResult::ALREADY_IN_POOL;
 	}
-	//	std::cout << "add_transaction " << tid << std::endl;
 	const size_t my_size         = binary_tx.size();
 	const Amount my_fee          = cn::get_tx_fee(tx);
 	const Amount my_fee_per_byte = my_fee / my_size;
@@ -850,19 +856,11 @@ bool BlockChainState::add_transaction(const Hash &tid, const Transaction &tx, co
 	                    ? 0
 	                    : m_memory_state_tx.at(m_memory_state_fee_tx.begin()->second).binary_tx.size();
 	auto min_fee_per_byte = m_memory_state_fee_tx.empty() ? 0 : m_memory_state_fee_tx.begin()->first;
-	//	if( m_memory_state_total_size-min_size >= m_max_pool_size)
-	//		std::cout << "Aha" << std::endl;
 	m_log(logging::INFO) << "Added transaction with hash=" << tid << " size=" << my_size << " fee=" << my_fee
 	                     << " fee/byte=" << my_fee_per_byte << " current_pool_size=("
 	                     << m_memory_state_total_size - min_size << "+" << min_size << ")=" << m_memory_state_total_size
 	                     << " count=" << m_memory_state_tx.size() << " min fee/byte=" << min_fee_per_byte << std::endl;
 	m_archive.add(Archive::TRANSACTION, binary_tx, tid, source_address);
-	//	for(auto && bb : m_memory_state_fee_tx)
-	//		for(auto ff : bb.second){
-	//			const PoolTransaction &other_tx = m_memory_state_tx.at(ff);
-	//			std::cout << "\t" << other_tx.fee_per_byte() << "\t" << other_tx.binary_tx.size() << "\t" <<
-	// common::pod_to_hex(ff) << std::endl;
-	//		}
 	m_tx_pool_version += 1;
 	return true;
 }
@@ -1004,8 +1002,8 @@ void BlockChainState::redo_transaction(uint8_t major_block_version, bool generat
 						//						std::for_each(output_keys.begin(), output_keys.end(),
 						//									  [&output_key_pointers](const PublicKey &key) {
 						// output_key_pointers.push_back(&key); });
-						if (!check_ring_signature(tx_prefix_hash, in.key_image, output_keys.data(), output_keys.size(),
-						        signatures.signatures.at(input_index))) {
+						if (!check_ring_signature(
+						        tx_prefix_hash, in.key_image, output_keys, signatures.signatures.at(input_index))) {
 							throw ConsensusErrorBadOutputOrSignature{
 							    "Bad signature or output reference changed", newest_referenced_height};
 						}
@@ -1089,7 +1087,7 @@ void BlockChainState::redo_block(const Hash &bhash, const Block &block, const ap
 				process_input(block.header.transaction_hashes.at(tit - block.transactions.begin()), input_index,
 				    boost::get<InputKey>(tit->inputs.at(input_index)));
 	}
-	m_tx_pool_version = 2;
+	m_tx_pool_version = 0;
 
 	auto key =
 	    BLOCK_GLOBAL_INDICES_PREFIX + DB::to_binary_key(bhash.data, sizeof(bhash.data)) + BLOCK_GLOBAL_INDICES_SUFFIX;
@@ -1150,24 +1148,27 @@ std::vector<api::Output> BlockChainState::get_random_outputs(uint8_t block_major
 	// We might need better algorithm if we have lots of locked amounts
 	std::set<size_t> tried_or_added;
 	crypto::random_engine<uint64_t> generator;
-	std::lognormal_distribution<double> distribution(1.9, 1.0);  // Magic params here
-	const uint32_t linear_part = 150;                            // Magic params here
-	size_t attempts            = 0;
-	if (total_stack_count > output_count)
+	std::normal_distribution<double> gaus_distribution{7.03635, 3.274266};  // magic
+	std::exponential_distribution<double> exp_distribution(1.13526e-01);    // magic
+	std::uniform_real_distribution<double> uniform_distribution(0.0, 1.0);
+
+	size_t attempts = 0;
+	if (total_stack_count > output_count)  // implicit total_stack_count > 0
 		for (; result.size() < output_count && attempts < output_count * 20; ++attempts) {  // TODO - 20
-			size_t num = 0;
-			if (result.size() % 2 == 0) {  // Half of outputs linear
-				if (total_stack_count <= linear_part)
-					num = crypto::rand<size_t>() % total_stack_count;  // 0 handled in if above
-				else
-					num = total_stack_count - 1 - crypto::rand<size_t>() % linear_part;
+			double bound = uniform_distribution(generator);
+			double y     = 0.0;
+			if (bound > 0.11) {  // 0.11 magic
+				y = gaus_distribution(generator);
+				y = exp(y);
 			} else {
-				double sample = distribution(generator);
-				int d_num     = static_cast<int>(std::floor(total_stack_count * (1 - std::pow(10, -sample / 10))));
-				if (d_num < 0 || d_num >= int(total_stack_count))
-					continue;
-				num = static_cast<size_t>(d_num);
+				y = exp_distribution(generator);
 			}
+			if (y > std::numeric_limits<int>::max() || y < std::numeric_limits<int>::min())
+				continue;
+			const int tmp = int(y);
+			if (tmp > static_cast<int>(total_stack_count - 1))
+				continue;
+			const size_t num = (tmp >= 0) ? total_stack_count - 1 - tmp : total_stack_count - 1;
 			if (!tried_or_added.insert(num).second)
 				continue;
 			size_t global_index = 0;
@@ -1224,11 +1225,6 @@ std::vector<api::Output> BlockChainState::get_random_outputs(uint8_t block_major
 			item.height                    = unp.height;
 			(unp.spent ? spent_result : result).push_back(item);
 		}
-		// To satisfy minimum anonymity requirement for very rare coins, we add spent as a last resort
-		//		while (result.size() < output_count && !spent_result.empty()) {
-		//			result.push_back(spent_result.back());
-		//			spent_result.pop_back();
-		//		}
 	}
 	return result;
 }
@@ -1419,7 +1415,7 @@ void BlockChainState::unprocess_input(const InputKey &input) {
 void BlockChainState::spend_output(
     OutputIndexData &&output, size_t hidden_index, size_t trigger_input_index, size_t level, bool spent) {
 	if (level > 2)
-		std::cout << "Sure spent level=" << level << " hi=" << hidden_index << std::endl;
+		m_log(logging::INFO) << "Sure spent level=" << level << " hi=" << hidden_index << std::endl;
 	auto key                         = OUTPUT_PREFIX + common::write_varint_sqlite4(hidden_index);
 	bool no_subgroup_check_aftermath = hidden_index == 35654297 || hidden_index == 35655016;
 	if (spent) {

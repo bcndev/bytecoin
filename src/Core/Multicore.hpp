@@ -22,6 +22,11 @@ namespace cn {
 
 class IBlockChainState;  // We will read keyimages and outputs from it
 class Currency;
+class Wallet;
+
+namespace hardware {
+class HardwareWallet;
+}
 
 class BlockPreparatorMulticore {
 	const Currency &currency;
@@ -90,6 +95,8 @@ public:
 };
 
 struct PreparedWalletTransaction {
+	Hash tid;
+	size_t size = 0;
 	TransactionPrefix tx;
 	Hash prefix_hash;
 	Hash inputs_hash;
@@ -98,42 +105,74 @@ struct PreparedWalletTransaction {
 	std::vector<BinaryArray> output_secret_hash_args;
 
 	PreparedWalletTransaction() = default;
-	PreparedWalletTransaction(
-	    TransactionPrefix &&tx, const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
-	PreparedWalletTransaction(
-	    Transaction &&tx, const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
+	PreparedWalletTransaction(const Hash &tid, size_t size, TransactionPrefix &&tx,
+	    const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
+	PreparedWalletTransaction(const Hash &tid, size_t size, Transaction &&tx, const Wallet::OutputHandler &o_handler,
+	    const SecretKey &view_secret_key);
+
+	// TODO - remove constructors and always use prepare()?
+	void prepare(const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
 };
 
 struct PreparedWalletBlock {
-	BlockTemplate header;
-	PreparedWalletTransaction base_transaction;
-	Hash base_transaction_hash;
+	api::RawBlock raw_block;
 	std::vector<PreparedWalletTransaction> transactions;
-	PreparedWalletBlock() = default;
-	PreparedWalletBlock(BlockTemplate &&bc_header, std::vector<TransactionPrefix> &&raw_transactions,
-	    Hash base_transaction_hash, const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
+	// base_transaction will be inserted before other transactions
+
+	void prepare(const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
+	//	PreparedWalletBlock() = default;
+	//	PreparedWalletBlock(api::RawBlock && raw_block, const Wallet::OutputHandler &o_handler, const SecretKey
+	//&view_secret_key);
 };
 
+// We add mempool processing here because it is slow for HW wallet to process outputs by one
+// We combine both blocks and mempool processing in single class
+// because access to HW wallet should be synced anyway.
 class WalletPreparatorMulticore {
 	std::vector<std::thread> threads;
 	std::mutex mu;
 	std::condition_variable have_work;
-	std::condition_variable result_ready;
 	bool quit = false;
 
-	std::map<Height, PreparedWalletBlock> prepared_blocks;
-	api::cnd::SyncBlocks::Response work;
-	int work_counter = 0;
+	enum Status { WAITING, BUSY, PREPARED };
+	struct WorkItem {
+		PreparedWalletTransaction pwtx;
+		PreparedWalletBlock block;
+		bool is_tx       = false;
+		Status status    = WAITING;
+		size_t pks_count = 0;
+	};
+
+	std::deque<std::unique_ptr<WorkItem>> work;
+	std::deque<crypto::PublicKey> source_pks;
+	std::deque<crypto::PublicKey> result_pks;  // not synced, access from 1 worker thread
+
+	bool wallet_connected      = true;
+	size_t total_block_size    = 0;
+	size_t total_mempool_count = 0;
+
+	hardware::HardwareWallet *hw_copy;
 	Wallet::OutputHandler m_o_handler;
 	SecretKey m_view_secret_key;
+	platform::EventLoop *m_main_loop;
 	void thread_run();
 
+	void hw_output_handler(uint8_t tx_version, const KeyDerivation &kd, const Hash &tx_inputs_hash, size_t output_index,
+	    const OutputKey &key_output, PublicKey *address_S, BinaryArray *output_secret_hash_arg);
+
 public:
-	WalletPreparatorMulticore();
+	WalletPreparatorMulticore(hardware::HardwareWallet *hw_copy, Wallet::OutputHandler &&o_handler,
+	    const SecretKey &view_secret_key, platform::EventLoop *main_loop);
 	~WalletPreparatorMulticore();
-	void cancel_work();
-	void start_work(const api::cnd::SyncBlocks::Response &new_work, Wallet::OutputHandler &&o_handler,
-	    const SecretKey &view_secret_key);
-	PreparedWalletBlock get_ready_work(Height height);
+	void add_work(std::vector<api::RawBlock> &&new_work);
+	void add_work(const Hash &tid, size_t size, TransactionPrefix &&new_work);
+	bool is_wallet_connected();
+	void wallet_reconnected();
+	size_t get_total_block_size() const { return total_block_size; }
+	size_t get_total_mempool_count() const { return total_mempool_count; }
+	void get_ready_work(std::deque<PreparedWalletBlock> *blocks, std::deque<PreparedWalletTransaction> *transactions);
+	void return_ready_work(std::deque<PreparedWalletBlock> &&ppb);
+	void return_ready_work(std::deque<PreparedWalletTransaction> &&ppb);
 };
+
 }  // namespace cn

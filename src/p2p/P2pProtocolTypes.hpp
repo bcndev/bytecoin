@@ -106,6 +106,7 @@ struct CoreStatistics {
 	Amount transaction_pool_lowest_fee_per_byte = 0;
 	Height upgrade_decided_height               = 0;
 	Height upgrade_votes_in_top_block           = 0;
+	uint64_t node_database_size                 = 0;
 };
 
 // inline bool operator<(const NetworkAddressLegacy &a, const NetworkAddressLegacy &b) {

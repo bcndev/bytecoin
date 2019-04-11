@@ -36,7 +36,7 @@ size_t pack_varint(IOutputStream &s, uint8_t type_or, size_t pv) {
 }
 
 void write_element_name(IOutputStream &s, common::StringView name) {
-	if (name.size() > std::numeric_limits<uint8_t>::max())
+	if (name.size() > 255)
 		throw std::runtime_error("Element name is too long");
 	// When this happens first time (probably inside begin_map/end_map)
 	// We will have to add new BIN_KV_SERIALIZE_TYPE_OBJECT2 format with
@@ -65,7 +65,7 @@ size_t write_array_size(IOutputStream &s, size_t val) {
 
 }  // namespace
 
-KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : m_target(target) {
+KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : ISeria(false), m_target(target) {
 	KVBinaryStorageBlockHeader hdr{
 	    PORTABLE_STORAGE_SIGNATUREA, PORTABLE_STORAGE_SIGNATUREB, PORTABLE_STORAGE_FORMAT_VER};
 	write_pod(m_target, hdr.m_signature_a);
@@ -74,6 +74,7 @@ KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : m_ta
 }
 
 bool KVBinaryOutputStream::object_key(common::StringView name, bool optional) {
+	invariant(!m_next_key.data(), "");
 	m_next_key = name;
 	return true;
 }
@@ -150,15 +151,16 @@ void KVBinaryOutputStream::write_element_prefix(uint8_t type) {
 	if (verbose_debug)
 		std::cout << "write_element_prefix level.state=" << int(level.state) << std::endl;
 	if (level.state == State::Object) {
-		if (!m_next_key.empty()) {
-			write_element_name(s, m_next_key);
-			if (type != BIN_KV_SERIALIZE_TYPE_ARRAY)
-				s.write(&type, 1);
-			m_next_key = common::StringView("");
-		}
+		invariant(m_next_key.data(), "");
+		write_element_name(s, m_next_key);
+		if (type != BIN_KV_SERIALIZE_TYPE_ARRAY)
+			s.write(&type, 1);
+		m_next_key = common::StringView();
 		++level.count;
 	}
 	if (level.state == State::ArrayPrefix) {
+		//		if(type == BIN_KV_SERIALIZE_TYPE_INT64 || type == BIN_KV_SERIALIZE_TYPE_UINT64)
+		//			std::cout << "Breakpoint" << std::endl;
 		unsigned char c = BIN_KV_SERIALIZE_FLAG_ARRAY | type;
 		s.write(&c, 1);
 		write_array_size(s, level.count);
@@ -178,50 +180,54 @@ common::VectorStream &KVBinaryOutputStream::stream() {
 	return m_objects_stack.back();
 }
 
-void KVBinaryOutputStream::seria_v(uint8_t &value) {
-	write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT8);
-	write_pod(stream(), value);
+// TODO - select array/value type on min/max written values
+
+/*void KVBinaryOutputStream::seria_v(uint8_t &value) {
+    write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT8);
+    write_pod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(uint16_t &value) {
-	write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT16);
-	write_pod(stream(), value);
+    write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT16);
+    write_pod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(int16_t &value) {
-	write_element_prefix(BIN_KV_SERIALIZE_TYPE_INT16);
-	write_pod(stream(), value);
+    write_element_prefix(BIN_KV_SERIALIZE_TYPE_INT16);
+    write_pod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(uint32_t &value) {
-	write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT32);
-	write_pod(stream(), value);
+    write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT32);
+    write_pod(stream(), value);
 }
 
 void KVBinaryOutputStream::seria_v(int32_t &value) {
-	write_element_prefix(BIN_KV_SERIALIZE_TYPE_INT32);
-	write_pod(stream(), value);
-	if (verbose_tokens)
-		std::cout << value << std::endl;
-}
+    write_element_prefix(BIN_KV_SERIALIZE_TYPE_INT32);
+    write_pod(stream(), value);
+    if (verbose_tokens)
+        std::cout << value << std::endl;
+}*/
 
-void KVBinaryOutputStream::seria_v(int64_t &value) {
+bool KVBinaryOutputStream::seria_v(int64_t &value) {
 	write_element_prefix(BIN_KV_SERIALIZE_TYPE_INT64);
 	write_pod(stream(), value);
+	return true;
 }
 
-void KVBinaryOutputStream::seria_v(uint64_t &value) {
+bool KVBinaryOutputStream::seria_v(uint64_t &value) {
 	write_element_prefix(BIN_KV_SERIALIZE_TYPE_UINT64);
 	write_pod(stream(), value);
+	return true;
 }
 
-void KVBinaryOutputStream::seria_v(bool &value) {
+bool KVBinaryOutputStream::seria_v(bool &value) {
 	write_element_prefix(BIN_KV_SERIALIZE_TYPE_BOOL);
 	write_pod(stream(), uint8_t(value));
+	return true;
 }
 
 // void KVBinaryOutputStream::seria_v(double &value) {
-//	assert(false);  // the method is not supported for this type of serialization
 //	throw std::logic_error("double serialization is not supported in KVBinaryOutputStream");
 //	write_element_prefix(BIN_KV_SERIALIZE_TYPE_DOUBLE);
 //	stream().write(&value, sizeof(double)); // TODO - double in binary is bug
@@ -237,6 +243,7 @@ bool KVBinaryOutputStream::seria_v(std::string &value) {
 		std::cout << "\"" << value << "\"" << std::endl;
 	return true;
 }
+
 bool KVBinaryOutputStream::seria_v(common::BinaryArray &value) {
 	write_element_prefix(BIN_KV_SERIALIZE_TYPE_STRING);
 

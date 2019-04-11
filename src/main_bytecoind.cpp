@@ -44,6 +44,8 @@ int main(int argc, const char *argv[]) try {
 	common::console::UnicodeConsoleSetup console_setup;
 	auto idea_start = std::chrono::high_resolution_clock::now();
 	common::CommandLine cmd(argc, argv);
+	if (cmd.show_help(Config::prepare_usage(USAGE).c_str(), cn::app_version()))
+		return 0;
 
 	std::string import_blocks;
 	if (const char *pa = cmd.get("--import-blocks"))
@@ -53,7 +55,7 @@ int main(int argc, const char *argv[]) try {
 		export_blocks = platform::normalize_folder(pa);
 	Height max_height = std::numeric_limits<Height>::max();
 	if (const char *pa = cmd.get("--max-height"))  // for export, import
-		max_height = boost::lexical_cast<Height>(pa);
+		max_height = common::integer_cast<Height>(pa);
 	std::string backup_blockchain;
 	if (const char *pa = cmd.get("--backup-blockchain"))
 		backup_blockchain = platform::normalize_folder(pa);
@@ -62,12 +64,12 @@ int main(int argc, const char *argv[]) try {
 	//	config.db_commit_every_n_blocks = 10000;
 	Height print_structure = std::numeric_limits<Height>::max();
 	if (const char *pa = cmd.get("--print-structure"))
-		print_structure = boost::lexical_cast<Height>(pa);
+		print_structure = common::integer_cast<Height>(pa);
 	size_t dump_outputs_quality = 0;
 	if (const char *pa = cmd.get("--dump-outputs-quality"))
-		dump_outputs_quality = boost::lexical_cast<Height>(pa);
-	if (int r = cmd.should_quit(Config::prepare_usage(USAGE).c_str(), cn::app_version()))
-		return r == 1 ? 0 : api::BYTECOIND_WRONG_ARGS;
+		dump_outputs_quality = common::integer_cast<size_t>(pa);
+	if (cmd.show_errors())
+		return api::BYTECOIND_WRONG_ARGS;
 
 	const std::string coin_folder = config.get_data_folder();
 	if (!export_blocks.empty() && !backup_blockchain.empty()) {
@@ -146,6 +148,12 @@ int main(int argc, const char *argv[]) try {
 } catch (const platform::ExclusiveLock::FailedToLock &ex) {
 	std::cout << "Bytecoind already running - " << common::what(ex) << std::endl;
 	return api::BYTECOIND_ALREADY_RUNNING;
+} catch (const cn::Config::DataFolderError &ex) {
+	std::cout << common::what(ex) << std::endl;
+	return api::BYTECOIND_DATAFOLDER_ERROR;
+} catch (const cn::Config::ConfigError &ex) {
+	std::cout << common::what(ex) << std::endl;
+	return api::BYTECOIND_WRONG_ARGS;
 } catch (const cn::BlockChainState::Exception &ex) {
 	std::cout << common::what(ex) << std::endl;
 	return api::BYTECOIND_DATABASE_FORMAT_TOO_NEW;

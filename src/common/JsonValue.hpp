@@ -162,14 +162,14 @@ private:
 		void throw_error(const std::string &text);
 		void expect(char c, char should_be_c);
 	};
-	void read_json(StreamContext &ctx);
+	void read_json(size_t level, StreamContext &ctx);
 
-	void read_array(StreamContext &ctx);
+	void read_array(size_t level, StreamContext &ctx);
 	void read_true(StreamContext &ctx);
 	void read_false(StreamContext &ctx);
 	void read_null(StreamContext &ctx);
 	void read_number(StreamContext &ctx, char c);
-	void read_object(StreamContext &ctx);
+	void read_object(size_t level, StreamContext &ctx);
 	void read_string(StreamContext &ctx);
 };
 }  // namespace common

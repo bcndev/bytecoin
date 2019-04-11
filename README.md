@@ -62,21 +62,14 @@ To go futher you have to have a number of packages and utilities. You need at le
     $bcndev/openssl> cd ..
     ```
 
-* SQLite (3.1 or newer)
-    Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into `bcndev/sqlite` folder (source files are referenced via relative paths, so you do not need to separately build it).
-    Please, note the direct download link is periodically updated with old versions removed, so you might need to tweak instructions below
-    ```
-    $bcndev> wget -c https://www.sqlite.org/2018/sqlite-amalgamation-3260000.zip
-    $bcndev> unzip ./sqlite-amalgamation-3260000.zip
-    $bcndev> rm ./sqlite-amalgamation-3260000.zip
-    $bcndev> mv ./sqlite-amalgamation-3260000/ ./sqlite/
-    ```
-
 * LMDB
     Source files are referenced via relative paths, so you do not need to separately build it:
     Please note, we use LMDB only when building 64-bit daemons. For 32-bit daemons SQLite is used instead.
+
+    Difference to official LMDB repository is lifted 2GB database limit if built by MSVC (even of 64-bit machine).
     ```
     $bcndev> git clone https://github.com/bcndev/lmdb.git
+
     ```
 
 Git-clone (or git-pull) Bytecoin source code in that folder:
@@ -238,3 +231,13 @@ Currently bytecoin does not work out of the box on any Big-Endian platform, due 
 ## Building with parameters
 
 If you want to use tools like `clang-tidy`, run `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..` instead of `cmake ..`
+
+## Building daemons with hardware wallet support on Linux 64-bit
+
+1. Clone `trezor-core` repository into the same folder where `bytecoin` resides.
+2. Install all Google protobuf stuff:
+```
+sudo apt install protobuf-compiler libprotobuf-dev
+```
+3. If your version of proto buffers library is not `3.0.0`, you should run `protoc` on proto files in `trezor-core/vendor/trezor-common/protob` overwriting `bytecoin/src/Core/hardware/trezor/protob`.
+4. Clean your `bytecoin/build` folder if you have built the Bytecoin source code before.

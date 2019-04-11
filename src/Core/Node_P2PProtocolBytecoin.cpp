@@ -279,7 +279,7 @@ bool Node::P2PProtocolBytecoin::on_idle(std::chrono::steady_clock::time_point id
 		api::BlockHeader info;
 		bool add_block_result = false;
 		try {
-			add_block_result = m_node->m_block_chain.add_block(pb, &info, get_address().to_string());
+			add_block_result = m_node->m_block_chain.add_block(pb, &info, false, get_address().to_string());
 		} catch (const std::exception &ex) {
 			auto what = common::what(ex);
 			m_node->m_log(logging::INFO) << "on_idle add_block BAN expected height=" << expected_height
@@ -698,7 +698,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_new_block(p2p::RelayBlock::Notify 
 		return disconnect("RelayBlock lied about top_id");
 	api::BlockHeader info;
 	// We'll catch consensus error automatically in common handler
-	if (m_node->m_block_chain.add_block(pb, &info, get_address().to_string())) {
+	if (m_node->m_block_chain.add_block(pb, &info, false, get_address().to_string())) {
 		if (get_peer_version() >= P2PProtocolVersion::AMETHYST && req.current_blockchain_height != info.height)
 			return disconnect("RelayBlock lied about current_blockchain_height");
 		set_peer_sync_data(CoreSyncData{info.height, pb.bid});

@@ -15,6 +15,7 @@
 
 #include "common/BinaryArray.hpp"
 #include "common/Int128.hpp"
+#include "common/Math.hpp"
 #include "common/StringView.hpp"
 #include "common/exception.hpp"
 #include "common/string.hpp"
@@ -22,14 +23,15 @@
 namespace seria {
 class ISeria;
 
-// template<typename T>
-// void ser(T &value, ISeria &s);
-
 class ISeria {
+	bool is_input_value;  // optimization
+protected:
+	explicit ISeria(bool iv) : is_input_value(iv) {}
+
 public:
 	virtual ~ISeria() = default;
 
-	virtual bool is_input() const = 0;
+	bool is_input() const { return is_input_value; }
 
 	virtual void begin_object()                                     = 0;
 	virtual bool object_key(common::StringView name, bool optional) = 0;  // return true if key is there
@@ -45,15 +47,9 @@ public:
 	// When we know array size from other field, we will skipping saving it
 	virtual void end_array() = 0;
 
-	virtual void seria_v(uint8_t &value)  = 0;
-	virtual void seria_v(int16_t &value)  = 0;
-	virtual void seria_v(uint16_t &value) = 0;
-	virtual void seria_v(int32_t &value)  = 0;
-	virtual void seria_v(uint32_t &value) = 0;
-	virtual void seria_v(int64_t &value)  = 0;
-	virtual void seria_v(uint64_t &value) = 0;
-	//	virtual void seria_v(double &value)              = 0;
-	virtual void seria_v(bool &value)                = 0;
+	virtual bool seria_v(uint64_t &value)            = 0;
+	virtual bool seria_v(int64_t &value)             = 0;
+	virtual bool seria_v(bool &value)                = 0;
 	virtual bool seria_v(std::string &value)         = 0;
 	virtual bool seria_v(common::BinaryArray &value) = 0;
 
@@ -61,44 +57,29 @@ public:
 	virtual bool binary(void *value, size_t size) = 0;  // fixed width, no size written
 };
 
-inline void ser(uint8_t &value, ISeria &s) { return s.seria_v(value); }
-inline void ser(int16_t &value, ISeria &s) { return s.seria_v(value); }
-inline void ser(uint16_t &value, ISeria &s) { return s.seria_v(value); }
-// Code below is a trick to solve the following problem
-// seria_v is defined for uint32_t uint64_t, but in C++ there is 3 unsigned types - unsigned, unsigned long, unsigned
-// long long
-// so on some platforms size_t, uint32_t and uint64_t may be mapped to 3 distinct types. We need to select appropriate
-// seria_v.
-// Ultimate fix - rewrite ISeria in terms of basic integral types
-template<typename T>
-void ser_integral(T &value, ISeria &s, std::true_type) {
-	s.seria_v(value);
+template<typename BT, typename T>
+void ser_integral(T &value, ISeria &s) {
+	if (s.is_input()) {
+		BT tmp = 0;
+		if (s.seria_v(tmp))
+			value = common::integer_cast<T>(tmp);
+	} else {
+		BT tmp = static_cast<BT>(value);
+		s.seria_v(tmp);
+	}
 }
-template<typename T>
-void ser_integral(T &value, ISeria &s, std::false_type) {
-	static_assert(sizeof(T) == sizeof(uint32_t) || sizeof(T) == sizeof(uint64_t),
-	    "This impl only selects between 32- and 64-bit types");
-	typename std::conditional<sizeof(T) == sizeof(uint32_t), uint32_t, uint64_t>::type val = value;
-	s.seria_v(val);
-	if (s.is_input())
-		value = val;
-}
-inline void ser(int32_t &value, ISeria &s) { return s.seria_v(value); }
-inline void ser(int64_t &value, ISeria &s) { return s.seria_v(value); }
-inline void ser(unsigned &value, ISeria &s) {
-	ser_integral(value, s, std::integral_constant < bool,
-	    std::is_same<unsigned, uint32_t>::value || std::is_same<unsigned, uint64_t>::value > {});
-}
-inline void ser(unsigned long &value, ISeria &s) {
-	ser_integral(value, s, std::integral_constant < bool,
-	    std::is_same<unsigned long, uint32_t>::value || std::is_same<unsigned long, uint64_t>::value > {});
-}
-inline void ser(unsigned long long &value, ISeria &s) {
-	ser_integral(value, s, std::integral_constant < bool,
-	    std::is_same<unsigned long long, uint32_t>::value || std::is_same<unsigned long long, uint64_t>::value > {});
-}
-// inline void ser(double &value, ISeria &s) { return s.seria_v(value); }
-inline void ser(bool &value, ISeria &s) { return s.seria_v(value); }
+
+inline void ser(uint8_t &value, ISeria &s) { ser_integral<uint64_t>(value, s); }
+inline void ser(short &value, ISeria &s) { ser_integral<int64_t>(value, s); }
+inline void ser(unsigned short &value, ISeria &s) { ser_integral<uint64_t>(value, s); }
+inline void ser(int &value, ISeria &s) { ser_integral<int64_t>(value, s); }
+inline void ser(unsigned int &value, ISeria &s) { ser_integral<uint64_t>(value, s); }
+inline void ser(long &value, ISeria &s) { ser_integral<int64_t>(value, s); }
+inline void ser(unsigned long &value, ISeria &s) { ser_integral<uint64_t>(value, s); }
+inline void ser(long long &value, ISeria &s) { ser_integral<int64_t>(value, s); }
+inline void ser(unsigned long long &value, ISeria &s) { ser_integral<uint64_t>(value, s); }
+
+inline void ser(bool &value, ISeria &s) { s.seria_v(value); }
 inline void ser(std::string &value, ISeria &s) { s.seria_v(value); }
 inline void ser(common::BinaryArray &value, ISeria &s) { s.seria_v(value); }
 

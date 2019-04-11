@@ -2,7 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "CryptoNoteTools.hpp"
-#include "Currency.hpp"
+#include <crypto/crypto.hpp>
 #include "TransactionExtra.hpp"
 #include "common/StringTools.hpp"
 #include "common/Varint.hpp"
@@ -10,26 +10,31 @@
 
 using namespace cn;
 
-Hash cn::get_root_block_base_transaction_hash(const BaseTransaction &tx) {
+Hash cn::get_root_block_base_transaction_hash(const RootBaseTransaction &tx) {
 	if (tx.version < 2)
 		return get_object_hash(tx);
 	// XMR(XMO) as popular MM root, see details in monero/src/cryptonote_basic/cryptonote_format_utils.cpp
 	// bc36789e7a1e281436464229828f817d6612f7b477d66591ff96a9e064bcc98a = hash(1 zero byte (RCTTypeNull))
-	BinaryArray data{{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xbc, 0x36,
-	    0x78, 0x9e, 0x7a, 0x1e, 0x28, 0x14, 0x36, 0x46, 0x42, 0x29, 0x82, 0x8f, 0x81, 0x7d, 0x66, 0x12, 0xf7, 0xb4,
-	    0x77, 0xd6, 0x65, 0x91, 0xff, 0x96, 0xa9, 0xe0, 0x64, 0xbc, 0xc9, 0x8a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
-	*reinterpret_cast<Hash *>(data.data()) = get_object_hash(static_cast<const TransactionPrefix &>(tx));
-	return crypto::cn_fast_hash(data.data(), data.size());
+	crypto::KeccakStream hasher;
+	static const unsigned char append_data[64] = {0xbc, 0x36, 0x78, 0x9e, 0x7a, 0x1e, 0x28, 0x14, 0x36, 0x46, 0x42,
+	    0x29, 0x82, 0x8f, 0x81, 0x7d, 0x66, 0x12, 0xf7, 0xb4, 0x77, 0xd6, 0x65, 0x91, 0xff, 0x96, 0xa9, 0xe0, 0x64,
+	    0xbc, 0xc9, 0x8a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+	const Hash ha                              = get_object_hash(static_cast<const TransactionPrefix &>(tx));
+	hasher.append(ha);
+	hasher.append(append_data, sizeof(append_data));
+	return hasher.cn_fast_hash();
 }
 
 void cn::set_root_extra_to_solo_mining_tag(BlockTemplate &block) {
 	if (block.is_merge_mined()) {
+		block.root_block                          = RootBlock{};
+		block.root_block.timestamp                = block.timestamp;
+		block.root_block.major_version            = 1;
+		block.root_block.transaction_count        = 1;
+		block.root_block.base_transaction.version = 1;
+
 		TransactionExtraMergeMiningTag mmTag;
-		mmTag.depth = 0;
-		block.root_block.base_transaction.extra.clear();
 		mmTag.merkle_root = get_auxiliary_block_header_hash(block, get_body_proxy_from_template(block));
 		extra_add_merge_mining_tag(block.root_block.base_transaction.extra, mmTag);
 	}
@@ -186,7 +191,7 @@ BlockBodyProxy cn::get_body_proxy_from_template(const BlockTemplate &bt) {
 	BlockBodyProxy body_proxy;
 	std::vector<Hash> transaction_hashes;
 	transaction_hashes.reserve(bt.transaction_hashes.size() + 1);
-	transaction_hashes.push_back(get_object_hash(bt.base_transaction));
+	transaction_hashes.push_back(get_transaction_hash(bt.base_transaction));
 	transaction_hashes.insert(transaction_hashes.end(), bt.transaction_hashes.begin(), bt.transaction_hashes.end());
 	body_proxy.transactions_merkle_root = crypto::tree_hash(transaction_hashes.data(), transaction_hashes.size());
 	body_proxy.transaction_count        = transaction_hashes.size();

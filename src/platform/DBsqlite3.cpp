@@ -16,6 +16,7 @@ void sqlite::check(int rc, const char *msg) {
 }
 
 void sqlite::Dbi::open_check_create(OpenMode open_mode, const std::string &full_path, bool *created) {
+	this->full_path = full_path;
 	sqlite::check(sqlite3_open_v2(full_path.c_str(),
 	                  &handle,
 	                  open_mode == OpenMode::O_READ_EXISTING
@@ -26,9 +27,9 @@ void sqlite::Dbi::open_check_create(OpenMode open_mode, const std::string &full_
 	    "sqlite3_open ");
 	invariant(open_mode != OpenMode::O_CREATE_ALWAYS, "sqlite database does not support clearing existing data");
 	if (open_mode == OpenMode::O_READ_EXISTING)
-		exec("BEGIN TRANSACTION");
+		exec("BEGIN TRANSACTION", "modifying database impossible. Disk read-only or database used by other running instance?");
 	else
-		exec("BEGIN IMMEDIATE TRANSACTION");
+		exec("BEGIN IMMEDIATE TRANSACTION", "modifying database impossible. Disk read-only or database used by other running instance?");
 	sqlite::Stmt stmt_get_tables;
 	stmt_get_tables.prepare(*this, "SELECT name FROM sqlite_master WHERE type = 'table'");
 	*created = !stmt_get_tables.step();
@@ -37,13 +38,14 @@ void sqlite::Dbi::open_check_create(OpenMode open_mode, const std::string &full_
 	sqlite::check(sqlite3_busy_timeout(handle, 5000), "sqlite3_busy_timeout");  // ms
 }
 
-void sqlite::Dbi::exec(const char *statement) {
-	char *err_msg = nullptr;  // TODO - we leak err_msg?
-	sqlite::check(sqlite3_exec(handle, statement, nullptr, nullptr, &err_msg), err_msg);
+void sqlite::Dbi::exec(const char *statement, const char * err_msg) {
+	auto rc = sqlite3_exec(handle, statement, nullptr, nullptr, nullptr);
+	if (rc != SQLITE_OK)
+		throw Error((err_msg ? err_msg : "") + std::string(" sqlite error code=") + common::to_string(rc) + " for db path=" + full_path);
 }
-void sqlite::Dbi::commit_txn() { exec("COMMIT TRANSACTION"); }
+void sqlite::Dbi::commit_txn() { exec("COMMIT TRANSACTION", "saving database data failed. Disk unplugged or out of disk space?"); }
 void sqlite::Dbi::begin_txn() {
-	exec("BEGIN IMMEDIATE TRANSACTION");  // TODO - if readonly, will throw
+	exec("BEGIN IMMEDIATE TRANSACTION", "modifying database impossible. Disk read-only or database used by other running instance?");  // TODO - if readonly, will throw
 }
 
 sqlite::Dbi::~Dbi() {
@@ -102,13 +104,14 @@ DBsqliteKV::DBsqliteKV(OpenMode open_mode, const std::string &full_path, uint64_
 size_t DBsqliteKV::test_get_approximate_size() const { return 0; }
 
 size_t DBsqliteKV::get_approximate_items_count() const {
-	return 1;  // Sqlite does full table scan on select count(*), we do not want that behavior
-	           //	sqlite3_reset(stmt_select_star.handle);
-	           //	auto rc = sqlite3_step(stmt_select_star.handle);
-	           //	if (rc != SQLITE_ROW)
-	           //		throw platform::sqlite::Error("DB::get_approximate_items_count failed sqlite3_step in get " +
-	           // common::to_string(rc));
-	           //	return common::integer_cast<size_t>(sqlite3_column_int64(stmt_select_star.handle, 0));
+	return std::numeric_limits<size_t>::
+	    max();  // Sqlite does full table scan on select count(*), we do not want that behavior
+	            //	sqlite3_reset(stmt_select_star.handle);
+	            //	auto rc = sqlite3_step(stmt_select_star.handle);
+	            //	if (rc != SQLITE_ROW)
+	            //		throw platform::sqlite::Error("DB::get_approximate_items_count failed sqlite3_step in get " +
+	            // common::to_string(rc));
+	            //	return common::integer_cast<size_t>(sqlite3_column_int64(stmt_select_star.handle, 0));
 }
 
 static const size_t max_key_size = 128;

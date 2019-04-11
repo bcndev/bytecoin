@@ -17,10 +17,6 @@ using namespace cn::hardware;
 using namespace crypto;
 using namespace common;
 
-static std::string debug_mnemonic;
-
-void HardwareWallet::debug_set_mnemonic(const std::string &mnemonic) { debug_mnemonic = mnemonic; }
-
 std::vector<std::unique_ptr<HardwareWallet>> HardwareWallet::get_connected() {
 	std::vector<std::unique_ptr<HardwareWallet>> result;
 
@@ -28,22 +24,6 @@ std::vector<std::unique_ptr<HardwareWallet>> HardwareWallet::get_connected() {
 #if cn_WITH_LEDGER
 	Ledger::add_connected(&result);
 #endif
-	// Now we create emulator and if hardware wallet found with the same mnemonic, we connect it through emulator
-	std::unique_ptr<HardwareWallet> em;
-	try {
-		if (!debug_mnemonic.empty())
-			em = std::make_unique<Emulator>(debug_mnemonic, std::unique_ptr<HardwareWallet>());
-	} catch (const std::exception &ex) {
-		std::cout << "Failed to create hardware wallet emulator, reason=" << common::what(ex) << std::endl;
-	}
-	for (auto &&r : result) {
-		if (em && r->get_wallet_key() == em->get_wallet_key()) {
-			em = std::unique_ptr<HardwareWallet>();
-			r  = std::make_unique<Emulator>(debug_mnemonic, std::move(r));
-		}
-	}
-	if (em)
-		result.push_back(std::move(em));
 	if (!result.empty())
 		std::cout << "Connected hardware wallets" << std::endl;
 	for (auto &&r : result) {
@@ -141,7 +121,6 @@ void HardwareWallet::test_all_methods() {
 	const PublicKey test_point1 = crypto::hash_to_good_point(pk.data, sizeof(pk.data));
 	std::cout << "---- testing hashes for m_spend_key_base_public_key =" << pk << std::endl;
 	{
-		std::cout << "hash_to_bad_point = " << crypto::hash_to_bad_point(pk.data, sizeof(pk.data)) << std::endl;
 		std::cout << "hash_to_good_point = " << test_point1 << std::endl;
 		Hash h  = cn_fast_hash(pk.data, sizeof(pk.data));
 		Hash h2 = cn_fast_hash(h.data, sizeof(h.data));
@@ -164,7 +143,7 @@ void HardwareWallet::test_all_methods() {
 	std::cout << "---- generate_output_seed" << std::endl;
 	Hash result_hash1, result_hash2, result_hash3, result_hash4;
 	PublicKey result_point1, result_point2, result_point3;
-	generate_output_seed(test_hash1, 0, &result_hash1);
+	result_hash1 = generate_output_seed(test_hash1, 0);
 	std::cout << result_point1 << std::endl;
 	std::vector<uint8_t> extra{1, 2, 3, 4, 5};
 	const size_t my_address = 0;

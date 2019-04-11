@@ -2,6 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "CommandLine.hpp"
+#include <ctype.h>
 #include <algorithm>
 #include <cstdio>
 
@@ -68,7 +69,7 @@ const char *CommandLine::get(const char *key, const char *deprecation_text) {
 	if (!op->values.front() && !op->wrong_type_message)
 		op->wrong_type_message = "is not flag and should have value (use --<option>=<value>)";
 	if (deprecation_text)
-		printf("Command line option '%s' is deprecated. %s\n", key, deprecation_text);
+		printf("Command line option %s is deprecated. %s\n", key, deprecation_text);
 	return op->values.front() ? op->values.front() : nullptr;
 }
 
@@ -82,7 +83,7 @@ bool CommandLine::get_bool(const char *key, const char *deprecation_text) {
 	if (op->values.front() && !op->wrong_type_message)
 		op->wrong_type_message = "is flag and should not have value (use --<option>, not --<option>=<value>)";
 	if (deprecation_text)
-		printf("Command line option '%s' is deprecated. %s\n", key, deprecation_text);
+		printf("Command line option %s is deprecated. %s\n", key, deprecation_text);
 	return !op->values.front();  // if value set, bool flag is not specified
 }
 
@@ -110,7 +111,7 @@ const std::vector<const char *> &CommandLine::get_array(const char *key, const c
 		} else
 			++vit;
 	if (deprecation_text)
-		printf("Command line option '%s' is deprecated. %s\n", key, deprecation_text);
+		printf("Command line option %s is deprecated. %s\n", key, deprecation_text);
 	return op->values;
 }
 const std::vector<const char *> &CommandLine::get_positional(const char *deprecation_text) {
@@ -120,36 +121,59 @@ const std::vector<const char *> &CommandLine::get_positional(const char *depreca
 	return positional;
 }
 
-int CommandLine::should_quit(const char *help_text, const char *version_text) {
+bool CommandLine::show_help(const char *help_text, const char *version_text) {
 	const bool v1 = get_bool("--version");
 	const bool v2 = get_bool("-v");
 	if (version_text && (v1 || v2)) {  // in case both specified
 		printf("%s\n", version_text);
-		return 1;  // No more output so scripts get version only
+		return true;  // No more output so scripts get version only
 	}
-	int quit      = 0;
 	const bool h1 = get_bool("--help");
 	const bool h2 = get_bool("-h");
 	if (help_text && (h1 || h2)) {  // in case both specified
 		printf("%s\n", help_text);
-		quit = 1;
+		return true;
 	}
+	if (help_text) {
+		size_t len               = strlen(help_text);
+		size_t start             = len;
+		bool previous_whitespace = true;
+		for (size_t i = 0; i != len; ++i) {
+			bool wh = isspace(help_text[i]);
+			if ((wh || help_text[i] == '=') && start != len) {
+				Option *op = find_option(SView(help_text + start, i - start));
+				if (op)
+					op->in_help = true;
+				start = len;
+			}
+			if (help_text[i] == '-' && previous_whitespace) {
+				start = i;
+			}
+			previous_whitespace = wh;
+		}
+	}
+	return false;
+}
+
+bool CommandLine::show_errors(const char *context) {
+	int errors = 0;
 	if (!positional_used)
 		for (auto &&po : positional) {
-			printf("Positional args are not allowed - you specified '%s' (typo?)\n", po);
-			quit = 2;
+			printf("Positional argument '%s' %s\n", po, context ? context : "are not allowed");
+			errors += 1;
 		}
 	for (auto &&op : options) {
 		if (!op.used) {
-			printf("Command line option '%s' has no meaning (typo?)\n", op.key.data);
-			quit = 2;
+			printf("Command line option %s %s\n", op.key.data,
+			    !op.in_help ? "has no meaning (typo?)" : context ? context : "cannot be used in this context");
+			errors += 1;
 		}
 		if (op.wrong_type_message) {
-			printf("Command line option '%s' %s\n", op.key.data, op.wrong_type_message);
-			quit = 2;
+			printf("Command line option %s %s\n", op.key.data, op.wrong_type_message);
+			errors += 1;
 		}
 	}
-	return quit;
+	return errors != 0;
 }
 
 static const char TOY_USAGE[] =
@@ -163,7 +187,7 @@ Options:
   -h --help            Show this screen.
   -v --version         Show version.
   --bool               Bool (flag)
-  --pos                Specify to make toy get positional args
+  --pos                If set, toy will read positional args
   --str=<str>          String
   --array=<el>         Array
   --deprecated=<str>   Deprecated string
@@ -171,6 +195,8 @@ Options:
 
 int CommandLine::toy_main(int argc, const char *argv[]) {
 	common::CommandLine cmd(argc, argv);
+	if (cmd.show_help(TOY_USAGE, "Toy cmd v 1.1"))
+		return 0;
 	if (const char *pa = cmd.get("--str"))
 		printf("--str={%s}\n", pa);
 	if (const char *pa = cmd.get("--deprecated", "Use --str instead"))
@@ -182,8 +208,8 @@ int CommandLine::toy_main(int argc, const char *argv[]) {
 	if (cmd.get_bool("--pos"))
 		for (auto &&el : cmd.get_positional())
 			printf("positional value={%s}\n", el);
-	if (int r = cmd.should_quit(TOY_USAGE, "Toy cmd v 1.1"))
-		return r != 1;
+	if (cmd.show_errors())
+		return 1;
 	printf("Toy is launching...\n");
 	return 0;
 }

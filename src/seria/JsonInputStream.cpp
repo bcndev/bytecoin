@@ -8,37 +8,11 @@
 #include <stdexcept>
 
 #include "common/Invariant.hpp"
-#include "common/Math.hpp"
+//#include "common/Math.hpp"
 #include "common/StringTools.hpp"
 
 using common::JsonValue;
 using namespace seria;
-
-namespace {
-template<typename T>
-void get_integer(const common::JsonValue *val, T &v, const char *t_name) {
-	if (val) {
-		try {
-			v = common::integer_cast<T>(val->get_integer());
-		} catch (const std::exception &) {
-			throw std::out_of_range(
-			    "value " + common::to_string(val->get_integer()) + " does not fit into " + std::string(t_name));
-		}
-	}
-}
-
-template<typename T>
-void get_unsigned(const common::JsonValue *val, T &v, const char *t_name) {
-	if (val) {
-		try {
-			v = common::integer_cast<T>(val->get_unsigned());
-		} catch (const std::exception &) {
-			throw std::out_of_range(
-			    "value " + common::to_string(val->get_unsigned()) + " does not fit into " + std::string(t_name));
-		}
-	}
-}
-}  // namespace
 
 JsonInputStreamValue::JsonInputStreamValue(const common::JsonValue &value, bool allow_unused_object_keys)
     : value(value), allow_unused_object_keys(allow_unused_object_keys) {}
@@ -127,25 +101,21 @@ void JsonInputStreamValue::end_array() {
 	idxs.pop_back();
 }
 
-void JsonInputStreamValue::seria_v(uint16_t &value) { get_unsigned(get_value(), value, "uint16_t"); }
+bool JsonInputStreamValue::seria_v(int64_t &value) {
+	const JsonValue *val = get_value();
+	if (!val)
+		return false;
+	value = val->get_integer();
+	return true;
+}
 
-void JsonInputStreamValue::seria_v(int16_t &value) { get_integer(get_value(), value, "int16_t"); }
-
-void JsonInputStreamValue::seria_v(uint32_t &value) { get_unsigned(get_value(), value, "uint32_t"); }
-
-void JsonInputStreamValue::seria_v(int32_t &value) { get_integer(get_value(), value, "int32_t"); }
-
-void JsonInputStreamValue::seria_v(int64_t &value) { get_integer(get_value(), value, "int64_t"); }
-
-void JsonInputStreamValue::seria_v(uint64_t &value) { get_unsigned(get_value(), value, "uint64_t"); }
-
-// void JsonInputStreamValue::seria_v(double &value) {
-//	const common::JsonValue *val = get_value();
-//	if (val)
-//		value = val->get_double();
-//}
-
-void JsonInputStreamValue::seria_v(uint8_t &value) { get_unsigned(get_value(), value, "uint8_t"); }
+bool JsonInputStreamValue::seria_v(uint64_t &value) {
+	const JsonValue *val = get_value();
+	if (!val)
+		return false;
+	value = val->get_unsigned();
+	return true;
+}
 
 bool JsonInputStreamValue::seria_v(std::string &value) {
 	const JsonValue *val = get_value();
@@ -155,10 +125,12 @@ bool JsonInputStreamValue::seria_v(std::string &value) {
 	return true;
 }
 
-void JsonInputStreamValue::seria_v(bool &value) {
+bool JsonInputStreamValue::seria_v(bool &value) {
 	const JsonValue *val = get_value();
-	if (val)
-		value = val->get_bool();
+	if (!val)
+		return false;
+	value = val->get_bool();
+	return true;
 }
 
 bool JsonInputStreamValue::binary(void *value, size_t size) {

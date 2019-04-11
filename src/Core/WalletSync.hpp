@@ -15,8 +15,10 @@ class WalletState;
 
 class WalletSync {
 public:
-	explicit WalletSync(logging::ILogger &, const Config &, WalletState &, std::function<void()> state_changed_handler);
+	explicit WalletSync(
+	    logging::ILogger &, const Config &, WalletState &, std::function<void()> &&state_changed_handler);
 	~WalletSync();
+	bool on_idle();
 	const api::cnd::GetStatus::Response &get_last_node_status() const { return m_last_node_status; }
 	std::string get_sync_error() const { return m_sync_error; }
 
@@ -26,6 +28,7 @@ protected:
 	const Config &m_config;
 
 	api::cnd::GetStatus::Response m_last_node_status;
+	api::cnd::GetStatus::Response m_last_syncpool_status;
 	std::string m_sync_error;
 	platform::Timer m_status_timer;
 	http::Agent m_sync_agent;
@@ -43,6 +46,10 @@ protected:
 	Hash m_next_send_hash;
 	Hash m_sending_transaction_hash;
 
+	std::vector<Hash> next_sparse_chain;
+	platform::Timer m_hw_reconnect_timer;
+
+	void on_hw_reconnect();
 	void db_commit();
 	void send_get_status();
 	bool send_send_transaction();  // nothing to send

@@ -95,14 +95,12 @@ class Emulator : public HardwareWallet {
 	    uint8_t *encrypted_address_type) const;
 	SecretKey generate_sign_secret(size_t i, const char secret_name[2]) const;
 
-	std::unique_ptr<HardwareWallet> m_proxy;
-
 	void sign_add_input_start(uint64_t amount, size_t output_indexes_count);
 	void sign_add_input_indexes(const std::vector<size_t> &output_indexes_chunk);
 	void sign_add_input_finish(const common::BinaryArray &output_secret_hash_arg, size_t address_index);
 
 public:
-	explicit Emulator(const std::string &mnemonic, std::unique_ptr<HardwareWallet> &&proxy);
+	explicit Emulator(const std::string &mnemonic);
 	~Emulator() override;
 	std::string get_hardware_type() const override;
 	Hash get_wallet_key() const override { return m_wallet_key; }
@@ -110,9 +108,10 @@ public:
 	PublicKey get_v_mul_A_plus_SH() const override { return m_v_mul_A_plus_sH; }
 	PublicKey get_public_view_key() const override { return m_view_public_key; }
 
+	size_t get_scan_outputs_max_batch() const override { return 100; }  // Arbitrary, emulator supports any
 	std::vector<PublicKey> scan_outputs(const std::vector<PublicKey> &output_public_keys) override;
 	KeyImage generate_keyimage(const common::BinaryArray &output_secret_hash_arg, size_t address_index) override;
-	void generate_output_seed(const Hash &tx_inputs_hash, size_t out_index, Hash *output_seed) override;
+	Hash generate_output_seed(const Hash &tx_inputs_hash, size_t out_index) override;
 	void sign_start(size_t version, uint64_t ut, size_t inputs_size, size_t outputs_size, size_t extra_size) override;
 	void sign_add_input(uint64_t amount, const std::vector<size_t> &output_indexes,
 	    const common::BinaryArray &output_secret_hash_arg, size_t address_index) override;

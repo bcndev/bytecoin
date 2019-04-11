@@ -72,7 +72,7 @@ public:
 	    const std::pair<Amount, Hash> &from, const std::pair<Amount, Hash> &to, size_t max_count) const;
 
 	void create_mining_block_template(const Hash &, const AccountAddress &, const BinaryArray &extra_nonce,
-	    BlockTemplate *, Difficulty *, Height *, size_t *) const;
+	    const Hash &miner_secret, BlockTemplate *, Difficulty *, Height *, size_t *) const;
 	bool add_mined_block(const BinaryArray &raw_block_template, RawBlock *, api::BlockHeader *);
 
 	static api::BlockHeader fill_genesis(Hash genesis_bid, const BlockTemplate &);
@@ -148,8 +148,7 @@ private:
 
 	void remove_from_pool(Hash tid);
 
-	size_t m_tx_pool_version = 2;  // Incremented every time pool changes, reset to 2 on redo block. 2 is selected
-	                               // because wallet resets to 1, so after both reset pool versions do not equal
+	size_t m_tx_pool_version = 0;  // Incremented every time pool changes, reset on redo block.
 	PoolTransMap m_memory_state_tx;
 	std::map<KeyImage, Hash> m_memory_state_ki_tx;
 	std::set<std::pair<Amount, Hash>> m_memory_state_fee_tx;

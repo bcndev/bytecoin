@@ -6,13 +6,8 @@
 #include "Core/TransactionExtra.hpp"
 #include "CryptoNoteConfig.hpp"  // We access TRANSACTION_VERSION_AMETHYST directly
 #include "rpc_api.hpp"
+#include "seria/JsonInputStream.hpp"
 #include "seria/JsonOutputStream.hpp"
-// includes below are for proof seria
-#include "Core/Currency.hpp"
-#include "common/Base58.hpp"
-#include "common/Varint.hpp"
-#include "seria/BinaryInputStream.hpp"
-#include "seria/BinaryOutputStream.hpp"
 
 using namespace cn;
 
@@ -301,7 +296,7 @@ void ser_members(TransactionPrefix &v, ISeria &s) {
 	seria_kv("outputs", v.outputs, s, is_tx_amethyst);
 	seria_kv("extra", v.extra, s);
 }
-void ser_members(BaseTransaction &v, ISeria &s) {
+void ser_members(RootBaseTransaction &v, ISeria &s) {
 	ser_members(static_cast<TransactionPrefix &>(v), s);
 	if (v.version >= 2) {
 		size_t ignored = 0;
@@ -345,11 +340,11 @@ void ser_members(RootBlock &v, ISeria &s, BlockSeriaType seria_type) {
 		return;
 
 	size_t branch_size = crypto_coinbase_tree_depth(v.transaction_count);
-	if (!s.is_input()) {
+	if (s.is_input()) {
+		v.base_transaction_branch.resize(branch_size);
+	} else {
 		if (v.base_transaction_branch.size() != branch_size)
 			throw std::runtime_error("Wrong miner transaction branch size");
-	} else {
-		v.base_transaction_branch.resize(branch_size);
 	}
 
 	s.object_key("coinbase_transaction_branch");
@@ -368,11 +363,11 @@ void ser_members(RootBlock &v, ISeria &s, BlockSeriaType seria_type) {
 	if (mm_tag.depth > 8 * sizeof(Hash))
 		throw std::runtime_error("Wrong merge mining tag depth");
 
-	if (!s.is_input()) {
+	if (s.is_input()) {
+		v.blockchain_branch.resize(mm_tag.depth);
+	} else {
 		if (mm_tag.depth != v.blockchain_branch.size())
 			throw std::runtime_error("Blockchain branch size must be equal to merge mining tag depth");
-	} else {
-		v.blockchain_branch.resize(mm_tag.depth);
 	}
 
 	s.object_key("blockchain_branch");
@@ -510,3 +505,61 @@ void ser_members(SignedCheckpoint &v, seria::ISeria &s) {
 }
 
 }  // namespace seria
+
+Hash cn::get_transaction_inputs_hash(const TransactionPrefix &tx) {
+	//	const bool is_tx_amethyst = (tx.version >= parameters::TRANSACTION_VERSION_AMETHYST);
+	BinaryArray ba = seria::to_binary(tx.inputs);
+	//	std::cout << "get_transaction_inputs_hash body=" << common::to_hex(ba) << std::endl;
+	return crypto::cn_fast_hash(ba.data(), ba.size());
+}
+
+Hash cn::get_transaction_prefix_hash(const TransactionPrefix &tx) {
+	BinaryArray ba = seria::to_binary(tx);
+	//	std::cout << "get_transaction_prefix_hash body=" << common::to_hex(ba) << std::endl;
+	return crypto::cn_fast_hash(ba.data(), ba.size());
+}
+
+Hash cn::get_transaction_hash(const Transaction &tx) {
+	if (tx.version >= parameters::TRANSACTION_VERSION_AMETHYST) {
+		std::pair<Hash, Hash> ha;
+		ha.first                = get_transaction_prefix_hash(tx);
+		BinaryArray binary_sigs = seria::to_binary(tx.signatures, static_cast<const TransactionPrefix &>(tx));
+		ha.second               = crypto::cn_fast_hash(binary_sigs.data(), binary_sigs.size());
+		BinaryArray ba          = seria::to_binary(ha);
+		//		BinaryArray tx_body = seria::to_binary(static_cast<const TransactionPrefix&>(tx));
+		//		common::append(tx_body, binary_sigs);
+		//		invariant(tx_body == seria::to_binary(tx), "");
+		return crypto::cn_fast_hash(ba.data(), ba.size());
+	}
+	BinaryArray ba = seria::to_binary(tx);
+	return crypto::cn_fast_hash(ba.data(), ba.size());
+}
+
+Hash cn::get_block_hash(const BlockHeader &bh, const BlockBodyProxy &body_proxy) {
+	// get_object_hash prepends array size before hashing.
+	// this was a mistake of initial cryptonote developers
+	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::BLOCKHASH, body_proxy));
+	//	std::cout << "ha: " << ha2 << " ba: " << common::to_hex(seria::to_binary(bh, BlockSeriaType::BLOCKHASH,
+	// body_proxy)) << std::endl;
+	return ha2;
+}
+
+Hash cn::get_auxiliary_block_header_hash(const BlockHeader &bh, const BlockBodyProxy &body_proxy) {
+	// get_object_hash prepends array size before hashing.
+	// this was a mistake of initial cryptonote developers
+	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::PREHASH, body_proxy));
+	//	std::cout << "ha: " << ha2 << " ba: " << common::to_hex(result.data(), result.size()) << std::endl;
+	return ha2;
+}
+
+BinaryArray cn::get_block_long_hashing_data(const BlockHeader &bh,
+    const BlockBodyProxy &body_proxy,
+    const Hash &genesis_block_hash) {
+	common::BinaryArray result;
+	common::VectorOutputStream stream(result);
+	seria::BinaryOutputStream ba(stream);
+	ba.begin_object();
+	ser_members(const_cast<BlockHeader &>(bh), ba, BlockSeriaType::LONG_BLOCKHASH, body_proxy, genesis_block_hash);
+	ba.end_object();
+	return result;
+}

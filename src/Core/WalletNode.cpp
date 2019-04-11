@@ -141,7 +141,7 @@ api::walletd::GetStatus::Response WalletNode::create_status_response() const {
 		response.top_block_hash      = m_wallet_state.get_currency().genesis_block_hash;
 		response.top_block_timestamp = m_wallet_state.get_currency().genesis_block_template.timestamp;
 	}
-	response.transaction_pool_version = m_wallet_state.get_tx_pool_version() + m_wallet_state.get_pq_version();
+	response.transaction_pool_version = m_wallet_state.get_tx_pool_version();
 	response.lower_level_error        = m_sync_error;
 	return response;
 }
@@ -554,8 +554,10 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 			response.save_history_error = true;
 		}
 		api::Transaction ptx{};
-		if (!m_wallet_state.parse_raw_transaction(false, ptx, std::move(tx), tx_hash))
+		if (!m_wallet_state.parse_raw_transaction(
+		        false, ptx, std::move(tx), tx_hash, response.binary_transaction.size()))
 			throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "Created transaction cannot be parsed");
+		ptx.size             = response.binary_transaction.size();
 		response.transaction = ptx;
 		return true;
 	}
@@ -597,12 +599,15 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 		    http::ResponseBody last_http_response(wc.original_request.r);
 		    last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 		    last_http_response.r.status = 200;
-		    if (!m_wallet_state.parse_raw_transaction(false, last_response.transaction, std::move(tx), tx_hash)) {
+		    if (!m_wallet_state.parse_raw_transaction(false, last_response.transaction, std::move(tx), tx_hash,
+		            last_response.binary_transaction.size())) {
 			    last_http_response.set_body(json_rpc::create_error_response_body(
 			        json_rpc::Error(json_rpc::INTERNAL_ERROR, "Created transaction cannot be parsed"),
 			        wc.original_jsonrpc_id));
-		    } else
+		    } else {
+			    last_response.transaction.size = last_response.binary_transaction.size();
 			    last_http_response.set_body(json_rpc::create_response_body(last_response, wc.original_jsonrpc_id));
+		    }
 		    wc.original_who->write(std::move(last_http_response));
 	    },
 	    [=](const WaitingClient &wc, std::string err) mutable {
@@ -714,7 +719,9 @@ bool WalletNode::on_send_transaction(http::Client *who, http::RequestBody &&raw_
 bool WalletNode::on_get_transaction(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::GetTransaction::Request &&req, api::walletd::GetTransaction::Response &res) {
 	TransactionPrefix tx;
-	m_wallet_state.api_get_transaction(req.hash, true, &tx, &res.transaction);
+	if (!m_wallet_state.api_get_transaction(req.hash, true, &tx, &res.transaction))
+		throw api::ErrorHashNotFound(
+		    "Transaction does not exist (in main chain or memory pool) or does not belong to this wallet.", req.hash);
 	return true;
 }
 

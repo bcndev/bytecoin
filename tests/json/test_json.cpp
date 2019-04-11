@@ -31,8 +31,7 @@ void test_json(const std::string &filename, bool should_be) {
 void test_json(const std::string &test_vectors_folder) {
 	for (int i = 1; i != 4; ++i)
 		test_json(test_vectors_folder + "/pass" + std::to_string(i) + ".json", true);
-	for (int i = 1; i != 34; ++i)
-		test_json(test_vectors_folder + "/fail" + std::to_string(i) + ".json", i == 1 || i == 18);
+	for (int i = 1; i != 35; ++i)
+		test_json(test_vectors_folder + "/fail" + std::to_string(i) + ".json", i == 1);
 	// We pass fail1 because we relax rules on top-level object or array
-	// We pass fail18 because we support infinite depth of arrays
 }

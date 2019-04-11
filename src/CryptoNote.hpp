@@ -72,6 +72,7 @@ typedef boost::variant<OutputKey> TransactionOutput;
 // We've broken compatibility in amethyst, bringing amount inside variant part
 
 struct TransactionPrefix {
+	// version is serialized as varint, but value > 127 will throw on parsing
 	uint8_t version                            = 0;
 	BlockOrTimestamp unlock_block_or_timestamp = 0;
 	std::vector<TransactionInput> inputs;
@@ -89,9 +90,12 @@ struct Transaction : public TransactionPrefix {
 	TransactionSignatures signatures;
 };
 
-struct BaseTransaction : public TransactionPrefix {};  // has 'ignored' field during seria
+struct RootBaseTransaction : public TransactionPrefix {};
+// can have different format for different MM roots.
 
 struct RootBlock {  // when block is merge mined
+	// versions are serialized as varints, but values > 127 will break most miners
+	// which assume nonce is at fixed offset. Those miners also expect timestamp to occupy exactly 5 bytes.
 	uint8_t major_version = 0;
 	uint8_t minor_version = 0;
 	Timestamp timestamp   = 0;
@@ -99,11 +103,13 @@ struct RootBlock {  // when block is merge mined
 	uint8_t nonce[4]{};  // 4 bytes is more convenient than uint32_t
 	size_t transaction_count = 0;
 	std::vector<Hash> base_transaction_branch;
-	BaseTransaction base_transaction;
+	RootBaseTransaction base_transaction;
 	std::vector<Hash> blockchain_branch;
 };
 
 struct BlockHeader {
+	// versions are serialized as varints, but values > 127 will break most miners
+	// which assume nonce is at fixed offset. Those miners also expect timestamp to occupy exactly 5 bytes.
 	uint8_t major_version = 0;
 	uint8_t minor_version = 0;  // Not version at all, used for hard fork voting
 	Timestamp timestamp   = 0;
@@ -222,6 +228,17 @@ inline bool operator<(const AccountAddressUnlinkable &a, const AccountAddressUnl
 	return std::tie(a.S, a.Sv) < std::tie(b.S, b.Sv);
 }
 
+Hash get_transaction_inputs_hash(const TransactionPrefix &);
+Hash get_transaction_prefix_hash(const TransactionPrefix &);
+Hash get_transaction_hash(const Transaction &);
+
+Hash get_block_hash(const BlockHeader &, const BlockBodyProxy &);
+Hash get_auxiliary_block_header_hash(const BlockHeader &, const BlockBodyProxy &);
+// Auxiliary or Pre- hash - inserted into MM or CM tree
+
+BinaryArray get_block_long_hashing_data(
+    const BlockHeader &bh, const BlockBodyProxy &body_proxy, const Hash &genesis_block_hash);
+
 }  // namespace cn
 
 // Serialization is part of CryptoNote standard, not problem to put it here
@@ -256,7 +273,7 @@ void ser_members(cn::TransactionSignatures &v, ISeria &s, const cn::TransactionP
 void ser_members(cn::OutputKey &v, ISeria &s, bool is_tx_amethyst);
 
 void ser_members(cn::TransactionPrefix &v, ISeria &s);
-void ser_members(cn::BaseTransaction &v, ISeria &s);
+void ser_members(cn::RootBaseTransaction &v, ISeria &s);
 void ser_members(cn::Transaction &v, ISeria &s);
 
 void ser_members(cn::RootBlock &v, ISeria &s, cn::BlockSeriaType seria_type = cn::BlockSeriaType::NORMAL);

@@ -38,9 +38,10 @@ public:
 	PublicKey get_v_mul_A_plus_SH() const override { return m_v_mul_A_plus_sH; }
 	PublicKey get_public_view_key() const override { return m_view_public_key; }
 
+	size_t get_scan_outputs_max_batch() const override { return 25; }
 	std::vector<PublicKey> scan_outputs(const std::vector<PublicKey> &output_public_keys) override;
 	KeyImage generate_keyimage(const common::BinaryArray &output_secret_hash_arg, size_t address_index) override;
-	void generate_output_seed(const Hash &tx_inputs_hash, size_t out_index, Hash *output_seed) override;
+	Hash generate_output_seed(const Hash &tx_inputs_hash, size_t out_index) override;
 	void sign_start(size_t version, uint64_t ut, size_t inputs_size, size_t outputs_size, size_t extra_size) override;
 	void sign_add_input(uint64_t amount, const std::vector<size_t> &output_indexes,
 	    const common::BinaryArray &output_secret_hash_arg, size_t address_index) override;

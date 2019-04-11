@@ -18,6 +18,15 @@ namespace cn {
 
 class Config {  // Consensus does not depend on those parameters
 public:
+	class DataFolderError : public std::runtime_error {
+	public:
+		using std::runtime_error::runtime_error;
+	};
+	class ConfigError : public std::runtime_error {
+	public:
+		using std::runtime_error::runtime_error;
+	};
+
 	explicit Config(common::CommandLine &cmd);
 	static std::string prepare_usage(const std::string &usage);  // replaces defaults
 
@@ -102,6 +111,8 @@ public:
 
 	Timestamp wallet_sync_timestamp_granularity = 86400 * 30;
 	// Sending exact timestamp of wallet to public node allows tracking
+	size_t wallet_sync_request_max_size      = 1024 * 1024;
+	size_t wallet_sync_preparator_queue_size = 10 * 1024 * 1024;
 
 	std::vector<NetworkAddress> seed_nodes;
 	std::vector<NetworkAddress> priority_nodes;

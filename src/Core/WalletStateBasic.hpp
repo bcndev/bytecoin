@@ -28,7 +28,7 @@ public:
 	virtual bool add_incoming_output(const api::Output &)                       = 0;  // added amount may be lower
 	virtual Amount add_incoming_keyimage(Height block_height, const KeyImage &) = 0;
 	virtual void add_transaction(
-	    Height block_height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) = 0;
+	    Height block_height, const Hash &tid, const PreparedWalletTransaction &pwtx, const api::Transaction &ptx) = 0;
 };
 
 class WalletStateBasic : protected IWalletState {
@@ -100,7 +100,7 @@ protected:
 	bool is_memory_spent(const api::Output &output) const {
 		return get_mempool_keyimages().count(output.key_image) != 0;
 	}
-	virtual const std::map<KeyImage, int> &get_mempool_keyimages() const;
+	virtual const std::map<KeyImage, std::vector<Hash>> &get_mempool_keyimages() const;
 	virtual void on_first_transaction_found(Timestamp ts) {}
 	void unlock(Height now_height, Timestamp now);
 
@@ -114,7 +114,8 @@ protected:
 	// methods to add incoming tx
 	bool add_incoming_output(const api::Output &) override;  // added amount may be lower
 	Amount add_incoming_keyimage(Height block_height, const KeyImage &) override;
-	void add_transaction(Height, const Hash &tid, const TransactionPrefix &tx, const api::Transaction &ptx) override;
+	void add_transaction(
+	    Height, const Hash &tid, const PreparedWalletTransaction &pwtx, const api::Transaction &ptx) override;
 
 	std::string format_output(const api::Output &output);
 

@@ -24,7 +24,7 @@ using namespace common;
 
 static Hash derive_from_seed(const Hash &seed, const std::string &append) {
 	BinaryArray seed_data = seed.as_binary_array() | as_binary_array(append);
-	return crypto::cn_fast_hash(seed_data.data(), seed_data.size());
+	return cn_fast_hash(seed_data.data(), seed_data.size());
 }
 
 void Emulator::KeccakStream::append(const unsigned char *data, size_t size) { common::append(ba, data, data + size); }
@@ -71,7 +71,7 @@ inline bool add_amount(uint64_t &sum, uint64_t amount) {
 	return true;
 }
 
-Emulator::Emulator(const std::string &mnemonic, std::unique_ptr<HardwareWallet> &&proxy) : m_proxy(std::move(proxy)) {
+Emulator::Emulator(const std::string &mnemonic) {
 	// read m_wallet_key, m_spend_key_base_public_key from device
 
 	m_mnemonics                   = cn::Bip32Key::check_bip39_mnemonic(mnemonic);
@@ -82,23 +82,23 @@ Emulator::Emulator(const std::string &mnemonic, std::unique_ptr<HardwareWallet> 
 	const cn::Bip32Key k2 = k1.derive_key(0x80000000 + uint32_t(m_address_type));
 	const cn::Bip32Key k3 = k2.derive_key(0);
 	const cn::Bip32Key k4 = k3.derive_key(0);
-	const Hash m_seed     = crypto::cn_fast_hash(k4.get_priv_key().data(), k4.get_priv_key().size());
+	const Hash m_seed     = cn_fast_hash(k4.get_priv_key().data(), k4.get_priv_key().size());
 
 	m_view_seed                 = derive_from_seed(m_seed, "view_seed");
 	BinaryArray vk_data         = m_view_seed.as_binary_array() | as_binary_array("view_key");
-	m_view_secret_key           = crypto::hash_to_scalar(vk_data.data(), vk_data.size());
+	m_view_secret_key           = hash_to_scalar(vk_data.data(), vk_data.size());
 	BinaryArray ak_data         = m_view_seed.as_binary_array() | as_binary_array("view_key_audit");
-	m_audit_key_base_secret_key = crypto::hash_to_scalar(ak_data.data(), ak_data.size());
+	m_audit_key_base_secret_key = hash_to_scalar(ak_data.data(), ak_data.size());
 	BinaryArray sk_data         = m_seed.as_binary_array() | as_binary_array("spend_key");
-	m_spend_secret_key          = crypto::hash_to_scalar(sk_data.data(), sk_data.size());
+	m_spend_secret_key          = hash_to_scalar(sk_data.data(), sk_data.size());
 
-	m_sH = crypto::A_mul_b(crypto::get_H(), m_spend_secret_key);
+	m_sH = to_bytes(crypto::H * m_spend_secret_key);
 
-	invariant(crypto::secret_key_to_public_key(m_view_secret_key, &m_view_public_key), "");
+	invariant(secret_key_to_public_key(m_view_secret_key, &m_view_public_key), "");
 	PublicKey A;
-	invariant(crypto::secret_key_to_public_key(m_audit_key_base_secret_key, &A), "");
-	m_A_plus_sH       = crypto::A_plus_B(A, m_sH);
-	m_v_mul_A_plus_sH = A_mul_b(m_A_plus_sH, m_view_secret_key);  // for hw debug only
+	invariant(secret_key_to_public_key(m_audit_key_base_secret_key, &A), "");
+	m_A_plus_sH       = to_bytes(P3(A) + P3(m_sH));
+	m_v_mul_A_plus_sH = to_bytes(P3(m_A_plus_sH) * m_view_secret_key);  // for hw debug only
 
 	m_wallet_key = derive_from_seed(m_seed, "wallet_key");
 
@@ -115,7 +115,7 @@ Emulator::Emulator(const std::string &mnemonic, std::unique_ptr<HardwareWallet> 
 		std::cout << "m_wallet_key " << m_wallet_key << std::endl;
 	}
 
-	crypto::SecretKey sc2;
+	SecretKey sc2;
 	sc2.data[0] = 2;
 	auto poi1   = crypto::G * sc2;
 	auto poi2   = crypto::H * sc2;
@@ -127,35 +127,21 @@ Emulator::Emulator(const std::string &mnemonic, std::unique_ptr<HardwareWallet> 
 
 	const char bcn[] = "bcn";
 
-	std::cout << crypto::cn_fast_hash(bcn, 3) << std::endl;
-	std::cout << crypto::hash_to_scalar(bcn, 3) << std::endl;
-	std::cout << crypto::hash_to_scalar64(bcn, 3) << std::endl;
-	std::cout << crypto::hash_to_good_point(bcn, 3) << std::endl;
-
-	if (m_proxy) {
-		invariant(get_A_plus_SH() == m_proxy->get_A_plus_SH(), "");
-		invariant(get_v_mul_A_plus_SH() == m_proxy->get_v_mul_A_plus_SH(), "");
-		invariant(get_public_view_key() == m_proxy->get_public_view_key(), "");
-		invariant(get_wallet_key() == m_proxy->get_wallet_key(), "");
-	}
-	test_all_methods();
+	std::cout << cn_fast_hash(bcn, 3) << std::endl;
+	std::cout << hash_to_scalar(bcn, 3) << std::endl;
+	std::cout << hash_to_scalar64(bcn, 3) << std::endl;
+	std::cout << hash_to_good_point(bcn, 3) << std::endl;
 }
 
 Emulator::~Emulator() {}
 
-std::string Emulator::get_hardware_type() const {
-	std::string result = "Emulator";
-	if (m_proxy)
-		result += " connected to " + m_proxy->get_hardware_type();
-	return result + ", mnemonic=" + m_mnemonics;
-}
+std::string Emulator::get_hardware_type() const { return "Emulator, mnemonic=" + m_mnemonics; }
 
 // When we need only secrets
 void Emulator::prepare_address(size_t address_index) const {
 	if (address_index != last_address_index) {
-		last_address_index = address_index;
-		last_address_audit_secret_key =
-		    crypto::generate_hd_secretkey(m_audit_key_base_secret_key, m_A_plus_sH, address_index);
+		last_address_index            = address_index;
+		last_address_audit_secret_key = generate_hd_secretkey(m_audit_key_base_secret_key, m_A_plus_sH, address_index);
 		std::cout << "HW::prepare_address[" << address_index << "]=" << last_address_audit_secret_key << std::endl;
 	}
 }
@@ -164,46 +150,33 @@ void Emulator::prepare_address(size_t address_index) const {
 void Emulator::prepare_address(size_t address_index, PublicKey *address_S, PublicKey *address_Sv) const {
 	prepare_address(address_index);
 	PublicKey last_address_audit_public_key;
-	invariant(crypto::secret_key_to_public_key(last_address_audit_secret_key, &last_address_audit_public_key), "");
-	*address_S  = crypto::A_plus_B(last_address_audit_public_key, m_sH);
-	*address_Sv = crypto::A_mul_b(*address_S, m_view_secret_key);
+	invariant(secret_key_to_public_key(last_address_audit_secret_key, &last_address_audit_public_key), "");
+	*address_S  = to_bytes(P3(last_address_audit_public_key) + P3(m_sH));
+	*address_Sv = to_bytes(P3(*address_S) * m_view_secret_key);
 }
 
 std::vector<PublicKey> Emulator::scan_outputs(const std::vector<PublicKey> &output_public_keys) {
 	// multiply by m_view_secret_key on device, throw if PublicKey detected to be invalid by device
 	std::vector<PublicKey> result(output_public_keys.size());
 	for (size_t i = 0; i != result.size(); ++i)
-		result.at(i) = crypto::unlinkable_underive_address_S_step1(m_view_secret_key, output_public_keys.at(i));
-	if (m_proxy)
-		invariant(m_proxy->scan_outputs(output_public_keys) == result, "");
+		result.at(i) = unlinkable_underive_address_S_step1(m_view_secret_key, output_public_keys.at(i));
 	return result;
 }
 
 KeyImage Emulator::generate_keyimage(const common::BinaryArray &output_secret_hash_arg, size_t address_index) {
 	SecretKey inv_output_secret_hash =
-	    sc_invert(crypto::hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size()));
+	    sc_invert(hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size()));
 	prepare_address(address_index);
 	SecretKey output_secret_key_a = last_address_audit_secret_key * inv_output_secret_hash;
 	SecretKey output_secret_key_s = m_spend_secret_key * inv_output_secret_hash;
-	PublicKey output_public_key   = crypto::secret_keys_to_public_key(output_secret_key_a, output_secret_key_s);
-	auto result                   = crypto::generate_key_image(output_public_key, output_secret_key_a);
+	PublicKey output_public_key   = secret_keys_to_public_key(output_secret_key_a, output_secret_key_s);
+	auto result                   = generate_key_image(output_public_key, output_secret_key_a);
 
-	// Experimental code below (3 lines) - do not implement yet in ledger
-	//	invariant(output_public_key == output_public_key2, "");
-	// We will ignore output_public_key parameter for security reasons.
-
-	if (m_proxy)
-		invariant(m_proxy->generate_keyimage(output_secret_hash_arg, address_index) == result, "");
 	return result;
 }
 
-void Emulator::generate_output_seed(const Hash &tx_inputs_hash, size_t out_index, Hash *output_seed) {
-	*output_seed = cn::TransactionBuilder::generate_output_seed(tx_inputs_hash, m_view_seed, out_index);
-	if (m_proxy) {
-		Hash p_output_seed;
-		m_proxy->generate_output_seed(tx_inputs_hash, out_index, &p_output_seed);
-		invariant(*output_seed == p_output_seed, "");
-	}
+Hash Emulator::generate_output_seed(const Hash &tx_inputs_hash, size_t out_index) {
+	return cn::TransactionBuilder::generate_output_seed(tx_inputs_hash, m_view_seed, out_index);
 }
 
 void Emulator::sign_start(size_t version, uint64_t ut, size_t inputs_size, size_t outputs_size, size_t extra_size) {
@@ -220,10 +193,6 @@ void Emulator::sign_start(size_t version, uint64_t ut, size_t inputs_size, size_
 	sign.tx_prefix_stream.append(ut);
 	sign.tx_prefix_stream.append(inputs_size);
 	sign.tx_inputs_stream.append(inputs_size);
-
-	if (m_proxy) {
-		m_proxy->sign_start(version, ut, inputs_size, outputs_size, extra_size);
-	}
 }
 
 SecretKey Emulator::generate_sign_secret(size_t i, const char secret_name[2]) const {
@@ -271,12 +240,12 @@ void Emulator::sign_add_input_indexes(const std::vector<size_t> &output_indexes_
 void Emulator::sign_add_input_finish(const common::BinaryArray &output_secret_hash_arg, size_t address_index) {
 	invariant(sign.state == SigningState::EXPECT_ADD_INPUT_FINISH, "");
 	SecretKey inv_output_secret_hash =
-	    sc_invert(crypto::hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size()));
+	    sc_invert(hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size()));
 	prepare_address(address_index);
 	SecretKey output_secret_key_a = last_address_audit_secret_key * inv_output_secret_hash;
 	SecretKey output_secret_key_s = m_spend_secret_key * inv_output_secret_hash;
-	PublicKey output_public_key   = crypto::secret_keys_to_public_key(output_secret_key_a, output_secret_key_s);
-	KeyImage key_image            = crypto::generate_key_image(output_public_key, output_secret_key_a);
+	PublicKey output_public_key   = secret_keys_to_public_key(output_secret_key_a, output_secret_key_s);
+	KeyImage key_image            = generate_key_image(output_public_key, output_secret_key_a);
 
 	sign.tx_prefix_stream.append(key_image.data, 32);
 	sign.tx_inputs_stream.append(key_image.data, 32);
@@ -290,16 +259,13 @@ void Emulator::sign_add_input_finish(const common::BinaryArray &output_secret_ha
 	sign.tx_prefix_stream.append(sign.outputs_size);
 }
 
-const size_t MAX_OUTPUTS_CHUNK = 4;
+const size_t MAX_INPUT_INDEXES_CHUNK = 4;
 
 void Emulator::sign_add_input(uint64_t amount, const std::vector<size_t> &output_indexes,
     const common::BinaryArray &output_secret_hash_arg, size_t address_index) {
-	if (m_proxy) {
-		m_proxy->sign_add_input(amount, output_indexes, output_secret_hash_arg, address_index);
-	}
 	sign_add_input_start(amount, output_indexes.size());
 	for (size_t pos = 0; pos != output_indexes.size();) {
-		size_t stop = std::min(output_indexes.size(), pos + MAX_OUTPUTS_CHUNK);
+		size_t stop = std::min(output_indexes.size(), pos + MAX_INPUT_INDEXES_CHUNK);
 		sign_add_input_indexes(std::vector<size_t>{output_indexes.begin() + pos, output_indexes.begin() + stop});
 		pos = stop;
 	}
@@ -327,10 +293,10 @@ void Emulator::add_output_or_change(uint64_t amount, uint8_t dst_address_tag, Pu
 
 	*encrypted_address_type = dst_address_tag ^ output_secret_address_type;
 	if (dst_address_tag == cn::AccountAddressSimple::type_tag) {
-		*public_key = crypto::linkable_derive_output_public_key(output_secret_scalar, sign.tx_inputs_hash,
-		    sign.outputs_counter, dst_address_s, dst_address_s_v, encrypted_secret);
+		*public_key = linkable_derive_output_public_key(output_secret_scalar, sign.tx_inputs_hash, sign.outputs_counter,
+		    dst_address_s, dst_address_s_v, encrypted_secret);
 	} else {
-		*public_key = crypto::unlinkable_derive_output_public_key(output_secret_point, sign.tx_inputs_hash,
+		*public_key = unlinkable_derive_output_public_key(output_secret_point, sign.tx_inputs_hash,
 		    sign.outputs_counter, dst_address_s, dst_address_s_v, encrypted_secret);
 	}
 
@@ -368,16 +334,6 @@ void Emulator::sign_add_output(bool change, uint64_t amount, size_t change_addre
 		add_output_or_change(amount, sign.dst_address_tag, sign.dst_address_s, sign.dst_address_s_v, public_key,
 		    encrypted_secret, encrypted_address_type);
 	}
-	if (m_proxy) {
-		PublicKey encrypted_secret2;
-		PublicKey public_key2;
-		uint8_t encrypted_address_type2 = 0;
-		m_proxy->sign_add_output(change, amount, change_address_index, dst_address_tag, dst_address_s, dst_address_s_v,
-		    &public_key2, &encrypted_secret2, &encrypted_address_type2);
-		invariant(*public_key == public_key2 && *encrypted_secret == encrypted_secret2 &&
-		              *encrypted_address_type == encrypted_address_type2,
-		    "");
-	}
 
 	if (++sign.outputs_counter < sign.outputs_size)
 		return;
@@ -395,9 +351,6 @@ void Emulator::sign_add_output(bool change, uint64_t amount, size_t change_addre
 }
 
 void Emulator::sign_add_extra(const BinaryArray &chunk) {
-	if (m_proxy) {
-		m_proxy->sign_add_extra(chunk);
-	}
 	invariant(sign.state == SigningState::EXPECT_ADD_EXTRA_CHUNK, "");
 	invariant(sign.extra_counter + chunk.size() <= sign.extra_size, "");  // <= because we call it also for empty extra
 	sign.tx_prefix_stream.append(chunk.data(), chunk.size());
@@ -411,8 +364,8 @@ void Emulator::sign_add_extra(const BinaryArray &chunk) {
 	sign.tx_inputs_stream.append(tx_prefix_hash.data, 32);
 	sign.tx_prefix_stream = KeccakStream{};
 
-	sign.random_seed    = debug_seed ? crypto::cn_fast_hash("bcn", 3) : crypto::rand<Hash>();
-	sign.encryption_key = debug_seed ? crypto::cn_fast_hash("bcn", 3) : crypto::rand<Hash>();
+	sign.random_seed    = debug_seed ? cn_fast_hash("bcn", 3) : crypto::rand<Hash>();
+	sign.encryption_key = debug_seed ? cn_fast_hash("bcn", 3) : crypto::rand<Hash>();
 }
 
 void Emulator::sign_step_a(const common::BinaryArray &output_secret_hash_arg, size_t address_index,
@@ -424,15 +377,15 @@ void Emulator::sign_step_a(const common::BinaryArray &output_secret_hash_arg, si
 	invariant(sign.state == SigningState::EXPECT_STEP_A && sign.inputs_counter < sign.inputs_size, "");
 
 	SecretKey inv_output_secret_hash =
-	    sc_invert(crypto::hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size()));
+	    sc_invert(hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size()));
 	sign.tx_prefix_stream.append(inv_output_secret_hash.data, 32);
 	sign.tx_prefix_stream.append(address_index);
 
 	prepare_address(address_index);
 	SecretKey output_secret_key_a = last_address_audit_secret_key * inv_output_secret_hash;
 	SecretKey output_secret_key_s = m_spend_secret_key * inv_output_secret_hash;
-	PublicKey output_public_key   = crypto::secret_keys_to_public_key(output_secret_key_a, output_secret_key_s);
-	KeyImage key_image            = crypto::generate_key_image(output_public_key, output_secret_key_a);
+	PublicKey output_public_key   = secret_keys_to_public_key(output_secret_key_a, output_secret_key_s);
+	KeyImage key_image            = generate_key_image(output_public_key, output_secret_key_a);
 
 	const P3 b_coin_p3(hash_to_good_point_p3(key_image));
 	const PublicKey b_coin = to_bytes(b_coin_p3);
@@ -465,25 +418,15 @@ void Emulator::sign_step_a(const common::BinaryArray &output_secret_hash_arg, si
 		std::cout << "z[" << sign.inputs_counter << ", my]=" << *z << std::endl;
 
 	sign.state = SigningState::EXPECT_STEP_A_MORE_DATA;
-	if (m_proxy) {
-		EllipticCurvePoint sigp2;
-		EllipticCurvePoint y2, z2;
-
-		m_proxy->sign_step_a(output_secret_hash_arg, address_index, &sigp2, &y2, &z2);
-		invariant(*sig_p == sigp2 && *y == y2 && *z == z2, "");
-	}
 }
 
 void Emulator::sign_step_a_more_data(const BinaryArray &data) {
-	if (m_proxy) {
-		m_proxy->sign_step_a_more_data(data);
-	}
 	invariant(sign.state == SigningState::EXPECT_STEP_A_MORE_DATA, "");
 
 	sign.tx_inputs_stream.append(data.data(), data.size());
 }
 
-crypto::EllipticCurveScalar Emulator::sign_get_c0() {
+EllipticCurveScalar Emulator::sign_get_c0() {
 	invariant(sign.state == SigningState::EXPECT_STEP_A_MORE_DATA && sign.inputs_counter + 1 == sign.inputs_size, "");
 
 	sign.c0               = sign.tx_inputs_stream.hash_to_scalar();
@@ -495,11 +438,6 @@ crypto::EllipticCurveScalar Emulator::sign_get_c0() {
 	sign.state          = SigningState::EXPECT_STEP_B;
 	sign.inputs_counter = 0;
 
-	if (m_proxy) {
-		auto c02 = m_proxy->sign_get_c0();
-		invariant(c02 == sign.c0, "");
-	}
-
 	return sign.c0;
 }
 
@@ -508,7 +446,7 @@ void Emulator::sign_step_b(const common::BinaryArray &output_secret_hash_arg, si
 	invariant(sign.state == SigningState::EXPECT_STEP_B && sign.inputs_counter < sign.inputs_size, "");
 
 	SecretKey inv_output_secret_hash =
-	    sc_invert(crypto::hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size()));
+	    sc_invert(hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size()));
 	sign.tx_prefix_stream.append(inv_output_secret_hash.data, 32);  // for NEW protocol
 	sign.tx_prefix_stream.append(address_index);                    // for NEW protocol
 
@@ -535,13 +473,6 @@ void Emulator::sign_step_b(const common::BinaryArray &output_secret_hash_arg, si
 	if (debug_print)
 		std::cout << "ra[" << sign.inputs_counter << "]=" << rsig_ra << " encrypted=" << *sig_ra << std::endl;
 
-	Hash ek2;
-	if (m_proxy) {
-		Hash sig_my_rr2, rs2, ra2;
-		m_proxy->sign_step_b(output_secret_hash_arg, address_index, my_c, &sig_my_rr2, &rs2, &ra2, &ek2);
-		invariant(*sig_my_rr == sig_my_rr2 && *sig_rs == rs2 && *sig_ra == ra2, "");
-	}
-
 	if (++sign.inputs_counter < sign.inputs_size) {
 		*e_key = Hash{};  // We return encryption key only after last iteration
 		return;
@@ -551,9 +482,6 @@ void Emulator::sign_step_b(const common::BinaryArray &output_secret_hash_arg, si
 	if (sign.step_args_hash != step_args_hash2)
 		sign.encryption_key = Hash{};
 	*e_key = sign.encryption_key;
-	if (m_proxy) {
-		invariant(*e_key == ek2, "");
-	}
 }
 
 void Emulator::proof_start(const common::BinaryArray &data) {
@@ -562,15 +490,14 @@ void Emulator::proof_start(const common::BinaryArray &data) {
 
 	sign.tx_prefix_stream.append_byte(0);                    // guard_byte
 	sign.tx_prefix_stream.append(data.data(), data.size());  // will require separate sign.state on real device
-	Hash tx_prefix_hash = sign.tx_prefix_stream.cn_fast_hash();
-	sign.random_seed    = Hash{};  // = crypto::rand<Hash>(); - uncomment in final code for full security
-	//	sign.encryption_key = Hash{}; // = crypto::rand<Hash>(); - uncomment in final code for full security
+	Hash tx_prefix_hash   = sign.tx_prefix_stream.cn_fast_hash();
+	sign.tx_prefix_stream = KeccakStream{};
+
+	sign.random_seed    = debug_seed ? cn_fast_hash("bcn", 3) : crypto::rand<Hash>();
+	sign.encryption_key = debug_seed ? cn_fast_hash("bcn", 3) : crypto::rand<Hash>();
 
 	sign.tx_inputs_stream.append(tx_prefix_hash.data, 32);
 	sign.state = SigningState::EXPECT_STEP_A;
-	if (m_proxy) {
-		m_proxy->proof_start(data);
-	}
 }
 
 void Emulator::export_view_only(SecretKey *audit_key_base_secret_key, SecretKey *view_secret_key, Hash *view_seed,
@@ -582,22 +509,11 @@ void Emulator::export_view_only(SecretKey *audit_key_base_secret_key, SecretKey 
 	if (view_outgoing_addresses)
 		*view_seed = m_view_seed;
 
-	*view_secrets_signature = crypto::generate_proof_H(m_spend_secret_key);
+	*view_secrets_signature = generate_proof_H(m_spend_secret_key);
 	if (debug_print) {
 		std::cout << "audit_key_base_secret_key=" << *audit_key_base_secret_key << std::endl;
 		std::cout << "view_secret_key=" << view_secret_key << std::endl;
 		std::cout << "m_sH=" << m_sH << std::endl;
 		std::cout << "view_secrets_signature=" << view_secrets_signature->c << view_secrets_signature->r << std::endl;
-	}
-	if (m_proxy) {
-		SecretKey audit_key_base_secret_key2, view_secret_key2;
-		Hash tx_derivation_seed2;
-		Signature view_secrets_signature2;
-		m_proxy->export_view_only(
-		    &audit_key_base_secret_key2, &view_secret_key2, &tx_derivation_seed2, &view_secrets_signature2);
-		invariant(*audit_key_base_secret_key == audit_key_base_secret_key2 && *view_secret_key == view_secret_key2 &&
-		              *view_seed == tx_derivation_seed2,
-		    "");
-		// Cannot compare signatures - they include random component
 	}
 }

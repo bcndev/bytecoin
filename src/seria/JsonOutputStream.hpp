@@ -9,13 +9,15 @@
 
 namespace seria {
 
-class JsonOutputStream : public ISeria {};  // Common base for use with dynamic_cast in ser() methods
+// Common base for use with dynamic_cast in ser() methods
+class JsonOutputStream : public ISeria {
+public:
+	JsonOutputStream() : ISeria(false) {}
+};
 
 class JsonOutputStreamValue : public JsonOutputStream {
 public:
 	JsonOutputStreamValue();
-
-	bool is_input() const override { return false; }
 
 	void begin_object() override;
 	bool object_key(common::StringView name, bool optional) override;
@@ -28,15 +30,10 @@ public:
 	void begin_array(size_t &size, bool fixed_size) override;
 	void end_array() override;
 
-	void seria_v(uint8_t &value) override;
-	void seria_v(int16_t &value) override;
-	void seria_v(uint16_t &value) override;
-	void seria_v(int32_t &value) override;
-	void seria_v(uint32_t &value) override;
-	void seria_v(int64_t &value) override;
-	void seria_v(uint64_t &value) override;
-	// void seria_v(double &value) override;
-	void seria_v(bool &value) override;
+	bool seria_v(int64_t &value) override;
+	bool seria_v(uint64_t &value) override;
+
+	bool seria_v(bool &value) override;
 	bool seria_v(std::string &value) override;
 	bool seria_v(common::BinaryArray &value) override;
 	bool binary(void *value, size_t size) override;
@@ -45,7 +42,7 @@ public:
 
 private:
 	bool expecting_root = true;
-	common::StringView next_key;
+	common::StringView m_next_key;
 	bool next_optional = false;
 	common::JsonValue root;
 	std::vector<common::JsonValue *> chain;
@@ -57,8 +54,6 @@ class JsonOutputStreamText : public JsonOutputStream {
 public:
 	explicit JsonOutputStreamText(std::string &text) : text(text) {}
 
-	bool is_input() const override { return false; }
-
 	void begin_object() override;
 	bool object_key(common::StringView name, bool optional) override;
 	void end_object() override;
@@ -70,22 +65,17 @@ public:
 	void begin_array(size_t &size, bool fixed_size) override;
 	void end_array() override;
 
-	void seria_v(uint8_t &value) override;
-	void seria_v(int16_t &value) override;
-	void seria_v(uint16_t &value) override;
-	void seria_v(int32_t &value) override;
-	void seria_v(uint32_t &value) override;
-	void seria_v(int64_t &value) override;
-	void seria_v(uint64_t &value) override;
-	//	void seria_v(double &value) override;
-	void seria_v(bool &value) override;
+	bool seria_v(int64_t &value) override;
+	bool seria_v(uint64_t &value) override;
+
+	bool seria_v(bool &value) override;
 	bool seria_v(std::string &value) override;
 	bool seria_v(common::BinaryArray &value) override;
 	bool binary(void *value, size_t size) override;
 
 private:
 	bool expecting_root = true;
-	common::StringView next_key;
+	common::StringView m_next_key;
 	bool next_optional = false;
 	std::string &text;
 	std::vector<std::pair<common::JsonValue::Type, int>>

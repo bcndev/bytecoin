@@ -135,7 +135,6 @@ bool P2PClient::test_connect(const NetworkAddress &addr) {
 	if (!sock.connect(common::ip_address_to_string(addr.ip), addr.port))
 		return false;
 	address = addr;
-	m_protocol->on_connect();
 	return true;
 }
 

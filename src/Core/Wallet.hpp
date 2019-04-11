@@ -8,7 +8,7 @@
 #include "CryptoNote.hpp"
 #include "Currency.hpp"
 #include "crypto/chacha.hpp"
-#include "hardware/HardwareWallet.hpp"
+#include "hardware/Proxy.hpp"
 #include "logging/LoggerMessage.hpp"
 #include "platform/DBsqlite3.hpp"
 #include "platform/Files.hpp"
@@ -57,7 +57,7 @@ public:
 	};
 	Wallet(const Currency &currency, logging::ILogger &log, const std::string &path);
 	virtual ~Wallet() = default;
-	virtual hardware::HardwareWallet *get_hw() const { return nullptr; }
+	virtual hardware::Proxy *get_hw() const { return nullptr; }
 	bool scan_outputs_via_hw() const { return get_hw() && m_view_secret_key == SecretKey{}; }
 	virtual void import_view_key() {}
 	virtual void set_password(const std::string &password) = 0;
@@ -194,7 +194,7 @@ class WalletHD : public Wallet {
 	PublicKey m_v_mul_A_plus_sH;
 	size_t m_used_address_count = 1;
 	std::map<std::string, std::string> m_labels;
-	std::unique_ptr<hardware::HardwareWallet> m_hw;  // quick prototyping, will refactor later
+	std::unique_ptr<hardware::Proxy> m_hw;  // quick prototyping, will refactor later
 
 	static BinaryArray encrypt_data(const crypto::chacha_key &wallet_key, const BinaryArray &data);
 	static BinaryArray decrypt_data(const crypto::chacha_key &wallet_key, const uint8_t *value_data, size_t value_size);
@@ -230,7 +230,7 @@ public:
 	WalletHD(const Currency &currency, logging::ILogger &log, const std::string &path, const std::string &password,
 	    const std::string &mnemonic, Timestamp creation_timestamp, const std::string &mnemonic_password,
 	    bool hardware_wallet);
-	hardware::HardwareWallet *get_hw() const override { return m_hw.get(); }
+	hardware::Proxy *get_hw() const override { return m_hw.get(); }
 	void import_view_key() override;
 	bool is_view_only() const override { return !m_hw && m_spend_secret_key == SecretKey{}; }
 	bool is_amethyst() const override { return true; }

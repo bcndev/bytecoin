@@ -38,6 +38,7 @@ public:
 	void write(const void *data, size_t size);
 	void write(const BinaryArray &data);
 	void write(const std::string &data);
+	void write_byte(uint8_t b) { write(&b, 1); }
 	void write_varint(uint64_t value);
 };
 

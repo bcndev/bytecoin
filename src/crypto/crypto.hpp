@@ -83,7 +83,7 @@ public:
 	}
 	SecretKey hash_to_scalar();
 	SecretKey hash_to_scalar64();
-	PublicKey hash_to_point();
+	PublicKey hash_to_good_point();
 };
 
 template<class T>
@@ -93,7 +93,7 @@ KeccakStream &operator<<(KeccakStream &buffer, const T &value) {
 }
 
 // Check a public key. Returns true if it is valid, false otherwise.
-bool key_isvalid(const PublicKey &key);
+bool key_isvalid(const EllipticCurvePoint &key);
 bool key_in_main_subgroup(const EllipticCurvePoint &key);
 // Checks a private key and computes the corresponding public key.
 bool secret_key_to_public_key(const SecretKey &sec, PublicKey *pub);
@@ -119,8 +119,8 @@ KeyImage generate_key_image(const PublicKey &pub, const SecretKey &sec);
 RingSignature generate_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey pubs[],
     std::size_t pubs_count, const SecretKey &sec, std::size_t sec_index);
 
-bool check_ring_signature(const Hash &prefix_hash, const KeyImage &image, const PublicKey pubs[], size_t pubs_count,
-    const RingSignature &sig);
+bool check_ring_signature(
+    const Hash &prefix_hash, const KeyImage &image, const std::vector<PublicKey> &pubs, const RingSignature &sig);
 
 RingSignatureAmethyst generate_ring_signature_amethyst(const Hash &prefix_hash, const std::vector<KeyImage> &images,
     const std::vector<std::vector<PublicKey>> &pubs, const std::vector<SecretKey> &secs_spend,
@@ -135,8 +135,6 @@ SecretKey hash_to_scalar64(const void *data, size_t length);
 
 // any 32 bytes into valid point (potentially outside main subgroup)
 PublicKey bytes_to_bad_point(const Hash &h);
-// hash of (data, length) into valid point (potentially outside main subgroup)
-PublicKey hash_to_bad_point(const void *data, size_t length);
 
 // hash of (data, length) into valid point (inside main subgroup)
 PublicKey bytes_to_good_point(const Hash &h);
@@ -191,7 +189,6 @@ SecretKey linkable_derive_output_secret_key(const SecretKey &address_s, const Se
 void linkable_underive_address(const SecretKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
     const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, PublicKey *address_S,
     PublicKey *address_V);
-void test_linkable();
 
 // Unlinkable crypto, output_secret_hash is temporary value that is expensive to calc, we pass it around
 
@@ -201,12 +198,6 @@ PublicKey generate_hd_spendkey(
     const PublicKey &v_mul_A_plus_SH, const PublicKey &A_plus_SH, const PublicKey &V, size_t index);
 // generate_hd_secretkey function emulate hardware wallet
 SecretKey generate_hd_secretkey(const SecretKey &a0, const PublicKey &A_plus_SH, size_t index);
-
-PublicKey A_plus_b_H(const PublicKey &A, const SecretKey &b);
-PublicKey A_plus_B(const PublicKey &A, const PublicKey &B);
-PublicKey A_minus_B(const PublicKey &A, const PublicKey &B);
-PublicKey A_minus_b_H(const PublicKey &A, const SecretKey &b);
-PublicKey A_mul_b(const PublicKey &A, const SecretKey &b);
 
 // a*G + s*H
 PublicKey secret_keys_to_public_key(const SecretKey &a, const SecretKey &s);

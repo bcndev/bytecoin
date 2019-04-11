@@ -1,7 +1,6 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
-#include <boost/lexical_cast.hpp>
 #include <thread>
 #include "Core/Config.hpp"
 #include "Core/CryptoNoteTools.hpp"
@@ -32,10 +31,11 @@ Options:
   -h --help                      Show this screen.
   -v --version                   Show version.
   --wallet-address=<address>     Address to receive mined coins (required).
-  --)" CRYPTONOTE_NAME R"(d-address=<ip:port>  Single option for both daemon address and port.
+  --bytecoind-address=<ip:port>  Single option for both daemon address and port.
   --limit=<N>                    Mine and submit specified number of blocks, then exit, 0 means no limit [Default: 0].
   --threads=<N>                  Not implemented yet - just start several copies of minerd.
   --boast=<text>                 Text to insert into coinbase transaction's extra nonce.
+  --miner-secret=<hash_hex>      Turn on deterministic mining.
   --cm                           EXPERIMENTAL. Use CM with random virtual coins.
 )";
 
@@ -51,15 +51,22 @@ struct MiningConfig {
 		if (const char *pa = cmd.get("--wallet-address"))
 			mining_address = pa;
 		if (const char *pa = cmd.get("--" CRYPTONOTE_NAME "d-address")) {
-			if (!common::parse_ip_address_and_port(pa, &bytecoind_ip, &bytecoind_port))
-				throw std::runtime_error("Wrong address format " + std::string(pa) + ", should be ip:port");
-		}
+			ewrap(common::parse_ip_address_and_port(pa, &bytecoind_ip, &bytecoind_port),
+			    std::runtime_error("Command line option --" CRYPTONOTE_NAME "d-address has wrong format"));
+		} else
+			throw std::runtime_error("--" CRYPTONOTE_NAME "d-address=ip:port argument is mandatory");
 		if (const char *pa = cmd.get("--threads"))
-			thread_count = boost::lexical_cast<size_t>(pa);
+			thread_count = common::integer_cast<size_t>(pa);
 		if (const char *pa = cmd.get("--limit"))
-			blocks_limit = boost::lexical_cast<size_t>(pa);
+			blocks_limit = common::integer_cast<size_t>(pa);
 		if (const char *pa = cmd.get("--boast"))
 			boast = pa;
+		if (const char *pa = cmd.get("--miner-secret")) {
+			if (!common::pod_from_hex(pa, &miner_secret))
+				throw std::runtime_error("Miner Secret must be hash in hex");
+			if (miner_secret == Hash{})
+				throw std::runtime_error("Miner Secret must not be all zeroes");
+		}
 		cm = cmd.get_bool("--cm");
 	}
 
@@ -70,6 +77,7 @@ struct MiningConfig {
 	size_t thread_count     = 0;
 	size_t blocks_limit     = 0;
 	// Mine specified number of blocks, then exit, 0 == indefinetely
+	Hash miner_secret;
 	bool cm = false;
 };
 
@@ -205,10 +213,11 @@ public:
 	void send_getwork() {
 		api::cnd::GetBlockTemplate::Request req{};
 		req.wallet_address = mining_config.mining_address;
+		req.miner_secret   = mining_config.miner_secret;
 		if (!mining_config.cm)
 			req.reserve_size = mining_config.boast.size();
-		req.top_block_hash = block_response.top_block_hash;
-		//		req.transaction_pool_version = txPoolVersion;
+		req.top_block_hash           = block_response.top_block_hash;
+		req.transaction_pool_version = block_response.transaction_pool_version;
 		http::RequestBody req_header = json_rpc::create_request("/json_rpc", "getblocktemplate", req);
 		std::cout << "Miner send getblocktemplate top_block_hash=" << block_response.top_block_hash << std::endl;
 		getwork_request = std::make_unique<http::Request>(getwork_agent, std::move(req_header),
@@ -225,32 +234,42 @@ public:
 				    set_root_extra_to_solo_mining_tag(block);
 				    difficulty = resp.difficulty;
 				    nonce      = crypto::rand<uint32_t>();
+				    if (mining_config.miner_secret != Hash{}) {
+					    block.timestamp = block.root_block.timestamp =
+					        1550000000 + resp.height * currency.difficulty_target;
+					    nonce = 0;
+				    }
 				    std::cout << "Miner received getblocktemplate difficulty=" << difficulty
 				              << " top_block_hash=" << resp.top_block_hash << " #tx=" << block.transaction_hashes.size()
 				              << std::endl;
 				    for (const auto &ha : block.transaction_hashes)
 					    std::cout << "tx=" << ha << std::endl;
-				    getwork_retry.once(1);
+				    getwork_retry.once(0.1f);
 			    } else {
 				    getwork_retry.once(10);
-				    std::cout << "Json Error getting blocktemplate code=" << err_resp.code
+				    std::cout << "Json Error getting blocktemplate (will retry in 10 sec) code=" << err_resp.code
 				              << " msg=" << err_resp.message << std::endl;
 			    }
 		    },
-		    [&](std::string err) { getwork_retry.once(5); });
+		    [&](std::string err) {
+			    getwork_retry.once(5);
+			    std::cout << "Network Error getting blocktemplate (will retry in 5 sec) err=" << err << std::endl;
+		    });
 	}
-	static int main(int argc, const char *argv[]) {
+	static int main(int argc, const char *argv[]) try {
 		common::console::UnicodeConsoleSetup console_setup;
 		common::console::set_text_color(common::console::BrightRed);
 		std::cout << "This miner is VERY INEFFICIENT and should be only used by team only for testnet" << std::endl;
 		common::console::set_text_color(common::console::Default);
 
 		common::CommandLine cmd(argc, argv);
+		if (cmd.show_help(Config::prepare_usage(USAGE).c_str(), cn::app_version()))
+			return 0;
 		MiningConfig mining_config(cmd);
-		if (int r = cmd.should_quit(Config::prepare_usage(USAGE).c_str(), cn::app_version()))
-			return r != 1;
+		if (cmd.show_errors())
+			return 1;
 		if (mining_config.mining_address.empty()) {
-			std::cout << "--wallet-address option is mandatory" << std::endl;
+			std::cout << "--wallet-address=<addr> option is mandatory" << std::endl;
 			return 1;
 		}
 
@@ -264,6 +283,9 @@ public:
 				io.run_one();
 		}
 		return 0;
+	} catch (const std::exception &ex) {
+		std::cout << common::what(ex) << std::endl;
+		return 1;
 	}
 };
 

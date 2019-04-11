@@ -1,5 +1,21 @@
 ## Release Notes
 
+### v3.4.2-beta-20190411 (Amethyst)
+
+- Fixed problem when `bytecoind` stops responding via JSON RPC API.
+- Tweaked random output distribution for mixins.
+- The `walletd` daemon now better utilizes CPU during sync (cores use 100%, if available).
+- During mining, the `bytecoind` daemon now prefers blocks received via `submit_block` API to other blocks, if difficulty are equal. This will slightly increase mining profitability for lucky miners.
+- Added back `create_transaction` optimization for large wallets which was accidentally removed in version 3.4.1.
+- Fixed bug when transaction size is `0` in all `walletd` API calls.
+- Fixed bug when transaction timestamp is `0` in `get_transaction` of `bytecoind` API call for transaction, if it has been already included in the blockchain.
+- Transaction fields `prefix_hash` and `inputs_hash` are now correctly set in various `bytecoind` API calls, if `need_redundant_data` is set.
+- Improved command line processing in `walletd`, especially if wrong combination of options specified.
+- Trezor and Ledger early support in `walletd`.
+
+*Incompatible API changes*
+- deprecated `binary_size` field removed from transaction in all contexts. Please use the `size` field.
+
 ### v3.4.1 (Amethyst)
 
 - New cryptography reviewed, some important tweaks added - thanks for all feedback to those who contributed.

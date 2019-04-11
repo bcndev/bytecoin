@@ -7,8 +7,8 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "ResponseParser.hpp"
-#include <boost/lexical_cast.hpp>
 #include <sstream>
+#include "common/Math.hpp"
 
 using namespace http;
 
@@ -169,7 +169,7 @@ ResponseParser::state ResponseParser::consume(ResponseHeader &req, char input) {
 bool ResponseParser::process_ready_header(ResponseHeader &req) {
 	if (lowcase.name == "content-length") {
 		try {
-			req.content_length = boost::lexical_cast<decltype(req.content_length)>(lowcase.value);  // std::stoull
+			req.content_length = common::integer_cast<decltype(req.content_length)>(lowcase.value);  // std::stoull
 			req.headers.pop_back();
 			return true;
 		} catch (const std::exception &) {

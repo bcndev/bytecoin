@@ -13,7 +13,8 @@ namespace cn {
 
 struct TransactionExtraPadding {
 	size_t size = 0;
-	enum { tag = 0x00, MAX_COUNT = 255 };
+	enum { tag = 0x00 };
+	// We removed MAX_COUNT, when padding encountered, remaining bytes are padding
 };
 
 struct TransactionExtraPublicKey {

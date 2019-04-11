@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <vector>
 
-#include "Currency.hpp"
 #include "Difficulty.hpp"
 #include "common/Varint.hpp"
 #include "crypto/hash.hpp"

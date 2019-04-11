@@ -495,6 +495,7 @@ void ser_members(api::walletd::GetTransaction::Response &v, ISeria &s) { seria_k
 void ser_members(api::cnd::GetBlockTemplate::Request &v, ISeria &s) {
 	seria_kv("reserve_size", v.reserve_size, s);
 	seria_kv("wallet_address", v.wallet_address, s);
+	seria_kv("miner_secret", v.miner_secret, s);
 	seria_kv("top_block_hash", v.top_block_hash, s);
 	seria_kv("transaction_pool_version", v.transaction_pool_version, s);
 }

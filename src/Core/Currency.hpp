@@ -91,8 +91,8 @@ public:
 	Amount get_block_reward(uint8_t block_major_version, Height height, size_t effective_median_size,
 	    size_t current_transactions_size, Amount already_generated_coins, Amount fee,
 	    SignedAmount *emission_change = nullptr) const;
-	Transaction construct_miner_tx(
-	    uint8_t block_major_version, Height height, Amount block_reward, const AccountAddress &miner_address) const;
+	Transaction construct_miner_tx(const Hash &miner_secret, uint8_t block_major_version, Height height,
+	    Amount block_reward, const AccountAddress &miner_address) const;
 
 	std::string account_address_as_string(const AccountAddress &account_public_address) const;
 	bool parse_account_address_string(const std::string &str, AccountAddress *addr) const;
@@ -128,14 +128,5 @@ private:
 	const HardCheckpoint *checkpoints_begin = nullptr;
 	const HardCheckpoint *checkpoints_end   = nullptr;
 };
-
-// we should probably find better place for these global funs
-Hash get_transaction_inputs_hash(const TransactionPrefix &);
-Hash get_transaction_prefix_hash(const TransactionPrefix &);
-Hash get_transaction_hash(const Transaction &);
-
-Hash get_block_hash(const BlockHeader &, const BlockBodyProxy &);
-Hash get_auxiliary_block_header_hash(const BlockHeader &, const BlockBodyProxy &);
-// Auxiliary or Pre- hash - inserted into MM or CM tree
 
 }  // namespace cn

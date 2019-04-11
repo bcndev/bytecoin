@@ -102,7 +102,7 @@ public:
 	bool has_transaction(const Hash &tid) const;
 	// Modify blockchain state. bytecoin header does not contain enough info for consensus calcs, so we cannot have
 	// header chain without block chain
-	bool add_block(const PreparedBlock &pb, api::BlockHeader *info, const std::string &source_address);
+	bool add_block(const PreparedBlock &pb, api::BlockHeader *info, bool just_mined, const std::string &source_address);
 
 	// Facilitate sync and download
 	std::vector<Hash> get_sparse_chain(Height max_jump = std::numeric_limits<Height>::max()) const;
@@ -194,8 +194,8 @@ private:
 	bool prune_branch(CumulativeDifficulty cd, Hash bid);
 	void for_each_tip(std::function<bool(CumulativeDifficulty cd, Hash bid)> &&fun) const;
 
-	static int compare(
-	    const CheckpointDifficulty &a, CumulativeDifficulty ca, const CheckpointDifficulty &b, CumulativeDifficulty cb);
+	static int compare(const CheckpointDifficulty &a, CumulativeDifficulty ca, bool a_just_mined,
+	    const CheckpointDifficulty &b, CumulativeDifficulty cb);
 	struct Blod {
 		Hash hash;
 		Height height = 0;

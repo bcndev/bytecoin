@@ -86,7 +86,7 @@ bool TransactionBuilder::detect_not_our_output(const Wallet *wallet, bool tx_ame
 	// In amethyst, we should always detect out outputs if we know view_seed
 	Hash output_seed;
 	if (wallet->get_hw()) {
-		wallet->get_hw()->generate_output_seed(tx_inputs_hash, out_index, &output_seed);
+		output_seed = wallet->get_hw()->generate_output_seed(tx_inputs_hash, out_index);
 	} else {
 		output_seed = TransactionBuilder::generate_output_seed(tx_inputs_hash, wallet->get_view_seed(), out_index);
 	}
@@ -485,10 +485,6 @@ void UnspentSelector::return_coins_to_index(
 	for (auto &&un : m_optimization_unspents) {
 		m_used_total -= un.amount;
 		m_inputs_count -= 1;
-		//		if (un.dust) {
-		//			(*dust_coins)[un.amount].push_back(std::move(un));
-		//			continue;
-		//		}
 		Amount am    = un.amount;
 		size_t digit = 0;
 		while (am % 10 == 0) {

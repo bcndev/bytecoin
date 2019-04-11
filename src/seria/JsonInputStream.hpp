@@ -10,13 +10,15 @@
 
 namespace seria {
 
-class JsonInputStream : public ISeria {};  // Common base for use with dynamic_cast in ser() methods
+// Common base for use with dynamic_cast in ser() methods
+class JsonInputStream : public ISeria {
+public:
+	JsonInputStream() : ISeria(true) {}
+};
 
 class JsonInputStreamValue : public JsonInputStream, private common::Nocopy {
 public:
 	explicit JsonInputStreamValue(const common::JsonValue &value, bool allow_unused_object_keys);
-
-	bool is_input() const override { return true; }
 
 	void begin_object() override;
 	bool object_key(common::StringView name, bool optional) override;
@@ -29,15 +31,10 @@ public:
 	void begin_array(size_t &size, bool fixed_size) override;
 	void end_array() override;
 
-	void seria_v(uint8_t &value) override;
-	void seria_v(int16_t &value) override;
-	void seria_v(uint16_t &value) override;
-	void seria_v(int32_t &value) override;
-	void seria_v(uint32_t &value) override;
-	void seria_v(int64_t &value) override;
-	void seria_v(uint64_t &value) override;
-	// void seria_v(double &value) override;
-	void seria_v(bool &value) override;
+	bool seria_v(int64_t &value) override;
+	bool seria_v(uint64_t &value) override;
+
+	bool seria_v(bool &value) override;
 	bool seria_v(std::string &value) override;
 	bool seria_v(common::BinaryArray &value) override;
 	bool binary(void *value, size_t size) override;
@@ -57,6 +54,19 @@ private:
 template<typename T, typename... Context>
 void from_json_value(T &v, const common::JsonValue &js, Context... context) {
 	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
+	JsonInputStreamValue s(js, true);
+	try {
+		ser(v, s, context...);
+	} catch (const std::exception &) {
+		std::throw_with_nested(std::runtime_error(
+		    "Error while deserializing json value of type '" + common::demangle(typeid(T).name()) + "'"));
+	}
+}
+
+// Disallow unknown object keys - prevents typos
+template<typename T, typename... Context>
+void from_json_value_strict(T &v, const common::JsonValue &js, Context... context) {
+	static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
 	JsonInputStreamValue s(js, false);
 	try {
 		ser(v, s, context...);
@@ -65,4 +75,5 @@ void from_json_value(T &v, const common::JsonValue &js, Context... context) {
 		    "Error while deserializing json value of type '" + common::demangle(typeid(T).name()) + "'"));
 	}
 }
+
 }  // namespace seria

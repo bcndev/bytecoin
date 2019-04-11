@@ -82,25 +82,27 @@ void read_name(common::IInputStream &s, std::string &name) {
 	s.read(name, len);
 }
 
-JsonValue load_value(common::IInputStream &stream, uint8_t type);
-JsonValue load_object(common::IInputStream &stream);
-JsonValue load_entry(common::IInputStream &stream);
-JsonValue load_array(common::IInputStream &stream, uint8_t item_type);
+JsonValue load_value(size_t level, common::IInputStream &stream, uint8_t type);
+JsonValue load_object(size_t level, common::IInputStream &stream);
+JsonValue load_entry(size_t level, common::IInputStream &stream);
+JsonValue load_array(size_t level, common::IInputStream &stream, uint8_t item_type);
 
-JsonValue load_object(common::IInputStream &stream) {
+JsonValue load_object(size_t level, common::IInputStream &stream) {
+	if (level > 100)
+		throw std::runtime_error("KVBinaryInputStream depth too high");
 	JsonValue sec(JsonValue::OBJECT);
 	size_t count = read_kv_varint(stream);
 	std::string name;
 
 	while (count--) {
 		read_name(stream, name);
-		sec.insert(name, load_entry(stream));
+		sec.insert(name, load_entry(level, stream));
 	}
 
 	return sec;
 }
 
-JsonValue load_value(common::IInputStream &stream, uint8_t type) {
+JsonValue load_value(size_t level, common::IInputStream &stream, uint8_t type) {
 	switch (type) {
 	case BIN_KV_SERIALIZE_TYPE_INT64:
 		return read_integer_json<int64_t, int64_t>(stream);
@@ -119,7 +121,7 @@ JsonValue load_value(common::IInputStream &stream, uint8_t type) {
 	case BIN_KV_SERIALIZE_TYPE_UINT8:
 		return read_integer_json<uint8_t, uint64_t>(stream);
 	case BIN_KV_SERIALIZE_TYPE_DOUBLE: {
-		throw std::logic_error("KVBinaryInputStream double serialization is not supported in KVBinaryInputStream");
+		throw std::runtime_error("KVBinaryInputStream double serialization is not supported");
 		//		double dv = 0; // TODO - double as binary is a BUG
 		//		stream.read(&dv, sizeof(dv));
 		//		return dv;
@@ -129,27 +131,29 @@ JsonValue load_value(common::IInputStream &stream, uint8_t type) {
 	case BIN_KV_SERIALIZE_TYPE_STRING:
 		return read_string_json(stream);
 	case BIN_KV_SERIALIZE_TYPE_OBJECT:
-		return load_object(stream);
+		return load_object(level + 1, stream);
 	case BIN_KV_SERIALIZE_TYPE_ARRAY:
-		return load_array(stream, type);
+		return load_array(level + 1, stream, type);
 	default:
 		throw std::runtime_error("KVBinaryInputStream Unknown data type");
 	}
 }
 
-JsonValue load_entry(common::IInputStream &stream) {
+JsonValue load_entry(size_t level, common::IInputStream &stream) {
+	if (level > 100)
+		throw std::runtime_error("KVBinaryInputStream depth too high");
 	uint8_t type;
 	stream.read(&type, 1);
 
 	if (type & BIN_KV_SERIALIZE_FLAG_ARRAY) {
 		type &= ~BIN_KV_SERIALIZE_FLAG_ARRAY;
-		return load_array(stream, type);
+		return load_array(level + 1, stream, type);
 	}
 
-	return load_value(stream, type);
+	return load_value(level, stream, type);
 }
 
-JsonValue load_array(common::IInputStream &stream, uint8_t item_type) {
+JsonValue load_array(size_t level, common::IInputStream &stream, uint8_t item_type) {
 	JsonValue arr(JsonValue::ARRAY);
 	size_t count = read_kv_varint(stream);
 
@@ -161,9 +165,9 @@ JsonValue load_array(common::IInputStream &stream, uint8_t item_type) {
 				throw std::runtime_error("KVBinaryInputStream Incorrect array of array encoding");
 			type &= ~BIN_KV_SERIALIZE_FLAG_ARRAY;
 
-			arr.push_back(load_array(stream, type));
+			arr.push_back(load_array(level + 1, stream, type));
 		} else
-			arr.push_back(load_value(stream, item_type));
+			arr.push_back(load_value(level, stream, item_type));
 	}
 
 	return arr;
@@ -180,7 +184,7 @@ JsonValue parse_binary(common::IInputStream &stream) {
 	if (hdr.m_ver != PORTABLE_STORAGE_FORMAT_VER)
 		throw std::runtime_error("KVBinaryInputStream unknown binary storage format version");
 
-	return load_object(stream);
+	return load_object(0, stream);
 }
 }  // namespace
 

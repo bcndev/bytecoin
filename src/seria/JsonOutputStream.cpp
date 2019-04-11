@@ -15,15 +15,15 @@ using namespace seria;
 JsonOutputStreamValue::JsonOutputStreamValue() : root(JsonValue::NIL) {}
 
 bool JsonOutputStreamValue::object_key(common::StringView name, bool optional) {
-	// TODO - check if m_next_key already exists
-	next_key      = name;
+	invariant(!m_next_key.data(), "");
+	m_next_key    = name;
 	next_optional = optional;
 	return true;
 }
 
 void JsonOutputStreamValue::next_map_key(std::string &name) {
-	// TODO - check if m_next_key already exists
-	next_key = name;
+	invariant(!m_next_key.data(), "");
+	m_next_key = name;
 }
 
 void JsonOutputStreamValue::begin_object() { chain.push_back(insert_or_push(JsonValue(JsonValue::OBJECT), false)); }
@@ -42,27 +42,15 @@ void JsonOutputStreamValue::end_array() {
 	chain.pop_back();
 }
 
-void JsonOutputStreamValue::seria_v(uint64_t &value) { insert_or_push(JsonValue(value), value == 0); }
-
-void JsonOutputStreamValue::seria_v(uint16_t &value) {
-	insert_or_push(JsonValue(JsonValue::Unsigned(value)), value == 0);
+bool JsonOutputStreamValue::seria_v(uint64_t &value) {
+	insert_or_push(JsonValue(value), value == 0);
+	return true;
 }
 
-void JsonOutputStreamValue::seria_v(int16_t &value) {
-	insert_or_push(JsonValue(JsonValue::Integer(value)), value == 0);
+bool JsonOutputStreamValue::seria_v(int64_t &value) {
+	insert_or_push(JsonValue(value), value == 0);
+	return true;
 }
-
-void JsonOutputStreamValue::seria_v(uint32_t &value) {
-	insert_or_push(JsonValue(JsonValue::Unsigned(value)), value == 0);
-}
-
-void JsonOutputStreamValue::seria_v(int32_t &value) {
-	insert_or_push(JsonValue(JsonValue::Integer(value)), value == 0);
-}
-
-void JsonOutputStreamValue::seria_v(int64_t &value) { insert_or_push(JsonValue(value), value == 0); }
-
-// void JsonOutputStreamValue::seria_v(double &value) { insert_or_push(JsonValue(value), value == 0); }
 
 bool JsonOutputStreamValue::seria_v(std::string &value) {
 	insert_or_push(JsonValue(value), value.empty());
@@ -75,11 +63,10 @@ bool JsonOutputStreamValue::seria_v(common::BinaryArray &value) {
 	return true;
 }
 
-void JsonOutputStreamValue::seria_v(uint8_t &value) {
-	insert_or_push(JsonValue(JsonValue::Integer(value)), value == 0);
+bool JsonOutputStreamValue::seria_v(bool &value) {
+	insert_or_push(JsonValue(value), !value);
+	return true;
 }
-
-void JsonOutputStreamValue::seria_v(bool &value) { insert_or_push(JsonValue(value), !value); }
 
 bool JsonOutputStreamValue::binary(void *value, size_t size) {
 	std::string hex = common::to_hex(value, size);
@@ -100,8 +87,9 @@ common::JsonValue *JsonOutputStreamValue::insert_or_push(const common::JsonValue
 		return &js->push_back(value);
 	}
 	if (js->is_object()) {
-		common::StringView key = next_key;
-		next_key               = common::StringView("");
+		invariant(m_next_key.data(), "");
+		common::StringView key = m_next_key;
+		m_next_key             = common::StringView();
 		if (skip_if_optional && next_optional)
 			return nullptr;
 		return &js->insert(static_cast<std::string>(key), value);
@@ -123,8 +111,9 @@ bool JsonOutputStreamText::append_prefix(const std::string &value, bool skip_if_
 		text += value;
 		return true;
 	}
-	common::StringView key = next_key;
-	next_key               = common::StringView("");
+	invariant(m_next_key.data(), "");
+	common::StringView key = m_next_key;
+	m_next_key             = common::StringView();
 	if (skip_if_optional && next_optional)
 		return false;
 	if (chain.back().second != 0)
@@ -138,15 +127,15 @@ bool JsonOutputStreamText::append_prefix(const std::string &value, bool skip_if_
 }
 
 bool JsonOutputStreamText::object_key(common::StringView name, bool optional) {
-	// TODO - check if m_next_key already exists
-	next_key      = name;
+	invariant(!m_next_key.data(), "");
+	m_next_key    = name;
 	next_optional = optional;
 	return true;
 }
 
 void JsonOutputStreamText::next_map_key(std::string &name) {
-	// TODO - check if m_next_key already exists
-	next_key = name;
+	invariant(!m_next_key.data(), "");
+	m_next_key = name;
 }
 
 void JsonOutputStreamText::begin_object() {
@@ -177,19 +166,15 @@ void JsonOutputStreamText::end_array() {
 	chain.pop_back();
 }
 
-void JsonOutputStreamText::seria_v(uint64_t &value) { append_prefix(common::to_string(value), value == 0); }
+bool JsonOutputStreamText::seria_v(uint64_t &value) {
+	append_prefix(common::to_string(value), value == 0);
+	return true;
+}
 
-void JsonOutputStreamText::seria_v(uint16_t &value) { append_prefix(common::to_string(value), value == 0); }
-
-void JsonOutputStreamText::seria_v(int16_t &value) { append_prefix(common::to_string(value), value == 0); }
-
-void JsonOutputStreamText::seria_v(uint32_t &value) { append_prefix(common::to_string(value), value == 0); }
-
-void JsonOutputStreamText::seria_v(int32_t &value) { append_prefix(common::to_string(value), value == 0); }
-
-void JsonOutputStreamText::seria_v(int64_t &value) { append_prefix(common::to_string(value), value == 0); }
-
-// void JsonOutputStreamText::seria_v(double &value) { append_prefix(common::to_string(value), value == 0); }
+bool JsonOutputStreamText::seria_v(int64_t &value) {
+	append_prefix(common::to_string(value), value == 0);
+	return true;
+}
 
 bool JsonOutputStreamText::seria_v(std::string &value) {
 	if (!append_prefix("\"", value.empty()))
@@ -204,9 +189,10 @@ bool JsonOutputStreamText::seria_v(common::BinaryArray &value) {
 	return seria_v(hex);
 }
 
-void JsonOutputStreamText::seria_v(uint8_t &value) { append_prefix(common::to_string(value), value == 0); }
-
-void JsonOutputStreamText::seria_v(bool &value) { append_prefix(value ? "true" : "false", !value); }
+bool JsonOutputStreamText::seria_v(bool &value) {
+	append_prefix(value ? "true" : "false", !value);
+	return true;
+}
 
 bool JsonOutputStreamText::binary(void *value, size_t size) {
 	std::string hex = common::to_hex(value, size);

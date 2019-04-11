@@ -11,3 +11,10 @@ namespace common {
 std::string demangle(const char *name);
 std::string what(const std::exception &e);
 }  // namespace common
+
+#define ewrap(expr, ex)                \
+	try {                              \
+		expr;                          \
+	} catch (const std::exception &) { \
+		std::throw_with_nested(ex);    \
+	}

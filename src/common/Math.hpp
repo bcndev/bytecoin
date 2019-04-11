@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <ctype.h>
 #include <algorithm>
+#include <string>
 #include <typeinfo>
 #include <vector>
 #include "exception.hpp"
@@ -68,10 +70,51 @@ inline Target integer_cast_impl(const Source &arg, std::false_type, std::true_ty
 	return static_cast<Target>(arg);
 }
 
+template<typename Target, typename Source>  // source integral
+inline Target integer_cast_is_integral(const Source &arg, std::true_type) {
+	return integer_cast_impl<Target, Source>(arg, std::is_unsigned<Target>{}, std::is_unsigned<Source>{});
+}
+
+inline bool has_sign(const std::string &arg) {
+	size_t pos = 0;
+	while (pos != arg.size() && isspace(arg[pos]))
+		pos += 1;
+	return pos != arg.size() && arg[pos] == '-';
+}
+
+inline bool has_tail(const std::string &arg, size_t pos) {
+	while (pos != arg.size() && isspace(arg[pos]))
+		pos += 1;
+	return pos != arg.size();
+}
+
+template<typename Target, typename Source>  // source not integral (string convertible)
+inline Target integer_cast_is_integral(const Source &arg, std::false_type) {
+	const std::string &sarg = arg;          // creates tmp object if neccessary
+	if (std::is_unsigned<Target>::value) {  // Crazy stupid C++ standard :(
+		if (has_sign(sarg))
+			throw std::out_of_range("Failed integer cast of " + sarg + " to " +
+			                        common::demangle(typeid(Target).name()) + ", sign not allowed");
+		size_t pos = 0;
+		auto val   = std::stoull(sarg, &pos);
+		if (has_tail(sarg, pos))
+			throw std::out_of_range("Failed integer cast of " + sarg + " to " +
+			                        common::demangle(typeid(Target).name()) + ", excess characters not allowed");
+		return integer_cast_is_integral<Target>(val, std::true_type{});
+	}
+	size_t pos = 0;
+	auto val   = std::stoll(sarg, &pos);
+	if (has_tail(sarg, pos))
+		throw std::out_of_range("Failed integer cast of " + sarg + " to " + common::demangle(typeid(Target).name()) +
+		                        ", excess characters not allowed");
+	return integer_cast_is_integral<Target>(val, std::true_type{});
+}
+
 template<typename Target, typename Source>
 inline Target integer_cast(const Source &arg) {
-	static_assert(std::is_integral<Target>::value && std::is_integral<Source>::value, "Needs 2 integral types");
-	return integer_cast_impl<Target, Source>(arg, std::is_unsigned<Target>{}, std::is_unsigned<Source>{});
+	static_assert(
+	    std::is_integral<Target>::value, "Target type must be integral, source either integral or string convertible");
+	return integer_cast_is_integral<Target, Source>(arg, std::is_integral<Source>{});
 }
 
 // template<typename Target, typename Source>
@@ -123,4 +166,20 @@ inline Target integer_cast(const Source &arg) {
 //	test_convert<int16_t, int64_t>(20000);
 //	test_convert<int16_t, int64_t>(60000);
 //	test_convert<int16_t, int64_t>(2000000000);
+
+//	auto i1 = common::integer_cast<unsigned short>("30000");
+//	auto i2 = common::integer_cast<unsigned short>("50000");
+////	auto i3 = common::integer_cast<unsigned short>("-30000");
+////	auto i4 = common::integer_cast<unsigned short>("-50000");
+//	auto i5 = common::integer_cast<short>("30000");
+//	auto i7 = common::integer_cast<short>("-30000");
+//	auto ii1 = common::integer_cast<uint64_t>("30000");
+//	auto ii2 = common::integer_cast<uint64_t>("18446744073709551615");
+////	auto ii3 = common::integer_cast<uint64_t>("-30000");
+////	auto ii4 = common::integer_cast<uint64_t>("-118446744073709551615");
+//	auto ii5 = common::integer_cast<int64_t>("30000");
+//	auto ii6 = common::integer_cast<int64_t>("8446744073709551615");
+//	auto ii7 = common::integer_cast<int64_t>("-30000");
+//	auto ii8 = common::integer_cast<int64_t>("-8446744073709551615");
+
 }  // namespace common

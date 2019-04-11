@@ -27,6 +27,7 @@
 
 using namespace cn;
 using namespace common;
+using namespace crypto;
 
 static std::string net_append(const std::string &net) { return net == "main" ? std::string() : "_" + net + "net"; }
 
@@ -35,18 +36,18 @@ Wallet::Wallet(const Currency &currency, logging::ILogger &log, const std::strin
 
 static Hash derive_from_seed_legacy(const Hash &seed, const std::string &append) {
 	BinaryArray seed_data = as_binary_array(append) | seed.as_binary_array();
-	return crypto::cn_fast_hash(seed_data.data(), seed_data.size());
+	return cn_fast_hash(seed_data.data(), seed_data.size());
 }
 
-static Hash derive_from_key(const crypto::chacha_key &key, const std::string &append) {
+static Hash derive_from_key(const chacha_key &key, const std::string &append) {
 	BinaryArray seed_data = key.as_binary_array() | as_binary_array(append);
-	return crypto::cn_fast_hash(seed_data.data(), seed_data.size());
+	return cn_fast_hash(seed_data.data(), seed_data.size());
 }
 
 AccountAddress Wallet::get_first_address() const { return record_to_address(0); }
 
 std::string Wallet::get_cache_name() const {
-	Hash h           = crypto::cn_fast_hash(m_view_public_key.data, sizeof(m_view_public_key.data));
+	Hash h           = cn_fast_hash(m_view_public_key.data, sizeof(m_view_public_key.data));
 	std::string name = common::pod_to_hex(h);
 	if (is_view_only()) {
 		if (can_view_outgoing_addresses())
@@ -84,13 +85,13 @@ static const uint8_t SERIALIZATION_VERSION_V2 = 6;
 static const size_t CHECK_KEYS_COUNT = 128;  // >8 KB checked at start and end of file
 #pragma pack(push, 1)
 struct EncryptedWalletRecord {
-	crypto::chacha_iv iv;
+	chacha_iv iv;
 	// Secret key, public key and creation timestamp
 	uint8_t data[sizeof(PublicKey) + sizeof(SecretKey) + sizeof(uint64_t)]{};
 };
 struct ContainerStoragePrefix {
 	// We moved uint8_t version out of this struct, because with it other fields become unaligned
-	crypto::chacha_iv next_iv;
+	chacha_iv next_iv;
 	EncryptedWalletRecord encrypted_view_keys;
 };
 // struct ContainerStorageWalletRecord {
@@ -101,7 +102,7 @@ struct ContainerStoragePrefix {
 #pragma pack(pop)
 
 static void decrypt_key_pair(
-    const EncryptedWalletRecord &r, PublicKey &pk, SecretKey &sk, Timestamp &ct, const crypto::chacha_key &key) {
+    const EncryptedWalletRecord &r, PublicKey &pk, SecretKey &sk, Timestamp &ct, const chacha_key &key) {
 	//	ContainerStorageWalletRecord rec;
 	unsigned char rec_data[sizeof(r.data)]{};
 	chacha8(r.data, sizeof(r.data), key, r.iv, rec_data);
@@ -112,12 +113,12 @@ static void decrypt_key_pair(
 }
 
 static void encrypt_key_pair(
-    EncryptedWalletRecord &r, PublicKey pk, SecretKey sk, Timestamp ct, const crypto::chacha_key &key) {
+    EncryptedWalletRecord &r, PublicKey pk, SecretKey sk, Timestamp ct, const chacha_key &key) {
 	unsigned char rec_data[sizeof(r.data)]{};
 	memcpy(rec_data, pk.data, sizeof(PublicKey));
 	memcpy(rec_data + sizeof(PublicKey), sk.data, sizeof(SecretKey));
 	uint_le_to_bytes<uint64_t>(rec_data + sizeof(PublicKey) + sizeof(SecretKey), sizeof(uint64_t), ct);
-	r.iv = crypto::rand<crypto::chacha_iv>();
+	r.iv = crypto::rand<chacha_iv>();
 	chacha8(&rec_data, sizeof(r.data), key, r.iv, r.data);
 }
 
@@ -227,7 +228,7 @@ void WalletContainerStorage::load_legacy_wallet_file() {
 }
 
 WalletContainerStorage::WalletContainerStorage(
-    const Currency &currency, logging::ILogger &log, const std::string &path, const crypto::chacha_key &wallet_key)
+    const Currency &currency, logging::ILogger &log, const std::string &path, const chacha_key &wallet_key)
     : Wallet(currency, log, path) {
 	m_wallet_key = wallet_key;
 	load();
@@ -236,7 +237,7 @@ WalletContainerStorage::WalletContainerStorage(
 WalletContainerStorage::WalletContainerStorage(const Currency &currency, logging::ILogger &log, const std::string &path,
     const std::string &password, const std::string &import_keys, Timestamp creation_timestamp)
     : Wallet(currency, log, path) {
-	crypto::CryptoNightContext cn_ctx;
+	CryptoNightContext cn_ctx;
 	m_wallet_key = generate_chacha8_key(cn_ctx, password.data(), password.size());
 	//	try {
 	m_file = std::make_unique<platform::FileStream>(path, platform::O_CREATE_NEW);
@@ -249,10 +250,10 @@ WalletContainerStorage::WalletContainerStorage(const Currency &currency, logging
 
 	if (import_keys.empty()) {
 		m_oldest_timestamp = platform::now_unix_timestamp();  // ignore creation_timestamp
-		crypto::random_keypair(m_view_public_key, m_view_secret_key);
+		random_keypair(m_view_public_key, m_view_secret_key);
 		m_wallet_records.push_back(WalletRecord{});
 		m_wallet_records.at(0).creation_timestamp = m_oldest_timestamp;
-		crypto::random_keypair(m_wallet_records.at(0).spend_public_key, m_wallet_records.at(0).spend_secret_key);
+		random_keypair(m_wallet_records.at(0).spend_public_key, m_wallet_records.at(0).spend_secret_key);
 	} else {
 		if (import_keys.size() != 256)
 			throw Exception(api::WALLET_FILE_DECRYPT_ERROR, "Imported keys should be exactly 128 hex bytes");
@@ -282,7 +283,7 @@ WalletContainerStorage::WalletContainerStorage(const Currency &currency, logging
 WalletContainerStorage::WalletContainerStorage(
     const Currency &currency, logging::ILogger &log, const std::string &path, const std::string &password)
     : Wallet(currency, log, path) {
-	crypto::CryptoNightContext cn_ctx;
+	CryptoNightContext cn_ctx;
 	m_wallet_key = generate_chacha8_key(cn_ctx, password.data(), password.size());
 	load();
 }
@@ -324,15 +325,15 @@ void WalletContainerStorage::load() {
 	if (!is_view_only()) {
 		BinaryArray seed_data = m_view_secret_key.as_binary_array();
 		seed_data |= m_wallet_records.at(0).spend_secret_key.as_binary_array();
-		m_seed                  = crypto::cn_fast_hash(seed_data);
+		m_seed                  = cn_fast_hash(seed_data);
 		m_view_seed             = derive_from_seed_legacy(m_seed, "tx_derivation");
 		m_history_filename_seed = derive_from_seed_legacy(m_seed, "history_filename");
-		m_history_key           = crypto::chacha_key{derive_from_seed_legacy(m_seed, "history")};
+		m_history_key           = chacha_key{derive_from_seed_legacy(m_seed, "history")};
 	}
 }
 
-void WalletContainerStorage::save(const std::string &export_path, const crypto::chacha_key &wallet_key, bool view_only,
-    platform::OpenMode open_mode) const {
+void WalletContainerStorage::save(
+    const std::string &export_path, const chacha_key &wallet_key, bool view_only, platform::OpenMode open_mode) const {
 	platform::FileStream f(export_path, open_mode);
 
 	uint8_t version = SERIALIZATION_VERSION_V2;
@@ -378,7 +379,7 @@ void WalletContainerStorage::save_and_check() {
 }
 
 void WalletContainerStorage::set_password(const std::string &password) {
-	crypto::CryptoNightContext cn_ctx;
+	CryptoNightContext cn_ctx;
 	m_wallet_key = generate_chacha8_key(cn_ctx, password.data(), password.size());
 	save_and_check();
 }
@@ -397,7 +398,7 @@ void WalletContainerStorage::export_wallet(const std::string &export_path, const
 			}
 		}
 	}
-	crypto::CryptoNightContext cn_ctx;
+	CryptoNightContext cn_ctx;
 	auto new_wallet_key = generate_chacha8_key(cn_ctx, new_password.data(), new_password.size());
 	save(export_path, new_wallet_key, view_only, platform::O_CREATE_NEW);
 }
@@ -425,7 +426,7 @@ std::vector<WalletRecord> WalletContainerStorage::generate_new_addresses(const s
 		if (sk == SecretKey{}) {
 			record.creation_timestamp = now;
 			do {
-				crypto::random_keypair(record.spend_public_key, record.spend_secret_key);
+				random_keypair(record.spend_public_key, record.spend_secret_key);
 			} while (m_records_map.count(record.spend_public_key) != 0);
 			m_oldest_timestamp = std::min(m_oldest_timestamp, record.creation_timestamp);
 		} else {
@@ -537,7 +538,7 @@ bool WalletContainerStorage::save_history(const Hash &tid, const History &used_a
 		return false;
 	if (used_addresses.empty())
 		return true;  // saved empty history :)
-	crypto::chacha_iv iv = crypto::rand<crypto::chacha_iv>();
+	chacha_iv iv = crypto::rand<chacha_iv>();
 	BinaryArray data;
 
 	for (auto &&addr : used_addresses) {
@@ -546,11 +547,11 @@ bool WalletContainerStorage::save_history(const Hash &tid, const History &used_a
 	}
 	BinaryArray encrypted_data;
 	encrypted_data.resize(data.size(), 0);
-	crypto::chacha8(data.data(), data.size(), m_history_key, iv, encrypted_data.data());
+	chacha8(data.data(), data.size(), m_history_key, iv, encrypted_data.data());
 	encrypted_data.insert(encrypted_data.begin(), std::begin(iv.data), std::end(iv.data));
 
 	const BinaryArray filename_data = tid.as_binary_array() | m_history_filename_seed.as_binary_array();
-	const Hash filename_hash        = crypto::cn_fast_hash(filename_data);
+	const Hash filename_hash        = cn_fast_hash(filename_data);
 
 	const auto tmp_path = history_folder + "/_tmp.txh";
 	return platform::atomic_save_file(history_folder + "/" + common::pod_to_hex(filename_hash) + ".txh",
@@ -561,17 +562,15 @@ Wallet::History WalletContainerStorage::load_history(const Hash &tid) const {
 	Wallet::History used_addresses;
 	std::string history_folder      = get_history_folder();
 	const BinaryArray filename_data = tid.as_binary_array() | m_history_filename_seed.as_binary_array();
-	const Hash filename_hash        = crypto::cn_fast_hash(filename_data);
+	const Hash filename_hash        = cn_fast_hash(filename_data);
 
 	BinaryArray hist;
 	if (!platform::load_file(history_folder + "/" + common::pod_to_hex(filename_hash) + ".txh", hist) ||
-	    hist.size() < sizeof(crypto::chacha_iv) ||
-	    (hist.size() - sizeof(crypto::chacha_iv)) % (2 * sizeof(PublicKey)) != 0)
+	    hist.size() < sizeof(chacha_iv) || (hist.size() - sizeof(chacha_iv)) % (2 * sizeof(PublicKey)) != 0)
 		return used_addresses;
-	const crypto::chacha_iv *iv = (const crypto::chacha_iv *)hist.data();
-	BinaryArray dec(hist.size() - sizeof(crypto::chacha_iv), 0);
-	crypto::chacha8(hist.data() + sizeof(crypto::chacha_iv), hist.size() - sizeof(crypto::chacha_iv), m_history_key,
-	    *iv, dec.data());
+	const chacha_iv *iv = (const chacha_iv *)hist.data();
+	BinaryArray dec(hist.size() - sizeof(chacha_iv), 0);
+	chacha8(hist.data() + sizeof(chacha_iv), hist.size() - sizeof(chacha_iv), m_history_key, *iv, dec.data());
 	for (size_t i = 0; i != dec.size() / (2 * sizeof(PublicKey)); ++i) {
 		AccountAddressSimple ad;
 		memcpy(ad.V.data, dec.data() + i * 2 * sizeof(PublicKey), sizeof(PublicKey));
@@ -646,8 +645,7 @@ bool WalletContainerStorage::detect_our_output(uint8_t tx_version, const KeyDeri
 	if (record.spend_secret_key != SecretKey{}) {
 		const bool is_tx_amethyst = tx_version >= m_currency.amethyst_transaction_version;
 		if (is_tx_amethyst) {
-			SecretKey output_secret_hash =
-			    crypto::hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size());
+			SecretKey output_secret_hash = hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size());
 			*output_secret_key_a = linkable_derive_output_secret_key(record.spend_secret_key, output_secret_hash);
 		} else {
 			if (kd == KeyDerivation{})  // tx_public_key was invalid
@@ -659,7 +657,7 @@ bool WalletContainerStorage::detect_our_output(uint8_t tx_version, const KeyDeri
 				return false;
 		}
 		*output_secret_key_s        = SecretKey{};
-		PublicKey output_public_key = crypto::secret_keys_to_public_key(*output_secret_key_a, *output_secret_key_s);
+		PublicKey output_public_key = secret_keys_to_public_key(*output_secret_key_a, *output_secret_key_s);
 		if (output_public_key != key_output.public_key)
 			return false;
 		*keyimage = generate_key_image(key_output.public_key, *output_secret_key_a);
@@ -767,16 +765,16 @@ WalletHD::WalletHD(const Currency &currency, logging::ILogger &log, const std::s
     const std::string &password, bool readonly)
     : Wallet(currency, log, path) {
 	bool created = false;
-	m_db_dbi.open_check_create(readonly ? platform::O_READ_EXISTING : platform::O_OPEN_EXISTING, path, &created);
+	ewrap(m_db_dbi.open_check_create(readonly ? platform::O_READ_EXISTING : platform::O_OPEN_EXISTING, path, &created), Exception(api::WALLET_FILE_READ_ERROR, "Cannot open wallet file " + path));
 
 	if (get_is_hardware()) {
 		auto connected = hardware::HardwareWallet::get_connected();
 		for (auto &&c : connected) {
 			try {
-				m_wallet_key = crypto::chacha_key{c->get_wallet_key()};
+				m_wallet_key = chacha_key{c->get_wallet_key()};
 				std::string version;
 				if (get("version", version)) {
-					m_hw = std::move(c);
+					m_hw = std::make_unique<hardware::Proxy>(std::move(c));
 					break;
 				}
 			} catch (const std::exception &) {
@@ -789,7 +787,7 @@ WalletHD::WalletHD(const Currency &currency, logging::ILogger &log, const std::s
 			        common::to_string(connected.size()) + " hardware wallet(s)");
 	} else {
 		BinaryArray salt_data = get_salt() | as_binary_array(password);
-		crypto::CryptoNightContext cn_ctx;
+		CryptoNightContext cn_ctx;
 		m_wallet_key = generate_chacha8_key(cn_ctx, salt_data.data(), salt_data.size());
 	}
 	try {
@@ -805,19 +803,6 @@ WalletHD::WalletHD(const Currency &currency, logging::ILogger &log, const std::s
     const std::string &password, const std::string &mnemonic, Timestamp creation_timestamp,
     const std::string &mnemonic_password, bool hardware_wallet)
     : Wallet(currency, log, path) {
-	bool created = false;
-	m_db_dbi.open_check_create(platform::O_CREATE_NEW, path, &created);
-	m_db_dbi.exec(
-	    "CREATE TABLE unencrypted(key BLOB PRIMARY KEY COLLATE BINARY NOT NULL, value BLOB NOT NULL) WITHOUT ROWID");
-	m_db_dbi.exec(
-	    "CREATE TABLE parameters(key_hash BLOB PRIMARY KEY COLLATE BINARY NOT NULL, key BLOB NOT NULL, value BLOB NOT NULL) WITHOUT ROWID");
-	m_db_dbi.exec(
-	    "CREATE TABLE labels(address_hash BLOB PRIMARY KEY NOT NULL, address BLOB NOT NULL, label BLOB NOT NULL) WITHOUT ROWID");
-	m_db_dbi.exec(
-	    "CREATE TABLE payment_queue(tid_hash BLOB COLLATE BINARY NOT NULL, net_hash BLOB COLLATE BINARY NOT NULL, tid BLOB NOT NULL, net BLOB NOT NULL, binary_transaction BLOB NOT NULL, PRIMARY KEY (tid_hash, net_hash)) WITHOUT ROWID");
-	BinaryArray salt(sizeof(Hash));
-	crypto::generate_random_bytes(salt.data(), salt.size());
-	put_salt(salt);  // The only unencrypted field
 	if (hardware_wallet) {
 		if (!password.empty())
 			throw Exception(api::WALLET_FILE_HARDWARE_DECRYPT_ERROR,
@@ -829,12 +814,27 @@ WalletHD::WalletHD(const Currency &currency, logging::ILogger &log, const std::s
 		if (connected.size() > 1)
 			throw Exception(api::WALLET_FILE_HARDWARE_DECRYPT_ERROR,
 			    "More than 1 hardware wallet connected, please disconnect all but one you wish to use to create wallet file.");
-		m_hw         = std::move(connected.back());
-		m_wallet_key = crypto::chacha_key{m_hw->get_wallet_key()};
+		m_hw = std::make_unique<hardware::Proxy>(std::move(connected.back()));
+	}
+	bool created = false;
+	ewrap(m_db_dbi.open_check_create(platform::O_CREATE_NEW, path, &created), Exception(api::WALLET_FILE_READ_ERROR, "Cannot create wallet file " + path));
+	m_db_dbi.exec(
+	    "CREATE TABLE unencrypted(key BLOB PRIMARY KEY COLLATE BINARY NOT NULL, value BLOB NOT NULL) WITHOUT ROWID");
+	m_db_dbi.exec(
+	    "CREATE TABLE parameters(key_hash BLOB PRIMARY KEY COLLATE BINARY NOT NULL, key BLOB NOT NULL, value BLOB NOT NULL) WITHOUT ROWID");
+	m_db_dbi.exec(
+	    "CREATE TABLE labels(address_hash BLOB PRIMARY KEY NOT NULL, address BLOB NOT NULL, label BLOB NOT NULL) WITHOUT ROWID");
+	m_db_dbi.exec(
+	    "CREATE TABLE payment_queue(tid_hash BLOB COLLATE BINARY NOT NULL, net_hash BLOB COLLATE BINARY NOT NULL, tid BLOB NOT NULL, net BLOB NOT NULL, binary_transaction BLOB NOT NULL, PRIMARY KEY (tid_hash, net_hash)) WITHOUT ROWID");
+	BinaryArray salt(sizeof(Hash));
+	generate_random_bytes(salt.data(), salt.size());
+	put_salt(salt);  // The only unencrypted field
+	if (m_hw) {
+		m_wallet_key = chacha_key{m_hw->get_wallet_key()};
 		put_is_hardware(true);
 	} else {
 		salt |= as_binary_array(password);
-		crypto::CryptoNightContext cn_ctx;
+		CryptoNightContext cn_ctx;
 		m_wallet_key = generate_chacha8_key(cn_ctx, salt.data(), salt.size());
 	}
 	if (mnemonic.empty() && !m_hw)
@@ -874,14 +874,13 @@ void WalletHD::load() {
 		m_A_plus_sH       = m_hw->get_A_plus_SH();
 		m_v_mul_A_plus_sH = m_hw->get_v_mul_A_plus_SH();
 		m_view_public_key = m_hw->get_public_view_key();
-		invariant(crypto::key_in_main_subgroup(m_A_plus_sH), "Hardware wallet error - spend key base is invalid");
-		invariant(crypto::key_in_main_subgroup(m_v_mul_A_plus_sH), "Hardware wallet error - view key base is invalid");
-		invariant(
-		    crypto::key_in_main_subgroup(m_view_public_key), "Hardware wallet error - view public key is invalid");
+		invariant(key_in_main_subgroup(m_A_plus_sH), "Hardware wallet error - spend key base is invalid");
+		invariant(key_in_main_subgroup(m_v_mul_A_plus_sH), "Hardware wallet error - view key base is invalid");
+		invariant(key_in_main_subgroup(m_view_public_key), "Hardware wallet error - view public key is invalid");
 		BinaryArray ba;
 		if (get("view_key", ba)) {  // hardware wallet with a view key
 			seria::from_binary(m_view_secret_key, ba);
-			invariant(crypto::keys_match(m_view_secret_key, m_view_public_key), "Hardware-backed wallet corrupted");
+			invariant(keys_match(m_view_secret_key, m_view_public_key), "Hardware-backed wallet corrupted");
 		}
 	} else {
 		PublicKey sH;
@@ -895,25 +894,25 @@ void WalletHD::load() {
 			cn::Bip32Key k2             = k1.derive_key(0x80000001);
 			cn::Bip32Key k3             = k2.derive_key(0);
 			cn::Bip32Key k4             = k3.derive_key(0);
-			m_seed                      = crypto::cn_fast_hash(k4.get_priv_key().data(), k4.get_priv_key().size());
+			m_seed                      = cn_fast_hash(k4.get_priv_key().data(), k4.get_priv_key().size());
 			const BinaryArray tx_data   = m_seed.as_binary_array() | as_binary_array("view_seed");
-			m_view_seed                 = crypto::cn_fast_hash(tx_data.data(), tx_data.size());
+			m_view_seed                 = cn_fast_hash(tx_data.data(), tx_data.size());
 			const BinaryArray vk_data   = m_view_seed.as_binary_array() | as_binary_array("view_key");
-			m_view_secret_key           = crypto::hash_to_scalar(vk_data.data(), vk_data.size());
+			m_view_secret_key           = hash_to_scalar(vk_data.data(), vk_data.size());
 			const BinaryArray ak_data   = m_view_seed.as_binary_array() | as_binary_array("view_key_audit");
-			m_audit_key_base.secret_key = crypto::hash_to_scalar(ak_data.data(), ak_data.size());
+			m_audit_key_base.secret_key = hash_to_scalar(ak_data.data(), ak_data.size());
 			const BinaryArray sk_data   = m_seed.as_binary_array() | as_binary_array("spend_key");
-			m_spend_secret_key          = crypto::hash_to_scalar(sk_data.data(), sk_data.size());
-			sH                          = crypto::A_mul_b(crypto::get_H(), m_spend_secret_key);
+			m_spend_secret_key          = hash_to_scalar(sk_data.data(), sk_data.size());
+			sH                          = to_bytes(crypto::H * m_spend_secret_key);
 		} else {  // View only
 			// only if we have output_secret_derivation_seed, view-only wallet will be able to see outgoing addresses
 			BinaryArray ba;
 			if (get("view_seed", ba)) {
 				seria::from_binary(m_view_seed, ba);
 				const BinaryArray vk_data   = m_view_seed.as_binary_array() | as_binary_array("view_key");
-				m_view_secret_key           = crypto::hash_to_scalar(vk_data.data(), vk_data.size());
+				m_view_secret_key           = hash_to_scalar(vk_data.data(), vk_data.size());
 				const BinaryArray ak_data   = m_view_seed.as_binary_array() | as_binary_array("view_key_audit");
-				m_audit_key_base.secret_key = crypto::hash_to_scalar(ak_data.data(), ak_data.size());
+				m_audit_key_base.secret_key = hash_to_scalar(ak_data.data(), ak_data.size());
 			} else {
 				invariant(get("view_key", ba), "Wallet corrupted - no view key");
 				seria::from_binary(m_view_secret_key, ba);
@@ -922,19 +921,19 @@ void WalletHD::load() {
 			}
 			invariant(get("sH", ba), "Wallet corrupted - no sH key");
 			seria::from_binary(sH, ba);
-			invariant(crypto::key_in_main_subgroup(sH), "Wallet Corrupted - s*H is invalid");
+			invariant(key_in_main_subgroup(sH), "Wallet Corrupted - s*H is invalid");
 			// We check that sH is product of some known s0 by H, this is required by audit
 			invariant(get("view_secrets_signature", ba), "Wallet audit secrets are corrupted");
 			Signature view_secrets_signature;
 			seria::from_binary(view_secrets_signature, ba);
 
-			if (!crypto::check_proof_H(sH, view_secrets_signature))
+			if (!check_proof_H(sH, view_secrets_signature))
 				throw Exception(api::WALLET_FILE_DECRYPT_ERROR, "Wallet view secrets are corrupted");
 		}
-		invariant(crypto::secret_key_to_public_key(m_view_secret_key, &m_view_public_key), "");
-		invariant(crypto::secret_key_to_public_key(m_audit_key_base.secret_key, &m_audit_key_base.public_key), "");
-		m_A_plus_sH       = crypto::A_plus_B(m_audit_key_base.public_key, sH);
-		m_v_mul_A_plus_sH = A_mul_b(m_A_plus_sH, m_view_secret_key);  // for hw debug only
+		invariant(secret_key_to_public_key(m_view_secret_key, &m_view_public_key), "");
+		invariant(secret_key_to_public_key(m_audit_key_base.secret_key, &m_audit_key_base.public_key), "");
+		m_A_plus_sH       = to_bytes(P3(m_audit_key_base.public_key) + P3(sH));
+		m_v_mul_A_plus_sH = to_bytes(P3(m_A_plus_sH) * m_view_secret_key);  // for hw debug only
 	}
 	{
 		BinaryArray ba;
@@ -964,7 +963,7 @@ void WalletHD::load() {
 void WalletHD::generate_ahead1(size_t counter, std::vector<WalletRecord> &result) const {
 	std::vector<KeyPair> key_result;
 	key_result.resize(result.size());
-	crypto::generate_hd_spendkeys(m_audit_key_base.secret_key, m_A_plus_sH, counter, &key_result);
+	generate_hd_spendkeys(m_audit_key_base.secret_key, m_A_plus_sH, counter, &key_result);
 	for (size_t i = 0; i != result.size(); ++i) {
 		WalletRecord &record    = result[i];
 		record.spend_secret_key = key_result.at(i).secret_key;
@@ -1003,7 +1002,7 @@ void WalletHD::generate_ahead() {
 		}
 }
 
-BinaryArray WalletHD::encrypt_data(const crypto::chacha_key &wallet_key, const BinaryArray &data) {
+BinaryArray WalletHD::encrypt_data(const chacha_key &wallet_key, const BinaryArray &data) {
 	const size_t MIN_SIZE   = 256;
 	const size_t EXTRA_SIZE = sizeof(Hash) + 4;  // iv, actual size in le
 	size_t actual_size      = 1;
@@ -1016,19 +1015,19 @@ BinaryArray WalletHD::encrypt_data(const crypto::chacha_key &wallet_key, const B
 	Hash iv = crypto::rand<Hash>();
 	memcpy(enc_data.data(), iv.data, sizeof(iv));
 	const BinaryArray key_data = wallet_key.as_binary_array() | iv.as_binary_array();
-	crypto::chacha_key key{crypto::cn_fast_hash(key_data)};
-	chacha(20, large_data.data(), large_data.size(), key, crypto::chacha_iv{}, enc_data.data() + sizeof(Hash));
+	chacha_key key{cn_fast_hash(key_data)};
+	chacha(20, large_data.data(), large_data.size(), key, chacha_iv{}, enc_data.data() + sizeof(Hash));
 	return enc_data;
 }
 
-BinaryArray WalletHD::decrypt_data(const crypto::chacha_key &wallet_key, const uint8_t *value_data, size_t value_size) {
+BinaryArray WalletHD::decrypt_data(const chacha_key &wallet_key, const uint8_t *value_data, size_t value_size) {
 	Hash iv;
 	invariant(value_size >= 4 + sizeof(Hash), "");
 	memcpy(iv.data, value_data, sizeof(Hash));
 	BinaryArray result(value_size - sizeof(Hash));
 	BinaryArray key_data = wallet_key.as_binary_array() | iv.as_binary_array();
-	crypto::chacha_key key{crypto::cn_fast_hash(key_data)};
-	chacha(20, value_data + sizeof(Hash), result.size(), key, crypto::chacha_iv{}, result.data());
+	chacha_key key{cn_fast_hash(key_data)};
+	chacha(20, value_data + sizeof(Hash), result.size(), key, chacha_iv{}, result.data());
 	auto real_size = uint_le_from_bytes<size_t>(result.data(), 4);
 	invariant(real_size <= result.size() - 4, "");
 	return BinaryArray{result.data() + 4, result.data() + 4 + real_size};
@@ -1130,9 +1129,9 @@ AccountAddress WalletHD::record_to_address(size_t index) const {
 	const WalletRecord &record = m_wallet_records.at(index);
 	Hash view_seed;
 	memcpy(view_seed.data, m_audit_key_base.public_key.data, sizeof(m_audit_key_base.public_key.data));
-	PublicKey sv2 = crypto::generate_hd_spendkey(m_v_mul_A_plus_sH, m_A_plus_sH, m_view_public_key, index);
+	PublicKey sv2 = generate_hd_spendkey(m_v_mul_A_plus_sH, m_A_plus_sH, m_view_public_key, index);
 	if (m_view_secret_key != SecretKey{}) {
-		PublicKey sv = A_mul_b(record.spend_public_key, m_view_secret_key);
+		PublicKey sv = to_bytes(P3(record.spend_public_key) * m_view_secret_key);
 		invariant(sv == sv2, "");
 	}
 	// TODO - do multiplication only once
@@ -1168,10 +1167,10 @@ void WalletHD::set_password(const std::string &password) {
 	m_db_dbi.exec("DELETE FROM labels");
 
 	BinaryArray salt(sizeof(Hash));
-	crypto::generate_random_bytes(salt.data(), salt.size());
+	generate_random_bytes(salt.data(), salt.size());
 	put_salt(salt);
 	salt |= as_binary_array(password);
-	crypto::CryptoNightContext cn_ctx;
+	CryptoNightContext cn_ctx;
 	m_wallet_key = generate_chacha8_key(cn_ctx, salt.data(), salt.size());
 
 	for (const auto &p : parameters)
@@ -1198,8 +1197,8 @@ void WalletHD::export_wallet(const std::string &export_path, const std::string &
 			Hash view_seed;
 			Signature view_secrets_signature;
 			m_hw->export_view_only(&audit_key_base_secret_key, &view_secret_key, &view_seed, &view_secrets_signature);
-			invariant(crypto::secret_key_to_public_key(audit_key_base_secret_key, &A), "");
-			PublicKey sH = crypto::A_minus_B(m_A_plus_sH, A);
+			invariant(secret_key_to_public_key(audit_key_base_secret_key, &A), "");
+			PublicKey sH = to_bytes(P3(m_A_plus_sH) - P3(A));
 			if (view_seed != Hash{}) {
 				other.put("view_seed", view_seed.as_binary_array(), true);
 			} else {
@@ -1208,7 +1207,7 @@ void WalletHD::export_wallet(const std::string &export_path, const std::string &
 			}
 			other.put("sH", sH.as_binary_array(), true);
 			other.put("view_secrets_signature", seria::to_binary(view_secrets_signature), true);
-			invariant(crypto::check_proof_H(sH, view_secrets_signature), "");
+			invariant(check_proof_H(sH, view_secrets_signature), "");
 		} else {
 			if (view_outgoing_addresses) {
 				other.put("view_seed", m_view_seed.as_binary_array(), true);
@@ -1216,12 +1215,12 @@ void WalletHD::export_wallet(const std::string &export_path, const std::string &
 				other.put("view_key", m_view_secret_key.as_binary_array(), true);
 				other.put("view_key_audit", m_audit_key_base.secret_key.as_binary_array(), true);
 			}
-			auto sH = crypto::A_mul_b(crypto::get_H(), m_spend_secret_key);
+			auto sH = to_bytes(crypto::H * m_spend_secret_key);
 			other.put("sH", sH.as_binary_array(), true);
 
-			auto view_secrets_signature = crypto::generate_proof_H(m_spend_secret_key);
+			auto view_secrets_signature = generate_proof_H(m_spend_secret_key);
 			other.put("view_secrets_signature", seria::to_binary(view_secrets_signature), true);
-			invariant(crypto::check_proof_H(sH, view_secrets_signature), "");
+			invariant(check_proof_H(sH, view_secrets_signature), "");
 		}
 		for (const auto &p : parameters_get())
 			if (p.first != "mnemonic" && p.first != "mnemonic-password")
@@ -1247,7 +1246,7 @@ void WalletHD::import_view_key() {
 	Signature view_secrets_signature;
 	m_hw->export_view_only(&audit_key_base_secret_key, &m_view_secret_key, &view_seed, &view_secrets_signature);
 	// We do not store other secrets and will continue using hardware wallet for them
-	invariant(crypto::secret_key_to_public_key(m_view_secret_key, &m_view_public_key), "");
+	invariant(secret_key_to_public_key(m_view_secret_key, &m_view_public_key), "");
 
 	put("view_key", m_view_secret_key.as_binary_array(), true);
 	commit();
@@ -1420,11 +1419,11 @@ Wallet::OutputHandler WalletHD::get_output_handler() const {
 		// we will remake architecture later
 		if (hw_copy) {
 			auto Pv    = hw_copy->scan_outputs({key_output.public_key}).at(0);
-			*address_S = crypto::unlinkable_underive_address_S_step2(Pv, tx_inputs_hash, output_index,
-			    key_output.public_key, key_output.encrypted_secret, output_secret_hash_arg);
+			*address_S = unlinkable_underive_address_S_step2(Pv, tx_inputs_hash, output_index, key_output.public_key,
+			    key_output.encrypted_secret, output_secret_hash_arg);
 		} else {
-			*address_S = crypto::unlinkable_underive_address_S(vsk_copy, tx_inputs_hash, output_index,
-			    key_output.public_key, key_output.encrypted_secret, output_secret_hash_arg);
+			*address_S = unlinkable_underive_address_S(vsk_copy, tx_inputs_hash, output_index, key_output.public_key,
+			    key_output.encrypted_secret, output_secret_hash_arg);
 		}
 	};
 }
@@ -1440,12 +1439,11 @@ bool WalletHD::detect_our_output(uint8_t tx_version, const KeyDerivation &kd, si
 	if (m_hw) {
 		*keyimage = m_hw->generate_keyimage(output_secret_hash_arg, *record_index);
 	} else {
-		SecretKey output_secret_hash =
-		    crypto::hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size());
-		*output_secret_key_a = crypto::unlinkable_derive_output_secret_key(record.spend_secret_key, output_secret_hash);
+		SecretKey output_secret_hash = hash_to_scalar(output_secret_hash_arg.data(), output_secret_hash_arg.size());
+		*output_secret_key_a         = unlinkable_derive_output_secret_key(record.spend_secret_key, output_secret_hash);
 		if (m_spend_secret_key != SecretKey{}) {
-			*output_secret_key_s = crypto::unlinkable_derive_output_secret_key(m_spend_secret_key, output_secret_hash);
-			PublicKey output_public_key = crypto::secret_keys_to_public_key(*output_secret_key_a, *output_secret_key_s);
+			*output_secret_key_s        = unlinkable_derive_output_secret_key(m_spend_secret_key, output_secret_hash);
+			PublicKey output_public_key = secret_keys_to_public_key(*output_secret_key_a, *output_secret_key_s);
 			if (output_public_key != key_output.public_key)
 				return false;
 		}

@@ -169,6 +169,7 @@ enum return_code {
 	BYTECOIND_BIND_PORT_IN_USE        = 104,
 	BYTECOIND_WRONG_ARGS              = 105,
 	BYTECOIND_DATABASE_FORMAT_TOO_NEW = 106,
+	BYTECOIND_DATAFOLDER_ERROR        = 107,  // Also returned from walletd
 	WALLET_FILE_READ_ERROR            = 205,
 	WALLET_FILE_UNKNOWN_VERSION       = 206,
 	WALLET_FILE_DECRYPT_ERROR         = 207,
@@ -593,7 +594,7 @@ struct GetBlockHeader {
 
 struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoind
 	static std::string method() { return "sync_blocks"; }
-	static std::string bin_method() { return "sync_blocks_v3.4.0"; }
+	static std::string bin_method() { return "sync_blocks_v3.4.2"; }
 	// we increment bin method version when binary format changes
 
 	struct Request {
@@ -601,12 +602,12 @@ struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoin
 		std::vector<Hash> sparse_chain;
 		Timestamp first_block_timestamp = 0;
 		size_t max_count                = MAX_COUNT / 10;
-		size_t max_size                 = 10 * 1024 * 1024;  // No more than 10 megabytes of blocks + 1 block
-		bool need_redundant_data        = true;              // walletd and smart clients can save traffic
+		size_t max_size                 = 1 * 1024 * 1024;  // No more than 1 megabytes of blocks + 1 block
+		bool need_redundant_data        = true;             // walletd and smart clients can save traffic
 	};
 	struct Response {
 		std::vector<RawBlock> blocks;
-		Height start_height = 0;
+		Height start_height = 0;  // Redundant, deprecated. Use blocks[0].header.height (if blocks empty, sync finished)
 		GetStatus::Response status;  // We save roundtrip during sync by also sending status here
 	};
 };
@@ -753,6 +754,7 @@ struct GetBlockTemplate {
 	struct Request {
 		size_t reserve_size = 0;  // max 127 bytes
 		std::string wallet_address;
+		Hash miner_secret;                                 // Used during testing for deterministic block generation
 		boost::optional<Hash> top_block_hash;              // for longpoll in v3 - behaves like GetStatus
 		boost::optional<size_t> transaction_pool_version;  // for longpoll in v3 - behaves like GetStatus
 	};
@@ -873,7 +875,6 @@ void ser_members(cn::api::walletd::GetViewKeyPair::Response &v, ISeria &s);
 void ser_members(cn::api::walletd::CreateAddresses::Request &v, ISeria &s);
 void ser_members(cn::api::walletd::CreateAddresses::Response &v, ISeria &s);
 void ser_members(cn::api::walletd::GetBalance::Request &v, ISeria &s);
-void ser_members(cn::api::walletd::GetBalance::Response &v, ISeria &s);
 void ser_members(cn::api::walletd::GetUnspents::Request &v, ISeria &s);
 void ser_members(cn::api::walletd::GetUnspents::Response &v, ISeria &s);
 void ser_members(cn::api::walletd::GetTransfers::Request &v, ISeria &s);

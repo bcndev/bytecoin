@@ -11,9 +11,7 @@ namespace seria {
 
 class BinaryInputStream : public ISeria {
 public:
-	explicit BinaryInputStream(common::IInputStream &strm) : stream(strm) {}
-
-	bool is_input() const override { return true; }
+	explicit BinaryInputStream(common::IInputStream &strm) : ISeria(true), stream(strm) {}
 
 	void begin_object() override {}
 	bool object_key(common::StringView, bool optional) override { return true; }
@@ -26,15 +24,10 @@ public:
 	void begin_array(size_t &size, bool fixed_size) override;
 	void end_array() override {}
 
-	void seria_v(uint8_t &value) override;
-	void seria_v(int16_t &value) override;
-	void seria_v(uint16_t &value) override;
-	void seria_v(int32_t &value) override;
-	void seria_v(uint32_t &value) override;
-	void seria_v(int64_t &value) override;
-	void seria_v(uint64_t &value) override;
-	//	void seria_v(double &value) override;
-	void seria_v(bool &value) override;
+	bool seria_v(int64_t &value) override;
+	bool seria_v(uint64_t &value) override;
+
+	bool seria_v(bool &value) override;
 	bool seria_v(std::string &value) override;
 	bool seria_v(common::BinaryArray &value) override;
 	bool binary(void *value, size_t size) override;

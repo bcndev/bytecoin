@@ -37,8 +37,9 @@ uint32_t ip_address_to_legacy(const BinaryArray &ip);
 BinaryArray ip_address_from_legacy(uint32_t ip);
 std::string ip_address_and_port_to_string(const BinaryArray &ip, uint16_t port);
 bool parse_ip_address(const std::string &addr, BinaryArray *ip);
-bool parse_ip_address_and_port(const std::string &addr, BinaryArray *ip, uint16_t *port);
-bool parse_ip_address_and_port(const std::string &addr, std::string *ip, uint16_t *port);
+BinaryArray parse_ip_address(const std::string &addr);
+void parse_ip_address_and_port(const std::string &addr, BinaryArray *ip, uint16_t *port);
+void parse_ip_address_and_port(const std::string &addr, std::string *ip, uint16_t *port);
 int get_private_network_prefix(
     const BinaryArray &ip);  // 0, 10, 127, 172, 192 for all classes of IPv4 private addresses
 inline bool is_ip_address_loopback(const BinaryArray &ip) { return get_private_network_prefix(ip) == 127; }

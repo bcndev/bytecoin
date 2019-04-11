@@ -83,8 +83,8 @@ bool Node::on_binary_rpc(http::Client *who, http::RequestBody &&request, http::R
 bool Node::on_getblocktemplate(http::Client *who, http::RequestBody &&raw_request, json_rpc::Request &&raw_js_request,
     api::cnd::GetBlockTemplate::Request &&req, api::cnd::GetBlockTemplate::Response &res) {
 	api::cnd::GetStatus::Request sta;
-	sta.top_block_hash           = req.top_block_hash;
-	sta.transaction_pool_version = req.transaction_pool_version;
+	sta.top_block_hash                       = req.top_block_hash;
+	sta.transaction_pool_version             = req.transaction_pool_version;
 	api::cnd::GetStatus::Response status_res = create_status_response();
 	m_log(logging::INFO) << "Node received getblocktemplate REQ transaction_pool_version="
 	                     << (req.transaction_pool_version ? common::to_string(req.transaction_pool_version.get())
@@ -123,8 +123,8 @@ void Node::getblocktemplate(const api::cnd::GetBlockTemplate::Request &req, api:
 	size_t reserve_back_offset = 0;
 
 	try {
-		m_block_chain.create_mining_block_template(m_block_chain.get_tip_bid(), acc, blob_reserve, &block_template,
-		    &res.difficulty, &res.height, &reserve_back_offset);
+		m_block_chain.create_mining_block_template(m_block_chain.get_tip_bid(), acc, blob_reserve, req.miner_secret,
+		    &block_template, &res.difficulty, &res.height, &reserve_back_offset);
 	} catch (const std::exception &ex) {
 		m_log(logging::ERROR) << logging::BrightRed << "getblocktemplate exception " << ex.what() << std::endl;
 		throw;

@@ -144,7 +144,8 @@ void BlockChain::db_commit() {
 	m_log(logging::INFO) << "BlockChain::db_commit finished..." << std::endl;
 }
 
-bool BlockChain::add_block(const PreparedBlock &pb, api::BlockHeader *info, const std::string &source_address) {
+bool BlockChain::add_block(
+    const PreparedBlock &pb, api::BlockHeader *info, bool just_mined, const std::string &source_address) {
 	*info            = api::BlockHeader();
 	bool have_header = get_header(pb.bid, info);
 	bool have_block  = has_block(pb.bid);
@@ -193,7 +194,8 @@ bool BlockChain::add_block(const PreparedBlock &pb, api::BlockHeader *info, cons
 			build_blods();
 		auto tip_check_cd = get_checkpoint_difficulty(get_tip_bid());
 		auto bid_check_cd = get_checkpoint_difficulty(info->hash);
-		if (compare(bid_check_cd, info->cumulative_difficulty, tip_check_cd, get_tip_cumulative_difficulty()) > 0) {
+		if (compare(bid_check_cd, info->cumulative_difficulty, just_mined, tip_check_cd,
+		        get_tip_cumulative_difficulty()) > 0) {
 			if (get_tip_bid() == pb.block.header.previous_block_hash) {  // most common case optimization
 				redo_block(pb.bid, pb.block_data, pb.raw_block, pb.block, *info, pb.base_transaction_hash);
 				push_chain(*info);
@@ -890,11 +892,14 @@ void BlockChain::start_internal_import() {
 	std::set<Hash> main_chain_bids{m_internal_import_chain.begin(), m_internal_import_chain.end()};
 	m_log(logging::INFO) << "Found " << m_internal_import_chain.size() << " blocks from main chain" << std::endl;
 	size_t erased = 0, skipped = 0;
-	size_t total_items = m_db.get_approximate_items_count();
+	const size_t total_items          = m_db.get_approximate_items_count();
+	const std::string total_items_str = (total_items == std::numeric_limits<size_t>::max())
+	                                        ? "unknown"
+	                                        : common::to_string((total_items + 999999) / 1000000);
 	for (DB::Cursor cur = m_db.rbegin(std::string()); !cur.end();) {
 		if ((erased + skipped) % 1000000 == 0)
-			m_log(logging::INFO) << "Processing " << (erased + skipped) / 1000000 << "/"
-			                     << (total_items + 999999) / 1000000 << " million DB records" << std::endl;
+			m_log(logging::INFO) << "Processing " << (erased + skipped) / 1000000 << "/" << total_items_str
+			                     << " million DB records" << std::endl;
 		if (cur.get_suffix().find(BLOCK_PREFIX) == 0 &&
 		    cur.get_suffix().substr(cur.get_suffix().size() - BLOCK_SUFFIX.size()) == BLOCK_SUFFIX) {
 			Hash bid;
@@ -930,7 +935,7 @@ bool BlockChain::internal_import() {
 			}
 			PreparedBlock pb(std::move(rb), m_currency, nullptr);
 			api::BlockHeader info;
-			if (!add_block(pb, &info, "internal_import")) {
+			if (!add_block(pb, &info, false, "internal_import")) {
 				m_log(logging::WARNING) << "Block corrupted during internal import for height=" << get_tip_height() + 1
 				                        << " bid=" << bid << std::endl;
 				break;
@@ -1045,7 +1050,7 @@ bool BlockChain::add_checkpoint(const SignedCheckpoint &checkpoint, const std::s
 	auto tip_check_cd = get_checkpoint_difficulty(get_tip_bid());
 	for_each_tip([&](CumulativeDifficulty cd, Hash bid) -> bool {
 		auto bid_check_cd = get_checkpoint_difficulty(bid);
-		if (compare(bid_check_cd, cd, tip_check_cd, get_tip_cumulative_difficulty()) <= 0)
+		if (compare(bid_check_cd, cd, false, tip_check_cd, get_tip_cumulative_difficulty()) <= 0)
 			return true;
 		api::BlockHeader header = read_header(bid);
 		RawBlock raw_block;
@@ -1059,15 +1064,16 @@ bool BlockChain::add_checkpoint(const SignedCheckpoint &checkpoint, const std::s
 	return true;
 }
 
-int BlockChain::compare(
-    const CheckpointDifficulty &a, CumulativeDifficulty ca, const CheckpointDifficulty &b, CumulativeDifficulty cb) {
-	//	invariant(a.size() == b.size(), "size mismatch in BlockChain::compare");
+int BlockChain::compare(const CheckpointDifficulty &a, CumulativeDifficulty ca, bool a_just_mined,
+    const CheckpointDifficulty &b, CumulativeDifficulty cb) {
 	for (size_t i = a.size(); i-- > 0;)
 		if (a.at(i) != b.at(i))
 			return int(a.at(i)) - int(b.at(i));
 	if (ca < cb)
 		return -1;
 	if (ca > cb)
+		return 1;
+	if (a_just_mined)
 		return 1;
 	return 0;
 }
