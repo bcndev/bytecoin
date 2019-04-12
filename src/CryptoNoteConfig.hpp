@@ -215,12 +215,19 @@ constexpr const HardCheckpoint CHECKPOINTS[] = {
     {1628000, common::pfh<Hash>("4e7b55e53402c71c45cb97f8ed78ed3f128c802008c83b0153aa52c30b740c68")},
     {1670000, common::pfh<Hash>("58770b800108c72512a386783fd0a4326c74dc9f99b538337a195945b89a9a6f")},
     {1709000, common::pfh<Hash>("82185d3365e730074c4804b151c19d29ee4b2407772467853f96839567d8b45a")},
-	{1740000, common::pfh<Hash>("769ef18196c1ebeab9ef372e40475c2ce8c65ca7e22b0894e41f3d675343ab49")},
-	{1764000, common::pfh<Hash>("b79c80df808d6447965e5e75d0e2a40ab07e591e9efa8efa1be3945fe3278669")}};
+    {1740000, common::pfh<Hash>("769ef18196c1ebeab9ef372e40475c2ce8c65ca7e22b0894e41f3d675343ab49")},
+    {1764000, common::pfh<Hash>("b79c80df808d6447965e5e75d0e2a40ab07e591e9efa8efa1be3945fe3278669")}};
+
+// When adding checkpoint and BEFORE release, you MUST check that daemon fully syncs both mainnet and stagenet.
+
+// Be extra careful when setting checkpoint around consensus update heights. Follow rules:
+// 1. never set checkpoint after or to height where required # of votes for upgrade was gathered
+// 2. never set checkpoint before height where upgrade happened (with desired major version)
+// 3. after setting checkpoint after upgrade, modify upgrade_heights array
 
 constexpr const HardCheckpoint CHECKPOINTS_STAGENET[] = {
     {450, common::pfh<Hash>("c69823a6b3e0c1f724411e697219a9d31a2df900cb49bb0488b1a91a9989a805")},
     {30000, common::pfh<Hash>("4a3b02206d120bab6c3bef4a7bcbc1934b5327c27c181d790f4db407dc92c640")},
-	{49000, common::pfh<Hash>("1960a677cda6afd47dd4a928bf876b7cb7c9bd86107e3193ca9b0fd0926bad4c")},
-	{70000, common::pfh<Hash>("10ce87ab253c1142414a700336795057781572b5d9f026c57463ae420e456240")}};
+    {49000, common::pfh<Hash>("1960a677cda6afd47dd4a928bf876b7cb7c9bd86107e3193ca9b0fd0926bad4c")},
+    {70000, common::pfh<Hash>("10ce87ab253c1142414a700336795057781572b5d9f026c57463ae420e456240")}};
 }}  // namespace cn::parameters

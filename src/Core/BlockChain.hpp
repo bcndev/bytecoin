@@ -216,8 +216,7 @@ private:
 
 protected:
 	void build_blods();
-	bool fill_next_block_versions(const api::BlockHeader &prev_info, bool cooperative, uint8_t *major_mm,
-	    uint8_t *major_cm, uint8_t *minor) const;
+	bool fill_next_block_versions(const api::BlockHeader &prev_info, uint8_t *major_mm, uint8_t *major_cm) const;
 };
 
 }  // namespace cn

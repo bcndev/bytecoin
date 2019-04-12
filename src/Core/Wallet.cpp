@@ -765,7 +765,8 @@ WalletHD::WalletHD(const Currency &currency, logging::ILogger &log, const std::s
     const std::string &password, bool readonly)
     : Wallet(currency, log, path) {
 	bool created = false;
-	ewrap(m_db_dbi.open_check_create(readonly ? platform::O_READ_EXISTING : platform::O_OPEN_EXISTING, path, &created), Exception(api::WALLET_FILE_READ_ERROR, "Cannot open wallet file " + path));
+	ewrap(m_db_dbi.open_check_create(readonly ? platform::O_READ_EXISTING : platform::O_OPEN_EXISTING, path, &created),
+	    Exception(api::WALLET_FILE_READ_ERROR, "Cannot open wallet file " + path));
 
 	if (get_is_hardware()) {
 		auto connected = hardware::HardwareWallet::get_connected();
@@ -817,7 +818,8 @@ WalletHD::WalletHD(const Currency &currency, logging::ILogger &log, const std::s
 		m_hw = std::make_unique<hardware::Proxy>(std::move(connected.back()));
 	}
 	bool created = false;
-	ewrap(m_db_dbi.open_check_create(platform::O_CREATE_NEW, path, &created), Exception(api::WALLET_FILE_READ_ERROR, "Cannot create wallet file " + path));
+	ewrap(m_db_dbi.open_check_create(platform::O_CREATE_NEW, path, &created),
+	    Exception(api::WALLET_FILE_READ_ERROR, "Cannot create wallet file " + path));
 	m_db_dbi.exec(
 	    "CREATE TABLE unencrypted(key BLOB PRIMARY KEY COLLATE BINARY NOT NULL, value BLOB NOT NULL) WITHOUT ROWID");
 	m_db_dbi.exec(

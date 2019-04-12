@@ -272,8 +272,8 @@ void BlockChainState::check_standalone_consensus(
 	const bool is_amethyst = block.header.major_version >= m_currency.amethyst_block_version;
 	const auto body_proxy  = get_body_proxy_from_template(block.header);
 
-	uint8_t should_be_major_mm = 0, should_be_major_cm = 0, might_be_minor = 0;
-	if (!fill_next_block_versions(prev_info, false, &should_be_major_mm, &should_be_major_cm, &might_be_minor))
+	uint8_t should_be_major_mm = 0, should_be_major_cm = 0;
+	if (!fill_next_block_versions(prev_info, &should_be_major_mm, &should_be_major_cm))
 		throw ConsensusError("Block does not pass through last hard checkpoint");
 	if (block.header.major_version != should_be_major_mm && block.header.major_version != should_be_major_cm)
 		throw ConsensusError(common::to_string("Block version wrong", int(block.header.major_version), "instead of",
@@ -491,8 +491,9 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 		throw std::runtime_error("Attempt to mine from block we do not have");
 	*height                  = parent_info.height + 1;
 	*b                       = BlockTemplate{};
+	b->minor_version         = m_currency.upgrade_vote_minor;
 	uint8_t major_version_cm = 0;
-	if (!fill_next_block_versions(parent_info, false, &b->major_version, &major_version_cm, &b->minor_version))
+	if (!fill_next_block_versions(parent_info, &b->major_version, &major_version_cm))
 		throw std::runtime_error(
 		    "Mining of block in chain not passing through last hard checkpoint is not possible (will not be accepted by network anyway)");
 	const bool is_amethyst = b->major_version >= m_currency.amethyst_block_version;

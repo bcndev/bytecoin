@@ -1092,7 +1092,7 @@ bool BlockChain::add_blod_impl(const api::BlockHeader &header) {
 	bit->second.children.push_back(&blod);
 	blod.checkpoint_difficulty = blod.parent->checkpoint_difficulty;
 
-	if (m_currency.upgrade_desired_major_version) {
+	if (m_currency.wish_to_upgrade()) {
 		blod.vote_for_upgrade       = uint8_t(m_currency.is_upgrade_vote(header.major_version, header.minor_version));
 		blod.upgrade_decided_height = blod.parent->upgrade_decided_height;
 		if (!blod.upgrade_decided_height) {
@@ -1103,14 +1103,11 @@ bool BlockChain::add_blod_impl(const api::BlockHeader &header) {
 			invariant(blod.votes_for_upgrade_in_voting_window.size() <= m_currency.upgrade_voting_window, "");
 			size_t count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
 			    blod.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
-			//			if(count != 0)
-			//				std::cout << "Votes for version=" << int(m_currency.upgrade_desired_major_version) << "
-			// height=" << header.height << " votes=" << count << std::endl;
 			if (count >= m_currency.upgrade_votes_required()) {
 				blod.upgrade_decided_height = blod.height + m_currency.upgrade_window;
-				m_log(logging::INFO) << "Consensus upgrade decided on height=" << header.height
-				                     << " decided_height=" << blod.upgrade_decided_height << " bid=" << header.hash
-				                     << std::endl;
+				m_log(logging::INFO) << "Consensus upgrade votes gathered on height=" << header.height
+				                     << " upgrade_decided_height=" << blod.upgrade_decided_height
+				                     << " bid=" << header.hash << std::endl;
 				blod.votes_for_upgrade_in_voting_window.clear();
 			}
 		}
@@ -1142,6 +1139,9 @@ void BlockChain::build_blods() {
 	api::BlockHeader last_hard_checkpoint_header;
 	if (!get_header(m_currency.last_hard_checkpoint().hash, &last_hard_checkpoint_header))
 		return;
+	invariant(last_hard_checkpoint_header.hash == m_currency.genesis_block_hash || last_hard_checkpoint_header.major_version == 1 + m_currency.upgrade_heights.size(),
+	    "When adding checkpoint after consensus update, always update currency.upgrade_heights");
+
 	std::set<Hash> bad_header_hashes;   // sidechains that do not pass through last hard checkpoint
 	std::set<Hash> good_header_hashes;  // sidechains that pass through last hard checkpoint
 	std::vector<api::BlockHeader> good_headers;
@@ -1188,7 +1188,7 @@ void BlockChain::build_blods() {
 			Blod &blod  = m_blods[ha.hash];
 			blod.height = ha.height;
 			blod.hash   = ha.hash;
-			if (m_currency.upgrade_desired_major_version) {
+			if (m_currency.wish_to_upgrade()) {
 				blod.vote_for_upgrade = uint8_t(m_currency.is_upgrade_vote(ha.major_version, ha.minor_version));
 				Height first_height =
 				    m_currency.last_hard_checkpoint().height < m_currency.upgrade_voting_window - 1
@@ -1200,10 +1200,8 @@ void BlockChain::build_blods() {
 					blod.votes_for_upgrade_in_voting_window.push_back(vote);
 				}
 				blod.votes_for_upgrade_in_voting_window.push_back(blod.vote_for_upgrade);
-				size_t count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
-				    blod.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
-				invariant(
-				    count < m_currency.upgrade_votes_required(), "Upgrade happened before or on last hard checkpoint");
+				//				size_t count = std::count(blod.votes_for_upgrade_in_voting_window.begin(),
+				//				    blod.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
 			}
 		}
 	}
@@ -1213,7 +1211,7 @@ void BlockChain::build_blods() {
 void BlockChain::fill_statistics(api::cnd::GetStatistics::Response &res) const {
 	res.checkpoints = get_latest_checkpoints();
 
-	if (!m_currency.upgrade_desired_major_version)
+	if (!m_currency.wish_to_upgrade())
 		return;
 	auto bit = m_blods.find(get_tip_bid());
 	if (bit == m_blods.end())
@@ -1225,14 +1223,13 @@ void BlockChain::fill_statistics(api::cnd::GetStatistics::Response &res) const {
 }
 
 bool BlockChain::fill_next_block_versions(
-    const api::BlockHeader &prev_info, bool cooperative, uint8_t *major_mm, uint8_t *major_cm, uint8_t *minor) const {
+    const api::BlockHeader &prev_info, uint8_t *major_mm, uint8_t *major_cm) const {
 	*major_cm = *major_mm = m_currency.get_block_major_version_for_height(prev_info.height + 1);
+#if bytecoin_ALLOW_CM
 	if (*major_cm >= m_currency.amethyst_block_version)
 		*major_cm += 1;
-	*minor = 0;
-	if (*major_mm == m_currency.upgrade_from_major_version)
-		*minor = m_currency.upgrade_indicator_minor_version;
-	if (!m_currency.upgrade_desired_major_version)
+#endif
+	if (!m_currency.wish_to_upgrade())
 		return true;
 	if (m_blods.empty())
 		return true;
@@ -1241,10 +1238,11 @@ bool BlockChain::fill_next_block_versions(
 		return false;
 	if (!bit->second.upgrade_decided_height || prev_info.height + 1 < bit->second.upgrade_decided_height)
 		return true;
-	*major_cm = *major_mm = m_currency.upgrade_desired_major_version;
+	*major_cm = *major_mm = m_currency.upgrade_desired_major;
+#if bytecoin_ALLOW_CM
 	if (*major_cm >= m_currency.amethyst_block_version)
 		*major_cm += 1;
-	*minor = 0;
+#endif
 	return true;
 }
 

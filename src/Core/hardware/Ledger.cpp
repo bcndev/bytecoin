@@ -300,7 +300,7 @@ int Ledger::sendApdu(const uint8_t *data, size_t len, uint8_t *out, size_t out_l
 	//		int length_ignore = 0;
 	//		int result = libusb_interrupt_transfer(m_device.handle, 0x82, chunk, static_cast<int>(MAX_BLOCK),
 	//&length_ignore, TIMEOUT); 		if (result < 0) 			return result; 		if( !parse_chunk(chunk,
-	//MAX_BLOCK, DEFAULT_LEDGER_CHANNEL, sequence, &response_length, &response)) 			return -1;
+	// MAX_BLOCK, DEFAULT_LEDGER_CHANNEL, sequence, &response_length, &response)) 			return -1;
 	//	}
 	//	if(response.size() < 2)
 	//		return -1;
@@ -391,12 +391,12 @@ static void write_big_endian(T value, size_t size, common::IOutputStream *s) {
 void Ledger::get_app_info() {
 	common::VectorStream vs;
 
-	vs = common::VectorStream(sendApdu(INS_GET_APP_INFO, vs.buffer()));
+	vs                       = common::VectorStream(sendApdu(INS_GET_APP_INFO, vs.buffer()));
 	m_app_info.major_version = vs.read_byte();
 	m_app_info.minor_version = vs.read_byte();
 	m_app_info.patch_version = vs.read_byte();
 
-	static constexpr char expected_app_name[] = "Bytecoin";
+	static constexpr char expected_app_name[]       = "Bytecoin";
 	static constexpr uint8_t expected_app_name_size = sizeof(expected_app_name) - 1;
 
 	const uint8_t app_name_size = vs.read_byte();
@@ -407,7 +407,7 @@ void Ledger::get_app_info() {
 		throw std::runtime_error("invalid ledger app is running");
 
 	static constexpr uint8_t max_reasonable_version_size = 50;
-	const uint8_t version_size = vs.read_byte();
+	const uint8_t version_size                           = vs.read_byte();
 	if (version_size > max_reasonable_version_size)
 		throw std::runtime_error("invalid ledger app version");
 	vs.read(m_app_info.app_version, version_size);

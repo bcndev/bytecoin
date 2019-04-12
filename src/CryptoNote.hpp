@@ -111,7 +111,7 @@ struct BlockHeader {
 	// versions are serialized as varints, but values > 127 will break most miners
 	// which assume nonce is at fixed offset. Those miners also expect timestamp to occupy exactly 5 bytes.
 	uint8_t major_version = 0;
-	uint8_t minor_version = 0;  // Not version at all, used for hard fork voting
+	uint8_t minor_version = 0;  // Not version at all, used for consensus update voting
 	Timestamp timestamp   = 0;
 	Hash previous_block_hash;
 	BinaryArray nonce;  // 4 bytes, except in blocks with is_cm_mined() (variable-length there)

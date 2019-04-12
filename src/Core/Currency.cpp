@@ -73,19 +73,20 @@ Currency::Currency(const std::string &net)
     , key_image_subgroup_checking_height(KEY_IMAGE_SUBGROUP_CHECKING_HEIGHT)
     , amethyst_block_version(BLOCK_VERSION_AMETHYST)
     , amethyst_transaction_version(TRANSACTION_VERSION_AMETHYST)
-    , upgrade_from_major_version(3)
-    , upgrade_indicator_minor_version(7)
-    , upgrade_desired_major_version(4)
+    , upgrade_vote_minor(7)
+    , upgrade_indicator_minor(7)
+    , upgrade_desired_major(4)
     , upgrade_voting_window(UPGRADE_VOTING_WINDOW)
     , upgrade_window(UPGRADE_WINDOW)
     , sendproof_base58_prefix(SENDPROOF_BASE58_PREFIX) {
+	// for upgrade_desired_major=4 upgrade_indicator_minor=7
 	if (net == "test") {
 		upgrade_heights       = {1, 1};  // block 1 is already V3
 		upgrade_voting_window = 30;
 		upgrade_window        = 10;
 	}
 	if (net == "stage") {
-		upgrade_heights = {1, 1};  // block 1 is already V3
+		upgrade_heights = {1, 1, 64233};  // block 1 is already V3
 		upgrade_window  = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;
 	}
 	{
@@ -165,14 +166,10 @@ bool Currency::is_transaction_unlocked(uint8_t block_major_version, BlockOrTimes
 }
 
 bool Currency::is_upgrade_vote(uint8_t major, uint8_t minor) const {
-	if (major == upgrade_from_major_version)
-		return minor == upgrade_indicator_minor_version;
-#if bytecoin_ALLOW_CM
-	if (upgrade_from_major_version >= amethyst_block_version && major == upgrade_from_major_version + 1)
-		return minor == upgrade_indicator_minor_version;
-#endif
-	return false;
+	return minor >= upgrade_indicator_minor;
 }
+
+bool Currency::wish_to_upgrade() const { return upgrade_desired_major > 1 + upgrade_heights.size(); }
 
 Height Currency::expected_blocks_per_day() const {
 	return 24 * 60 * 60 / difficulty_target / platform::get_time_multiplier_for_tests();
@@ -407,20 +404,20 @@ bool Currency::parse_account_address_string(const std::string &str, AccountAddre
 }
 
 // We used C-style here to have same code on Ledger
-static void c_ffw(Amount am, size_t digs, char * buf) {
-	for(;digs > 0; digs -= 1 ) {
-		Amount d = am % 10;
-		am = am / 10;
-		buf[digs - 1] = '0' + d;
+static void c_ffw(Amount am, size_t digs, char *buf) {
+	while (digs-- > 0) {
+		Amount d  = am % 10;
+		am        = am / 10;
+		buf[digs] = '0' + d;
 	}
 }
 
-size_t c_format_amount(Amount amount, char * buffer, size_t len){
+size_t c_format_amount(Amount amount, char *buffer, size_t len) {
 	const size_t COIN = 100000000;
 	const size_t CENT = COIN / 100;
-	Amount ia = amount / COIN;
-	Amount fa = amount - ia * COIN;
-	size_t pos = 0;
+	Amount ia         = amount / COIN;
+	Amount fa         = amount - ia * COIN;
+	size_t pos        = 0;
 	while (ia >= 1000) {
 		pos += 4;
 		memmove(buffer + 4, buffer, pos);
@@ -428,13 +425,13 @@ size_t c_format_amount(Amount amount, char * buffer, size_t len){
 		c_ffw(ia % 1000, 3, buffer + 1);
 		ia /= 1000;
 	}
-	while(true){
+	while (true) {
 		Amount d = ia % 10;
-		ia = ia / 10;
+		ia       = ia / 10;
 		pos += 1;
 		memmove(buffer + 1, buffer, pos);
 		buffer[0] = '0' + d;
-		if(ia == 0)
+		if (ia == 0)
 			break;
 	}
 	if (fa != 0) {  // cents
@@ -444,13 +441,13 @@ size_t c_format_amount(Amount amount, char * buffer, size_t len){
 		fa %= CENT;
 	}
 	if (fa != 0) {
-//		buffer[pos++] = '\'';
+		//		buffer[pos++] = '\'';
 		c_ffw(fa / 1000, 3, buffer + pos);
 		pos += 3;
 		fa %= 1000;
 	}
 	if (fa != 0) {
-//		buffer[pos++] = '\'';
+		//		buffer[pos++] = '\'';
 		c_ffw(fa, 3, buffer + pos);
 		pos += 3;
 	}
@@ -478,15 +475,15 @@ std::string Currency::format_amount(size_t number_of_decimal_places, Amount amou
 		fa %= DECIMAL_PLACES.at(number_of_decimal_places - 2);
 	}
 	if (fa != 0) {
-		result += ffw(fa / 1000, 3); // "'" +
+		result += ffw(fa / 1000, 3);
 		fa %= 1000;
 	}
 	if (fa != 0)
-		result += ffw(fa, 3); // "'" +
-//	char buffer[64]{};
-//	std::string res2(buffer, c_format_amount(amount, buffer, sizeof(buffer)));
-//	invariant(res2 == result, "");
-//	std::cout << amount << " -> " << result << std::endl;
+		result += ffw(fa, 3);
+	//   	char buffer[64]{};
+	//   	std::string res2(buffer, c_format_amount(amount, buffer, sizeof(buffer)));
+	//   	invariant(res2 == result, "c_format_amount error");
+	//   	std::cout << amount << " -> " << result << std::endl;
 	return result;
 }
 

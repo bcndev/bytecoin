@@ -70,10 +70,11 @@ public:
 	uint8_t amethyst_transaction_version;
 
 	// upgrade voting threshold must not be reached before or at last sw checkpoint!
-	uint8_t upgrade_from_major_version;
-	uint8_t upgrade_indicator_minor_version;
+	uint8_t upgrade_vote_minor;
+	uint8_t upgrade_indicator_minor;
 	bool is_upgrade_vote(uint8_t major, uint8_t minor) const;
-	uint8_t upgrade_desired_major_version;
+	bool wish_to_upgrade() const;
+	uint8_t upgrade_desired_major;
 	Height upgrade_voting_window;
 	Height upgrade_votes_required() const;
 	Height upgrade_window;

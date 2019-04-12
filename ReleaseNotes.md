@@ -1,5 +1,9 @@
 ## Release Notes
 
+### v3.4.2-beta-20190412 (Amethyst)
+
+- Fixed a stagenet voting bug.
+
 ### v3.4.2-beta-20190411 (Amethyst)
 
 - Fixed problem when `bytecoind` stops responding via JSON RPC API.
@@ -14,7 +18,7 @@
 - Trezor and Ledger early support in `walletd`.
 
 *Incompatible API changes*
-- deprecated `binary_size` field removed from transaction in all contexts. Please use the `size` field.
+- Deprecated `binary_size` field removed from transaction in all contexts. Please use the `size` field.
 
 ### v3.4.1 (Amethyst)
 

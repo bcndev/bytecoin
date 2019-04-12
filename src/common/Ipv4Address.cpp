@@ -100,8 +100,8 @@ void parse_ip_address_and_port(const std::string &addr, BinaryArray *ip, uint16_
 	//
 	//	*ip = BinaryArray{
 	//	    static_cast<uint8_t>(v[0]), static_cast<uint8_t>(v[1]), static_cast<uint8_t>(v[2]),
-	//static_cast<uint8_t>(v[3])}; 	if (local_port > 65535) 		return false; 	*port = static_cast<uint16_t>(local_port);
-	//	return true;
+	// static_cast<uint8_t>(v[3])}; 	if (local_port > 65535) 		return false; 	*port =
+	// static_cast<uint16_t>(local_port); 	return true;
 }
 
 void parse_ip_address_and_port(const std::string &addr, std::string *ip, uint16_t *port) {
