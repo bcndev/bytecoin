@@ -476,13 +476,13 @@ std::vector<WalletRecord> WalletContainerStorage::generate_new_addresses(const s
 
 AccountAddress WalletContainerStorage::record_to_address(size_t index) const {
 	const WalletRecord &record = m_wallet_records.at(index);
-	return AccountAddressSimple{record.spend_public_key, m_view_public_key};
+	return AccountAddressLegacy{record.spend_public_key, m_view_public_key};
 }
 
 bool WalletContainerStorage::get_record(const AccountAddress &v_addr, size_t *index, WalletRecord *record) const {
-	if (v_addr.type() != typeid(AccountAddressSimple))
+	if (v_addr.type() != typeid(AccountAddressLegacy))
 		return false;
-	auto &addr = boost::get<AccountAddressSimple>(v_addr);
+	auto &addr = boost::get<AccountAddressLegacy>(v_addr);
 	auto rit   = m_records_map.find(addr.S);
 	if (m_view_public_key != addr.V || rit == m_records_map.end())
 		return false;
@@ -572,7 +572,7 @@ Wallet::History WalletContainerStorage::load_history(const Hash &tid) const {
 	BinaryArray dec(hist.size() - sizeof(chacha_iv), 0);
 	chacha8(hist.data() + sizeof(chacha_iv), hist.size() - sizeof(chacha_iv), m_history_key, *iv, dec.data());
 	for (size_t i = 0; i != dec.size() / (2 * sizeof(PublicKey)); ++i) {
-		AccountAddressSimple ad;
+		AccountAddressLegacy ad;
 		memcpy(ad.V.data, dec.data() + i * 2 * sizeof(PublicKey), sizeof(PublicKey));
 		memcpy(ad.S.data, dec.data() + i * 2 * sizeof(PublicKey) + sizeof(PublicKey), sizeof(PublicKey));
 		used_addresses.insert(ad);
@@ -612,7 +612,7 @@ void WalletContainerStorage::payment_queue_remove(const Hash &tid) {
 }
 
 void WalletContainerStorage::set_label(const std::string &address, const std::string &label) {
-	throw std::runtime_error("Linkable wallet file cannot store labels");
+	throw std::runtime_error("Legacy wallet file cannot store labels");
 }
 
 Wallet::OutputHandler WalletContainerStorage::get_output_handler() const {
@@ -1137,13 +1137,13 @@ AccountAddress WalletHD::record_to_address(size_t index) const {
 		invariant(sv == sv2, "");
 	}
 	// TODO - do multiplication only once
-	return AccountAddressUnlinkable{record.spend_public_key, sv2};
+	return AccountAddressAmethyst{record.spend_public_key, sv2};
 }
 
 bool WalletHD::get_record(const AccountAddress &v_addr, size_t *index, WalletRecord *record) const {
-	if (v_addr.type() != typeid(AccountAddressUnlinkable))
+	if (v_addr.type() != typeid(AccountAddressAmethyst))
 		return false;
-	auto &addr = boost::get<AccountAddressUnlinkable>(v_addr);
+	auto &addr = boost::get<AccountAddressAmethyst>(v_addr);
 	auto rit   = m_records_map.find(addr.S);
 	if (rit == m_records_map.end() || rit->second >= get_actual_records_count())
 		return false;
@@ -1257,7 +1257,7 @@ void WalletHD::import_view_key() {
 std::string WalletHD::export_keys() const {
 	std::string mnemonic;
 	if (!get("mnemonic", mnemonic))
-		throw std::runtime_error("Exporting keys (mnemonic) not supported by view-only HD wallet");
+		throw std::runtime_error("Exporting mnemonic not supported by view-only or hardware-backed wallet");
 	return mnemonic;
 }
 

@@ -1,0 +1,332 @@
+# Requirements:
+#   set 'GithubPAT' secure variable in the Azure Pipelines UI
+
+name: $(System.TeamProject)-$(Build.SourceBranchName)-$(Date:yyyyMMdd-HHmm)$(Rev:.r)
+
+trigger:
+  branches:
+    include:
+    - releases/*
+  paths:
+    exclude:
+    - README.md
+
+pr: none
+# pr:
+#   autoCancel: true
+#   branches:
+#     include:
+#     - master
+#     - releases/*
+#   paths:
+#     exclude:
+#     - README.md
+
+variables:
+  daemonsRepo: $(Build.Repository.Name)
+
+jobs:
+
+####################### Linux #######################
+- job: Linux
+  pool:
+    vmImage: ubuntu-16.04
+  steps:
+  - checkout: none
+
+  - script: |
+      echo Build.BuildId=$(Build.BuildId)
+      echo Build.BuildNumber=$(Build.BuildNumber)
+      echo Build.BuildUri=$(Build.BuildUri)
+    displayName: Echo predefined vars
+
+  - script: |
+      sudo apt-get install -y libusb-1.0-0-dev
+    displayName: Install libusb-1.0
+
+  - script: |
+      mkdir bytecoin && cd bytecoin
+      git init
+      git remote add origin https://user:$(GithubPAT)@github.com/$(daemonsRepo)
+      git fetch --depth 1 origin $(Build.SourceBranch)
+      git checkout FETCH_HEAD
+    displayName: Clone daemons code
+
+  - script: |
+      wget -c 'https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz'
+      mkdir boost && tar -xzf ./boost_1_69_0.tar.gz --directory boost --strip-components=1
+    displayName: Fetch boost
+
+  - script: |
+      git clone --single-branch --depth 1 https://github.com/bcndev/lmdb.git
+    displayName: Clone LMDB
+
+  - script: |
+      git clone --single-branch --branch OpenSSL_1_1_1b --depth 1 https://github.com/openssl/openssl.git
+    displayName: Clone OpenSSL
+
+  - script: |
+      cd openssl && ./Configure linux-x86_64 no-shared && make -j$(nproc)
+    displayName: Build OpenSSL
+
+  - script: |
+      mkdir bytecoin/build && cd bytecoin/build
+      cmake -DWITH_LEDGER=1 .. && make -j$(nproc)
+    displayName: Build daemons
+
+  - script: |
+      zip -v -j $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-linux64.zip bytecoin/bin/bytecoind bytecoin/bin/minerd bytecoin/bin/walletd
+    displayName: Zip daemons
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      pathToPublish: $(Build.ArtifactStagingDirectory)
+      artifactName: linux64
+    displayName: Publish artifacts
+
+
+####################### Macos #######################
+- job: Mac
+  pool:
+    vmImage: macOS-10.13
+  variables:
+    MACOSX_DEPLOYMENT_TARGET: 10.11
+  condition: |
+    and(
+      succeeded(),
+      or(
+        startsWith(variables['build.sourceBranch'], 'refs/heads/releases/'),
+        startsWith(variables['build.sourceBranch'], 'refs/tags/')
+    ))
+  steps:
+  - checkout: none
+
+  - script: |
+      brew install boost
+    displayName: Install boost from Homebrew
+
+  - script: |
+      curl -L -O https://github.com/libusb/libusb/releases/download/v1.0.22/libusb-1.0.22.tar.bz2
+      mkdir libusb && tar -xvf libusb-1.0.22.tar.bz2 --directory libusb --strip-components=1
+      cd libusb
+      ./configure --prefix=`pwd`
+      make install
+    displayName: Build libusb
+
+  - script: |
+      mkdir bytecoin && cd bytecoin
+      git init
+      git remote add origin https://user:$(GithubPAT)@github.com/$(daemonsRepo)
+      git fetch --depth 1 origin $(Build.SourceBranch)
+      git checkout FETCH_HEAD
+    displayName: Clone daemons code
+
+  - script: |
+      git clone --single-branch --depth 1 https://github.com/bcndev/lmdb.git
+    displayName: Clone LMDB
+
+  - script: |
+      git clone --single-branch --branch OpenSSL_1_1_1b --depth 1 https://github.com/openssl/openssl.git
+    displayName: Clone OpenSSL
+
+  - script: |
+      cd openssl && ./Configure darwin64-x86_64-cc no-shared && make -j
+    displayName: Build OpenSSL
+
+  - script: |
+      mkdir bytecoin/build && cd bytecoin/build
+      cmake -DWITH_LEDGER=1 .. && make -j
+    displayName: Build daemons
+
+  - script: |
+      zip -v -j $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-macos.zip bytecoin/bin/bytecoind bytecoin/bin/minerd bytecoin/bin/walletd
+    displayName: Zip daemons
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      pathToPublish: $(Build.ArtifactStagingDirectory)
+      artifactName: macos
+    displayName: Publish artifacts
+
+
+####################### Windows #######################
+- job: Windows
+  pool:
+    vmImage: vs2017-win2016
+  condition: |
+    and(
+      succeeded(),
+      or(
+        startsWith(variables['build.sourceBranch'], 'refs/heads/releases/'),
+        startsWith(variables['build.sourceBranch'], 'refs/tags/')
+    ))
+  variables:
+    vsPath: C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise
+    vsCMakeDir: $(vsPath)\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin
+    vsMSBuildDir: $(vsPath)\MSBuild\15.0\Bin
+    VCINSTALLDIR: $(vsPath)\VC
+  strategy:
+    matrix:
+      win64:
+        opensslDir: openssl
+        opensslConfig: VC-WIN64A
+        generatorName: Visual Studio 15 2017 Win64
+        arch: 64
+      win32:
+        opensslDir: openssl32
+        opensslConfig: VC-WIN32
+        generatorName: Visual Studio 15 2017
+        arch: 32
+  steps:
+  - checkout: none
+
+  - bash: |
+      curl -O http://strawberryperl.com/download/5.28.1.1/strawberry-perl-5.28.1.1-64bit-portable.zip
+      7z x strawberry-perl-5.28.1.1-64bit-portable.zip -ostrawberry-perl
+    displayName: Install ActivePerl (required to build OpenSSL)
+
+  - bash: |
+      curl -L -O http://download.qt.io/official_releases/jom/jom.zip
+      7z x jom.zip -ojom
+    displayName: Install Jom
+
+  - bash: |
+      mkdir bytecoin && cd bytecoin
+      git init
+      git remote add origin https://user:$(GithubPAT)@github.com/$(daemonsRepo)
+      git fetch --depth 1 origin $(Build.SourceBranch)
+      git checkout FETCH_HEAD
+    displayName: Clone daemons code
+
+  - bash: |
+      curl -L -O https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.zip
+      7z x boost_1_69_0.zip
+      mv boost_1_69_0 boost
+    displayName: Fetch boost
+
+  - bash: |
+      curl -L -O https://github.com/libusb/libusb/releases/download/v1.0.22/libusb-1.0.22.7z
+      7z x libusb-1.0.22.7z -olibusb
+    displayName: Fetch libusb
+
+  - bash: |
+      git clone --single-branch --depth 1 https://github.com/bcndev/lmdb.git
+    displayName: Clone LMDB
+
+  - bash: |
+      git clone --single-branch --branch OpenSSL_1_1_1b --depth 1 https://github.com/openssl/openssl.git $(opensslDir)
+    displayName: Clone OpenSSL
+
+  - bash: |
+      sed -i 's/  lib_cflags       => add("\/Zi \/Fdossl_static.pdb"),/# lib_cflags       => add("\/Zi \/Fdossl_static.pdb"),/g' $(opensslDir)/Configurations/10-main.conf
+      sed -i 's/  dso_cflags       => "\/Zi \/Fddso.pdb",/# dso_cflags       => "\/Zi \/Fddso.pdb",/g' $(opensslDir)/Configurations/10-main.conf
+      sed -i 's/  bin_cflags       => "\/Zi \/Fdapp.pdb",/# bin_cflags       => "\/Zi \/Fdapp.pdb",/g' $(opensslDir)/Configurations/10-main.conf
+    displayName: Patch OpenSSL config files to build OpenSSL using many threads
+    # we have to do it because of:
+    #   fatal error C1041: cannot open program database openssl\ossl_static.pdb;
+    #   if multiple CL.EXE write to the same .PDB file, please use /FS
+    # But we do not need the debug files and there is no option to disable them.
+
+  - bash: |
+      cd $(opensslDir)
+      ../strawberry-perl/perl/bin/perl.exe Configure $(opensslConfig) no-shared no-asm no-stdio no-tests
+       echo "call \"$VCINSTALLDIR\Auxiliary\Build\vcvars$(arch).bat\"" > compile.bat
+       echo "..\jom\jom -j %NUMBER_OF_PROCESSORS%" >> compile.bat
+      ./compile.bat
+    displayName: Build OpenSSL
+
+  - bash: |
+      mkdir bytecoin/build && cd bytecoin/build
+      "$(vsCMakeDir)"/cmake.exe -DWITH_LEDGER=1 -G "$(generatorName)" --config RelWithDebInfo ..
+      CL=/MP
+      "$(vsMSBuildDir)"/msbuild.exe ALL_BUILD.vcxproj -maxcpucount -p:Configuration=RelWithDebInfo
+    displayName: Build daemons
+
+  - bash: |
+      mv -v bytecoin/bin/RelWithDebInfo/* bytecoin/bin
+      mv -v bytecoin/libs/RelWithDebInfo/* bytecoin/libs
+    displayName: Move daemons from RelWithDebInfo to bin/ or libs/
+
+  - bash: |
+      cp -v libusb/MS$(arch)/dll/libusb-1.0.dll bytecoin/bin
+    displayName: Copy libusb to bytecoin/bin
+
+  - bash: |
+      7z a "$(Build.ArtifactStagingDirectory)"/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win$(arch).zip \
+        ./bytecoin/bin/bytecoind.exe \
+        ./bytecoin/bin/bytecoind.pdb \
+        ./bytecoin/bin/minerd.exe \
+        ./bytecoin/bin/minerd.pdb \
+        ./bytecoin/bin/walletd.exe \
+        ./bytecoin/bin/walletd.pdb \
+        ./bytecoin/bin/libusb-1.0.dll
+    displayName: Zip daemons
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      pathToPublish: $(Build.ArtifactStagingDirectory)
+      artifactName: win$(arch)
+    displayName: Publish artifacts
+
+#############################
+- job: CreateGithubRelease
+  pool:
+    vmImage: ubuntu-16.04
+  dependsOn:
+  - Linux
+  - Mac
+  - Windows
+  condition: |
+    and(
+      succeeded(),
+      or(
+        startsWith(variables['build.sourceBranch'], 'refs/heads/releases/'),
+        startsWith(variables['build.sourceBranch'], 'refs/tags/')
+    ))
+  steps:
+  - checkout: none
+
+  - task: DownloadBuildArtifacts@0
+    displayName: Download artifacts
+    inputs:
+      downloadType: specific
+      itemPattern: '**'
+      downloadPath: '$(Build.ArtifactStagingDirectory)'
+
+  - script: |
+      set -e
+      set -o xtrace
+      ls -alh $(Build.ArtifactStagingDirectory)
+      [[ `echo $(Build.SourceBranchName) | grep '-'` ]] && preRelease=true || preRelease=false
+      curl -H "Authorization: token $(GithubPAT)" \
+        -d '{ "tag_name": "v$(Build.SourceBranchName)",
+            "target_commitish": "$(Build.SourceVersion)",
+            "name": "v$(Build.SourceBranchName)",
+            "draft": true,
+            "prerelease": '$preRelease'}' \
+        https://api.github.com/repos/$(daemonsRepo)/releases > resp
+      cat resp
+      release_id=`cat resp | jq -r '.id'`
+      echo release_id=$release_id
+      curl \
+        -H "Authorization: token $(GithubPAT)" \
+        -H "Content-Type: application/zip" -X POST \
+        --data-binary "@$(Build.ArtifactStagingDirectory)/linux64/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-linux64.zip" \
+        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-linux64.zip"
+      curl \
+        -H "Authorization: token $(GithubPAT)" \
+        -H "Content-Type: application/zip" -X POST \
+        --data-binary "@$(Build.ArtifactStagingDirectory)/macos/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-macos.zip" \
+        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-macos.zip"
+      curl \
+        -H "Authorization: token $(GithubPAT)" \
+        -H "Content-Type: application/zip" -X POST \
+        --data-binary "@$(Build.ArtifactStagingDirectory)/win64/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win64.zip" \
+        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win64.zip"
+      curl \
+        -H "Authorization: token $(GithubPAT)" \
+        -H "Content-Type: application/zip" -X POST \
+        --data-binary "@$(Build.ArtifactStagingDirectory)/win32/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win32.zip" \
+        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win32.zip"
+    displayName: Create github release in daemons repo
+

@@ -133,6 +133,15 @@ BlockChain::BlockChain(logging::ILogger &log, const Config &config, const Curren
 		m_log(logging::INFO) << "BlockChain continue internal import of blocks, count="
 		                     << m_internal_import_chain.size() << std::endl;
 	}
+	//	m_db.debug_print_index_size(BLOCK_PREFIX);
+	//	m_db.debug_print_index_size(TRANSACTION_PREFIX);
+	//	m_db.debug_print_index_size(TIP_CHAIN_PREFIX);
+	//	m_db.debug_print_index_size(TIMESTAMP_BLOCK_PREFIX);
+
+	//	m_db.debug_print_index_size(CHECKPOINT_PREFIX_STABLE);
+	//	m_db.debug_print_index_size(CHECKPOINT_PREFIX_LATEST);
+	//	m_db.debug_print_index_size(CHILDREN_PREFIX);
+	//	m_db.debug_print_index_size(CD_TIPS_PREFIX);
 }
 
 void BlockChain::db_commit() {
@@ -1139,7 +1148,8 @@ void BlockChain::build_blods() {
 	api::BlockHeader last_hard_checkpoint_header;
 	if (!get_header(m_currency.last_hard_checkpoint().hash, &last_hard_checkpoint_header))
 		return;
-	invariant(last_hard_checkpoint_header.hash == m_currency.genesis_block_hash || last_hard_checkpoint_header.major_version == 1 + m_currency.upgrade_heights.size(),
+	invariant(last_hard_checkpoint_header.hash == m_currency.genesis_block_hash ||
+	              last_hard_checkpoint_header.major_version == 1 + m_currency.upgrade_heights.size(),
 	    "When adding checkpoint after consensus update, always update currency.upgrade_heights");
 
 	std::set<Hash> bad_header_hashes;   // sidechains that do not pass through last hard checkpoint

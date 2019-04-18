@@ -1,5 +1,14 @@
 ## Release Notes
 
+### v3.4.2 (Amethyst)
+
+- Fixed merge mining related bug affecting blocks version 4 (amethyst). All miners not upgraded to 3.4.2 at the moment of consensus update will produce broken blocks.
+- Fixed crash when disconnecting Ledger while scanning blockchain.
+- Fixed behavior of the get_transfers method when transactions from a memory pool are wrongly returned for some `from_height` and `to_height` values. 
+
+*Incompatible API changes*
+- In response to the `get_wallet_info` `walletd`'s method, boolean field `amethyst` changed to string `wallet_type`
+
 ### v3.4.2-beta-20190412 (Amethyst)
 
 - Fixed a stagenet voting bug.

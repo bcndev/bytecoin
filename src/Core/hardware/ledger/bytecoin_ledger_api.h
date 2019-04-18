@@ -8,6 +8,7 @@
 
 #define BYTECOIN_MAX_OUTPUT_INDEXES 16
 #define BYTECOIN_MAX_BUFFER_SIZE    128
+#define BYTECOIN_MAX_SCAN_OUTPUTS   7
 
 // INS must be even and cannot start with 9 or 6
 #define INS_GET_WALLET_KEYS           0x30

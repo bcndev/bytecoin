@@ -21,32 +21,30 @@ else()
     set(OPENSSL_ROOT ${PARENT_DIR}/openssl32)
 endif()
 
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.11")
+endif()
 if(WIN32)
     add_definitions(-D_SCL_SECURE_NO_WARNINGS=1 -D_CRT_SECURE_NO_WARNINGS=1 -D_WIN32_WINNT=0x0501)
 else()
-	if(APPLE)
-        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.11")
-    endif()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -maes -g -Wall -Wextra -Werror=return-type -Wno-unused-parameter")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -maes -g -Wall -Wextra -Werror=return-type -Wno-unused-parameter")
+    # We can build on old Ubuntu 14 with clang by adding next line (does not work with add_compile_options)
+    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+    # Binaries will need sudo apt-get install libc++-dev to run on machines without clang
+    add_compile_options(-maes -g -Wall -Wextra -Werror=return-type -Wno-unused-parameter)
     # We can use -Wshadow with clang occasionally
     if(BETTER_DEBUG)
         message(STATUS "Using better debug: " ${BETTER_DEBUG})
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0")
+        add_compile_options(-O0)
     else()
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
+        add_compile_options(-O2)
     endif()
     message(STATUS "Instrumentation usage: " ${USE_INSTRUMENTATION})
     message(STATUS "Thread sanitizer usage: " ${WITH_THREAD_SANITIZER})
     if(USE_INSTRUMENTATION)
         if(WITH_THREAD_SANITIZER)
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread")
-            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=thread")
+            add_compile_options(-fsanitize=thread)
         else()
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -fsanitize=address,undefined")
-            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer -fsanitize=address,undefined")
+            add_compile_options(-fno-omit-frame-pointer -fsanitize=address,undefined)
         endif()
     endif()
 endif()
@@ -61,9 +59,9 @@ if(USE_SQLITE)
 else()
     message(STATUS "Database selected: LMDB")
     include_directories(../lmdb/libraries/liblmdb)
-	if(NOT EXISTS "${PARENT_DIR}/lmdb/libraries/liblmdb/mdb.c")
-		message(FATAL_ERROR "${PARENT_DIR}/lmdb/libraries/liblmdb/mdb.c not found. Make sure lmdb is cloned into ../lmdb/")
-	endif()
+    if(NOT EXISTS "${PARENT_DIR}/lmdb/libraries/liblmdb/mdb.c")
+        message(FATAL_ERROR "${PARENT_DIR}/lmdb/libraries/liblmdb/mdb.c not found. Make sure lmdb is cloned into ../lmdb/")
+    endif()
     set(SRC_WARNINGS_DB ${SRC_WARNINGS_DB} ../lmdb/libraries/liblmdb/mdb.c ../lmdb/libraries/liblmdb/midl.c)
     set(SRC_DB ${SRC_DB} src/platform/DBlmdb.cpp src/platform/DBlmdb.hpp)
 endif()
@@ -91,7 +89,7 @@ file(GLOB SRC_LOGGING src/logging/*.cpp src/logging/*.hpp)
 file(GLOB SRC_P2P src/p2p/*.cpp src/p2p/*.hpp)
 file(GLOB SRC_CORE src/Core/*.cpp src/Core/*.hpp
         src/Core/hardware/*.cpp src/Core/hardware/*.hpp
-		src/Core/hardware/trezor/*.cpp src/Core/hardware/trezor/*.hpp        
+        src/Core/hardware/trezor/*.cpp src/Core/hardware/trezor/*.hpp
         src/CryptoNote.hpp src/CryptoNote.cpp
         src/rpc_api.hpp src/rpc_api.cpp
         vendor/hmac/*.h vendor/hmac/*.c)
@@ -167,6 +165,15 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/libs")
 add_library(bytecoin-crypto ${SRC_CRYPTO})
 add_library(bytecoin-core ${SOURCE_FILES})
 target_link_libraries(bytecoin-core bytecoin-crypto ${USBLIB_LIBRARY})
+
+link_libraries(bytecoin-crypto bytecoin-core)
+if(APPLE)
+    link_libraries(-dead_strip)
+endif()
+if(NOT WIN32)
+    link_libraries(${LINK_OPENSSL} dl pthread)
+endif()
+
 if(WIN32)
     add_executable(walletd src/main_walletd.cpp src/bytecoin.rc) # .rc works only if referenced directly in add_executable
     add_executable(${CRYPTONOTE_NAME}d src/main_bytecoind.cpp src/bytecoin.rc) # .rc works only if referenced directly in add_executable
@@ -200,21 +207,10 @@ else()
 endif()
 include_directories(${Boost_INCLUDE_DIRS})
 
-target_link_libraries(walletd bytecoin-crypto bytecoin-core ${USBLIB_LIBRARY})
-target_link_libraries(${CRYPTONOTE_NAME}d bytecoin-crypto bytecoin-core)
-target_link_libraries(minerd bytecoin-crypto bytecoin-core)
-target_link_libraries(tests bytecoin-crypto bytecoin-core)
+target_link_libraries(walletd ${USBLIB_LIBRARY})
 
-if(NOT WIN32)
-    if(APPLE)
-        target_link_libraries(walletd "-framework Foundation" "-framework IOKit" -dead_strip ) # -dead_strip_dylibs
-        target_link_libraries(${CRYPTONOTE_NAME}d "-framework Foundation" "-framework IOKit" -dead_strip ) # -dead_strip_dylibs
-        target_link_libraries(minerd -dead_strip ) # -dead_strip_dylibs
-        target_link_libraries(tests -dead_strip ) # -dead_strip_dylibs
-    endif()
-    target_link_libraries(walletd ${LINK_OPENSSL} dl pthread)
-    target_link_libraries(${CRYPTONOTE_NAME}d ${LINK_OPENSSL} dl pthread)
-    target_link_libraries(minerd ${LINK_OPENSSL} dl pthread)
-    target_link_libraries(tests ${LINK_OPENSSL} dl pthread)
+if(APPLE)
+    target_link_libraries(walletd "-framework Foundation" "-framework IOKit") # -dead_strip_dylibs
+    target_link_libraries(${CRYPTONOTE_NAME}d "-framework Foundation" "-framework IOKit") # -dead_strip_dylibs
 endif()
 

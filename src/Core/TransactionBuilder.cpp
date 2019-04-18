@@ -33,8 +33,8 @@ OutputKey TransactionBuilder::create_output(bool tx_amethyst, const AccountAddre
 	//	          << output_secret_address_type << std::endl;
 
 	if (!tx_amethyst) {
-		if (to.type() == typeid(AccountAddressSimple)) {
-			auto &addr                     = boost::get<AccountAddressSimple>(to);
+		if (to.type() == typeid(AccountAddressLegacy)) {
+			auto &addr                     = boost::get<AccountAddressLegacy>(to);
 			const KeyDerivation derivation = crypto::generate_key_derivation(addr.V, tx_secret_key);
 			out_key.public_key             = crypto::derive_output_public_key(derivation, output_index, addr.S);
 			return out_key;
@@ -42,21 +42,21 @@ OutputKey TransactionBuilder::create_output(bool tx_amethyst, const AccountAddre
 		throw std::runtime_error(
 		    "TransactionBuilder::create_output output type forbidden for transaction version, wait for amethyst upgrade");
 	}
-	if (to.type() == typeid(AccountAddressSimple)) {
-		auto &addr         = boost::get<AccountAddressSimple>(to);
+	if (to.type() == typeid(AccountAddressLegacy)) {
+		auto &addr         = boost::get<AccountAddressLegacy>(to);
 		out_key.public_key = crypto::linkable_derive_output_public_key(
 		    output_secret_scalar, tx_inputs_hash, output_index, addr.S, addr.V, &out_key.encrypted_secret);
-		out_key.encrypted_address_type = AccountAddressSimple::type_tag ^ output_secret_address_type;
-		//		std::cout << "AccountAddressSimple=" << addr.S << " " << addr.V << " " << out_key.public_key << " "
+		out_key.encrypted_address_type = AccountAddressLegacy::type_tag ^ output_secret_address_type;
+		//		std::cout << "AccountAddressLegacy=" << addr.S << " " << addr.V << " " << out_key.public_key << " "
 		//		          << out_key.encrypted_secret << std::endl;
 		return out_key;
 	}
-	if (to.type() == typeid(AccountAddressUnlinkable)) {
-		auto &addr         = boost::get<AccountAddressUnlinkable>(to);
+	if (to.type() == typeid(AccountAddressAmethyst)) {
+		auto &addr         = boost::get<AccountAddressAmethyst>(to);
 		out_key.public_key = crypto::unlinkable_derive_output_public_key(
 		    output_secret_point, tx_inputs_hash, output_index, addr.S, addr.Sv, &out_key.encrypted_secret);
-		out_key.encrypted_address_type = AccountAddressUnlinkable::type_tag ^ output_secret_address_type;
-		//		std::cout << "AccountAddressUnlinkable=" << addr.S << " " << addr.Sv << " " << out_key.public_key << " "
+		out_key.encrypted_address_type = AccountAddressAmethyst::type_tag ^ output_secret_address_type;
+		//		std::cout << "AccountAddressAmethyst=" << addr.S << " " << addr.Sv << " " << out_key.public_key << " "
 		//		          << out_key.encrypted_secret << std::endl;
 		return out_key;
 	}
@@ -102,15 +102,15 @@ bool TransactionBuilder::detect_not_our_output_amethyst(const Hash &tx_inputs_ha
 	    output_seed, &output_secret_scalar, &output_secret_point, &output_secret_address_type);
 
 	const uint8_t address_type = key_output.encrypted_address_type ^ output_secret_address_type;
-	if (address_type == AccountAddressSimple::type_tag) {
-		AccountAddressSimple addr;
+	if (address_type == AccountAddressLegacy::type_tag) {
+		AccountAddressLegacy addr;
 		crypto::linkable_underive_address(output_secret_scalar, tx_inputs_hash, out_index, key_output.public_key,
 		    key_output.encrypted_secret, &addr.S, &addr.V);
 		*address = addr;
 		return true;
 	}
-	if (address_type == AccountAddressUnlinkable::type_tag) {
-		AccountAddressUnlinkable u_address;
+	if (address_type == AccountAddressAmethyst::type_tag) {
+		AccountAddressAmethyst u_address;
 		crypto::unlinkable_underive_address(&u_address.S, &u_address.Sv, output_secret_point, tx_inputs_hash, out_index,
 		    key_output.public_key, key_output.encrypted_secret);
 		*address = u_address;
@@ -256,13 +256,13 @@ Transaction TransactionBuilder::sign(
 				wallet->get_hw()->sign_add_output(true, amount, record_index, 0, PublicKey{}, PublicKey{},
 				    &out_key.public_key, &out_key.encrypted_secret, &out_key.encrypted_address_type);
 			} else {
-				if (to.type() == typeid(AccountAddressSimple)) {
-					auto &addr = boost::get<AccountAddressSimple>(to);
-					wallet->get_hw()->sign_add_output(false, amount, 0, AccountAddressSimple::type_tag, addr.S, addr.V,
+				if (to.type() == typeid(AccountAddressLegacy)) {
+					auto &addr = boost::get<AccountAddressLegacy>(to);
+					wallet->get_hw()->sign_add_output(false, amount, 0, AccountAddressLegacy::type_tag, addr.S, addr.V,
 					    &out_key.public_key, &out_key.encrypted_secret, &out_key.encrypted_address_type);
-				} else if (to.type() == typeid(AccountAddressUnlinkable)) {
-					auto &addr = boost::get<AccountAddressUnlinkable>(to);
-					wallet->get_hw()->sign_add_output(false, amount, 0, AccountAddressUnlinkable::type_tag, addr.S,
+				} else if (to.type() == typeid(AccountAddressAmethyst)) {
+					auto &addr = boost::get<AccountAddressAmethyst>(to);
+					wallet->get_hw()->sign_add_output(false, amount, 0, AccountAddressAmethyst::type_tag, addr.S,
 					    addr.Sv, &out_key.public_key, &out_key.encrypted_secret, &out_key.encrypted_address_type);
 				} else
 					throw std::runtime_error("TransactionBuilder::sign unknown address type");

@@ -10,6 +10,7 @@
 
 #if cn_WITH_LEDGER
 
+// We use forward declaration because libusb.h include windows.h, we do not want it
 struct libusb_device_handle;
 typedef struct libusb_device_handle libusb_device_handle;
 
@@ -68,7 +69,7 @@ public:
 	PublicKey get_v_mul_A_plus_SH() const override { return m_v_mul_A_plus_sH; }
 	PublicKey get_public_view_key() const override { return m_view_public_key; }
 
-	size_t get_scan_outputs_max_batch() const override { return 4; }
+	size_t get_scan_outputs_max_batch() const override;
 	std::vector<PublicKey> scan_outputs(const std::vector<PublicKey> &output_public_keys) override;
 	KeyImage generate_keyimage(const common::BinaryArray &output_secret_hash_arg, size_t address_index) override;
 	Hash generate_output_seed(const Hash &tx_inputs_hash, size_t out_index) override;

@@ -744,15 +744,15 @@ std::string WalletState::api_create_proof(const TransactionPrefix &tx,
 	if (!m_currency.parse_account_address_string(addr_str, &address))
 		throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse wallet address", addr_str);
 	if (tx.version < m_currency.amethyst_transaction_version) {
-		if (address.type() != typeid(AccountAddressSimple))
+		if (address.type() != typeid(AccountAddressLegacy))
 			return std::string();  // TODO - throw?
 		SendproofAmethyst sp;
 		sp.version          = tx.version;
-		sp.address_simple   = boost::get<AccountAddressSimple>(address);
+		sp.address_simple   = boost::get<AccountAddressLegacy>(address);
 		sp.message          = message;
 		sp.transaction_hash = tid;
 		KeyPair tx_keys     = TransactionBuilder::transaction_keys_from_seed(tx_inputs_hash, m_wallet.get_view_seed());
-		const auto &addr    = boost::get<AccountAddressSimple>(address);
+		const auto &addr    = boost::get<AccountAddressLegacy>(address);
 		sp.derivation       = crypto::generate_key_derivation(addr.V, tx_keys.secret_key);
 		sp.signature =
 		    crypto::generate_sendproof(tx_keys.public_key, tx_keys.secret_key, addr.V, sp.derivation, message_hash);

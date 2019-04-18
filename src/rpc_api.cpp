@@ -224,7 +224,7 @@ void ser_members(cn::api::walletd::GetWalletInfo::Request &v, ISeria &s) {
 
 void ser_members(cn::api::walletd::GetWalletInfo::Response &v, ISeria &s) {
 	seria_kv("view_only", v.view_only, s);
-	seria_kv("amethyst", v.amethyst, s);
+	seria_kv("wallet_type", v.wallet_type, s);
 	seria_kv("can_view_outgoing_addresses", v.can_view_outgoing_addresses, s);
 	seria_kv("has_view_secret_key", v.has_view_secret_key, s);
 	seria_kv("wallet_creation_timestamp", v.wallet_creation_timestamp, s);

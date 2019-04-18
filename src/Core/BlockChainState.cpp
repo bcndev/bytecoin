@@ -248,6 +248,10 @@ BlockChainState::BlockChainState(logging::ILogger &log, const Config &config, co
 	DB::Cursor cur3 = m_db.rbegin(OUTPUT_PREFIX);
 	m_next_global_key_output_index =
 	    cur3.end() ? 0 : common::integer_cast<size_t>(common::read_varint_sqlite4(cur3.get_suffix())) + 1;
+	//	m_db.debug_print_index_size(KEYIMAGE_PREFIX);
+	//	m_db.debug_print_index_size(AMOUNT_OUTPUT_PREFIX);
+	//	m_db.debug_print_index_size(OUTPUT_PREFIX);
+	//	m_db.debug_print_index_size(DIN_PREFIX);
 }
 
 void BlockChainState::check_standalone_consensus(

@@ -74,8 +74,8 @@ static void test_body(const Currency &currency, const std::string &path, const s
 		AccountAddress v_address;
 		if (!currency.parse_account_address_string(a, &v_address))
 			throw std::runtime_error("failed to parse address " + a);
-		invariant(v_address.type() == typeid(AccountAddressSimple), "");
-		auto &address = boost::get<AccountAddressSimple>(v_address);
+		invariant(v_address.type() == typeid(AccountAddressLegacy), "");
+		auto &address = boost::get<AccountAddressLegacy>(v_address);
 		if (address.V != wallet.get_view_public_key())
 			throw std::runtime_error("view_public_key test failed for " + path);
 		size_t pos = 0;

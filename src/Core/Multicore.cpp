@@ -358,7 +358,11 @@ void WalletPreparatorMulticore::thread_run() {
 				have_work.wait(lock);
 				continue;
 			}
-			local_source_pks.swap(source_pks);  // We might need all of them
+			if (hw_copy && m_view_secret_key == SecretKey{}) {
+				const size_t max_cou =
+				    std::min<size_t>(source_pks.size(), sync_block->pks_count + hw_copy->get_scan_outputs_max_batch());
+				local_source_pks.assign(source_pks.begin(), source_pks.begin() + max_cou);
+			}
 		}
 		try {
 			if (hw_copy && m_view_secret_key == SecretKey{}) {
@@ -383,6 +387,7 @@ void WalletPreparatorMulticore::thread_run() {
 			std::unique_lock<std::mutex> lock(mu);
 			wallet_connected   = false;
 			sync_block->status = WAITING;
+			source_pks.insert(source_pks.begin(), local_source_pks.begin(), local_source_pks.end());
 		}
 		m_main_loop->wake();
 	}

@@ -342,3 +342,14 @@ void DBlmdb::run_tests() {
 	}
 	delete_db("temp_db");
 }
+
+void DBlmdb::debug_print_index_size(const std::string &prefix) {
+	size_t count      = 0;
+	size_t total_size = 0;
+	for (Cursor cur = begin(prefix); !cur.end(); cur.next()) {
+		count += 1;
+		total_size += prefix.size() + cur.get_suffix().size() + cur.get_value_array().size();
+	}
+	std::cout << "prefix=" << prefix << " count=" << count << " total_size=" << total_size / 1024.0 / 1024.0 << " MB"
+	          << std::endl;
+}

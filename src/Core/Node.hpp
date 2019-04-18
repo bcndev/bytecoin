@@ -210,7 +210,7 @@ protected:
 	void fill_transaction_info(
 	    const TransactionPrefix &tx, api::Transaction *api_tx, std::vector<std::vector<PublicKey>> *mixed_public_keys);
 	void check_sendproof(const BinaryArray &data_inside_base58, api::cnd::CheckSendproof::Response &resp) const;
-	void check_sendproof(const SendproofKey &sp, api::cnd::CheckSendproof::Response &resp) const;
+	void check_sendproof(const SendproofLegacy &sp, api::cnd::CheckSendproof::Response &resp) const;
 };
 
 }  // namespace cn

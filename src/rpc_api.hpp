@@ -278,11 +278,11 @@ struct GetWalletInfo {
 		bool need_secrets = false;
 	};
 	struct Response {
-		bool view_only                      = false;
-		bool amethyst                       = false;  // combines deterministic, auditable, unlinkable properties
+		bool view_only = false;
+		std::string wallet_type;                      // can be legacy, amethyst, hardware
 		bool can_view_outgoing_addresses    = false;  // can be false for some view-only wallets
 		bool has_view_secret_key            = false;  // can be false for some hardware-backed wallets
-		Timestamp wallet_creation_timestamp = 0;      // O if not known (restored form keys and did not sync yet)
+		Timestamp wallet_creation_timestamp = 0;      // O if not known (restored from keys and did not sync yet)
 		std::string first_address;
 		size_t total_address_count = 0;  // Useful when iterating
 		std::string net;                 // network walletd is currently operating on
@@ -395,11 +395,11 @@ struct GetTransfers {  // Can be used incrementally by high-performace clients t
 	static std::string method() { return "get_transfers"; }
 
 	struct Request {
-		std::string address;                                      // empty for all addresses
-		Height from_height = 0;                                   // From, but not including from_height
-		Height to_height   = std::numeric_limits<Height>::max();  // Up to, and including to_height. Will return
-		                                                          // transfers in mempool if to_height >
-		                                                          // top_block_height
+		std::string address;     // empty for all addresses
+		Height from_height = 0;  // From, but not including from_height
+		Height to_height   = std::numeric_limits<Height>::max();
+		// Up to, and including to_height. Will return transfers in mempool if from_height <= top_block_height &&
+		// to_height > top_block_height
 		bool forward = true;  // determines order of blocks returned, additionally if desired_transaction_count set,
 		                      // then this defines if call starts from from_height forward, or from to_height backwards
 		size_t desired_transaction_count =
@@ -414,8 +414,9 @@ struct GetTransfers {  // Can be used incrementally by high-performace clients t
 		Height next_to_height = 0;
 	};
 	enum {
-		ADDRESS_FAILED_TO_PARSE = -4,    // returns ErrorAddress
-		ADDRESS_NOT_IN_WALLET   = -1002  // returns ErrorAddress
+		INVALID_PARAMS          = -32602,  // from_height > to_height
+		ADDRESS_FAILED_TO_PARSE = -4,      // returns ErrorAddress
+		ADDRESS_NOT_IN_WALLET   = -1002    // returns ErrorAddress
 	};
 };
 

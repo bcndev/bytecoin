@@ -94,7 +94,7 @@ public:
 
 	virtual void backup(const std::string &dst_name, const std::string &pass) const = 0;
 
-	typedef std::set<AccountAddressSimple> History;
+	typedef std::set<AccountAddressLegacy> History;
 	virtual bool save_history(const Hash &tid, const History &used_addresses) { return true; }
 	virtual History load_history(const Hash &tid) const = 0;
 

@@ -165,9 +165,7 @@ bool Currency::is_transaction_unlocked(uint8_t block_major_version, BlockOrTimes
 	return block_time + LOCKED_TX_ALLOWED_DELTA_SECONDS(difficulty_target) >= unlock_time;  // interpret as time
 }
 
-bool Currency::is_upgrade_vote(uint8_t major, uint8_t minor) const {
-	return minor >= upgrade_indicator_minor;
-}
+bool Currency::is_upgrade_vote(uint8_t major, uint8_t minor) const { return minor >= upgrade_indicator_minor; }
 
 bool Currency::wish_to_upgrade() const { return upgrade_desired_major > 1 + upgrade_heights.size(); }
 
@@ -286,7 +284,7 @@ Height Currency::largest_window() const {
 Transaction Currency::construct_miner_tx(const Hash &miner_secret, uint8_t block_major_version, Height height,
     Amount block_reward, const AccountAddress &miner_address) const {
 	Transaction tx;
-	const bool is_tx_amethyst = miner_address.type() != typeid(AccountAddressSimple);
+	const bool is_tx_amethyst = miner_address.type() != typeid(AccountAddressLegacy);
 	const size_t max_outs     = get_max_coinbase_outputs();
 	// If we wish to limit number of outputs, it makes sense to round miner reward to some arbitrary number
 	// Though this solution will reduce number of coins to mix
@@ -358,13 +356,13 @@ Amount Currency::get_penalized_amount(uint64_t amount, size_t median_size, size_
 }
 
 std::string Currency::account_address_as_string(const AccountAddress &v_addr) const {
-	if (v_addr.type() == typeid(AccountAddressSimple)) {
-		auto &addr     = boost::get<AccountAddressSimple>(v_addr);
+	if (v_addr.type() == typeid(AccountAddressLegacy)) {
+		auto &addr     = boost::get<AccountAddressLegacy>(v_addr);
 		BinaryArray ba = seria::to_binary(addr);
 		return common::base58::encode_addr(ADDRESS_BASE58_PREFIX, ba);
 	}
-	if (v_addr.type() == typeid(AccountAddressUnlinkable)) {
-		auto &addr     = boost::get<AccountAddressUnlinkable>(v_addr);
+	if (v_addr.type() == typeid(AccountAddressAmethyst)) {
+		auto &addr     = boost::get<AccountAddressAmethyst>(v_addr);
 		BinaryArray ba = seria::to_binary(addr);
 		return common::base58::encode_addr(ADDRESS_BASE58_PREFIX_AMETHYST, ba);
 	}
@@ -377,7 +375,7 @@ bool Currency::parse_account_address_string(const std::string &str, AccountAddre
 	if (!common::base58::decode_addr(str, &tag, &data))
 		return false;
 	if (tag == ADDRESS_BASE58_PREFIX_AMETHYST) {
-		AccountAddressUnlinkable addr;
+		AccountAddressAmethyst addr;
 		try {
 			seria::from_binary(addr, data);
 		} catch (const std::exception &) {
@@ -389,7 +387,7 @@ bool Currency::parse_account_address_string(const std::string &str, AccountAddre
 		return true;
 	}
 	if (tag == ADDRESS_BASE58_PREFIX) {
-		AccountAddressSimple addr;
+		AccountAddressLegacy addr;
 		try {
 			seria::from_binary(addr, data);
 		} catch (const std::exception &) {

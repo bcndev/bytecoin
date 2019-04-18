@@ -422,7 +422,7 @@ int main(int argc, const char *argv[]) try {
 		if (launch_after_command && !(set_password || import_view_key))
 			wrong_args(
 			    "Command line option --launch-after-command can only be used with --create-wallet, --set-password, --import-view-key");
-		if (cmd.show_errors())
+		if (cmd.show_errors("cannot be used when opening wallet"))
 			return api::WALLETD_WRONG_ARGS;
 		wallet = open_wallet(currency, logManagerWalletNode, wallet_file, &password, false, console_setup);
 		std::string new_password = ask_new_password(set_password, password.get(), console_setup);

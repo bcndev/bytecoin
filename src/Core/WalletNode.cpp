@@ -191,7 +191,7 @@ bool WalletNode::on_get_wallet_info(http::Client *, http::RequestBody &&, json_r
     api::walletd::GetWalletInfo::Request &&request, api::walletd::GetWalletInfo::Response &response) {
 	const Wallet &wa                     = m_wallet_state.get_wallet();
 	response.view_only                   = wa.is_view_only();
-	response.amethyst                    = wa.is_amethyst();
+	response.wallet_type                 = wa.get_hw() ? "hardware" : wa.is_amethyst() ? "amethyst" : "legacy";
 	response.can_view_outgoing_addresses = wa.can_view_outgoing_addresses();
 	response.has_view_secret_key         = wa.get_view_secret_key() != SecretKey{};
 	response.total_address_count         = wa.get_actual_records_count();
@@ -317,6 +317,10 @@ bool WalletNode::on_get_unspent(http::Client *, http::RequestBody &&, json_rpc::
 bool WalletNode::on_get_transfers(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::walletd::GetTransfers::Request &&request, api::walletd::GetTransfers::Response &response) {
 	check_address_in_wallet_or_throw(request.address);
+	if (request.from_height > request.to_height)
+		throw json_rpc::Error(api::walletd::GetTransfers::INVALID_PARAMS,
+		    "from_height should be <= to_height, actual request.from_height=" + common::to_string(request.from_height) +
+		        ", request.to_height=" + common::to_string(request.to_height));
 	response.next_from_height = request.from_height;
 	response.next_to_height   = request.to_height;
 	// GetTransfers API is documented to accept (from..to] range,
@@ -328,7 +332,8 @@ bool WalletNode::on_get_transfers(http::Client *, http::RequestBody &&, json_rpc
 		request.to_height += 1;
 	response.blocks = m_wallet_state.api_get_transfers(
 	    request.address, &request.from_height, &request.to_height, request.forward, request.desired_transaction_count);
-	if (request.from_height < m_wallet_state.get_tip_height() && request.to_height >= m_wallet_state.get_tip_height()) {
+	if (request.from_height <= m_wallet_state.get_tip_height() + 1 &&
+	    request.to_height > m_wallet_state.get_tip_height() + 1) {
 		api::Block pool_block = m_wallet_state.api_get_pool_as_history(request.address);
 		if (!pool_block.transactions.empty()) {
 			if (request.forward)
@@ -432,11 +437,11 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 			throw api::ErrorAddress(
 			    api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse transfer address", tr.address);
 		combined_outputs[addr] += tr.amount;
-		if (addr.type() == typeid(AccountAddressSimple))
-			history.insert(boost::get<AccountAddressSimple>(addr));
-		if (!is_amethyst && addr.type() == typeid(AccountAddressUnlinkable))
+		if (addr.type() == typeid(AccountAddressLegacy))
+			history.insert(boost::get<AccountAddressLegacy>(addr));
+		if (!is_amethyst && addr.type() == typeid(AccountAddressAmethyst))
 			throw json_rpc::Error(
-			    json_rpc::INVALID_PARAMS, "You cannot send to unlinkable address before amethyst upgrade");
+			    json_rpc::INVALID_PARAMS, "You cannot send to amethyst address before amethyst upgrade");
 		if (!add_amount(sum_positive_transfers, tr.amount))
 			throw json_rpc::Error(json_rpc::INVALID_PARAMS, "Sum of transfers overflow max amount ");
 	}
@@ -510,8 +515,8 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 				throw api::ErrorAddress(
 				    api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse transfer address", tr.address);
 			combined_outputs[addr] += am;
-			if (addr.type() == typeid(AccountAddressSimple))
-				history.insert(boost::get<AccountAddressSimple>(addr));
+			if (addr.type() == typeid(AccountAddressLegacy))
+				history.insert(boost::get<AccountAddressLegacy>(addr));
 		}
 		if (combined_outputs.empty())
 			throw json_rpc::Error(

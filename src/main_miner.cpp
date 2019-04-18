@@ -4,7 +4,6 @@
 #include <thread>
 #include "Core/Config.hpp"
 #include "Core/CryptoNoteTools.hpp"
-#include "Core/Currency.hpp"
 #include "Core/Difficulty.hpp"
 #include "Core/TransactionExtra.hpp"
 #include "CryptoNoteConfig.hpp"
@@ -33,7 +32,7 @@ Options:
   --wallet-address=<address>     Address to receive mined coins (required).
   --bytecoind-address=<ip:port>  Single option for both daemon address and port.
   --limit=<N>                    Mine and submit specified number of blocks, then exit, 0 means no limit [Default: 0].
-  --threads=<N>                  Not implemented yet - just start several copies of minerd.
+  --threads=<N>                  Not implemented - just start several copies of minerd.
   --boast=<text>                 Text to insert into coinbase transaction's extra nonce.
   --miner-secret=<hash_hex>      Turn on deterministic mining.
   --cm                           EXPERIMENTAL. Use CM with random virtual coins.
@@ -43,9 +42,7 @@ using namespace cn;
 
 struct MiningConfig {
 	explicit MiningConfig(common::CommandLine &cmd)
-	    : bytecoind_ip("127.0.0.1")
-	    , bytecoind_port(parameters::RPC_DEFAULT_PORT)
-	    , thread_count(std::thread::hardware_concurrency()) {
+	    : bytecoind_ip("127.0.0.1"), bytecoind_port(parameters::RPC_DEFAULT_PORT) {
 		if (const char *pa = cmd.get("--address", "Use --wallet-address instead"))
 			mining_address = pa;
 		if (const char *pa = cmd.get("--wallet-address"))
@@ -55,8 +52,8 @@ struct MiningConfig {
 			    std::runtime_error("Command line option --" CRYPTONOTE_NAME "d-address has wrong format"));
 		} else
 			throw std::runtime_error("--" CRYPTONOTE_NAME "d-address=ip:port argument is mandatory");
-		if (const char *pa = cmd.get("--threads"))
-			thread_count = common::integer_cast<size_t>(pa);
+		if (cmd.get("--threads"))
+			throw std::runtime_error("Not implemented - just start several copies of minerd.");
 		if (const char *pa = cmd.get("--limit"))
 			blocks_limit = common::integer_cast<size_t>(pa);
 		if (const char *pa = cmd.get("--boast"))
@@ -68,17 +65,18 @@ struct MiningConfig {
 				throw std::runtime_error("Miner Secret must not be all zeroes");
 		}
 		cm = cmd.get_bool("--cm");
+		mm = cmd.get_bool("--mm");
 	}
 
 	std::string mining_address;
 	std::string bytecoind_ip;
 	std::string boast;
 	uint16_t bytecoind_port = 0;
-	size_t thread_count     = 0;
 	size_t blocks_limit     = 0;
 	// Mine specified number of blocks, then exit, 0 == indefinetely
 	Hash miner_secret;
 	bool cm = false;
+	bool mm = false;
 };
 
 class HTTPMiner {
@@ -92,10 +90,11 @@ public:
 	platform::Timer getwork_retry;
 	platform::Timer submit_retry;
 
-	Currency currency;  // Need genesis_bid, will be changed to API method get_currency_id later
 	crypto::CryptoNightContext crypto_context;
 	BlockTemplate block{};
 	api::cnd::GetBlockTemplate::Response block_response;
+	api::cnd::GetCurrencyId::Response currencyid_response;
+	bool need_currency_id = true;
 	uint64_t nonce        = 0;  // we use lower 4 bytes as a nonce.
 	Difficulty difficulty = 0;  // used as a flag to mine/not mine
 
@@ -114,8 +113,7 @@ public:
 	    , getwork_agent(mining_config.bytecoind_ip, mining_config.bytecoind_port)
 	    , submit_agent(mining_config.bytecoind_ip, mining_config.bytecoind_port)
 	    , getwork_retry(std::bind(&HTTPMiner::send_getwork, this))
-	    , submit_retry(std::bind(&HTTPMiner::send_submit, this))
-	    , currency("main") {
+	    , submit_retry(std::bind(&HTTPMiner::send_submit, this)) {
 		send_getwork();
 	}
 	bool on_idle() {
@@ -149,7 +147,7 @@ public:
 		} else {
 			common::uint_le_to_bytes(block.root_block.nonce, 4, nonce);
 			auto body_proxy   = get_body_proxy_from_template(block);
-			long_hashing_data = currency.get_block_long_hashing_data(block, body_proxy);
+			long_hashing_data = get_block_long_hashing_data(block, body_proxy, currencyid_response.currency_id_blob);
 		}
 		Hash hash = crypto_context.cn_slow_hash(long_hashing_data.data(), long_hashing_data.size());
 		if (check_hash(hash, difficulty)) {
@@ -176,7 +174,7 @@ public:
 		req.blocktemplate_blob       = seria::to_binary(found_blocks.front().block);
 		req.cm_nonce                 = found_blocks.front().cm_nonce;
 		req.cm_merkle_branch         = found_blocks.front().cm_merkle_branch;
-		http::RequestBody req_header = json_rpc::create_request("/json_rpc", api::cnd::SubmitBlock::method(), req);
+		http::RequestBody req_header = json_rpc::create_request(api::cnd::url(), api::cnd::SubmitBlock::method(), req);
 		submit_request               = std::make_unique<http::Request>(submit_agent, std::move(req_header),
             [&](http::ResponseBody &&response) {
                 submit_request.reset();
@@ -187,6 +185,7 @@ public:
                     common::console::set_text_color(common::console::BrightRed);
                     std::cout << "Json Error submitting block code=" << err_resp.code << " msg=" << err_resp.message
                               << std::endl;
+                    need_currency_id = true;  // In case it changed due to consensus update
                     common::console::set_text_color(common::console::Default);
                     if (!found_blocks.empty())  // Should not be empty, but...
                         found_blocks.pop_front();
@@ -210,7 +209,36 @@ public:
             },
             [&](std::string err) { submit_retry.once(5); });
 	}
+	void send_getcurrency_id() {
+		api::cnd::GetCurrencyId::Request req{};
+		http::RequestBody req_header =
+		    json_rpc::create_request(api::cnd::url(), api::cnd::GetCurrencyId::method(), req);
+		std::cout << "Miner send " << api::cnd::GetCurrencyId::method() << std::endl;
+		getwork_request = std::make_unique<http::Request>(getwork_agent, std::move(req_header),
+		    [&](http::ResponseBody &&response) {
+			    getwork_request.reset();
+			    api::cnd::GetCurrencyId::Response resp;
+			    json_rpc::Error err_resp;
+			    if (json_rpc::parse_response(response.body, resp, err_resp)) {
+				    currencyid_response = resp;
+				    need_currency_id    = false;
+				    std::cout << "Miner received currrency id=" << resp.currency_id_blob << std::endl;
+				    getwork_retry.once(0.1f);
+			    } else {
+				    getwork_retry.once(10);
+				    std::cout << "Json Error getting currency id (will retry in 10 sec) code=" << err_resp.code
+				              << " msg=" << err_resp.message << std::endl;
+			    }
+		    },
+		    [&](std::string err) {
+			    getwork_retry.once(5);
+			    std::cout << "Network Error getting currency id (will retry in 5 sec) err=" << err << std::endl;
+		    });
+	}
 	void send_getwork() {
+		if (need_currency_id) {
+			return send_getcurrency_id();
+		}
 		api::cnd::GetBlockTemplate::Request req{};
 		req.wallet_address = mining_config.mining_address;
 		req.miner_secret   = mining_config.miner_secret;
@@ -218,8 +246,10 @@ public:
 			req.reserve_size = mining_config.boast.size();
 		req.top_block_hash           = block_response.top_block_hash;
 		req.transaction_pool_version = block_response.transaction_pool_version;
-		http::RequestBody req_header = json_rpc::create_request("/json_rpc", "getblocktemplate", req);
-		std::cout << "Miner send getblocktemplate top_block_hash=" << block_response.top_block_hash << std::endl;
+		http::RequestBody req_header =
+		    json_rpc::create_request(api::cnd::url(), api::cnd::GetBlockTemplate::method(), req);
+		std::cout << "Miner send " << api::cnd::GetBlockTemplate::method()
+		          << " top_block_hash=" << block_response.top_block_hash << std::endl;
 		getwork_request = std::make_unique<http::Request>(getwork_agent, std::move(req_header),
 		    [&](http::ResponseBody &&response) {
 			    getwork_request.reset();
@@ -236,7 +266,7 @@ public:
 				    nonce      = crypto::rand<uint32_t>();
 				    if (mining_config.miner_secret != Hash{}) {
 					    block.timestamp = block.root_block.timestamp =
-					        1550000000 + resp.height * currency.difficulty_target;
+					        1550000000 + resp.height * parameters::DIFFICULTY_TARGET;
 					    nonce = 0;
 				    }
 				    std::cout << "Miner received getblocktemplate difficulty=" << difficulty

@@ -117,6 +117,17 @@ WalletStateBasic::WalletStateBasic(
 		}
 		fix_empty_chain();
 	}
+	//	m_db.debug_print_index_size(INDEX_UID_to_STATE);
+	//	m_db.debug_print_index_size(INDEX_HEIGHT_to_HEADER);
+	//	m_db.debug_print_index_size(INDEX_TID_to_TRANSACTIONS);
+	//	m_db.debug_print_index_size(INDEX_ADDRESS_HEIGHT_TID);
+	//	m_db.debug_print_index_size(INDEX_ADDRESS_to_BALANCE);
+	//	m_db.debug_print_index_size(INDEX_KEYIMAGE_to_HE_GI);
+	//	m_db.debug_print_index_size(INDEX_HE_GI_to_OUTPUT);
+	//	m_db.debug_print_index_size(INDEX_ADDRESS_HE_GI);
+	//	m_db.debug_print_index_size(UNLOCKED_INDEX_REALHE_GI_to_OUTPUT);
+	//	m_db.debug_print_index_size(LOCKED_INDEX_KI_GI);
+	//	m_db.debug_print_index_size(LOCKED_INDEX_B_OR_T_GI_to_OUTPUT);
 }
 
 void WalletStateBasic::combine_balance(
@@ -379,6 +390,12 @@ void WalletStateBasic::add_transaction(
 		on_first_transaction_found(ptx.timestamp);
 	auto trkey         = INDEX_TID_to_TRANSACTIONS + DB::to_binary_key(tid.data, sizeof(tid.data));
 	BinaryArray str_pa = seria::to_binary(std::make_pair(pwtx.tx, ptx));
+	//	Experiment with db size reduction
+	//	api::Transaction ptx2 = ptx; // Remove redundant info before saving
+	//	for (auto &&transfer : ptx2.transfers)
+	//		for(auto && ou : transfer.outputs)
+	//			ou.address = std::string();
+	//	BinaryArray str_pa = seria::to_binary(std::make_pair(pwtx.tx, ptx2));
 	put_with_undo(trkey, str_pa, true);
 	std::set<std::string> addresses;
 	addresses.insert(std::string());
@@ -559,6 +576,10 @@ bool WalletStateBasic::get_transaction(Hash tid, TransactionPrefix *tx, api::Tra
 	seria::from_binary(pa, data);
 	*tx  = std::move(pa.first);
 	*ptx = std::move(pa.second);
+	//	Experiment with db size reduction
+	//	for (auto &transfer : ptx->transfers) // Restore redundant info
+	//		for(auto & ou : transfer.outputs)
+	//			ou.address = transfer.address;
 	return true;
 }
 
@@ -750,6 +771,10 @@ void WalletStateBasic::add_to_unspent_index(const api::Output &output) {
 	auto keyun = INDEX_HE_GI_to_OUTPUT + common::write_varint_sqlite4(output.height) +
 	             common::write_varint_sqlite4(output.global_index);
 	put_with_undo(keyun, seria::to_binary(output), true);
+	//	Experiment with db size reduction
+	//	api::Output output2 = output;
+	//	output2.address = "index";
+	//	put_with_undo(keyun, seria::to_binary(output2), true);
 
 	keyun = INDEX_ADDRESS_HE_GI + output.address + "/" + common::write_varint_sqlite4(output.height) +
 	        common::write_varint_sqlite4(output.global_index);

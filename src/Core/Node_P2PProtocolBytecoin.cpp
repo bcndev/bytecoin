@@ -391,7 +391,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_chain(p2p::GetChainRespons
 	if (m_chain.empty()) {
 		// TODO - add delay to advance_chain
 		//		const auto now = m_node->m_p2p.get_local_time();
-		m_node->m_log(logging::INFO) << "truncated chain to zero from" << get_address() << std::endl;
+		m_node->m_log(logging::INFO) << "truncated chain to zero from " << get_address() << std::endl;
 		advance_chain();
 		return;
 	}

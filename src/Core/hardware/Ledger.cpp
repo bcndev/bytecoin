@@ -239,123 +239,60 @@ static int unwrapReponseApdu(unsigned int channel, const unsigned char *data, si
 	return static_cast<int>(offsetOut);
 }
 
-static void fill_chunk(
-    unsigned char *chunk, size_t block_size, size_t channel, size_t sequence, const uint8_t **data, size_t *len) {
-	invariant(block_size >= 7, "");
-	size_t pos   = 0;
-	chunk[pos++] = ((channel >> 8) & 0xff);
-	chunk[pos++] = (channel & 0xff);
-	chunk[pos++] = TAG_APDU;
-	chunk[pos++] = ((sequence >> 8) & 0xff);
-	chunk[pos++] = (sequence & 0xff);
-	if (sequence == 0) {
-		chunk[pos++] = ((*len >> 8) & 0xff);
-		chunk[pos++] = (*len & 0xff);
-	}
-	size_t cpd = std::min(block_size - pos, *len);
-	memcpy(chunk + pos, *data, cpd);
-	*len += cpd;
-	*data += cpd;
-}
-
-static bool parse_chunk(unsigned char *chunk, size_t block_size, size_t channel, size_t sequence,
-    size_t *response_length, BinaryArray *result) {
-	invariant(block_size >= 7, "");
-	size_t pos = 0;
-	if (chunk[pos++] != ((channel >> 8) & 0xff))
-		return false;
-	if (chunk[pos++] != (channel & 0xff))
-		return false;
-	if (chunk[pos++] != TAG_APDU)
-		return false;
-	if (chunk[pos++] != ((sequence >> 8) & 0xff))
-		return false;
-	if (chunk[pos++] != (sequence & 0xff))
-		return false;
-	if (sequence == 0) {
-		*response_length = (chunk[pos++] << 8);
-		*response_length += chunk[pos++];
-		result->reserve(*response_length);
-	}
-	size_t cpd = std::min(block_size - pos, *response_length - result->size());
-	result->insert(result->end(), chunk + pos, chunk + pos + cpd);
-	return true;
-}
+size_t Ledger::get_scan_outputs_max_batch() const { return BYTECOIN_MAX_SCAN_OUTPUTS; }
 
 int Ledger::sendApdu(const uint8_t *data, size_t len, uint8_t *out, size_t out_len, unsigned *sw) {
 	static const size_t MAX_BLOCK = 64;
 	static const int TIMEOUT      = 600000;
 
-	//	for(size_t sequence = 0; len != 0 || sequence == 0; ++sequence){
-	//		unsigned char chunk[MAX_BLOCK]{};
-	//		fill_chunk(chunk, MAX_BLOCK, DEFAULT_LEDGER_CHANNEL, sequence, &data, &len);
-	//		int length_ignore = 0;
-	//		int result = libusb_interrupt_transfer(m_device.handle, 0x02, chunk, static_cast<int>(MAX_BLOCK),
-	//&length_ignore, TIMEOUT); 		if (result < 0) 			return result;
-	//	}
-	//	size_t response_length = 0;
-	//	BinaryArray response;
-	//	for(size_t sequence = 0; response.size() < response_length || sequence == 0; ++sequence){
-	//		unsigned char chunk[MAX_BLOCK]{};
-	//		int length_ignore = 0;
-	//		int result = libusb_interrupt_transfer(m_device.handle, 0x82, chunk, static_cast<int>(MAX_BLOCK),
-	//&length_ignore, TIMEOUT); 		if (result < 0) 			return result; 		if( !parse_chunk(chunk,
-	// MAX_BLOCK, DEFAULT_LEDGER_CHANNEL, sequence, &response_length, &response)) 			return -1;
-	//	}
-	//	if(response.size() < 2)
-	//		return -1;
-	//	if (sw)
-	//		*sw = (response[response.size() - 2] << 8) + response[response.size() - 1];
-	//	response.resize(response.size() - 2);
+	unsigned char buffer[800]{};
+	int length = 0;
 
-	unsigned char buffer[800];
-	unsigned char paddingBuffer[MAX_BLOCK];
-	int swOffset     = 0;
-	size_t remaining = len;
-	int offset       = 0;
-	int length       = 0;
-
-	int result = wrapCommandApdu(DEFAULT_LEDGER_CHANNEL, data, len, LEDGER_HID_PACKET_SIZE, buffer, sizeof(buffer));
+	int send_size = wrapCommandApdu(DEFAULT_LEDGER_CHANNEL, data, len, LEDGER_HID_PACKET_SIZE, buffer, sizeof(buffer));
+	if (send_size < 0) {
+		return send_size;
+	}
+	int result = libusb_interrupt_transfer(m_device.handle, 0x02, buffer, send_size, &length, TIMEOUT);
 	if (result < 0) {
 		return result;
 	}
-	remaining = result;
-	while (remaining > 0) {
-		size_t blockSize = (remaining > MAX_BLOCK ? MAX_BLOCK : remaining);
-		memset(paddingBuffer, 0, MAX_BLOCK);
-		memcpy(paddingBuffer, buffer + offset, blockSize);
-		result = libusb_interrupt_transfer(
-		    m_device.handle, 0x02, paddingBuffer, static_cast<int>(blockSize), &length, TIMEOUT);
-		if (result < 0) {
-			return result;
-		}
-		offset += blockSize;
-		remaining -= blockSize;
+	if (length != send_size) {
+		return -1;
 	}
 	result = libusb_interrupt_transfer(m_device.handle, 0x82, buffer, MAX_BLOCK, &length, TIMEOUT);
 	if (result < 0) {
 		return result;
 	}
-	offset = MAX_BLOCK;
-	for (;;) {
-		int dummy;
-		result = unwrapReponseApdu(DEFAULT_LEDGER_CHANNEL, buffer, offset, LEDGER_HID_PACKET_SIZE, out, out_len);
-		if (result < 0) {
-			return result;
-		}
-		if (result != 0) {
-			length   = result - 2;
-			swOffset = result - 2;
-			break;
-		}
-		result = libusb_interrupt_transfer(m_device.handle, 0x82, buffer + offset, MAX_BLOCK, &dummy, TIMEOUT);
-		if (result < 0) {
-			return result;
-		}
-		offset += MAX_BLOCK;
+	if (length != MAX_BLOCK) {
+		return result;
 	}
+	size_t msg_size = (buffer[5] << 8U) + buffer[6];
+	size_t chunks =
+	    (msg_size <= MAX_BLOCK - 7) ? 1 : 1 + (msg_size - (MAX_BLOCK - 7) + MAX_BLOCK - 5 - 1) / (MAX_BLOCK - 5);
+	if (chunks * MAX_BLOCK > sizeof(buffer)) {
+		return -1;  // overflow
+	}
+	if (chunks > 1) {
+		result = libusb_interrupt_transfer(
+		    m_device.handle, 0x82, buffer + MAX_BLOCK, MAX_BLOCK * (chunks - 1), &length, TIMEOUT);
+		if (result < 0) {
+			return result;
+		}
+		if (size_t(length) != MAX_BLOCK * (chunks - 1)) {
+			return -1;
+		}
+	}
+	result =
+	    unwrapReponseApdu(DEFAULT_LEDGER_CHANNEL, buffer, chunks * MAX_BLOCK, LEDGER_HID_PACKET_SIZE, out, out_len);
+	if (result < 0) {
+		return result;
+	}
+	if (result < 2) {
+		return -1;  // No place for SW
+	}
+	length = result - 2;
 	if (sw) {
-		*sw = (out[swOffset] << 8) | out[swOffset + 1];
+		*sw = (out[length] << 8U) + out[length + 1];
 	}
 	return length;
 }
@@ -365,7 +302,7 @@ BinaryArray Ledger::sendApdu(uint8_t cmd, const BinaryArray &body) {
 		throw std::runtime_error("sendApdu size too big size=" + common::to_string(body.size()));
 	BinaryArray ba{BYTECOIN_CLA, cmd, 0, 0, static_cast<uint8_t>(body.size())};
 	common::append(ba, body);
-	if (body.empty()) {  // We cannot send empty packets to HID
+	if (body.empty()) {  // According to smartcard protocol 0 means 256. We do not want this.
 		ba.back() = 1;
 		ba.push_back(0);
 	}
@@ -436,7 +373,7 @@ Ledger::Ledger(libusb_device_handle *dev_handle, const std::string &path) : m_de
 	m_device.attach_kernel_driver(false);
 
 	get_app_info();
-	if (m_app_info.major_version != 0 || m_app_info.minor_version != 1)
+	if (m_app_info.major_version != 0 || m_app_info.minor_version != 1 || m_app_info.patch_version != 1)
 		throw std::runtime_error("this version of the ledger app is incompatible");
 	get_wallet_keys();
 }
@@ -448,18 +385,34 @@ std::string Ledger::get_hardware_type() const { return "Ledger path=" + m_path; 
 std::vector<cn::PublicKey> Ledger::scan_outputs(const std::vector<cn::PublicKey> &output_public_keys) {
 	invariant(output_public_keys.size() <= get_scan_outputs_max_batch(), "");
 	std::vector<PublicKey> result;
-	for (const auto &pk : output_public_keys) {
-		common::VectorStream vs;
-		vs.write(pk.data, sizeof(pk.data));
+	const size_t size = std::min(output_public_keys.size(), get_scan_outputs_max_batch());
 
-		vs = common::VectorStream(sendApdu(INS_SCAN_OUTPUTS, vs.buffer()));
+	common::VectorStream vs;
+	write_big_endian(size, 1, &vs);
+	for (const auto &pk : output_public_keys)
+		vs.write(pk.data, sizeof(pk.data));
+	vs = common::VectorStream(sendApdu(INS_SCAN_OUTPUTS, vs.buffer()));
+	for (size_t i = 0; i < size; ++i) {
 		PublicKey rpk;
 		vs.read(rpk.data, sizeof(rpk.data));
-		if (!vs.empty())
-			throw std::runtime_error("excess data left in INS_SCAN_OUTPUTS");
-		result.push_back(rpk);
+		result.push_back(std::move(rpk));
 	}
+	if (!vs.empty())
+		throw std::runtime_error("excess data left in INS_SCAN_OUTPUTS");
 	return result;
+
+	//	for (const auto &pk : output_public_keys) {
+	//		common::VectorStream vs;
+	//		vs.write(pk.data, sizeof(pk.data));
+
+	//		vs = common::VectorStream(sendApdu(INS_SCAN_OUTPUTS, vs.buffer()));
+	//		PublicKey rpk;
+	//		vs.read(rpk.data, sizeof(rpk.data));
+	//		if (!vs.empty())
+	//			throw std::runtime_error("excess data left in INS_SCAN_OUTPUTS");
+	//		result.push_back(rpk);
+	//	}
+	//	return result;
 }
 
 cn::KeyImage Ledger::generate_keyimage(const common::BinaryArray &output_secret_hash_arg, size_t address_index) {

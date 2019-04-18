@@ -123,5 +123,7 @@ public:
 	static void run_tests();
 	static void delete_db(const std::string &full_path);
 	static void backup_db(const std::string &full_path, const std::string &dst_path);
+
+	void debug_print_index_size(const std::string &prefix);
 };
 }  // namespace platform

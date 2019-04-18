@@ -2,6 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include <assert.h>
+#include <algorithm>
 #include <new>
 
 #include "crypto.hpp"  // KeccakStream
@@ -9,10 +10,11 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#undef ERROR
+#undef min
+#undef max
 #else
 #include <sys/mman.h>
-#include <algorithm>
-
 #endif
 
 namespace crypto {
@@ -52,20 +54,35 @@ CryptoNightContext::~CryptoNightContext() {
 
 #endif
 
-static Hash fill_merge_mining_branches(const std::vector<MergeMiningItem *> &pitems, size_t depth) {
-	if (pitems.size() == 1)
-		return pitems.at(0)->leaf;
+static size_t get_merge_mining_depth(const std::vector<MergeMiningItem *> &pitems, size_t depth) {
+	if (pitems.size() <= 1)
+		return depth;
 	std::vector<MergeMiningItem *> halves[2];
 	for (auto pitem : pitems) {
 		bool dir = (pitem->path.data[depth >> 3] & (1 << (depth & 7))) != 0;
 		halves[dir].push_back(pitem);
-		pitem->branch.push_back(Hash{});
 	}
-	Hash hashes[2] = {halves[0].empty() ? Hash{} : fill_merge_mining_branches(halves[0], depth + 1),
-	    halves[1].empty() ? Hash{} : fill_merge_mining_branches(halves[1], depth + 1)};
+	size_t left  = get_merge_mining_depth(halves[0], depth + 1);
+	size_t right = get_merge_mining_depth(halves[1], depth + 1);
+	return std::max(left, right);
+}
+
+static Hash fill_merge_mining_branches(const std::vector<MergeMiningItem *> &pitems, size_t depth, size_t max_depth) {
+	if (depth == max_depth) {
+		if (pitems.size() != 1)
+			throw std::logic_error("fill_merge_mining_branches invariant 1");
+		return pitems.at(0)->leaf;
+	}
+	std::vector<MergeMiningItem *> halves[2];
+	for (auto pitem : pitems) {
+		bool dir = (pitem->path.data[depth >> 3] & (1 << (depth & 7))) != 0;
+		halves[dir].push_back(pitem);
+	}
+	Hash hashes[2] = {halves[0].empty() ? Hash{} : fill_merge_mining_branches(halves[0], depth + 1, max_depth),
+	    halves[1].empty() ? Hash{} : fill_merge_mining_branches(halves[1], depth + 1, max_depth)};
 	for (size_t ha = 0; ha != 2; ++ha)
 		for (auto pitem : halves[ha])
-			pitem->branch.at(depth) = hashes[1 - ha];
+			pitem->branch.push_back(hashes[1 - ha]);
 	return cn_fast_hash(hashes, 2 * sizeof(Hash));
 }
 
@@ -75,7 +92,11 @@ Hash fill_merge_mining_branches(MergeMiningItem items[], size_t count) {
 	std::vector<MergeMiningItem *> pitems(count);
 	for (size_t i = 0; i != count; ++i)
 		pitems[i] = items + i;
-	return fill_merge_mining_branches(pitems, 0);
+	size_t max_depth = get_merge_mining_depth(pitems, 0);
+	Hash result      = fill_merge_mining_branches(pitems, 0, max_depth);
+	for (size_t i = 0; i != count; ++i)  // We push_back instead of insert(begin, ) for speed
+		std::reverse(pitems[i]->branch.begin(), pitems[i]->branch.end());
+	return result;
 }
 
 static Hash fill_cm_branches(const std::vector<CMTreeItem *> &pitems, size_t depth) {

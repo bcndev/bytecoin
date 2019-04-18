@@ -155,13 +155,13 @@ void HardwareWallet::test_all_methods() {
 	std::cout << result_point1 << std::endl;
 	std::cout << result_point2 << std::endl;
 	std::cout << "---- sign_add_output" << std::endl;
-	sign_add_output(false, 400, my_address, cn::AccountAddressSimple::type_tag, test_address1_s, test_address1_v,
+	sign_add_output(false, 400, my_address, cn::AccountAddressLegacy::type_tag, test_address1_s, test_address1_v,
 	    &result_point1, &result_point2, &result_byte);
 	std::cout << result_point1 << std::endl;
 	std::cout << result_point2 << std::endl;
 	std::cout << int(result_byte) << std::endl;
 	std::cout << "---- sign_add_output" << std::endl;
-	sign_add_output(true, 500, my_address, cn::AccountAddressSimple::type_tag, test_address1_s, test_address1_v,
+	sign_add_output(true, 500, my_address, cn::AccountAddressLegacy::type_tag, test_address1_s, test_address1_v,
 	    &result_point1, &result_point2, &result_byte);
 	std::cout << result_point1 << std::endl;
 	std::cout << result_point2 << std::endl;
@@ -194,7 +194,7 @@ void HardwareWallet::test_all_methods() {
 	std::cout << result_point1 << std::endl;
 	std::cout << result_point2 << std::endl;
 	std::cout << "---- sign_add_output" << std::endl;
-	sign_add_output(false, 400, my_address, cn::AccountAddressUnlinkable::type_tag, test_address1_s, test_address1_v,
+	sign_add_output(false, 400, my_address, cn::AccountAddressAmethyst::type_tag, test_address1_s, test_address1_v,
 	    &result_point1, &result_point2, &result_byte);
 	std::cout << result_point1 << std::endl;
 	std::cout << result_point2 << std::endl;

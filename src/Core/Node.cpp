@@ -683,7 +683,7 @@ bool Node::on_send_transaction(http::Client *, http::RequestBody &&, json_rpc::R
 	return true;
 }
 
-void Node::check_sendproof(const SendproofKey &sp, api::cnd::CheckSendproof::Response &response) const {
+void Node::check_sendproof(const SendproofLegacy &sp, api::cnd::CheckSendproof::Response &response) const {
 	BinaryArray binary_tx;
 	Height height = 0;
 	Hash block_hash;
@@ -702,10 +702,10 @@ void Node::check_sendproof(const SendproofKey &sp, api::cnd::CheckSendproof::Res
 	if (!m_block_chain.get_currency().parse_account_address_string(sp.address, &address))
 		throw api::ErrorAddress(
 		    api::ErrorAddress::ADDRESS_FAILED_TO_PARSE, "Failed to parse sendproof address", sp.address);
-	if (address.type() != typeid(AccountAddressSimple))
+	if (address.type() != typeid(AccountAddressLegacy))
 		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION,
 		    "Transaction version too low to contain address of type other than simple");
-	auto &addr              = boost::get<AccountAddressSimple>(address);
+	auto &addr              = boost::get<AccountAddressLegacy>(address);
 	PublicKey tx_public_key = extra_get_transaction_public_key(tx.extra);
 	if (!crypto::check_sendproof(tx_public_key, addr.V, sp.derivation, message_hash, sp.signature)) {
 		throw api::cnd::CheckSendproof::Error(
@@ -749,7 +749,7 @@ void Node::check_sendproof(const BinaryArray &data_inside_base58, api::cnd::Chec
 		if (!stream.empty())
 			throw api::cnd::CheckSendproof::Error(
 			    api::cnd::CheckSendproof::FAILED_TO_PARSE, "Failed to parse proof object - too many bytes");
-		SendproofKey spk;
+		SendproofLegacy spk;
 		spk.transaction_hash = sp.transaction_hash;
 		spk.message          = sp.message;
 		spk.address          = m_block_chain.get_currency().account_address_as_string(sp.address_simple);
@@ -859,7 +859,7 @@ bool Node::on_check_sendproof(http::Client *, http::RequestBody &&, json_rpc::Re
 		check_sendproof(data_inside_base58, response);
 		return true;
 	}
-	SendproofKey sp;
+	SendproofLegacy sp;
 	try {
 		common::JsonValue jv = common::JsonValue::from_string(request.sendproof);
 		seria::from_json_value(sp, jv);

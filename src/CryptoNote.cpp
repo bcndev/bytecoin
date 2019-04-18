@@ -22,15 +22,15 @@ void ser(Signature &v, ISeria &s) { s.binary(reinterpret_cast<uint8_t *>(&v), si
 void ser(crypto::EllipticCurveScalar &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
 void ser(crypto::EllipticCurvePoint &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
 
-void ser_members(cn::AccountAddressSimple &v, ISeria &s) {
+void ser_members(cn::AccountAddressLegacy &v, ISeria &s) {
 	seria_kv("spend", v.S, s);
 	seria_kv("view", v.V, s);
 }
-void ser_members(cn::AccountAddressUnlinkable &v, ISeria &s) {
+void ser_members(cn::AccountAddressAmethyst &v, ISeria &s) {
 	seria_kv("spend", v.S, s);
 	seria_kv("spend_view", v.Sv, s);
 }
-void ser_members(cn::SendproofKey &v, ISeria &s) {
+void ser_members(cn::SendproofLegacy &v, ISeria &s) {
 	Amount amount = 0;
 	seria_kv("transaction_hash", v.transaction_hash, s);
 	seria_kv("message", v.message, s);

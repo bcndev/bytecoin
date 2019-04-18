@@ -136,23 +136,23 @@ struct BlockTemplate : public BlockHeader {
 
 enum BlockSeriaType { NORMAL, PREHASH, BLOCKHASH, LONG_BLOCKHASH };
 
-struct AccountAddressSimple {
+struct AccountAddressLegacy {
 	PublicKey S;
 	PublicKey V;
 	enum { type_tag = 0 };
-	static std::string str_type_tag() { return "simple"; }
+	static std::string str_type_tag() { return "legacy"; }
 };
 
-struct AccountAddressUnlinkable {
+struct AccountAddressAmethyst {
 	PublicKey S;
 	PublicKey Sv;
 	enum { type_tag = 1 };
-	static std::string str_type_tag() { return "unlinkable"; }
+	static std::string str_type_tag() { return "amethyst"; }
 };
 
-typedef boost::variant<AccountAddressSimple, AccountAddressUnlinkable> AccountAddress;
+typedef boost::variant<AccountAddressLegacy, AccountAddressAmethyst> AccountAddress;
 
-struct SendproofKey {
+struct SendproofLegacy {
 	Hash transaction_hash;
 	std::string message;
 	std::string address;
@@ -167,7 +167,7 @@ struct SendproofKey {
 struct SendproofAmethyst {
 	uint8_t version = 0;
 	Hash transaction_hash;
-	AccountAddressSimple address_simple;  // for version 1-3
+	AccountAddressLegacy address_simple;  // for version 1-3
 	KeyDerivation derivation;             // for version 1-3
 	Signature signature;                  // for version 1-3
 	struct Element {
@@ -210,21 +210,19 @@ struct SignedCheckpoint : public Checkpoint {
 };
 
 // Predicates for using in maps, sets, etc
-inline bool operator==(const AccountAddressSimple &a, const AccountAddressSimple &b) {
+inline bool operator==(const AccountAddressLegacy &a, const AccountAddressLegacy &b) {
 	return std::tie(a.V, a.S) == std::tie(b.V, b.S);
 }
-inline bool operator!=(const AccountAddressSimple &a, const AccountAddressSimple &b) { return !operator==(a, b); }
-inline bool operator<(const AccountAddressSimple &a, const AccountAddressSimple &b) {
+inline bool operator!=(const AccountAddressLegacy &a, const AccountAddressLegacy &b) { return !operator==(a, b); }
+inline bool operator<(const AccountAddressLegacy &a, const AccountAddressLegacy &b) {
 	return std::tie(a.V, a.S) < std::tie(b.V, b.S);
 }
 
-inline bool operator==(const AccountAddressUnlinkable &a, const AccountAddressUnlinkable &b) {
+inline bool operator==(const AccountAddressAmethyst &a, const AccountAddressAmethyst &b) {
 	return std::tie(a.S, a.Sv) == std::tie(b.S, b.Sv);
 }
-inline bool operator!=(const AccountAddressUnlinkable &a, const AccountAddressUnlinkable &b) {
-	return !operator==(a, b);
-}
-inline bool operator<(const AccountAddressUnlinkable &a, const AccountAddressUnlinkable &b) {
+inline bool operator!=(const AccountAddressAmethyst &a, const AccountAddressAmethyst &b) { return !operator==(a, b); }
+inline bool operator<(const AccountAddressAmethyst &a, const AccountAddressAmethyst &b) {
 	return std::tie(a.S, a.Sv) < std::tie(b.S, b.Sv);
 }
 
@@ -254,9 +252,9 @@ void ser(cn::Signature &v, ISeria &s);
 void ser(crypto::EllipticCurveScalar &v, ISeria &s);
 void ser(crypto::EllipticCurvePoint &v, ISeria &s);
 
-void ser_members(cn::AccountAddressSimple &v, ISeria &s);
-void ser_members(cn::AccountAddressUnlinkable &v, ISeria &s);
-void ser_members(cn::SendproofKey &v, ISeria &s);
+void ser_members(cn::AccountAddressLegacy &v, ISeria &s);
+void ser_members(cn::AccountAddressAmethyst &v, ISeria &s);
+void ser_members(cn::SendproofLegacy &v, ISeria &s);
 void ser_members(cn::SendproofAmethyst::Element &v, ISeria &s);
 void ser_members(cn::SendproofAmethyst &v, ISeria &s);
 void ser_members(cn::TransactionInput &v, ISeria &s);
