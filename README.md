@@ -1,5 +1,7 @@
 # Bytecoin
 
+[![Build Status](https://dev.azure.com/bcndev/bytecoin/_apis/build/status/bytecoin-daemons?branchName=releases/3.4.2)](https://dev.azure.com/bcndev/bytecoin/_build/latest?definitionId=1&branchName=releases/3.4.2)
+
 ## About
 
 Welcome to the repository of Bytecoin. Here you will find source code, instructions, wiki resources, and integration tutorials.
