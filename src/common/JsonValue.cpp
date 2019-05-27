@@ -2,10 +2,12 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "JsonValue.hpp"
+#include <math.h>
 #include <iomanip>
 #include <iterator>
 #include <limits>
 #include <sstream>
+#include "Math.hpp"
 #include "StringTools.hpp"
 #include "string.hpp"
 
@@ -21,20 +23,12 @@ JsonValue::JsonValue(const JsonValue &other) {
 	case BOOL:
 		value_bool = other.value_bool;
 		break;
-	case SIGNED_INTEGER:
-		value_integer = other.value_integer;
-		break;
-	case UNSIGNED_INTEGER:
-		value_unsigned = other.value_unsigned;
-		break;
 	case NIL:
 		break;
 	case OBJECT:
 		new (&value_object) Object(reinterpret_cast<const Object &>(other.value_object));
 		break;
-	case DOUBLE:
-		value_real = other.value_real;
-		break;
+	case NUMBER:
 	case STRING:
 		new (&value_string) String(reinterpret_cast<const String &>(other.value_string));
 		break;
@@ -50,20 +44,12 @@ JsonValue::JsonValue(JsonValue &&other) noexcept {
 	case BOOL:
 		value_bool = other.value_bool;
 		break;
-	case SIGNED_INTEGER:
-		value_integer = other.value_integer;
-		break;
-	case UNSIGNED_INTEGER:
-		value_unsigned = other.value_unsigned;
-		break;
 	case NIL:
 		break;
 	case OBJECT:
 		new (&value_object) Object(std::move(reinterpret_cast<Object &>(other.value_object)));
 		break;
-	case DOUBLE:
-		value_real = other.value_real;
-		break;
+	case NUMBER:
 	case STRING:
 		new (&value_string) String(std::move(reinterpret_cast<String &>(other.value_string)));
 		break;
@@ -82,6 +68,7 @@ JsonValue::JsonValue(Type value_type) {
 	case OBJECT:
 		new (&value_object) Object;
 		break;
+	case NUMBER:
 	case STRING:
 		new (&value_string) String;
 		break;
@@ -104,9 +91,9 @@ JsonValue::JsonValue(Array &&value) {
 
 JsonValue::JsonValue(Bool value) : type(BOOL), value_bool(value) {}
 
-JsonValue::JsonValue(Integer value) : type(SIGNED_INTEGER), value_integer(value) {}
-
-JsonValue::JsonValue(Unsigned value) : type(UNSIGNED_INTEGER), value_unsigned(value) {}
+JsonValue::JsonValue(Integer value) : type(NUMBER) { new (&value_string) String(common::to_string(value)); }
+JsonValue::JsonValue(Unsigned value) : type(NUMBER) { new (&value_string) String(common::to_string(value)); }
+JsonValue::JsonValue(Double value) : type(NUMBER) { new (&value_string) String(common::to_string(value)); }
 
 JsonValue::JsonValue(std::nullptr_t) : type(NIL) {}
 
@@ -119,8 +106,6 @@ JsonValue::JsonValue(Object &&value) {
 	new (&value_object) Object(std::move(value));
 	type = OBJECT;
 }
-
-JsonValue::JsonValue(Double value) : type(DOUBLE), value_real(value) {}
 
 JsonValue::JsonValue(const String &value) {
 	new (&value_string) String(value);
@@ -146,20 +131,12 @@ JsonValue &JsonValue::operator=(const JsonValue &other) {
 		case BOOL:
 			value_bool = other.value_bool;
 			break;
-		case SIGNED_INTEGER:
-			value_integer = other.value_integer;
-			break;
-		case UNSIGNED_INTEGER:
-			value_unsigned = other.value_unsigned;
-			break;
 		case NIL:
 			break;
 		case OBJECT:
 			new (&value_object) Object(reinterpret_cast<const Object &>(other.value_object));
 			break;
-		case DOUBLE:
-			value_real = other.value_real;
-			break;
+		case NUMBER:
 		case STRING:
 			new (&value_string) String(reinterpret_cast<const String &>(other.value_string));
 			break;
@@ -173,20 +150,12 @@ JsonValue &JsonValue::operator=(const JsonValue &other) {
 		case BOOL:
 			value_bool = other.value_bool;
 			break;
-		case SIGNED_INTEGER:
-			value_integer = other.value_integer;
-			break;
-		case UNSIGNED_INTEGER:
-			value_unsigned = other.value_unsigned;
-			break;
 		case NIL:
 			break;
 		case OBJECT:
 			reinterpret_cast<Object &>(value_object) = reinterpret_cast<const Object &>(other.value_object);
 			break;
-		case DOUBLE:
-			value_real = other.value_real;
-			break;
+		case NUMBER:
 		case STRING:
 			reinterpret_cast<String &>(value_string) = reinterpret_cast<const String &>(other.value_string);
 			break;
@@ -206,20 +175,12 @@ JsonValue &JsonValue::operator=(JsonValue &&other) noexcept {
 		case BOOL:
 			value_bool = other.value_bool;
 			break;
-		case SIGNED_INTEGER:
-			value_integer = other.value_integer;
-			break;
-		case UNSIGNED_INTEGER:
-			value_unsigned = other.value_unsigned;
-			break;
 		case NIL:
 			break;
 		case OBJECT:
 			new (&value_object) Object(std::move(reinterpret_cast<Object &>(other.value_object)));
 			break;
-		case DOUBLE:
-			value_real = other.value_real;
-			break;
+		case NUMBER:
 		case STRING:
 			new (&value_string) String(std::move(reinterpret_cast<String &>(other.value_string)));
 			break;
@@ -233,20 +194,12 @@ JsonValue &JsonValue::operator=(JsonValue &&other) noexcept {
 		case BOOL:
 			value_bool = other.value_bool;
 			break;
-		case SIGNED_INTEGER:
-			value_integer = other.value_integer;
-			break;
-		case UNSIGNED_INTEGER:
-			value_unsigned = other.value_unsigned;
-			break;
 		case NIL:
 			break;
 		case OBJECT:
 			reinterpret_cast<Object &>(value_object) = std::move(reinterpret_cast<Object &>(other.value_object));
 			break;
-		case DOUBLE:
-			value_real = other.value_real;
-			break;
+		case NUMBER:
 		case STRING:
 			reinterpret_cast<String &>(value_string) = std::move(reinterpret_cast<String &>(other.value_string));
 			break;
@@ -286,16 +239,41 @@ JsonValue &JsonValue::operator=(Bool value) {
 }
 
 JsonValue &JsonValue::operator=(Integer value) {
-	destruct_value();
-	type          = SIGNED_INTEGER;
-	value_integer = value;
+	set_number(common::to_string(value));
 	return *this;
 }
 
 JsonValue &JsonValue::operator=(Unsigned value) {
-	destruct_value();
-	type           = UNSIGNED_INTEGER;
-	value_unsigned = value;
+	set_number(common::to_string(value));
+	return *this;
+}
+
+JsonValue &JsonValue::operator=(Double value) {
+	set_number(common::to_string(value));
+	return *this;
+}
+
+JsonValue &JsonValue::set_number(const std::string &number) {
+	if (type != STRING && type != NUMBER) {
+		destruct_value();
+		new (&value_string) String(number);
+		type = NUMBER;
+	} else {
+		reinterpret_cast<String &>(value_string) = number;
+		type                                     = NUMBER;
+	}
+	return *this;
+}
+
+JsonValue &JsonValue::set_number(std::string &&number) {
+	if (type != STRING && type != NUMBER) {
+		destruct_value();
+		new (&value_string) String(std::move(number));
+		type = NUMBER;
+	} else {
+		reinterpret_cast<String &>(value_string) = std::move(number);
+		type                                     = NUMBER;
+	}
 	return *this;
 }
 
@@ -326,31 +304,26 @@ JsonValue &JsonValue::operator=(Object &&value) {
 	return *this;
 }
 
-JsonValue &JsonValue::operator=(Double value) {
-	destruct_value();
-	type       = DOUBLE;
-	value_real = value;
-	return *this;
-}
-
 JsonValue &JsonValue::operator=(const String &value) {
-	if (type != STRING) {
+	if (type != STRING && type != NUMBER) {
 		destruct_value();
 		new (&value_string) String(value);
 		type = STRING;
 	} else {
 		reinterpret_cast<String &>(value_string) = value;
+		type                                     = STRING;
 	}
 	return *this;
 }
 
 JsonValue &JsonValue::operator=(String &&value) {
-	if (type != STRING) {
+	if (type != STRING && type != NUMBER) {
 		destruct_value();
 		new (&value_string) String(std::move(value));
 		type = STRING;
 	} else {
 		reinterpret_cast<String &>(value_string) = std::move(value);
+		type                                     = STRING;
 	}
 	return *this;
 }
@@ -374,27 +347,47 @@ JsonValue::Bool JsonValue::get_bool() const {
 }
 
 JsonValue::Integer JsonValue::get_integer() const {
-	if (type == SIGNED_INTEGER)
-		return value_integer;
-	if (type == UNSIGNED_INTEGER) {
-		if (value_unsigned > static_cast<Unsigned>(std::numeric_limits<Integer>::max()))
-			throw std::runtime_error(
-			    "Too big unsigned number does not fit into integer (" + common::to_string(value_unsigned) + ")");
-		return value_unsigned;
+	if (type != NUMBER)
+		throw std::runtime_error("JsonValue type is not NUMBER");
+	const auto &s = reinterpret_cast<const String &>(value_string);
+	try {
+		return common::integer_cast<Integer>(s);
+	} catch (const std::exception &) {
 	}
-	throw std::runtime_error("JsonValue type is not INTEGER");
+	double value_real = 0;
+	std::istringstream{s} >> value_real;
+	double intpart   = 0;
+	double fractpart = modf(value_real, &intpart);
+	if (fractpart != 0)
+		throw std::runtime_error("Json number (" + s + ") must be integer");
+	auto result = static_cast<Integer>(value_real);
+	if (value_real != result)
+		throw std::runtime_error("Json number (" + s + ") must be in range [" +
+		                         common::to_string(std::numeric_limits<Integer>::min()) + ".." +
+		                         common::to_string(std::numeric_limits<Integer>::max()) + "]");
+	return result;
 }
 
 JsonValue::Unsigned JsonValue::get_unsigned() const {
-	if (type == SIGNED_INTEGER) {
-		if (value_integer < 0)
-			throw std::runtime_error(
-			    "JsonValue value < 0 cannot be returned as unsigned (" + common::to_string(value_integer) + ")");
-		return value_integer;
+	if (type != NUMBER)
+		throw std::runtime_error("JsonValue type is not NUMBER");
+	const auto &s = reinterpret_cast<const String &>(value_string);
+	try {
+		return common::integer_cast<Unsigned>(s);
+	} catch (const std::exception &) {
 	}
-	if (type == UNSIGNED_INTEGER)
-		return value_unsigned;
-	throw std::runtime_error("JsonValue type is not INTEGER");
+	double value_real = 0;
+	std::istringstream{s} >> value_real;
+	double intpart   = 0;
+	double fractpart = modf(value_real, &intpart);
+	if (fractpart != 0)
+		throw std::runtime_error("Json number (" + s + ") must be integer");
+	auto result = static_cast<Unsigned>(value_real);
+	if (value_real != result)
+		throw std::runtime_error("Json number (" + s + ") must be in range [" +
+		                         common::to_string(std::numeric_limits<Unsigned>::min()) + ".." +
+		                         common::to_string(std::numeric_limits<Unsigned>::max()) + "]");
+	return result;
 }
 
 JsonValue::Object &JsonValue::get_object() {
@@ -410,8 +403,11 @@ const JsonValue::Object &JsonValue::get_object() const {
 }
 
 JsonValue::Double JsonValue::get_double() const {
-	if (type != DOUBLE)
-		throw std::runtime_error("JsonValue type is not REAL");
+	if (type != NUMBER)
+		throw std::runtime_error("JsonValue type is not NUMBER");
+	const auto &s     = reinterpret_cast<const String &>(value_string);
+	double value_real = 0;
+	std::istringstream{s} >> value_real;
 	return value_real;
 }
 
@@ -424,6 +420,17 @@ JsonValue::String &JsonValue::get_string() {
 const JsonValue::String &JsonValue::get_string() const {
 	if (type != STRING)
 		throw std::runtime_error("JsonValue type is not STRING");
+	return reinterpret_cast<const String &>(value_string);
+}
+
+std::string &JsonValue::get_number() {
+	if (type != NUMBER)
+		throw std::runtime_error("JsonValue type is not NUMBER");
+	return reinterpret_cast<String &>(value_string);
+}
+const std::string &JsonValue::get_number() const {
+	if (type != NUMBER)
+		throw std::runtime_error("JsonValue type is not NUMBER");
 	return reinterpret_cast<const String &>(value_string);
 }
 
@@ -535,12 +542,6 @@ std::ostream &operator<<(std::ostream &out, const JsonValue &json_value) {
 	case JsonValue::BOOL:
 		out << (json_value.value_bool ? "true" : "false");
 		break;
-	case JsonValue::SIGNED_INTEGER:
-		out << json_value.value_integer;
-		break;
-	case JsonValue::UNSIGNED_INTEGER:
-		out << json_value.value_unsigned;
-		break;
 	case JsonValue::NIL:
 		out << "null";
 		break;
@@ -559,15 +560,8 @@ std::ostream &operator<<(std::ostream &out, const JsonValue &json_value) {
 		out << '}';
 		break;
 	}
-	case JsonValue::DOUBLE: {
-		std::ostringstream stream;
-		stream << std::fixed << std::setprecision(11) << json_value.value_real;
-		std::string value = stream.str();
-		while (value.size() > 1 && value[value.size() - 2] != '.' && value[value.size() - 1] == '0') {
-			value.resize(value.size() - 1);
-		}
-
-		out << value;
+	case JsonValue::NUMBER: {
+		out << *reinterpret_cast<const JsonValue::String *>(&json_value.value_string);
 		break;
 	}
 	case JsonValue::STRING:
@@ -858,19 +852,14 @@ void JsonValue::read_number(StreamContext &ctx, char c) {
 			} while (i >= '0' && i <= '9');
 		}
 		destruct_value();
-		std::istringstream(text) >> value_real;
-		type = DOUBLE;
+		new (&value_string) String(text);
+		type = NUMBER;
 	} else {
 		if (text.size() > 1 && ((text[0] == '0') || (text[0] == '-' && text[1] == '0')))
 			ctx.throw_error("Number expected");
 		destruct_value();
-		if (text.size() > 1 && text[0] == '-') {
-			std::istringstream(text) >> value_integer;
-			type = SIGNED_INTEGER;
-		} else {
-			std::istringstream(text) >> value_unsigned;
-			type = UNSIGNED_INTEGER;
-		}
+		new (&value_string) String(text);
+		type = NUMBER;
 	}
 }
 

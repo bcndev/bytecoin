@@ -44,6 +44,10 @@ public:
 
 class StreamError : public std::runtime_error {
 public:
-	explicit StreamError(const std::string &str) : std::runtime_error(str) {}
+	using std::runtime_error::runtime_error;
+};
+class StreamErrorFileExists : public StreamError {
+public:
+	using StreamError::StreamError;
 };
 }  // namespace common

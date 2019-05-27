@@ -5,6 +5,7 @@
 
 #include <condition_variable>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -21,7 +22,7 @@ class LegacyBlockChainReader {
 	std::unique_ptr<platform::FileStream> m_items_file;
 	std::unique_ptr<platform::FileStream> m_indexes_file;
 	Height m_count = 0;
-	std::vector<uint64_t> m_offsets;  // we artifically add offset of the end of file
+	std::vector<uint64_t> m_offsets;  // we artificially add offset of the end of file
 	void load_offsets();
 
 	std::thread m_th;

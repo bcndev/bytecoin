@@ -3,7 +3,6 @@
 
 #include "TransactionBuilder.hpp"
 #include <iostream>
-#include "BlockChain.hpp"
 #include "CryptoNoteTools.hpp"
 #include "Currency.hpp"
 #include "TransactionExtra.hpp"
@@ -13,6 +12,7 @@
 #include "common/string.hpp"
 #include "crypto/crypto.hpp"
 #include "crypto/crypto_helpers.hpp"
+#include "hardware/Proxy.hpp"
 #include "http/JsonRpc.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
@@ -21,7 +21,7 @@ using namespace cn;
 using namespace common;
 
 OutputKey TransactionBuilder::create_output(bool tx_amethyst, const AccountAddress &to, const SecretKey &tx_secret_key,
-    const Hash &tx_inputs_hash, size_t output_index, const Hash &output_seed) {
+    const Hash &tx_inputs_hash, size_t output_index, const Hash &output_seed, PublicKey *output_shared_secret) {
 	OutputKey out_key;
 
 	SecretKey output_secret_scalar;
@@ -43,9 +43,9 @@ OutputKey TransactionBuilder::create_output(bool tx_amethyst, const AccountAddre
 		    "TransactionBuilder::create_output output type forbidden for transaction version, wait for amethyst upgrade");
 	}
 	if (to.type() == typeid(AccountAddressLegacy)) {
-		auto &addr         = boost::get<AccountAddressLegacy>(to);
-		out_key.public_key = crypto::linkable_derive_output_public_key(
-		    output_secret_scalar, tx_inputs_hash, output_index, addr.S, addr.V, &out_key.encrypted_secret);
+		auto &addr                     = boost::get<AccountAddressLegacy>(to);
+		out_key.public_key             = crypto::linkable_derive_output_public_key(output_secret_scalar, tx_inputs_hash,
+            output_index, addr.S, addr.V, &out_key.encrypted_secret, output_shared_secret);
 		out_key.encrypted_address_type = AccountAddressLegacy::type_tag ^ output_secret_address_type;
 		//		std::cout << "AccountAddressLegacy=" << addr.S << " " << addr.V << " " << out_key.public_key << " "
 		//		          << out_key.encrypted_secret << std::endl;
@@ -53,8 +53,8 @@ OutputKey TransactionBuilder::create_output(bool tx_amethyst, const AccountAddre
 	}
 	if (to.type() == typeid(AccountAddressAmethyst)) {
 		auto &addr         = boost::get<AccountAddressAmethyst>(to);
-		out_key.public_key = crypto::unlinkable_derive_output_public_key(
-		    output_secret_point, tx_inputs_hash, output_index, addr.S, addr.Sv, &out_key.encrypted_secret);
+		out_key.public_key = crypto::unlinkable_derive_output_public_key(output_secret_point, tx_inputs_hash,
+		    output_index, addr.S, addr.Sv, &out_key.encrypted_secret, output_shared_secret);
 		out_key.encrypted_address_type = AccountAddressAmethyst::type_tag ^ output_secret_address_type;
 		//		std::cout << "AccountAddressAmethyst=" << addr.S << " " << addr.Sv << " " << out_key.public_key << " "
 		//		          << out_key.encrypted_secret << std::endl;
@@ -65,7 +65,7 @@ OutputKey TransactionBuilder::create_output(bool tx_amethyst, const AccountAddre
 
 bool TransactionBuilder::detect_not_our_output(const Wallet *wallet, bool tx_amethyst, const Hash &tid,
     const Hash &tx_inputs_hash, boost::optional<Wallet::History> *history, KeyPair *tx_keys, size_t out_index,
-    const OutputKey &key_output, AccountAddress *address) {
+    const OutputKey &key_output, AccountAddress *address, PublicKey *output_shared_secret) {
 	if (!tx_amethyst) {
 		if (!*history)
 			*history = wallet->load_history(tid);
@@ -77,6 +77,7 @@ bool TransactionBuilder::detect_not_our_output(const Wallet *wallet, bool tx_ame
 				const PublicKey guess_key      = crypto::derive_output_public_key(derivation, out_index, addr.S);
 				if (guess_key == key_output.public_key) {
 					*address = addr;
+					// No per output output_shared_secret before amethyst, and we do nto need to make one
 					return true;
 				}
 			}
@@ -90,11 +91,12 @@ bool TransactionBuilder::detect_not_our_output(const Wallet *wallet, bool tx_ame
 	} else {
 		output_seed = TransactionBuilder::generate_output_seed(tx_inputs_hash, wallet->get_view_seed(), out_index);
 	}
-	return detect_not_our_output_amethyst(tx_inputs_hash, output_seed, out_index, key_output, address);
+	return detect_not_our_output_amethyst(
+	    tx_inputs_hash, output_seed, out_index, key_output, address, output_shared_secret);
 }
 
 bool TransactionBuilder::detect_not_our_output_amethyst(const Hash &tx_inputs_hash, const Hash &output_seed,
-    size_t out_index, const OutputKey &key_output, AccountAddress *address) {
+    size_t out_index, const OutputKey &key_output, AccountAddress *address, PublicKey *output_shared_secret) {
 	SecretKey output_secret_scalar;
 	PublicKey output_secret_point;
 	uint8_t output_secret_address_type = 0;
@@ -105,22 +107,22 @@ bool TransactionBuilder::detect_not_our_output_amethyst(const Hash &tx_inputs_ha
 	if (address_type == AccountAddressLegacy::type_tag) {
 		AccountAddressLegacy addr;
 		crypto::linkable_underive_address(output_secret_scalar, tx_inputs_hash, out_index, key_output.public_key,
-		    key_output.encrypted_secret, &addr.S, &addr.V);
+		    key_output.encrypted_secret, &addr.S, &addr.V, output_shared_secret);
 		*address = addr;
 		return true;
 	}
 	if (address_type == AccountAddressAmethyst::type_tag) {
 		AccountAddressAmethyst u_address;
 		crypto::unlinkable_underive_address(&u_address.S, &u_address.Sv, output_secret_point, tx_inputs_hash, out_index,
-		    key_output.public_key, key_output.encrypted_secret);
+		    key_output.public_key, key_output.encrypted_secret, output_shared_secret);
 		*address = u_address;
 		return true;
 	}
 	return false;
 }
 
-void TransactionBuilder::add_output(uint64_t amount, const AccountAddress &to) {
-	m_output_descs.push_back(OutputDesc{amount, to});
+void TransactionBuilder::add_output(uint64_t amount, const AccountAddress &to, const std::string &message) {
+	m_output_descs.push_back(OutputDesc{amount, to, std::string{}});
 }
 
 static bool APIOutputLessGlobalIndex(const api::Output &a, const api::Output &b) {
@@ -162,6 +164,59 @@ void TransactionBuilder::generate_output_secrets(const Hash &output_seed, Secret
 	*output_secret_point                 = crypto::bytes_to_good_point(output_seed);
 	Hash output_secret_address_type_hash = crypto::cn_fast_hash(output_seed.data, sizeof(output_seed.data));
 	*output_secret_address_type          = output_secret_address_type_hash.data[0];
+}
+
+BinaryArray TransactionBuilder::encrypt_message_chunk(const std::string &message, const PublicKey &output_shared_secret,
+    const Hash &tx_inputs_hash, const size_t &out_index, size_t mid) {
+	const BinaryArray key_data = output_shared_secret.as_binary_array() | tx_inputs_hash.as_binary_array() |
+	                             get_varint_data(out_index) | as_binary_array("message");
+	auto key = crypto::chacha_key{crypto::cn_fast_hash(key_data)};
+	crypto::chacha_iv iv;
+	common::uint_be_to_bytes(iv.data, 8, mid);
+
+	std::string msg_crc = message + std::string(extra::EncryptedMessage::CRC_SIZE, '\0');
+	common::BinaryArray em(msg_crc.size());
+	crypto::chacha(20, msg_crc.data(), msg_crc.size(), key, iv, em.data());
+
+	std::string other;
+	invariant(
+	    decrypt_message_chunk(&other, em, output_shared_secret, tx_inputs_hash, out_index, mid) && other == message,
+	    "");
+	return em;
+}
+
+bool TransactionBuilder::decrypt_message_chunk(std::string *message, const BinaryArray &encrypted_message,
+    const PublicKey &output_shared_secret, const Hash &tx_inputs_hash, const size_t &out_index, size_t mid) {
+	if (encrypted_message.size() < extra::EncryptedMessage::CRC_SIZE)
+		return false;
+	const BinaryArray key_data = output_shared_secret.as_binary_array() | tx_inputs_hash.as_binary_array() |
+	                             get_varint_data(out_index) | as_binary_array("message");
+	auto key = crypto::chacha_key{crypto::cn_fast_hash(key_data)};
+	crypto::chacha_iv iv;
+	common::uint_be_to_bytes(iv.data, 8, mid);
+
+	common::BinaryArray dec(encrypted_message.size());
+	crypto::chacha(20, encrypted_message.data(), encrypted_message.size(), key, iv, dec.data());
+	for (size_t i = 0; i != extra::EncryptedMessage::CRC_SIZE; ++i, dec.pop_back())
+		if (dec.back() != 0)
+			return false;
+	*message = common::as_string(dec);
+	return true;
+}
+
+std::string TransactionBuilder::decrypt_message(const std::vector<extra::EncryptedMessage> &encrypted_messages,
+    const PublicKey &output_shared_secret, const Hash &tx_inputs_hash, const size_t &out_index) {
+	// When sending we can decide to split message for obfuscation of # of recipients
+	std::string result;
+	for (size_t mid = 0; mid != encrypted_messages.size(); ++mid) {
+		std::string msg;
+		if (TransactionBuilder::decrypt_message_chunk(
+		        &msg, encrypted_messages.at(mid).message, output_shared_secret, tx_inputs_hash, out_index, mid))
+			result += msg;
+	}
+	if (!result.empty())
+		std::cout << "Secret message decrypted: " << result << std::endl;
+	return result;
 }
 
 Transaction TransactionBuilder::sign(
@@ -215,11 +270,13 @@ Transaction TransactionBuilder::sign(
 		size_t record_index = 0;
 		SecretKey output_secret_key_s;
 		SecretKey output_secret_key_a;
-		BinaryArray output_secret_hash_arg;
+		PublicKey output_shared_secret;
 		if (!wallet->prepare_input_for_spend(ptx.version, other_kd, other_inputs_hash, our_output.index_in_transaction,
-		        key_output, &output_secret_hash_arg, &output_secret_key_s, &output_secret_key_a, &record_index)) {
+		        key_output, &output_shared_secret, &output_secret_key_s, &output_secret_key_a, &record_index)) {
 			throw json_rpc::Error(json_rpc::INTERNAL_ERROR, "No keys in wallet for address " + our_output.address);
 		}
+		auto output_secret_hash_arg = crypto::get_output_secret_hash_arg(
+		    output_shared_secret, other_inputs_hash, our_output.index_in_transaction);
 		output_secret_hash_args.push_back(output_secret_hash_arg);
 		all_secret_keys_s.push_back(output_secret_key_s);
 		all_secret_keys_a.push_back(output_secret_key_a);
@@ -227,9 +284,14 @@ Transaction TransactionBuilder::sign(
 
 		m_transaction.inputs.push_back(input_key);
 	}
+	std::vector<BinaryArray> encrypted_messages;
+	size_t additional_extra = 0;
+	for (const auto &ou : m_output_descs)
+		if (!ou.message.empty())
+			additional_extra += 1 + extra::EncryptedMessage::CRC_SIZE + ou.message.size();
 	if (wallet->get_hw()) {
 		wallet->get_hw()->sign_start(m_transaction.version, m_transaction.unlock_block_or_timestamp,
-		    m_input_descs.size(), m_output_descs.size(), m_transaction.extra.size());
+		    m_input_descs.size(), m_output_descs.size(), additional_extra + m_transaction.extra.size());
 		for (size_t i = 0; i != m_input_descs.size(); ++i) {
 			const InputKey &input_key = boost::get<InputKey>(m_transaction.inputs.at(i));
 			wallet->get_hw()->sign_add_input(
@@ -242,14 +304,18 @@ Transaction TransactionBuilder::sign(
 	const KeyPair tx_keys = transaction_keys_from_seed(tx_inputs_hash, wallet->get_view_seed());
 
 	if (!is_tx_amethyst)  // Never in case of hw, because we set extra size beforehand
-		extra_add_transaction_public_key(m_transaction.extra, tx_keys.public_key);
+		extra::add_transaction_public_key(m_transaction.extra, tx_keys.public_key);
 	// Now when we set tx keys we can derive output keys
 	m_transaction.outputs.resize(m_output_descs.size());
 	for (size_t out_index = 0; out_index != m_output_descs.size(); ++out_index) {
 		OutputKey out_key;
 		Amount amount            = m_output_descs.at(out_index).amount;
 		const AccountAddress &to = m_output_descs.at(out_index).addr;
+		std::string message      = m_output_descs.at(out_index).message;
+		PublicKey output_shared_secret;
 		if (wallet->get_hw()) {
+			output_shared_secret = crypto::rand<PublicKey>();
+			//	TODO - get shared_secret from hardware wallet
 			size_t record_index = 0;
 			WalletRecord record;
 			if (wallet->get_record(to, &record_index, &record)) {
@@ -270,11 +336,18 @@ Transaction TransactionBuilder::sign(
 		} else {
 			Hash output_seed = generate_output_seed(tx_inputs_hash, wallet->get_view_seed(), out_index);
 			out_key          = TransactionBuilder::create_output(is_tx_amethyst, m_output_descs.at(out_index).addr,
-                tx_keys.secret_key, tx_inputs_hash, out_index, output_seed);
+                tx_keys.secret_key, tx_inputs_hash, out_index, output_seed, &output_shared_secret);
 		}
 		out_key.amount                      = amount;
 		m_transaction.outputs.at(out_index) = out_key;
+		if (!message.empty()) {
+			common::BinaryArray em = encrypt_message_chunk(
+			    message, output_shared_secret, tx_inputs_hash, out_index, encrypted_messages.size());
+			encrypted_messages.push_back(em);
+		}
 	}
+	for (const auto &em : encrypted_messages)
+		extra::add_encrypted_message(m_transaction.extra, em);
 	if (wallet->get_hw()) {
 		wallet->get_hw()->sign_add_extra(m_transaction.extra);
 	}
@@ -391,7 +464,10 @@ void UnspentSelector::select_optimal_outputs(size_t max_transaction_size, size_t
 	while (true) {
 		if (!select_optimal_outputs(&pretty_coins, &non_pretty_coins, &dust_coins, max_digits,
 		        total_amount + (receiver_fee ? 0 : fee), anonymity, optimizations, small_optimizations))
-			throw json_rpc::Error(api::walletd::CreateTransaction::NOT_ENOUGH_FUNDS, "Not enough spendable funds");
+			throw json_rpc::Error(api::walletd::CreateTransaction::NOT_ENOUGH_FUNDS,
+			    "Not enough spendable funds, together with fee at least " +
+			        m_currency.format_amount(total_amount + (receiver_fee ? 0 : fee)) +
+			        " is required to send transaction");
 		Amount change_dust_fee = (m_used_total - total_amount - (receiver_fee ? 0 : fee)) % dust_threshold;
 		size_t tx_size = get_maximum_tx_size(m_inputs_count, total_outputs + m_currency.get_max_amount_outputs(),
 		    anonymity);  // Expected max change outputs
@@ -439,7 +515,7 @@ void UnspentSelector::select_optimal_outputs(size_t max_transaction_size, size_t
 			for (const auto &uu : m_used_unspents)
 				final_coins += " " + common::to_string(uu.amount);
 			m_log(logging::INFO) << "Selected used_total=" << m_used_total << " for total_amount=" << total_amount
-			                     << ", final coins" << final_coins << std::endl;
+			                     << ", final coins" << final_coins;
 			return;
 		}
 		fee = ((size_fee - change_dust_fee + dust_threshold - 1) / dust_threshold) * dust_threshold;
@@ -502,7 +578,7 @@ void UnspentSelector::return_coins_to_index(
 void UnspentSelector::optimize_amounts(PrettyCoins *pretty_coins, size_t max_digit, Amount total_amount) {
 	if (detailed_output)
 		m_log(logging::INFO) << "Sub optimizing amount=" << fake_large + total_amount - m_used_total
-		                     << " total_amount=" << total_amount << " used_total=" << m_used_total << std::endl;
+		                     << " total_amount=" << total_amount << " used_total=" << m_used_total;
 	Amount digit_amount = 1;
 	for (size_t digit = 0; digit != max_digit + 1; ++digit, digit_amount *= 10) {
 		if (m_used_total >= total_amount && digit_amount > m_used_total)  // No optimization far beyond requested sum
@@ -529,7 +605,7 @@ void UnspentSelector::optimize_amounts(PrettyCoins *pretty_coins, size_t max_dig
 			if (detailed_output)
 				m_log(logging::INFO) << "Found pair for digit=" << digit << " am=" << 10 - am << " coins=("
 				                     << best_two_counts[0] << ", " << best_two_counts[1]
-				                     << ") sum weight=" << best_weight << std::endl;
+				                     << ") sum weight=" << best_weight;
 			for (size_t i = 0; i != 2; ++i) {
 				auto &uns = dit->second[best_two_counts[i]];
 				auto &un  = uns.back();
@@ -557,7 +633,7 @@ void UnspentSelector::optimize_amounts(PrettyCoins *pretty_coins, size_t max_dig
 		if (best_single != 0) {
 			if (detailed_output)
 				m_log(logging::INFO) << "Found single for digit=" << digit << " am=" << 10 - am
-				                     << " coin=" << best_single << " weight=" << best_weight << std::endl;
+				                     << " coin=" << best_single << " weight=" << best_weight;
 			auto &uns = dit->second[best_single];
 			auto &un  = uns.back();
 			m_used_total += un.amount;
@@ -571,11 +647,10 @@ void UnspentSelector::optimize_amounts(PrettyCoins *pretty_coins, size_t max_dig
 			continue;
 		}
 		if (detailed_output)
-			m_log(logging::INFO) << "Found nothing for digit=" << digit << std::endl;
+			m_log(logging::INFO) << "Found nothing for digit=" << digit;
 	}
 	if (detailed_output)
-		m_log(logging::INFO) << "Sub optimized used_total=" << m_used_total << " for total=" << total_amount
-		                     << std::endl;
+		m_log(logging::INFO) << "Sub optimized used_total=" << m_used_total << " for total=" << total_amount;
 }
 
 bool UnspentSelector::select_optimal_outputs(PrettyCoins *pretty_coins, NonPrettyCoins *non_pretty_coins,
@@ -585,7 +660,7 @@ bool UnspentSelector::select_optimal_outputs(PrettyCoins *pretty_coins, NonPrett
 	//    [digit:size:outputs]
 	if (detailed_output)
 		m_log(logging::INFO) << "Optimizing amount=" << fake_large + total_amount - m_used_total
-		                     << " total_amount=" << total_amount << " used_total=" << m_used_total << std::endl;
+		                     << " total_amount=" << total_amount << " used_total=" << m_used_total;
 	if (anonymity == 0) {
 		if (m_used_total < total_amount) {
 			// Find smallest dust coin >= total_amount - used_total, it can be very
@@ -594,7 +669,7 @@ bool UnspentSelector::select_optimal_outputs(PrettyCoins *pretty_coins, NonPrett
 			if (duit != dust_coins->end()) {
 				auto &un = duit->second.back();
 				if (detailed_output)
-					m_log(logging::INFO) << "Found single large dust coin=" << un.amount << std::endl;
+					m_log(logging::INFO) << "Found single large dust coin=" << un.amount;
 				m_used_total += un.amount;
 				m_inputs_count += 1;
 				m_optimization_unspents.push_back(std::move(un));
@@ -608,7 +683,7 @@ bool UnspentSelector::select_optimal_outputs(PrettyCoins *pretty_coins, NonPrett
 			auto duit = --dust_coins->end();
 			auto &un  = duit->second.back();
 			if (detailed_output)
-				m_log(logging::INFO) << "Found optimization dust coin=" << un.amount << std::endl;
+				m_log(logging::INFO) << "Found optimization dust coin=" << un.amount;
 			m_used_total += un.amount;
 			m_inputs_count += 1;
 			optimization_count -= 1;
@@ -623,7 +698,7 @@ bool UnspentSelector::select_optimal_outputs(PrettyCoins *pretty_coins, NonPrett
 		auto duit = --non_pretty_coins->end();
 		auto &un  = duit->second.back();
 		if (detailed_output)
-			m_log(logging::INFO) << "Found optimization non-pretty coin=" << un.amount << std::endl;
+			m_log(logging::INFO) << "Found optimization non-pretty coin=" << un.amount;
 		m_used_total += un.amount;
 		m_inputs_count += 1;
 		optimization_count -= 1;
@@ -647,7 +722,7 @@ bool UnspentSelector::select_optimal_outputs(PrettyCoins *pretty_coins, NonPrett
 		for (int i = 0; i != 10; ++i) {
 			auto &un = best_stack->back();
 			if (detailed_output)
-				m_log(logging::INFO) << "Found optimization stack for coin=" << un.amount << std::endl;
+				m_log(logging::INFO) << "Found optimization stack for coin=" << un.amount;
 			m_used_total += un.amount;
 			m_inputs_count += 1;
 			optimization_count -= 1;
@@ -668,8 +743,7 @@ bool UnspentSelector::select_optimal_outputs(PrettyCoins *pretty_coins, NonPrett
 		for (auto ait = dit->second.begin(); ait != dit->second.end(); ++ait)
 			if (!ait->second.empty() && ait->first * digit_amount >= total_amount - m_used_total) {
 				if (detailed_output)
-					m_log(logging::INFO) << "Found single large coin for digit=" << digit << " coin=" << ait->first
-					                     << std::endl;
+					m_log(logging::INFO) << "Found single large coin for digit=" << digit << " coin=" << ait->first;
 				auto &uns = dit->second[ait->first];
 				auto &un  = uns.back();
 				m_used_total += un.amount;
@@ -722,7 +796,7 @@ void UnspentSelector::select_max_outputs(PrettyCoins *pretty_coins, NonPrettyCoi
 			auto &uns = ait->second;
 			auto &un  = uns.back();
 			if (detailed_output)
-				m_log(logging::INFO) << "Found filler coin=" << un.amount << std::endl;
+				m_log(logging::INFO) << "Found filler coin=" << un.amount;
 			m_used_total += un.amount;
 			m_inputs_count += 1;
 			m_optimization_unspents.push_back(std::move(un));
@@ -737,7 +811,7 @@ void UnspentSelector::select_max_outputs(PrettyCoins *pretty_coins, NonPrettyCoi
 			auto duit = --non_pretty_coins->end();
 			auto &un  = duit->second.back();
 			if (detailed_output)
-				m_log(logging::INFO) << "Found filler non-pretty coin=" << un.amount << std::endl;
+				m_log(logging::INFO) << "Found filler non-pretty coin=" << un.amount;
 			m_used_total += un.amount;
 			m_inputs_count += 1;
 			m_optimization_unspents.push_back(std::move(un));
@@ -749,7 +823,7 @@ void UnspentSelector::select_max_outputs(PrettyCoins *pretty_coins, NonPrettyCoi
 		auto duit = --dust_coins->end();
 		auto &un  = duit->second.back();
 		if (detailed_output)
-			m_log(logging::INFO) << "Found filler dust coin=" << un.amount << std::endl;
+			m_log(logging::INFO) << "Found filler dust coin=" << un.amount;
 		m_used_total += un.amount;
 		m_inputs_count += 1;
 		m_optimization_unspents.push_back(std::move(un));

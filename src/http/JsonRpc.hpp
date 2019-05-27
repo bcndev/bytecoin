@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <boost/foreach.hpp>
 #include <boost/optional.hpp>
 #include <functional>
 
@@ -47,8 +46,18 @@ public:
 	}
 	template<typename T>
 	void load_params(T &v) const {
-		if (params)
-			seria::from_json_value_strict(v, params.get());
+		static_assert(!std::is_pointer<T>::value, "Cannot be called with pointer");
+		seria::JsonInputStreamValue s(stripped_req, false);
+		try {
+			s.begin_object();
+			seria_kv("params", v, s);
+			s.end_object();
+		} catch (const std::exception &) {
+			std::throw_with_nested(std::runtime_error(
+			    "Error while deserializing json rpc request of type '" + common::demangle(typeid(T).name()) + "'"));
+		}
+		//		if (params)
+		//			seria::from_json_value_strict(v, params.get());
 	}
 	const std::string &get_method() const { return method; }
 	const OptionalJsonValue &get_id() const { return jid; }
@@ -56,7 +65,7 @@ public:
 private:
 	void parse(const std::string &request_body, bool allow_empty_id);
 
-	OptionalJsonValue params;
+	common::JsonValue stripped_req;  // req with params and excess fields
 	OptionalJsonValue jid;
 	std::string method;
 };

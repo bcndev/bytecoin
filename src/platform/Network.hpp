@@ -13,7 +13,26 @@
 #include "TargetConditionals.h"
 #endif
 
-#if defined(__ANDROID__)
+#ifdef __EMSCRIPTEN__
+namespace platform {
+class Timer : private common::Nocopy {
+public:
+	typedef std::function<void()> after_handler;
+
+	explicit Timer(after_handler &&a_handler);
+	~Timer();
+
+	void once(float after_seconds);  // cancels previous once first
+	void cancel();
+
+private:
+	class Impl;
+	std::unique_ptr<Impl> impl;
+	after_handler a_handler;
+};
+
+}  // namespace platform
+#elif defined(__ANDROID__)
 #include <QTcpSocket>
 #include <QTimer>
 
@@ -85,7 +104,7 @@ class EventLoop {
 public:
 	static void cancel_current() {}
 	static EventLoop *current() { return nullptr; }
-	void wake() {}
+	void wake(std::function<void()> &&a_handler) {}
 };
 class Timer : private common::Nocopy {
 public:
@@ -175,7 +194,7 @@ public:
 
 	void run();  // run until cancel
 	void cancel();
-	void wake();
+	void wake(std::function<void()> &&a_handler);
 
 	static void cancel_current() { current()->cancel(); }
 
@@ -184,6 +203,21 @@ public:
 private:
 	boost::asio::io_service &io_service;
 	static thread_local EventLoop *current_loop;
+};
+class SafeMessage : private common::Nocopy {
+public:
+	typedef std::function<void()> after_handler;
+
+	explicit SafeMessage(after_handler &&a_handler);
+	~SafeMessage();
+
+	void fire();  // The only method to be called from other threads
+	void cancel();
+
+private:
+	class Impl;
+	std::unique_ptr<Impl> impl;
+	after_handler a_handler;
 };
 
 class Timer : private common::Nocopy {
@@ -234,7 +268,7 @@ public:
 	typedef std::function<void()> A_handler;
 	class AddressInUse : public std::runtime_error {
 	public:
-		explicit AddressInUse(const std::string &msg) : std::runtime_error(msg) {}
+		using std::runtime_error::runtime_error;
 	};
 
 	static std::vector<std::string> local_addresses(bool ipv4, bool ipv6);

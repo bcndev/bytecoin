@@ -4,12 +4,9 @@
 #include "PathTools.hpp"
 #include <algorithm>
 #include <cstdio>
+#include <sstream>
 #include "Files.hpp"
 #include "common/Math.hpp"
-
-#ifdef __APPLE__
-#include "TargetConditionals.h"
-#endif
 
 #ifdef _WIN32
 #include <shlobj.h>
@@ -29,216 +26,76 @@
 #endif
 
 namespace platform {
-#ifdef _WIN32
+#ifdef __ANDROID__
+std::string get_os_version_string() { return "Android"; }
+std::string get_app_data_folder(const std::string &app_name) {
+	QString data_path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+	return data_path.toStdString();
+}
+#elif defined(_WIN32)
 std::string get_os_version_string() {
 	typedef void(WINAPI * PGNSI)(LPSYSTEM_INFO);
 	typedef BOOL(WINAPI * PGPI)(DWORD, DWORD, DWORD, DWORD, PDWORD);
-#define BUFSIZE 10000
 
-	char pszOS[BUFSIZE] = {0};
-	OSVERSIONINFOEX osvi;
-	SYSTEM_INFO si;
-	PGNSI pGNSI;
-	PGPI pGPI;
-	BOOL bOsVersionInfoEx;
-	DWORD dwType;
+	std::ostringstream stream;
 
-	ZeroMemory(&si, sizeof(SYSTEM_INFO));
-	ZeroMemory(&osvi, sizeof(OSVERSIONINFOEX));
+	OSVERSIONINFOEX osvi{};
+	SYSTEM_INFO si{};
 
 	osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
-	bOsVersionInfoEx         = GetVersionExA(reinterpret_cast<OSVERSIONINFO *>(&osvi));
+	if (!GetVersionExA(reinterpret_cast<OSVERSIONINFO *>(&osvi))) {
+		stream << "Microsoft Windows, GetVersionExA failed";
+		return stream.str();
+	}
 
-	if (!bOsVersionInfoEx)
-		return pszOS;
-
-	// Call GetNativeSystemInfo if supported or GetSystemInfo otherwise.
-
-	pGNSI = (PGNSI)GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")), "GetNativeSystemInfo");
-	if (NULL != pGNSI)
+	PGNSI pGNSI = (PGNSI)GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")), "GetNativeSystemInfo");
+	if (pGNSI)
 		pGNSI(&si);
 	else
 		GetSystemInfo(&si);
 
-	if (VER_PLATFORM_WIN32_NT == osvi.dwPlatformId && osvi.dwMajorVersion > 4) {
-		StringCchCopy(pszOS, BUFSIZE, TEXT("Microsoft "));
-
-		// Test for the specific product.
-
-		if (osvi.dwMajorVersion == 6) {
-			if (osvi.dwMinorVersion == 0) {
-				if (osvi.wProductType == VER_NT_WORKSTATION)
-					StringCchCat(pszOS, BUFSIZE, TEXT("Windows Vista "));
-				else
-					StringCchCat(pszOS, BUFSIZE, TEXT("Windows Server 2008 "));
-			}
-
-			if (osvi.dwMinorVersion == 1) {
-				if (osvi.wProductType == VER_NT_WORKSTATION)
-					StringCchCat(pszOS, BUFSIZE, TEXT("Windows 7 "));
-				else
-					StringCchCat(pszOS, BUFSIZE, TEXT("Windows Server 2008 R2 "));
-			}
-
-			pGPI = (PGPI)GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")), "GetProductInfo");
-
-			pGPI(osvi.dwMajorVersion, osvi.dwMinorVersion, 0, 0, &dwType);
-
-			switch (dwType) {
-			case PRODUCT_ULTIMATE:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Ultimate Edition"));
-				break;
-			case PRODUCT_PROFESSIONAL:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Professional"));
-				break;
-			case PRODUCT_HOME_PREMIUM:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Home Premium Edition"));
-				break;
-			case PRODUCT_HOME_BASIC:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Home Basic Edition"));
-				break;
-			case PRODUCT_ENTERPRISE:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Enterprise Edition"));
-				break;
-			case PRODUCT_BUSINESS:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Business Edition"));
-				break;
-			case PRODUCT_STARTER:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Starter Edition"));
-				break;
-			case PRODUCT_CLUSTER_SERVER:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Cluster Server Edition"));
-				break;
-			case PRODUCT_DATACENTER_SERVER:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Datacenter Edition"));
-				break;
-			case PRODUCT_DATACENTER_SERVER_CORE:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Datacenter Edition (core installation)"));
-				break;
-			case PRODUCT_ENTERPRISE_SERVER:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Enterprise Edition"));
-				break;
-			case PRODUCT_ENTERPRISE_SERVER_CORE:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Enterprise Edition (core installation)"));
-				break;
-			case PRODUCT_ENTERPRISE_SERVER_IA64:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Enterprise Edition for Itanium-based Systems"));
-				break;
-			case PRODUCT_SMALLBUSINESS_SERVER:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Small Business Server"));
-				break;
-			case PRODUCT_SMALLBUSINESS_SERVER_PREMIUM:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Small Business Server Premium Edition"));
-				break;
-			case PRODUCT_STANDARD_SERVER:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Standard Edition"));
-				break;
-			case PRODUCT_STANDARD_SERVER_CORE:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Standard Edition (core installation)"));
-				break;
-			case PRODUCT_WEB_SERVER:
-				StringCchCat(pszOS, BUFSIZE, TEXT("Web Server Edition"));
-				break;
-			}
-		}
-
-		if (osvi.dwMajorVersion == 5 && osvi.dwMinorVersion == 2) {
-			if (GetSystemMetrics(SM_SERVERR2))
-				StringCchCat(pszOS, BUFSIZE, TEXT("Windows Server 2003 R2, "));
-			else if (osvi.wSuiteMask & VER_SUITE_STORAGE_SERVER)
-				StringCchCat(pszOS, BUFSIZE, TEXT("Windows Storage Server 2003"));
-			else if (osvi.wSuiteMask & VER_SUITE_WH_SERVER)
-				StringCchCat(pszOS, BUFSIZE, TEXT("Windows Home Server"));
-			else if (osvi.wProductType == VER_NT_WORKSTATION &&
-			         si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) {
-				StringCchCat(pszOS, BUFSIZE, TEXT("Windows XP Professional x64 Edition"));
-			} else
-				StringCchCat(pszOS, BUFSIZE, TEXT("Windows Server 2003, "));
-
-			// Test for the server type.
-			if (osvi.wProductType != VER_NT_WORKSTATION) {
-				if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_IA64) {
-					if (osvi.wSuiteMask & VER_SUITE_DATACENTER)
-						StringCchCat(pszOS, BUFSIZE, TEXT("Datacenter Edition for Itanium-based Systems"));
-					else if (osvi.wSuiteMask & VER_SUITE_ENTERPRISE)
-						StringCchCat(pszOS, BUFSIZE, TEXT("Enterprise Edition for Itanium-based Systems"));
-				}
-
-				else if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) {
-					if (osvi.wSuiteMask & VER_SUITE_DATACENTER)
-						StringCchCat(pszOS, BUFSIZE, TEXT("Datacenter x64 Edition"));
-					else if (osvi.wSuiteMask & VER_SUITE_ENTERPRISE)
-						StringCchCat(pszOS, BUFSIZE, TEXT("Enterprise x64 Edition"));
-					else
-						StringCchCat(pszOS, BUFSIZE, TEXT("Standard x64 Edition"));
-				}
-
-				else {
-					if (osvi.wSuiteMask & VER_SUITE_COMPUTE_SERVER)
-						StringCchCat(pszOS, BUFSIZE, TEXT("Compute Cluster Edition"));
-					else if (osvi.wSuiteMask & VER_SUITE_DATACENTER)
-						StringCchCat(pszOS, BUFSIZE, TEXT("Datacenter Edition"));
-					else if (osvi.wSuiteMask & VER_SUITE_ENTERPRISE)
-						StringCchCat(pszOS, BUFSIZE, TEXT("Enterprise Edition"));
-					else if (osvi.wSuiteMask & VER_SUITE_BLADE)
-						StringCchCat(pszOS, BUFSIZE, TEXT("Web Edition"));
-					else
-						StringCchCat(pszOS, BUFSIZE, TEXT("Standard Edition"));
-				}
-			}
-		}
-
-		if (osvi.dwMajorVersion == 5 && osvi.dwMinorVersion == 1) {
-			StringCchCat(pszOS, BUFSIZE, TEXT("Windows XP "));
-			if (osvi.wSuiteMask & VER_SUITE_PERSONAL)
-				StringCchCat(pszOS, BUFSIZE, TEXT("Home Edition"));
-			else
-				StringCchCat(pszOS, BUFSIZE, TEXT("Professional"));
-		}
-
-		if (osvi.dwMajorVersion == 5 && osvi.dwMinorVersion == 0) {
-			StringCchCat(pszOS, BUFSIZE, TEXT("Windows 2000 "));
-
-			if (osvi.wProductType == VER_NT_WORKSTATION) {
-				StringCchCat(pszOS, BUFSIZE, TEXT("Professional"));
-			} else {
-				if (osvi.wSuiteMask & VER_SUITE_DATACENTER)
-					StringCchCat(pszOS, BUFSIZE, TEXT("Datacenter Server"));
-				else if (osvi.wSuiteMask & VER_SUITE_ENTERPRISE)
-					StringCchCat(pszOS, BUFSIZE, TEXT("Advanced Server"));
-				else
-					StringCchCat(pszOS, BUFSIZE, TEXT("Server"));
-			}
-		}
-
-		// Include service pack (if any) and build number.
-
-		if (strlen(osvi.szCSDVersion) > 0) {
-			StringCchCat(pszOS, BUFSIZE, TEXT(" "));
-			StringCchCat(pszOS, BUFSIZE, osvi.szCSDVersion);
-		}
-
-		TCHAR buf[80];
-
-		StringCchPrintf(buf, 80, TEXT(" (build %d)"), osvi.dwBuildNumber);
-		StringCchCat(pszOS, BUFSIZE, buf);
-
-		if (osvi.dwMajorVersion >= 6) {
-			if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64)
-				StringCchCat(pszOS, BUFSIZE, TEXT(", 64-bit"));
-			else if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL)
-				StringCchCat(pszOS, BUFSIZE, TEXT(", 32-bit"));
-		}
-
-		return pszOS;
-	} else {
-		printf("This sample does not support this version of Windows.\n");
-		return pszOS;
+	stream << "Microsoft Windows " << osvi.dwMajorVersion << "." << osvi.dwMinorVersion << "." << osvi.wProductType
+	       << ", wSuiteMask=" << osvi.wSuiteMask << ", build " << osvi.dwBuildNumber;
+	if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64)
+		stream << ", 64-bit";
+	else if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL)
+		stream << ", 32-bit";
+	else
+		stream << ", wProcessorArchitecture=" << si.wProcessorArchitecture;
+	if (osvi.dwPlatformId != VER_PLATFORM_WIN32_NT)
+		stream << ", dwPlatformId=" << osvi.dwPlatformId;
+	PGPI pGPI = (PGPI)GetProcAddress(GetModuleHandle(TEXT("kernel32.dll")), "GetProductInfo");
+	if (pGPI) {
+		DWORD dwType = 0;
+		pGPI(osvi.dwMajorVersion, osvi.dwMinorVersion, 0, 0, &dwType);
+		stream << ", Edition=" << dwType;
 	}
+
+	if (strlen(osvi.szCSDVersion) > 0)
+		stream << " " << osvi.szCSDVersion;
+
+	return stream.str();
+}
+static std::string get_special_folder_path(int nfolder, bool iscreate) {
+	wchar_t psz_path[MAX_PATH]{};
+	if (SHGetSpecialFolderPathW(NULL, psz_path, nfolder, iscreate)) {
+		return FileStream::utf16_to_utf8(psz_path);
+	}
+	return std::string();
 }
 std::string get_platform_name() { return sizeof(size_t) == 4 ? "windows(32bit)" : "windows"; }
+std::string get_app_data_folder(const std::string &app_name) {
+	return get_special_folder_path(CSIDL_APPDATA, true) + "\\" + app_name;
+}
 #else
-#if !TARGET_OS_IPHONE
+static std::string get_home_folder() {
+	std::string path_ret;
+	const char *psz_home = getenv("HOME");
+	if (psz_home)
+		path_ret = normalize_folder(psz_home);
+	return path_ret;
+}
+#if !TARGET_OS_MAC
 std::string get_os_version_string() {
 	utsname un;
 
@@ -247,104 +104,74 @@ std::string get_os_version_string() {
 	return std::string() + un.sysname + " " + un.version + " " + un.release;
 }
 std::string get_platform_name() {
-#if defined(__MACH__)
-	return "darwin";
-#elif defined(__linux__)
+#if defined(__linux__)
 	return "linux";
 #else
 	return "UNIX";
 #endif
 }
-
-#endif  // #if !TARGET_OS_IPHONE
-#endif
-
-#ifdef _WIN32
-static std::string get_special_folder_path(int nfolder, bool iscreate) {
-	wchar_t psz_path[MAX_PATH]{};
-	if (SHGetSpecialFolderPathW(NULL, psz_path, nfolder, iscreate)) {
-		return FileStream::utf16_to_utf8(psz_path);
-	}
-	return std::string();
-}
-#endif
-
-#if !TARGET_OS_IPHONE
-std::string get_default_data_directory(const std::string &cryptonote_name) {
-#ifdef _WIN32
-	return get_special_folder_path(CSIDL_APPDATA, true) + "\\" + cryptonote_name;
-#else
+std::string get_app_data_folder(const std::string &app_name) {
 	std::string path_ret;
 	const char *psz_home = getenv("HOME");
 	if (psz_home)
 		path_ret = normalize_folder(psz_home);
-	// Unix, including MAC_OSX
-	return path_ret + "/." + cryptonote_name;
-#endif
+	return get_home_folder() + "/." + app_name;
 }
-#endif  // #if !TARGET_OS_IPHONE
-
-#ifdef __ANDROID__
-std::string get_app_data_folder(const std::string &app_name) {
-	QString data_path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-	return data_path.toStdString();
-}
-#elif !TARGET_OS_IPHONE
-std::string get_app_data_folder(const std::string &app_name) {
-#ifdef _WIN32
-	return get_special_folder_path(CSIDL_APPDATA, true) + "\\" + app_name;
-#else
-	std::string path_ret;
-	const char *psz_home = getenv("HOME");
-	if (psz_home)
-		path_ret = normalize_folder(psz_home);
-#if defined(__MACH__)
-	return path_ret + "/Library/Application Support/" + app_name;
 #endif
-	return path_ret + "/." + app_name;
 #endif
-}
-#endif  // #if !TARGET_OS_IPHONE
 
 bool folder_exists(const std::string &path) {
-#if defined(__MACH__) || defined(__linux__)
+#if defined(_WIN32)
+	auto wsubpath  = FileStream::utf8_to_utf16(expand_path(path));
+	DWORD dwAttrib = GetFileAttributesW(wsubpath.c_str());
+
+	return dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY);
+#else
 	struct stat info;
 
-	if (stat(path.c_str(), &info) != 0)
+	if (stat(expand_path(path).c_str(), &info) != 0)
 		return false;  // printf( "cannot access %s\n", pathname );
 	if (info.st_mode & S_IFDIR)
 		return true;
 	return false;
-#elif defined(_WIN32)
-	auto wsubpath  = FileStream::utf8_to_utf16(path);
-	DWORD dwAttrib = GetFileAttributesW(wsubpath.c_str());
-
-	return dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY);
 #endif
 }
 
 std::string normalize_folder(const std::string &path) {
 	std::string result = path;
-#if defined(__MACH__) || defined(__linux__)
-	while (result.size() > 0 && result.back() == '/')
-		result.pop_back();
-#elif defined(_WIN32)
+#if defined(_WIN32)
 	while (result.size() > 0 && (result.back() == '/' || result.back() == '\\'))
+		result.pop_back();
+#else
+	while (result.size() > 0 && result.back() == '/')
 		result.pop_back();
 #endif
 	return result;
 }
 
-bool create_folder_if_necessary(const std::string &subpath) {
-#if defined(__MACH__) || defined(__linux__)
-	mode_t mode = 0755;
-	if (mkdir(subpath.c_str(), mode) != 0 && errno != EEXIST)
-		return false;
-	return true;
+std::string expand_path(const std::string &path) {
+#ifdef __ANDROID__
+	return path;
 #elif defined(_WIN32)
-	auto wsubpath = FileStream::utf8_to_utf16(subpath);
+	if (path.compare(0, sizeof("%appdata%") - 1, "%appdata%") == 0)
+		return get_special_folder_path(CSIDL_APPDATA, true) + path.substr(9);
+#else
+	if (!path.empty() && path[0] == '~')
+		return get_home_folder() + path.substr(1);
+#endif
+	return path;
+}
+
+bool create_folder_if_necessary(const std::string &subpath) {
+#if defined(_WIN32)
+	auto wsubpath = FileStream::utf8_to_utf16(expand_path(subpath));
 	DWORD last    = 0;
 	if (CreateDirectoryW(wsubpath.c_str(), nullptr) == 0 && (last = GetLastError()) != ERROR_ALREADY_EXISTS)
+		return false;
+	return true;
+#else
+	mode_t mode = 0755;
+	if (mkdir(expand_path(subpath).c_str(), mode) != 0 && errno != EEXIST)
 		return false;
 	return true;
 #endif
@@ -352,34 +179,38 @@ bool create_folder_if_necessary(const std::string &subpath) {
 
 std::string get_filename_without_folder(const std::string &path) {
 	size_t delim1 = path.rfind("/");
+#if defined(_WIN32)
 	size_t delim2 = path.rfind("\\");
+#else
+	size_t delim2    = std::string::npos;
+#endif
 	size_t delim_pos =
 	    delim1 == std::string::npos ? delim2 : delim2 == std::string::npos ? delim1 : std::max(delim1, delim2);
 	return delim_pos != std::string::npos ? path.substr(delim_pos + 1) : path;
 }
 
-// does not work for "/", more special cases could fail also
-// std::string strip_trailing_slashes(const std::string & path){
-//	std::string str = path;
-//	boost::algorithm::trim(str);
-//	boost::algorithm::trim_right_if(str, boost::algorithm::is_any_of("\\/"));
-//	return str;
-//}
-
 bool create_folders_if_necessary(const std::string &path) {
+#if defined(_WIN32)
 	size_t delim_pos = std::min(path.find("/"), path.find("\\"));
+#else
+	size_t delim_pos = path.find("/");
+#endif
 	while (delim_pos != std::string::npos) {
 		create_folder_if_necessary(
 		    path.substr(0, delim_pos + 1));  // We ignore intermediate results, because of some systems
+#if defined(_WIN32)
 		delim_pos = std::min(path.find("/", delim_pos + 1), path.find("\\", delim_pos + 1));
+#else
+		delim_pos = path.find("/", delim_pos + 1);
+#endif
 	}
 	return create_folder_if_necessary(path);
 }
 
 bool atomic_replace_file(const std::string &from_path, const std::string &to_path) {
 #if defined(_WIN32)
-	auto wfrom_path = FileStream::utf8_to_utf16(from_path);
-	auto wto_path   = FileStream::utf8_to_utf16(to_path);
+	auto wfrom_path = FileStream::utf8_to_utf16(expand_path(from_path));
+	auto wto_path   = FileStream::utf8_to_utf16(expand_path(to_path));
 	// Maximizing chances for success
 	DWORD attributes = GetFileAttributesW(wto_path.c_str());
 	if (INVALID_FILE_ATTRIBUTES != attributes)
@@ -387,7 +218,7 @@ bool atomic_replace_file(const std::string &from_path, const std::string &to_pat
 	bool ok = MoveFileExW(wfrom_path.c_str(), wto_path.c_str(), MOVEFILE_REPLACE_EXISTING) != 0;
 // int code = ok ? 0 : static_cast<int>(::GetLastError());
 #else
-	bool ok = std::rename(from_path.c_str(), to_path.c_str()) == 0;
+	bool ok = std::rename(expand_path(from_path).c_str(), expand_path(to_path).c_str()) == 0;
 // int code = ok ? 0 : errno;
 #endif
 	// if(err) *err = std::error_code(code, std::system_category());
@@ -410,17 +241,17 @@ bool copy_file(const std::string &from_path, const std::string &to_path) {
 
 bool remove_file(const std::string &path) {
 #if defined(_WIN32)
-	auto wpath = FileStream::utf8_to_utf16(path);
+	auto wpath = FileStream::utf8_to_utf16(expand_path(path));
 	return DeleteFileW(wpath.c_str()) != 0;
 #else
-	return std::remove(path.c_str()) == 0;
+	return std::remove(expand_path(path).c_str()) == 0;
 #endif
 }
 
 std::vector<std::string> get_filenames_in_folder(const std::string &path) {
 	std::vector<std::string> result;
 #if defined(_WIN32)
-	auto wpath = FileStream::utf8_to_utf16(path + "/*.*");
+	auto wpath = FileStream::utf8_to_utf16(expand_path(path) + "/*.*");
 	WIN32_FIND_DATAW fd;
 	HANDLE hFind = ::FindFirstFileW(wpath.c_str(), &fd);
 	if (hFind != INVALID_HANDLE_VALUE) {
@@ -432,7 +263,7 @@ std::vector<std::string> get_filenames_in_folder(const std::string &path) {
 		::FindClose(hFind);
 	}
 #else
-	DIR *dir = opendir(path.c_str());
+	DIR *dir = opendir(expand_path(path).c_str());
 	if (dir) {
 		while (struct dirent *ent = readdir(dir)) {  // != nullptr
 			std::string name = ent->d_name;

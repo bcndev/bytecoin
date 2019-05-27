@@ -102,8 +102,8 @@ struct RootBlock {  // when block is merge mined
 	Hash previous_block_hash;
 	uint8_t nonce[4]{};  // 4 bytes is more convenient than uint32_t
 	size_t transaction_count = 0;
-	std::vector<Hash> base_transaction_branch;
-	RootBaseTransaction base_transaction;
+	std::vector<Hash> coinbase_transaction_branch;
+	RootBaseTransaction coinbase_transaction;
 	std::vector<Hash> blockchain_branch;
 };
 
@@ -231,10 +231,10 @@ Hash get_transaction_prefix_hash(const TransactionPrefix &);
 Hash get_transaction_hash(const Transaction &);
 
 Hash get_block_hash(const BlockHeader &, const BlockBodyProxy &);
-Hash get_auxiliary_block_header_hash(const BlockHeader &, const BlockBodyProxy &);
+Hash get_block_header_prehash(const BlockHeader &, const BlockBodyProxy &);
 // Auxiliary or Pre- hash - inserted into MM or CM tree
 
-BinaryArray get_block_long_hashing_data(
+BinaryArray get_block_pow_hashing_data(
     const BlockHeader &bh, const BlockBodyProxy &body_proxy, const Hash &genesis_block_hash);
 
 }  // namespace cn
@@ -243,14 +243,14 @@ BinaryArray get_block_long_hashing_data(
 namespace seria {
 class ISeria;
 
-void ser(cn::Hash &v, ISeria &s);
-void ser(cn::KeyImage &v, ISeria &s);
-void ser(cn::PublicKey &v, ISeria &s);
-void ser(cn::SecretKey &v, ISeria &s);
-void ser(cn::KeyDerivation &v, ISeria &s);
-void ser(cn::Signature &v, ISeria &s);
-void ser(crypto::EllipticCurveScalar &v, ISeria &s);
-void ser(crypto::EllipticCurvePoint &v, ISeria &s);
+bool ser(cn::Hash &v, ISeria &s);
+bool ser(cn::KeyImage &v, ISeria &s);
+bool ser(cn::PublicKey &v, ISeria &s);
+bool ser(cn::SecretKey &v, ISeria &s);
+bool ser(cn::KeyDerivation &v, ISeria &s);
+bool ser(cn::Signature &v, ISeria &s);
+bool ser(crypto::EllipticCurveScalar &v, ISeria &s);
+bool ser(crypto::EllipticCurvePoint &v, ISeria &s);
 
 void ser_members(cn::AccountAddressLegacy &v, ISeria &s);
 void ser_members(cn::AccountAddressAmethyst &v, ISeria &s);

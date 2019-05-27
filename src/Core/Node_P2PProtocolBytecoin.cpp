@@ -63,24 +63,24 @@ void Node::P2PProtocolBytecoin::on_first_message_after_handshake() {
 
 void Node::P2PProtocolBytecoin::on_chain_timer() {
 	invariant(m_chain_request_sent, "");
-	m_node->m_log(logging::TRACE) << "on_chain_timer, disconnecting " << get_address() << std::endl;
+	m_node->m_log(logging::TRACE) << "on_chain_timer, disconnecting " << get_address();
 	disconnect(std::string());
 }
 
 void Node::P2PProtocolBytecoin::on_download_timer() {
 	invariant(m_downloading_block_count != 0, "");
-	m_node->m_log(logging::TRACE) << "on_download_timer, disconnecting " << get_address() << std::endl;
+	m_node->m_log(logging::TRACE) << "on_download_timer, disconnecting " << get_address();
 	disconnect(std::string());
 }
 
 void Node::P2PProtocolBytecoin::on_syncpool_timer() {
 	invariant(m_syncpool_equest_sent, "");
-	m_node->m_log(logging::TRACE) << "on_download_transactions_timer, disconnecting " << get_address() << std::endl;
+	m_node->m_log(logging::TRACE) << "on_download_transactions_timer, disconnecting " << get_address();
 	disconnect(std::string());
 }
 void Node::P2PProtocolBytecoin::on_download_transactions_timer() {
 	invariant(m_downloading_transaction_count != 0, "");
-	m_node->m_log(logging::TRACE) << "on_download_transactions_timer, disconnecting " << get_address() << std::endl;
+	m_node->m_log(logging::TRACE) << "on_download_transactions_timer, disconnecting " << get_address();
 	disconnect(std::string());
 }
 
@@ -90,8 +90,7 @@ void Node::P2PProtocolBytecoin::advance_chain() {
 	api::BlockHeader info;
 	if (m_node->m_block_chain.get_header(get_peer_sync_data().top_id, &info)) {
 		if (info.height + m_node->m_config.p2p_outgoing_peer_max_lag < m_node->m_block_chain.get_tip_height()) {
-			m_node->m_log(logging::INFO) << "Disconnecting and delay connecting lagging client " << get_address()
-			                             << std::endl;
+			m_node->m_log(logging::INFO) << "Disconnecting and delay connecting lagging client " << get_address();
 			const auto now = m_node->m_p2p.get_local_time();
 			m_node->m_peer_db.delay_connection_attempt(get_address(), now);
 			disconnect(std::string());
@@ -116,7 +115,7 @@ void Node::P2PProtocolBytecoin::advance_chain() {
 	m_chain_timer.once(m_node->m_config.download_chain_timeout);
 	m_node->m_log(logging::INFO) << "advance_chain Requesting chain from " << get_address()
 	                             << " remote height=" << get_peer_sync_data().current_height
-	                             << " our height=" << m_node->m_block_chain.get_tip_height() << std::endl;
+	                             << " our height=" << m_node->m_block_chain.get_tip_height();
 	BinaryArray raw_msg = LevinProtocol::send(msg);
 	send(std::move(raw_msg));
 }
@@ -153,7 +152,7 @@ void Node::P2PProtocolBytecoin::advance_blocks() {
 			std::cout << "Requesting block " << m_chain_start_height + i << " from " << get_address() << std::endl;
 		}
 		m_node->m_log(logging::TRACE) << "advance_download requesting block " << m_chain_start_height + i
-		                              << " hash=" << cit->first << " from " << get_address() << std::endl;
+		                              << " hash=" << cit->first << " from " << get_address();
 	}
 	if (!request_block_ids.empty())
 		m_download_timer.once(m_node->m_config.download_block_timeout);
@@ -188,8 +187,7 @@ void Node::P2PProtocolBytecoin::advance_transactions() {
 		m_syncpool_equest_sent = true;
 		m_syncpool_timer.once(m_node->m_config.sync_pool_timeout);
 		m_node->m_log(logging::TRACE) << "Sending SyncPool to " << get_address()
-		                              << " with fee_per_byte=" << msg.from.first << " hash=" << msg.from.second
-		                              << std::endl;
+		                              << " with fee_per_byte=" << msg.from.first << " hash=" << msg.from.second;
 		send(LevinProtocol::send(msg));
 		return;
 	}
@@ -266,7 +264,7 @@ bool Node::P2PProtocolBytecoin::on_idle(std::chrono::steady_clock::time_point id
 	while (!m_chain.empty() && m_node->m_pow_checker.get_prepared_block(m_chain.front()->first, &pb)) {
 		auto cit = m_chain.front();
 		m_node->m_log(logging::TRACE) << "on_idle prepared block " << cit->second.expected_height
-		                              << " hash=" << cit->first << " from " << get_address() << std::endl;
+		                              << " hash=" << cit->first << " from " << get_address();
 		invariant(pb.bid == cit->first, "");
 		invariant(cit->second.who_downloading == nullptr, "");
 		m_previous_chain_hash = cit->first;
@@ -283,8 +281,7 @@ bool Node::P2PProtocolBytecoin::on_idle(std::chrono::steady_clock::time_point id
 		} catch (const std::exception &ex) {
 			auto what = common::what(ex);
 			m_node->m_log(logging::INFO) << "on_idle add_block BAN expected height=" << expected_height
-			                             << " actual height=" << info.height << " wb=" << pb.bid << " what=" << what
-			                             << std::endl;
+			                             << " actual height=" << info.height << " wb=" << pb.bid << " what=" << what;
 			disconnect("on_idle add_block BAN what=" + what);
 			return false;
 		}
@@ -292,14 +289,14 @@ bool Node::P2PProtocolBytecoin::on_idle(std::chrono::steady_clock::time_point id
 			who->advance_transactions();
 		if (expected_height != info.height) {
 			m_node->m_log(logging::INFO) << "on_idle add_block lied about height, expected height " << expected_height
-			                             << " actual height=" << info.height << " wb=" << pb.bid << std::endl;
+			                             << " actual height=" << info.height << " wb=" << pb.bid;
 		}
 		if (add_block_result) {
 			if (m_chain.empty() ||
 			    m_node->m_block_chain.get_tip_height() % m_node->m_config.download_broadcast_every_n_blocks == 0) {
 				// We do not want to broadcast too often during download
-				m_node->m_log(logging::INFO) << "Added last (from batch) downloaded block height=" << info.height
-				                             << " bid=" << info.hash << std::endl;
+				m_node->m_log(logging::INFO)
+				    << "Added last (from batch) downloaded block height=" << info.height << " bid=" << info.hash;
 				p2p::TimedSync::Request req;
 				req.payload_data =
 				    CoreSyncData{m_node->m_block_chain.get_tip_height(), m_node->m_block_chain.get_tip_bid()};
@@ -370,7 +367,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_chain(p2p::GetChainRespons
 	m_chain_request_sent = false;
 	m_chain_timer.cancel();
 	m_node->m_log(logging::INFO) << "received chain from " << get_address() << " start_height=" << req.start_height
-	                             << " length=" << req.m_block_ids.size() << std::endl;
+	                             << " length=" << req.m_block_ids.size();
 	api::BlockHeader info;
 	if (!m_node->m_block_chain.get_header(req.m_block_ids.front(), &info) || info.height != req.start_height)
 		return disconnect("Chain does not start with hash we have or wrong start height");
@@ -386,12 +383,12 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_chain(p2p::GetChainRespons
 		m_chain.back()->second.chain_counter += 1;
 	}
 	if (req.m_block_ids.size() != m_chain.size() + 1) {
-		m_node->m_log(logging::INFO) << "truncated chain length=" << m_chain.size() << std::endl;
+		m_node->m_log(logging::INFO) << "truncated chain length=" << m_chain.size();
 	}
 	if (m_chain.empty()) {
 		// TODO - add delay to advance_chain
 		//		const auto now = m_node->m_p2p.get_local_time();
-		m_node->m_log(logging::INFO) << "truncated chain to zero from " << get_address() << std::endl;
+		m_node->m_log(logging::INFO) << "truncated chain to zero from " << get_address();
 		advance_chain();
 		return;
 	}
@@ -451,14 +448,13 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_objects(p2p::GetObjectsRes
 			bid             = cn::get_block_hash(bheader, body_proxy);
 		} catch (const std::exception &ex) {
 			m_node->m_log(logging::INFO) << "Exception " << common::what(ex)
-			                             << " while parsing returned block, banning " << get_address() << std::endl;
+			                             << " while parsing returned block, banning " << get_address();
 			disconnect("Bad Block Returned");
 			return;
 		}
 		auto cit = m_node->chain_blocks.find(bid);
 		if (cit == m_node->chain_blocks.end() || cit->second.who_downloading != this) {
-			m_node->m_log(logging::INFO) << "GetObjectsResponse received stray block from " << get_address()
-			                             << std::endl;
+			m_node->m_log(logging::INFO) << "GetObjectsResponse received stray block from " << get_address();
 			disconnect("Stray Block Returned");
 			return;
 		}
@@ -467,7 +463,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_objects(p2p::GetObjectsRes
 		invariant(m_downloading_block_count > 0, "");
 		m_downloading_block_count -= 1;
 		m_node->m_log(logging::TRACE) << "GetObjectsResponse received block " << cit->second.expected_height
-		                              << " hash=" << cit->first << " from " << get_address() << std::endl;
+		                              << " hash=" << cit->first << " from " << get_address();
 		bool check_pow = m_node->m_config.paranoid_checks ||
 		                 !m_node->m_block_chain.get_currency().is_in_hard_checkpoint_zone(cit->second.expected_height);
 		m_node->m_pow_checker.add_block(bid, check_pow, std::move(rb));
@@ -484,8 +480,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_objects(p2p::GetObjectsRes
 		const Hash tid = get_transaction_hash(tx);
 		auto cit       = m_node->downloading_transactions.find(tid);
 		if (cit == m_node->downloading_transactions.end() || cit->second != this) {
-			m_node->m_log(logging::INFO) << "GetObjectsResponse received stray transaction from " << get_address()
-			                             << std::endl;
+			m_node->m_log(logging::INFO) << "GetObjectsResponse received stray transaction from " << get_address();
 			return disconnect("Stray Transaction Returned");
 		}
 		auto tit = m_transaction_descs.find(tid);
@@ -535,8 +530,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_objects(p2p::GetObjectsRes
 	for (auto &&tid : req.missed_ids) {  // Here should be only transactions, we ask only block peer always has
 		auto cit = m_node->downloading_transactions.find(tid);
 		if (cit == m_node->downloading_transactions.end() || cit->second != this) {
-			m_node->m_log(logging::INFO) << "GetObjectsResponse received stray missed_id from " << get_address()
-			                             << std::endl;
+			m_node->m_log(logging::INFO) << "GetObjectsResponse received stray missed_id from " << get_address();
 			return disconnect("Stray Transaction Returned");
 		}
 		auto tit = m_transaction_descs.find(tid);
@@ -624,8 +618,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_request_tx_pool(p2p::SyncPool::Not
 		msg.txs.push_back(tx.second.binary_tx);
 	}
 	m_node->m_log(logging::TRACE) << "on_msg_notify_request_tx_pool from " << get_address()
-	                              << " peer sent=" << req.txs.size() << " we are relaying=" << msg.txs.size()
-	                              << std::endl;
+	                              << " peer sent=" << req.txs.size() << " we are relaying=" << msg.txs.size();
 	if (msg.txs.empty())
 		return;
 	send(LevinProtocol::send(msg));
@@ -762,7 +755,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_new_transactions(p2p::RelayTransac
 	m_node->m_log(logging::TRACE) << "on_msg_notify_new_transactions from " << get_address()
 	                              << " got=" << req.txs.size() << " relaying=" << msg.txs.size()
 	                              << (req.txs.size() > 1 ? " notify_tx_reply (?) " : " ")
-	                              << (any_tid == Hash{} ? "" : common::pod_to_hex(any_tid)) << std::endl;
+	                              << (any_tid == Hash{} ? "" : common::pod_to_hex(any_tid));
 	if (msg.txs.empty())
 		return;
 	BinaryArray raw_msg = LevinProtocol::send(msg);
@@ -779,7 +772,7 @@ void Node::P2PProtocolBytecoin::on_msg_notify_checkpoint(p2p::Checkpoint::Notify
 	if (!m_node->m_block_chain.add_checkpoint(req, get_address().to_string()))
 		return;
 	m_node->m_log(logging::INFO) << "p2p::Checkpoint::Notify height=" << req.height << " hash=" << req.hash
-	                             << " key_id=" << req.key_id << " counter=" << req.counter << std::endl;
+	                             << " key_id=" << req.key_id << " counter=" << req.counter;
 	BinaryArray raw_msg = LevinProtocol::send(req);
 	m_node->broadcast(nullptr, raw_msg);  // nullptr, not this - so a sender sees "reflection" of message
 	p2p::TimedSync::Request ts_req;

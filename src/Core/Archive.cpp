@@ -30,7 +30,7 @@ Archive::Archive(bool read_only, const std::string &path) : m_read_only(read_onl
 			DB::Cursor cur = m_db->begin(std::string());
 			if (!cur.end())
 				throw std::runtime_error("Archive database format unknown version, please delete " + m_db->get_path());
-			m_unique_id = common::pod_to_hex(crypto::random_keypair().public_key);
+			m_unique_id = common::pod_to_hex(crypto::rand<crypto::Hash>());
 			m_db->put("$unique_id", m_unique_id, true);
 			std::cout << "Created archive with unique id: " << m_unique_id << std::endl;
 		}

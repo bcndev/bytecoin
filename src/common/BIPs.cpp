@@ -4,13 +4,6 @@
 #include "BIPs.hpp"
 #include <iostream>
 
-#include <hmac_sha2.h>
-#include <openssl/bn.h>
-#include <openssl/ec.h>
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
-#include <openssl/obj_mac.h>
-#include <openssl/sha.h>
 #include <algorithm>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <string>
@@ -20,6 +13,20 @@
 #include "common/Varint.hpp"
 #include "common/Words.hpp"
 #include "crypto/crypto.hpp"
+#include "hmac/hmac_sha2.h"
+
+#ifndef __EMSCRIPTEN__
+#define CHECK_WITH_OPENSSL 1
+#endif
+
+#if CHECK_WITH_OPENSSL
+#include <openssl/bn.h>
+#include <openssl/ec.h>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+#include <openssl/obj_mac.h>
+#include <openssl/sha.h>
+#endif
 
 void pkcs5_pbkdf2_hmac_sha512(const uint8_t *pass, size_t passlen, const uint8_t *salt, size_t saltlen, size_t iter,
     size_t keylen, uint8_t *out) {
@@ -53,29 +60,37 @@ void pkcs5_pbkdf2_hmac_sha512(const uint8_t *pass, size_t passlen, const uint8_t
 void pkcs5_pbkdf2_hmac_sha512_checked(
     const uint8_t *pass, size_t passlen, const uint8_t *salt, size_t saltlen, size_t iter, uint8_t *out) {
 	pkcs5_pbkdf2_hmac_sha512(pass, passlen, salt, saltlen, iter, 64, out);
+#if CHECK_WITH_OPENSSL
 	unsigned char out2[64]{};
 	PKCS5_PBKDF2_HMAC(reinterpret_cast<const char *>(pass), static_cast<int>(passlen), salt, static_cast<int>(saltlen),
 	    static_cast<int>(iter), EVP_sha512(), 64, out2);
 	invariant(memcmp(out, out2, 64) == 0, "");
+#endif
 }
 
 void hmac_sha512_checked(
     const uint8_t *key, size_t key_size, const uint8_t *message, size_t message_len, uint8_t *out) {
 	hmac_sha512(key, static_cast<int>(key_size), message, static_cast<int>(message_len), out, 64);
+#if CHECK_WITH_OPENSSL
 	auto out2 = HMAC(EVP_sha512(), reinterpret_cast<const char *>(key), static_cast<int>(key_size), message,
 	    message_len, nullptr, nullptr);
 	invariant(memcmp(out, out2, 64) == 0, "");
+#endif
 }
 
 void sha256_checked(const unsigned char *message, size_t len, unsigned char *digest) {
 	sha256(message, static_cast<int>(len), digest);
+#if CHECK_WITH_OPENSSL
 	unsigned char digest2[32]{};
 	SHA256_CTX sha256;
 	SHA256_Init(&sha256);
 	SHA256_Update(&sha256, message, len);
 	SHA256_Final(digest2, &sha256);
 	invariant(memcmp(digest, digest2, 32) == 0, "");
+#endif
 }
+
+#if CHECK_WITH_OPENSSL
 
 struct EC_GROUPw {
 	EC_GROUP *pgroup = nullptr;
@@ -110,6 +125,7 @@ struct EC_POINTw {
 		p = nullptr;
 	}
 };
+#endif
 
 using namespace cn;
 
@@ -235,6 +251,17 @@ static common::BinaryArray bitcoin_Gn(const common::BinaryArray &n) {
 }
 
 static common::BinaryArray bitcoin_sc_add(const common::BinaryArray &a, const common::BinaryArray &b) {
+	mp::cpp_int priv_a;
+	import_bits(priv_a, std::begin(a), std::end(a));
+	mp::cpp_int priv_b;
+	import_bits(priv_b, std::begin(b), std::end(b));
+
+	mp::cpp_int priv_sum = pos_mod(priv_a + priv_b, group_n);
+	common::BinaryArray sum2;
+	export_bits(priv_sum, std::back_inserter(sum2), 8);
+	if (sum2.size() < 32)
+		sum2.insert(sum2.begin(), 32 - sum2.size(), uint8_t{0});
+#if CHECK_WITH_OPENSSL
 	EC_GROUPw group;
 	BN_CTXw bn_ctx;
 	BIGNUMw priv_bn(a.data(), a.size());
@@ -249,18 +276,9 @@ static common::BinaryArray bitcoin_sc_add(const common::BinaryArray &a, const co
 	//	std::cout << common::to_hex(sum) << std::endl;
 	invariant(BN_bn2binpad(priv_bn.pbn, sum.data(), 32), "BN_bn2binpad failed");
 
-	mp::cpp_int priv_a;
-	import_bits(priv_a, std::begin(a), std::end(a));
-	mp::cpp_int priv_b;
-	import_bits(priv_b, std::begin(b), std::end(b));
-
-	mp::cpp_int priv_sum = pos_mod(priv_a + priv_b, group_n);
-	common::BinaryArray sum2;
-	export_bits(priv_sum, std::back_inserter(sum2), 8);
-	if (sum2.size() < 32)
-		sum2.insert(sum2.begin(), 32 - sum2.size(), uint8_t{0});
 	invariant(sum == sum2, "");
-	return sum;
+#endif
+	return sum2;
 }
 
 void Bip32Key::make_pub() {
@@ -268,8 +286,12 @@ void Bip32Key::make_pub() {
 
 	if (debug_print)
 		std::cout << "priv_key=" << common::to_hex(priv_key) << std::endl;
+	pub_key = bitcoin_Gn(priv_key);
+	if (debug_print) {
+		std::cout << "   pub_key=" << common::to_hex(pub_key) << std::endl;
+	}
 
-	//	common::BinaryArray priv_key_zero(priv_key.size());
+#if CHECK_WITH_OPENSSL
 	EC_GROUPw group;
 	BIGNUMw priv_bn(priv_key.data(), priv_key.size());
 
@@ -279,12 +301,9 @@ void Bip32Key::make_pub() {
 	size_t si =
 	    EC_POINT_point2oct(group.pgroup, pkey.p, POINT_CONVERSION_COMPRESSED, pub_buf, sizeof(pub_buf), nullptr);
 	invariant(si != 0, "EC_POINT_point2oct failed");
-	pub_key.assign(pub_buf, pub_buf + si);
-	auto pub_key2 = bitcoin_Gn(priv_key);
+	common::BinaryArray pub_key2(pub_buf, pub_buf + si);
 	invariant(pub_key == pub_key2, "");
-	if (debug_print) {
-		std::cout << "   pub_key=" << common::to_hex(pub_key) << std::endl;
-	}
+#endif
 }
 
 Bip32Key Bip32Key::create_master_key(const std::string &bip39_mnemonic, const std::string &passphrase) {

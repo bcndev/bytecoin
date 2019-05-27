@@ -17,13 +17,17 @@ using namespace seria;
 // and the value will be the same if the result type can fit actual written value.
 // Otherwise exception will be thrown from integer_cast
 
-void BinaryOutputStream::begin_map(size_t &size) { stream.write_varint(size); }
+bool BinaryOutputStream::begin_map(size_t &size) {
+	stream.write_varint(size);
+	return true;
+}
 
 void BinaryOutputStream::next_map_key(std::string &name) { ser(name, *this); }
 
-void BinaryOutputStream::begin_array(size_t &size, bool fixed_size) {
+bool BinaryOutputStream::begin_array(size_t &size, bool fixed_size) {
 	if (!fixed_size)
 		stream.write_varint(size);
+	return true;
 }
 
 bool BinaryOutputStream::seria_v(int64_t &value) {

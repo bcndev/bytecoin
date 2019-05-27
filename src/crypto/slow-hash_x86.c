@@ -9,8 +9,8 @@
 #include "TargetConditionals.h"
 #endif
 
-#if !defined(__PPC__) && !TARGET_OS_IPHONE && \
-    !defined(__ANDROID__)  // We need "if x86", but no portable way to express that
+// We need if x86, but no portable way to express that
+#if !defined(__EMSCRIPTEN__) && !defined(__PPC__) && !TARGET_OS_IPHONE && !defined(__ANDROID__)
 
 #include <emmintrin.h>
 #include <wmmintrin.h>

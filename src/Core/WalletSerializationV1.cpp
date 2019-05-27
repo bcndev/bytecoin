@@ -144,7 +144,7 @@ void deserialize_encrypted(Object &obj, const std::string &name, cn::WalletSeria
 }  // anonymous namespace
 
 namespace seria {
-void ser(crypto::chacha_iv &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
+bool ser(crypto::chacha_iv &v, ISeria &s) { return s.binary(v.data, sizeof(v.data)); }
 void ser_members(WalletRecordDto &v, ISeria &s) {
 	seria_kv("spend_public_key", v.spend_public_key, s);
 	seria_kv("spend_secret_key", v.spend_secret_key, s);

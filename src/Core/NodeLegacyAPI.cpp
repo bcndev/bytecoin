@@ -9,6 +9,7 @@
 #include "WalletNode.hpp"
 #include "common/JsonValue.hpp"
 #include "common/exception.hpp"
+#include "http/Server.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 #include "seria/KVBinaryInputStream.hpp"
@@ -27,7 +28,7 @@ bool Node::on_json_rpc(http::Client *who, http::RequestBody &&request, http::Res
 
 		auto it = m_jsonrpc_handlers.find(json_req.get_method());
 		if (it == m_jsonrpc_handlers.end()) {
-			m_log(logging::INFO) << "jsonrpc request method not found - " << json_req.get_method() << std::endl;
+			m_log(logging::INFO) << "jsonrpc request method not found - " << json_req.get_method();
 			if (WalletNode::m_jsonrpc_handlers.count(json_req.get_method()) != 0)
 				throw json_rpc::Error(json_rpc::METHOD_NOT_FOUND,
 				    "Method not found " + json_req.get_method() +
@@ -63,7 +64,7 @@ bool Node::on_binary_rpc(http::Client *who, http::RequestBody &&request, http::R
 
 		auto it = m_binaryrpc_handlers.find(binary_req.get_method());
 		if (it == m_binaryrpc_handlers.end()) {
-			m_log(logging::INFO) << "binaryrpc request method not found - " << binary_req.get_method() << std::endl;
+			m_log(logging::INFO) << "binaryrpc request method not found - " << binary_req.get_method();
 			throw json_rpc::Error(json_rpc::METHOD_NOT_FOUND, "Method not found " + binary_req.get_method());
 		}
 		std::string response_body;
@@ -82,6 +83,8 @@ bool Node::on_binary_rpc(http::Client *who, http::RequestBody &&request, http::R
 
 bool Node::on_getblocktemplate(http::Client *who, http::RequestBody &&raw_request, json_rpc::Request &&raw_js_request,
     api::cnd::GetBlockTemplate::Request &&req, api::cnd::GetBlockTemplate::Response &res) {
+	if (!m_config.good_bytecoind_auth_private(raw_request.r.basic_authorization))
+		throw http::ErrorAuthorization("authorization-private");
 	api::cnd::GetStatus::Request sta;
 	sta.top_block_hash                       = req.top_block_hash;
 	sta.transaction_pool_version             = req.transaction_pool_version;
@@ -90,10 +93,9 @@ bool Node::on_getblocktemplate(http::Client *who, http::RequestBody &&raw_reques
 	                     << (req.transaction_pool_version ? common::to_string(req.transaction_pool_version.get())
 	                                                      : "empty")
 	                     << " top_block_hash="
-	                     << (req.top_block_hash ? common::pod_to_hex(req.top_block_hash.get()) : "empty") << std::endl;
+	                     << (req.top_block_hash ? common::pod_to_hex(req.top_block_hash.get()) : "empty");
 	m_log(logging::INFO) << "Node received getblocktemplate CUR transaction_pool_version="
-	                     << m_block_chain.get_tx_pool_version() << " top_block_hash=" << m_block_chain.get_tip_bid()
-	                     << std::endl;
+	                     << m_block_chain.get_tx_pool_version() << " top_block_hash=" << m_block_chain.get_tip_bid();
 	if (!status_res.ready_for_longpoll(sta)) {
 		LongPollClient lpc;
 		lpc.original_who          = who;
@@ -108,9 +110,9 @@ bool Node::on_getblocktemplate(http::Client *who, http::RequestBody &&raw_reques
 }
 
 void Node::getblocktemplate(const api::cnd::GetBlockTemplate::Request &req, api::cnd::GetBlockTemplate::Response &res) {
-	if (req.reserve_size > TransactionExtraNonce::MAX_COUNT)
+	if (req.reserve_size > extra::Nonce::MAX_COUNT)
 		throw json_rpc::Error{api::cnd::GetBlockTemplate::TOO_BIG_RESERVE_SIZE,
-		    "To big reserved size, maximum " + common::to_string(TransactionExtraNonce::MAX_COUNT)};
+		    "To big reserved size, maximum " + common::to_string(extra::Nonce::MAX_COUNT)};
 	AccountAddress acc{};
 	if (!m_block_chain.get_currency().parse_account_address_string(req.wallet_address, &acc))
 		throw api::ErrorAddress(
@@ -126,7 +128,7 @@ void Node::getblocktemplate(const api::cnd::GetBlockTemplate::Request &req, api:
 		m_block_chain.create_mining_block_template(m_block_chain.get_tip_bid(), acc, blob_reserve, req.miner_secret,
 		    &block_template, &res.difficulty, &res.height, &reserve_back_offset);
 	} catch (const std::exception &ex) {
-		m_log(logging::ERROR) << logging::BrightRed << "getblocktemplate exception " << ex.what() << std::endl;
+		m_log(logging::ERROR) << logging::BrightRed << "getblocktemplate exception " << ex.what();
 		throw;
 	}
 	BinaryArray block_blob = seria::to_binary(block_template);
@@ -151,7 +153,7 @@ void Node::getblocktemplate(const api::cnd::GetBlockTemplate::Request &req, api:
 		try {
 			block_template.major_version += 1;
 			auto body_proxy = get_body_proxy_from_template(block_template);
-			res.cm_prehash  = get_auxiliary_block_header_hash(block_template, body_proxy);
+			res.cm_prehash  = get_block_header_prehash(block_template, body_proxy);
 			res.cm_path     = m_block_chain.get_genesis_bid();
 		} catch (const std::exception &) {
 		}
@@ -167,6 +169,8 @@ bool Node::on_get_currency_id(http::Client *, http::RequestBody &&, json_rpc::Re
 
 bool Node::on_submitblock_legacy(http::Client *who, http::RequestBody &&rd, json_rpc::Request &&jr,
     api::cnd::SubmitBlockLegacy::Request &&req, api::cnd::SubmitBlockLegacy::Response &res) {
+	if (!m_config.good_bytecoind_auth_private(rd.r.basic_authorization))
+		throw http::ErrorAuthorization("authorization-private");
 	if (req.size() != 1)
 		throw json_rpc::Error{json_rpc::INVALID_PARAMS, "Request params should be an array with exactly 1 element"};
 
@@ -204,7 +208,7 @@ bool Node::on_get_block_header_by_height(http::Client *, http::RequestBody &&, j
 	// Freaking legacy, this call request counts blocks from 1, response counts from 0
 	if (request.height == 0 || !m_block_chain.get_chain(request.height - 1, &block_hash)) {
 		throw api::ErrorWrongHeight(
-		    "Too big height. Note, this method request counts blocks from 1, not 0 as all other methods",
+		    "Too big height. Note, this method request counts blocks from 1, not 0 as all other methods, height=",
 		    request.height - 1, m_block_chain.get_tip_height());
 	}
 	invariant(m_block_chain.get_header(block_hash, &response.block_header), "");

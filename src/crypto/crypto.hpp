@@ -91,7 +91,11 @@ KeccakStream &operator<<(KeccakStream &buffer, const T &value) {
 	buffer.append(value);
 	return buffer;
 }
-
+template<size_t S>
+KeccakStream &operator<<(KeccakStream &buffer, const char (&h)[S]) {
+	buffer.append(h);
+	return buffer;
+}
 // Check a public key. Returns true if it is valid, false otherwise.
 bool key_isvalid(const EllipticCurvePoint &key);
 bool key_in_main_subgroup(const EllipticCurvePoint &key);
@@ -169,18 +173,22 @@ Signature generate_sendproof(const PublicKey &txkey_pub, const SecretKey &txkey_
 bool check_sendproof(const PublicKey &txkey_pub, const PublicKey &receiver_address_V, const KeyDerivation &derivation,
     const Hash &message_hash, const Signature &proof);
 
+BinaryArray get_output_secret_hash_arg(
+    const PublicKey &output_shared_secret, const Hash &tx_inputs_hash, size_t output_index);
+
 // Linkable crypto, output_secret_hash is temporary value that is expensive to calc, we pass it around
 // Old addresses use improved crypto in amethyst, because we need to enforce unique output public keys
 // on crypto level. Enforcing on daemon DB index level does not work (each of 2 solutions is vulnerable attack).
 
 // sender, sending
 PublicKey linkable_derive_output_public_key(const SecretKey &output_secret, const Hash &tx_inputs_hash,
-    size_t output_index, const PublicKey &address_S, const PublicKey &address_V, PublicKey *encrypted_output_secret);
+    size_t output_index, const PublicKey &address_S, const PublicKey &address_V, PublicKey *encrypted_output_secret,
+    PublicKey *output_shared_secret);
 
 // receiver looking for outputs
 PublicKey linkable_underive_address_S(const SecretKey &inv_view_secret_key, const Hash &tx_inputs_hash,
     size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
-    BinaryArray *output_secret_hash_arg);
+    PublicKey *output_shared_secret);
 
 // receiver
 SecretKey linkable_derive_output_secret_key(const SecretKey &address_s, const SecretKey &output_secret_hash);
@@ -188,7 +196,7 @@ SecretKey linkable_derive_output_secret_key(const SecretKey &address_s, const Se
 // sender, restoring destination address
 void linkable_underive_address(const SecretKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
     const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, PublicKey *address_S,
-    PublicKey *address_V);
+    PublicKey *address_V, PublicKey *output_shared_secret);
 
 // Unlinkable crypto, output_secret_hash is temporary value that is expensive to calc, we pass it around
 
@@ -204,17 +212,18 @@ PublicKey secret_keys_to_public_key(const SecretKey &a, const SecretKey &s);
 
 // sender sending
 PublicKey unlinkable_derive_output_public_key(const PublicKey &output_secret, const Hash &tx_inputs_hash,
-    size_t output_index, const PublicKey &address_S, const PublicKey &address_SV, PublicKey *encrypted_output_secret);
+    size_t output_index, const PublicKey &address_S, const PublicKey &address_SV, PublicKey *encrypted_output_secret,
+    PublicKey *output_shared_secret);
 
 // receiver looking for outputs
 PublicKey unlinkable_underive_address_S(const SecretKey &view_secret_key, const Hash &tx_inputs_hash,
     size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
-    BinaryArray *output_secret_hash_arg);
+    PublicKey *output_shared_secret);
 
 // 2-step functions emulate hardware wallet
 PublicKey unlinkable_underive_address_S_step1(const SecretKey &view_secret_key, const PublicKey &output_public_key);
 PublicKey unlinkable_underive_address_S_step2(const PublicKey &Pv, const Hash &tx_inputs_hash, size_t output_index,
-    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, BinaryArray *output_secret_hash_org);
+    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, PublicKey *output_shared_secret);
 
 SecretKey unlinkable_derive_output_secret_key(const SecretKey &address_secret, const SecretKey &output_secret_hash);
 // address_secret can be audit_secret_key or spend_secret_key
@@ -222,6 +231,6 @@ SecretKey unlinkable_derive_output_secret_key(const SecretKey &address_secret, c
 // sender, restoring destination address
 void unlinkable_underive_address(PublicKey *address_S, PublicKey *address_Sv, const PublicKey &output_secret,
     const Hash &tx_inputs_hash, size_t output_index, const PublicKey &output_public_key,
-    const PublicKey &encrypted_output_secret);
+    const PublicKey &encrypted_output_secret, PublicKey *output_shared_secret);
 
 }  // namespace crypto

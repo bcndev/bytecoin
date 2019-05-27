@@ -121,14 +121,14 @@ CRYPTO_MAKE_COMPARABLE(UUID, std::memcmp)
 }  // namespace cn
 
 namespace seria {
-void ser(cn::UUID &v, seria::ISeria &s);
+bool ser(cn::UUID &v, seria::ISeria &s);
 void ser_members(cn::BasicNodeData &v, seria::ISeria &s);
 void ser_members(cn::CoreSyncData &v, seria::ISeria &s);
 void ser_members(cn::TransactionDesc &v, seria::ISeria &s);
 void ser_members(cn::PeerlistEntryLegacy &v, seria::ISeria &s);
 void ser_members(cn::NetworkAddressLegacy &v, seria::ISeria &s);
 void ser_members(cn::CoreStatistics &v, seria::ISeria &s);
-void ser(cn::NetworkAddress &v, seria::ISeria &s);
+bool ser(cn::NetworkAddress &v, seria::ISeria &s);
 void ser_members(cn::PeerlistEntry &v, seria::ISeria &s);
 void ser_members(cn::ConnectionDesc &v, seria::ISeria &s);
 void ser_members(cn::TopBlockDesc &v, seria::ISeria &s);

@@ -15,21 +15,16 @@
 #include <sys/stat.h>
 #include <boost/algorithm/string/trim.hpp>
 
-
 namespace platform {
 
+#if TARGET_OS_IPHONE
 std::string get_os_version_string() {
-	return "iOS :)"; // TODO
+	return "iOS";
 }
 std::string get_platform_name() {
 	return "iOS";
 }
-std::string get_default_data_directory(const std::string &cryptonote_name) {
-	//namespace fs = boost::filesystem;
-	// Windows < Vista: C:\Documents and Settings\Username\Application Data\CRYPTONOTE_NAME
-	// Windows >= Vista: C:\Users\Username\AppData\Roaming\CRYPTONOTE_NAME
-	// Mac: ~/Library/Application Support/CRYPTONOTE_NAME
-	// Unix: ~/.CRYPTONOTE_NAME
+std::string get_app_data_folder(const std::string & app_name) {
 	std::string config_folder;
 
 	NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
@@ -40,9 +35,22 @@ std::string get_default_data_directory(const std::string &cryptonote_name) {
 
 	return config_folder;
 }
+#endif
 
-std::string get_app_data_folder(const std::string & app_name) {
-	return get_default_data_directory(app_name);
+#if TARGET_OS_OSX
+std::string get_os_version_string() {
+	auto str = [[NSProcessInfo processInfo] operatingSystemVersionString];
+	return "macOS " + std::string([str UTF8String]);
 }
+std::string get_platform_name() {
+	return "darwin";
+}
+std::string get_app_data_folder(const std::string & app_name) {
+	std::string config_folder;
+
+	NSArray *paths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES);
+	return normalize_folder([[paths	objectAtIndex:0] UTF8String]) + "/" + app_name;
+}
+#endif
 
 }

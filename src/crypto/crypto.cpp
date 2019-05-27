@@ -9,7 +9,10 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+
+#ifndef __EMSCRIPTEN__
 #include <mutex>
+#endif
 
 #include "bernstein/crypto-ops.h"
 #include "crypto.hpp"
@@ -72,10 +75,14 @@ SecretKey KeccakStream::hash_to_scalar64() {
 
 PublicKey KeccakStream::hash_to_good_point() { return bytes_to_good_point(cn_fast_hash()); }
 
+#ifndef __EMSCRIPTEN__
 static std::mutex random_lock;
+#endif
 
 void generate_random_bytes(void *result, size_t n) {
+#ifndef __EMSCRIPTEN__
 	std::lock_guard<std::mutex> lock(random_lock);
+#endif
 	crypto_unsafe_generate_random_bytes(result, n);
 }
 
@@ -635,13 +642,23 @@ SecretKey generate_hd_secretkey(const SecretKey &a0, const PublicKey &A_plus_SH,
 
 PublicKey secret_keys_to_public_key(const SecretKey &a, const SecretKey &s) { return to_bytes(a * G + s * H); }
 
+BinaryArray get_output_secret_hash_arg(
+    const PublicKey &output_shared_secret, const Hash &tx_inputs_hash, size_t output_index) {
+	BinaryArray result = output_shared_secret.as_binary_array();
+	result.insert(result.end(), std::begin(tx_inputs_hash.data), std::end(tx_inputs_hash.data));
+	append_varint(&result, output_index);
+	return result;
+}
+
 PublicKey linkable_derive_output_public_key(const SecretKey &output_secret, const Hash &tx_inputs_hash,
-    size_t output_index, const PublicKey &address_S, const PublicKey &address_V, PublicKey *encrypted_output_secret) {
+    size_t output_index, const PublicKey &address_S, const PublicKey &address_V, PublicKey *encrypted_output_secret,
+    PublicKey *output_shared_secret) {
 	check_scalar(output_secret);
 	const P3 address_V_p3(address_V);
 	*encrypted_output_secret = to_bytes(output_secret * address_V_p3);
 
-	const EllipticCurvePoint derivation = to_bytes(output_secret * G);
+	const PublicKey derivation = to_bytes(output_secret * G);
+	*output_shared_secret      = derivation;
 
 	KeccakStream cr_comm;
 	cr_comm << derivation << tx_inputs_hash << output_index;
@@ -650,24 +667,17 @@ PublicKey linkable_derive_output_public_key(const SecretKey &output_secret, cons
 	return to_bytes(derivation_hash * G + P3(address_S));
 }
 
-PublicKey linkable_underive_address_S(const SecretKey &inv_view_secret_key,
-    const Hash &tx_inputs_hash,
-    size_t output_index,
-    const PublicKey &output_public_key,
-    const PublicKey &encrypted_output_secret,
-    BinaryArray *output_secret_hash_arg) {
+PublicKey linkable_underive_address_S(const SecretKey &inv_view_secret_key, const Hash &tx_inputs_hash,
+    size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
+    PublicKey *output_shared_secret) {
 	check_scalar(inv_view_secret_key);
 	const P3 encrypted_output_secret_p3(encrypted_output_secret);
-	const EllipticCurvePoint derivation = to_bytes(inv_view_secret_key * encrypted_output_secret_p3);
+	const PublicKey derivation = to_bytes(inv_view_secret_key * encrypted_output_secret_p3);
+	*output_shared_secret      = derivation;
 
 	KeccakStream cr_comm;
 	cr_comm << derivation << tx_inputs_hash << output_index;
 	SecretKey output_secret_hash = cr_comm.hash_to_scalar();
-
-	*output_secret_hash_arg = derivation.as_binary_array();
-	output_secret_hash_arg->insert(
-	    output_secret_hash_arg->end(), std::begin(tx_inputs_hash.data), std::end(tx_inputs_hash.data));
-	append_varint(output_secret_hash_arg, output_index);
 
 	return to_bytes(P3(output_public_key) - output_secret_hash * G);
 }
@@ -680,10 +690,10 @@ SecretKey linkable_derive_output_secret_key(const SecretKey &address_s, const Se
 
 void linkable_underive_address(const SecretKey &output_secret, const Hash &tx_inputs_hash, size_t output_index,
     const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, PublicKey *address_S,
-    PublicKey *address_V) {
+    PublicKey *address_V, PublicKey *output_shared_secret) {
 	check_scalar(output_secret);
-	const EllipticCurvePoint derivation = to_bytes(output_secret * G);
-
+	const PublicKey derivation = to_bytes(output_secret * G);
+	*output_shared_secret      = derivation;
 	KeccakStream cr_comm;
 	cr_comm << derivation << tx_inputs_hash << output_index;
 	const EllipticCurveScalar derivation_hash = cr_comm.hash_to_scalar();
@@ -694,12 +704,14 @@ void linkable_underive_address(const SecretKey &output_secret, const Hash &tx_in
 }
 
 PublicKey unlinkable_derive_output_public_key(const PublicKey &output_secret, const Hash &tx_inputs_hash,
-    size_t output_index, const PublicKey &address_S, const PublicKey &address_SV, PublicKey *encrypted_output_secret) {
+    size_t output_index, const PublicKey &address_S, const PublicKey &address_SV, PublicKey *encrypted_output_secret,
+    PublicKey *output_shared_secret) {
 	DEBUG_PRINT(std::cout << "output_secret=" << output_secret << std::endl);
 	const P3 address_s_p3(address_S);
 	const P3 address_sv_p3(address_SV);
 	const P3 output_secret_p3(output_secret);
 
+	*output_shared_secret = output_secret;
 	KeccakStream cr_comm;
 	cr_comm << output_secret << tx_inputs_hash << output_index;
 	const SecretKey output_secret_hash = cr_comm.hash_to_scalar();
@@ -715,20 +727,17 @@ PublicKey unlinkable_derive_output_public_key(const PublicKey &output_secret, co
 
 PublicKey unlinkable_underive_address_S(const SecretKey &view_secret_key, const Hash &tx_inputs_hash,
     size_t output_index, const PublicKey &output_public_key, const PublicKey &encrypted_output_secret,
-    BinaryArray *output_secret_hash_arg) {
+    PublicKey *output_shared_secret) {
 	check_scalar(view_secret_key);
 	const P3 output_public_key_p3(output_public_key);
 	const P3 encrypted_output_secret_p3(encrypted_output_secret);
 
 	const PublicKey output_secret = to_bytes(encrypted_output_secret_p3 - view_secret_key * output_public_key_p3);
+	*output_shared_secret         = output_secret;
 	DEBUG_PRINT(std::cout << "output_secret=" << output_secret << std::endl);
 
 	KeccakStream cr_comm;
 	cr_comm << output_secret << tx_inputs_hash << output_index;
-	*output_secret_hash_arg = output_secret.as_binary_array();
-	output_secret_hash_arg->insert(
-	    output_secret_hash_arg->end(), std::begin(tx_inputs_hash.data), std::end(tx_inputs_hash.data));
-	append_varint(output_secret_hash_arg, output_index);
 
 	SecretKey output_secret_hash = cr_comm.hash_to_scalar();
 	DEBUG_PRINT(std::cout << "output_secret_hash=" << output_secret_hash << std::endl);
@@ -743,19 +752,15 @@ PublicKey unlinkable_underive_address_S_step1(const SecretKey &view_secret_key, 
 }
 
 PublicKey unlinkable_underive_address_S_step2(const PublicKey &Pv, const Hash &tx_inputs_hash, size_t output_index,
-    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, BinaryArray *output_secret_hash_arg) {
+    const PublicKey &output_public_key, const PublicKey &encrypted_output_secret, PublicKey *output_shared_secret) {
 	const P3 Pv_p3(Pv);
 	const P3 output_public_key_p3(output_public_key);
 	const P3 encrypted_output_secret_p3(encrypted_output_secret);
 
 	const PublicKey output_secret = to_bytes(encrypted_output_secret_p3 - Pv_p3);
-
+	*output_shared_secret         = output_secret;
 	KeccakStream cr_comm;
 	cr_comm << output_secret << tx_inputs_hash << output_index;
-	*output_secret_hash_arg = output_secret.as_binary_array();
-	output_secret_hash_arg->insert(
-	    output_secret_hash_arg->end(), std::begin(tx_inputs_hash.data), std::end(tx_inputs_hash.data));
-	append_varint(output_secret_hash_arg, output_index);
 	SecretKey output_secret_hash = cr_comm.hash_to_scalar();
 
 	return to_bytes(output_secret_hash * output_public_key_p3);
@@ -770,7 +775,8 @@ SecretKey unlinkable_derive_output_secret_key(const SecretKey &address_secret, c
 
 void unlinkable_underive_address(PublicKey *address_S, PublicKey *address_Sv, const PublicKey &output_secret,
     const Hash &tx_inputs_hash, size_t output_index, const PublicKey &output_public_key,
-    const PublicKey &encrypted_output_secret) {
+    const PublicKey &encrypted_output_secret, PublicKey *output_shared_secret) {
+	*output_shared_secret = output_secret;
 	const P3 output_public_key_p3(output_public_key);
 	const P3 output_secret_p3(output_secret);
 	const P3 encrypted_output_secret_p3(encrypted_output_secret);

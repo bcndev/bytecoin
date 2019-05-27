@@ -7,27 +7,9 @@
 #include <cstdint>
 #include <memory>
 #include "HardwareWallet.hpp"
-
-#if cn_WITH_LEDGER
-
-// We use forward declaration because libusb.h include windows.h, we do not want it
-struct libusb_device_handle;
-typedef struct libusb_device_handle libusb_device_handle;
+#include "hidapi.h"
 
 namespace cn { namespace hardware {
-
-struct USBLib {
-	USBLib();
-	~USBLib();
-};
-
-struct USBDevice {
-	libusb_device_handle *handle = nullptr;
-	bool attached_kernel_driver  = true;
-	explicit USBDevice(libusb_device_handle *dev_handle) : handle(dev_handle) {}
-	void attach_kernel_driver(bool attach);
-	~USBDevice();
-};
 
 class Ledger : public HardwareWallet {
 	struct LedgerAppInfo {
@@ -45,8 +27,10 @@ class Ledger : public HardwareWallet {
 	PublicKey m_v_mul_A_plus_sH;
 	PublicKey m_view_public_key;
 
-	USBLib usb_lib;
-	USBDevice m_device;
+	using device_handle_t      = std::unique_ptr<hid_device, decltype(&hid_close)>;
+	using enumeration_handle_t = std::unique_ptr<hid_device_info, decltype(&hid_free_enumeration)>;
+
+	device_handle_t m_device_handle;
 	const std::string m_path;
 
 	int sendApdu(const uint8_t *data, size_t len, uint8_t *out, size_t out_len, unsigned *sw);
@@ -61,7 +45,7 @@ class Ledger : public HardwareWallet {
 public:
 	static void add_connected(std::vector<std::unique_ptr<HardwareWallet>> *result);
 
-	explicit Ledger(libusb_device_handle *dev_handle, const std::string &path);
+	explicit Ledger(device_handle_t &&dev_handle, const std::string &path);
 	~Ledger() override;
 	std::string get_hardware_type() const override;
 	Hash get_wallet_key() const override { return m_wallet_key; }
@@ -93,5 +77,3 @@ public:
 };
 
 }}  // namespace cn::hardware
-
-#endif  // cn_WITH_LEDGER

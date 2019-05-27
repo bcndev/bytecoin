@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <ios>
 #include <stdexcept>
+#include "PathTools.hpp"
 #include "common/Math.hpp"
 #include "common/string.hpp"
 #ifdef _WIN32
@@ -31,9 +32,15 @@ FileStream::FileStream(const std::string &filename, OpenMode mode) {
 #ifdef _WIN32
 	handle = INVALID_HANDLE_VALUE;
 #endif
-	if (!try_open(filename, mode))
-		throw common::StreamError(
-		    std::string("Failed to ") + open_mode_texts[mode] + std::string("'") + filename + std::string("'"));
+	bool file_existed = false;
+	if (!try_open(filename, mode, &file_existed)) {
+		std::string msg =
+		    std::string("Failed to ") + open_mode_texts[mode] + std::string("'") + filename + std::string("'");
+		if (file_existed)
+			throw common::StreamErrorFileExists(msg);
+		else
+			throw common::StreamError(msg);
+	}
 }
 
 FileStream::~FileStream() {
@@ -46,12 +53,12 @@ FileStream::~FileStream() {
 #endif
 }
 
-bool FileStream::try_open(const std::string &filename, OpenMode mode) {
+bool FileStream::try_open(const std::string &filename, OpenMode mode, bool *file_existed) {
 #ifdef _WIN32
 	CloseHandle(handle);
 	handle = INVALID_HANDLE_VALUE;
 
-	auto wfilename = utf8_to_utf16(filename);
+	auto wfilename = utf8_to_utf16(expand_path(filename));
 	handle         = CreateFileW(wfilename.c_str(), GENERIC_READ | (mode == O_READ_EXISTING ? 0 : GENERIC_WRITE),
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
         mode == O_CREATE_ALWAYS
@@ -59,6 +66,9 @@ bool FileStream::try_open(const std::string &filename, OpenMode mode) {
             : mode == O_CREATE_NEW ? CREATE_NEW : mode == O_OPEN_ALWAYS ? OPEN_ALWAYS : OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL, nullptr);
 	DWORD err      = GetLastError();
+	if (file_existed)
+		*file_existed = (err == ERROR_FILE_EXISTS);
+
 	return handle != INVALID_HANDLE_VALUE;
 #else
 	close(fd);
@@ -67,7 +77,9 @@ bool FileStream::try_open(const std::string &filename, OpenMode mode) {
 	int m1 = (mode == O_CREATE_ALWAYS)
 	             ? (O_CREAT | O_TRUNC)
 	             : (mode == O_CREATE_NEW) ? (O_CREAT | O_EXCL) : (mode == O_OPEN_ALWAYS) ? O_CREAT : 0;
-	fd = open(filename.c_str(), m1 | (mode == O_READ_EXISTING ? O_RDONLY : O_RDWR), 0600);
+	fd = open(expand_path(filename).c_str(), m1 | (mode == O_READ_EXISTING ? O_RDONLY : O_RDWR), 0600);
+	if (file_existed)
+		*file_existed = (errno == EEXIST);
 	return fd != -1;
 #endif
 }

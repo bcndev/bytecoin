@@ -28,6 +28,7 @@ struct RequestHeader {
 	std::vector<Header> headers;
 	std::string basic_authorization;
 	std::string host;
+	std::string origin;
 
 	bool keep_alive       = true;
 	size_t content_length = std::numeric_limits<size_t>::max();
@@ -96,6 +97,5 @@ bool is_tspecial(int c);
 bool is_digit(int c);
 
 std::string status_to_string(int status);
-// std::string extension_to_mime_type(const std::string &extension);
 
 }  // namespace http

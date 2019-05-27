@@ -155,10 +155,15 @@ bool decode_block_good(const char *block, size_t size, uint8_t *res) {
 	if (java_hi_part >= 0x100000000)
 		return false;
 	if (res_size > 4) {
+		if (res_size < full_block_size && java_hi_part >= (uint64_t(1) << (8 * (res_size - 4))))
+			return false;  // Overflow
 		uint_be_to_bytes(res, res_size - 4, java_hi_part);
 		uint_be_to_bytes(res + res_size - 4, 4, java_lo_part);
-	} else
+	} else {
+		if (res_size < full_block_size && java_lo_part >= (uint64_t(1) << (8 * res_size)))
+			return false;  // Overflow
 		uint_be_to_bytes(res, res_size, java_lo_part);
+	}
 	return true;
 }
 

@@ -6,6 +6,8 @@
 #include <random>
 #include "Core/Config.hpp"
 #include "Core/Node.hpp"
+#include "Core/WalletHDsqlite.hpp"
+#include "Core/WalletLegacy.hpp"
 #include "Core/WalletNode.hpp"
 #include "common/BIPs.hpp"
 #include "common/Base64.hpp"
@@ -65,9 +67,9 @@ DEPRECATED AND NOT RECOMMENDED as entailing security risk. Please always run byt
   --p2p-bind-address=<ip:port>          IP and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>            External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
   --bytecoind-bind-address=<ip:port>    IP and port for bytecoind RPC [default: 127.0.0.1:8081].
-  --seed-node-address=<ip:port>         Specify list (one or more) of nodes to start connecting to.
-  --priority-node-address=<ip:port>     Specify list (one or more) of nodes to connect to and attempt to keep the connection open.
-  --exclusive-node-address=<ip:port>    Specify list (one or more) of nodes to connect to only. All other nodes including seed nodes will be ignored.)";
+  --seed-node-address=<ip:port>         Specify node (one or more) to start connecting to.
+  --priority-node-address=<ip:port>     Specify node (one or more) to connect to and attempt to keep the connection open.
+  --exclusive-node-address=<ip:port>     Specify node (one or more) to exclusive connect to, ignoring all other nodes.)";
 
 static const bool separate_thread_for_bytecoind = true;
 
@@ -208,12 +210,12 @@ std::unique_ptr<Wallet> open_wallet(const Currency &currency, logging::ILogger &
     boost::optional<std::string> *password, bool readonly, common::console::UnicodeConsoleSetup &console_setup) {
 	if (!*password)
 		*password = prompt_for_string("Enter current wallet file password", console_setup, true);
-	const bool is_sqlite = WalletHD::is_sqlite(wallet_file);
+	const bool is_sqlite = WalletHDsqlite::is_sqlite(wallet_file);
 	std::unique_ptr<Wallet> wallet;
 	if (is_sqlite)
-		wallet = std::make_unique<WalletHD>(currency, log, wallet_file, password->get(), readonly);
+		wallet = std::make_unique<WalletHDsqlite>(currency, log, wallet_file, password->get(), readonly);
 	else
-		wallet = std::make_unique<WalletContainerStorage>(currency, log, wallet_file, password->get());
+		wallet = std::make_unique<WalletLegacy>(currency, log, wallet_file, password->get());
 	std::cout << "Opened wallet with first address " << currency.account_address_as_string(wallet->get_first_address())
 	          << std::endl;
 	return wallet;
@@ -275,7 +277,7 @@ std::unique_ptr<Wallet> create_wallet(const Currency &currency, logging::ILogger
 	std::string new_password = ask_new_password(true, std::string(), console_setup);
 	std::unique_ptr<Wallet> wallet;
 	if (wallet_type == "hardware") {
-		wallet = std::make_unique<WalletHD>(
+		wallet = std::make_unique<WalletHDsqlite>(
 		    currency, log, wallet_file, new_password, mnemonic, creation_timestamp, mnemonic_password, true);
 		wallet->create_look_ahead_records(address_count);
 		if (import_view_key) {
@@ -283,11 +285,11 @@ std::unique_ptr<Wallet> create_wallet(const Currency &currency, logging::ILogger
 			std::cout << "Successfully imported view key" << std::endl;
 		}
 	} else if (wallet_type == "amethyst") {
-		wallet = std::make_unique<WalletHD>(
+		wallet = std::make_unique<WalletHDsqlite>(
 		    currency, log, wallet_file, new_password, mnemonic, creation_timestamp, mnemonic_password, false);
 		wallet->create_look_ahead_records(address_count);
 	} else if (wallet_type == "legacy") {
-		wallet = std::make_unique<WalletContainerStorage>(
+		wallet = std::make_unique<WalletLegacy>(
 		    currency, log, wallet_file, new_password, import_keys_value, creation_timestamp);
 	}
 	std::cout << "Successfully created wallet with first address "
@@ -297,7 +299,7 @@ std::unique_ptr<Wallet> create_wallet(const Currency &currency, logging::ILogger
 
 int main(int argc, const char *argv[]) try {
 	common::console::UnicodeConsoleSetup console_setup;
-	auto idea_start = std::chrono::high_resolution_clock::now();
+	const auto idea_start = std::chrono::high_resolution_clock::now();
 
 	//	Visual Studio does not support passing cmake args in IDE
 	//	const char *argv2[] = {"walletd", "--create-wallet", "--wallet-type=hardware", "--wallet-file=test.wallet"};
@@ -479,7 +481,9 @@ int main(int argc, const char *argv[]) try {
 		std::cout << "Wallet with the same first address is in use - " << common::what(ex) << std::endl;
 		return api::WALLET_WITH_SAME_KEYS_IN_USE;
 	}
-	WalletState wallet_state(*wallet, logManagerWalletNode, config, currency);
+	WalletState::DB wallet_state_db(
+	    platform::O_OPEN_ALWAYS, config.get_data_folder("wallet_cache") + "/" + wallet->get_cache_name());
+	WalletState wallet_state(*wallet, logManagerWalletNode, config, currency, wallet_state_db);
 	//	wallet_state.test_undo_blocks();
 	//	return 0;
 
@@ -541,12 +545,12 @@ int main(int argc, const char *argv[]) try {
 			throw;
 		}
 	}
-	auto idea_ms =
+	const auto idea_ms =
 	    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - idea_start);
 	std::cout << "walletd started seconds=" << double(idea_ms.count()) / 1000 << std::endl;
 
 	while (!io.stopped()) {
-		if ((node && node->on_idle()) || wallet_node->on_idle())  // We load blockchain there
+		if (node && node->on_idle())  // We load blockchain there
 			io.poll();
 		else
 			io.run_one();

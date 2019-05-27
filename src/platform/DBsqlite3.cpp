@@ -17,7 +17,7 @@ void sqlite::check(int rc, const char *msg) {
 
 void sqlite::Dbi::open_check_create(OpenMode open_mode, const std::string &full_path, bool *created) {
 	this->full_path = full_path;
-	sqlite::check(sqlite3_open_v2(full_path.c_str(),
+	sqlite::check(sqlite3_open_v2(platform::expand_path(full_path).c_str(),
 	                  &handle,
 	                  open_mode == OpenMode::O_READ_EXISTING
 	                      ? SQLITE_OPEN_READONLY
@@ -36,7 +36,7 @@ void sqlite::Dbi::open_check_create(OpenMode open_mode, const std::string &full_
 	stmt_get_tables.prepare(*this, "SELECT name FROM sqlite_master WHERE type = 'table'");
 	*created = !stmt_get_tables.step();
 	if (open_mode == OpenMode::O_CREATE_NEW && !*created)
-		throw Error("sqlite database " + full_path + " already exists and will not be overwritten");
+		throw ErrorDBExists("sqlite database " + full_path + " already exists and will not be overwritten");
 	sqlite::check(sqlite3_busy_timeout(handle, 5000), "sqlite3_busy_timeout");  // ms
 }
 
@@ -51,9 +51,8 @@ void sqlite::Dbi::commit_txn() {
 }
 void sqlite::Dbi::begin_txn() {
 	exec("BEGIN IMMEDIATE TRANSACTION",
-	    "modifying database impossible. Disk read-only or database used by other running instance?");  // TODO - if
-	                                                                                                   // readonly, will
-	                                                                                                   // throw
+	    "modifying database impossible. Disk read-only or database used by other running instance?");
+	// TODO - if readonly, will throw
 }
 
 sqlite::Dbi::~Dbi() {
@@ -92,7 +91,7 @@ sqlite::Stmt::~Stmt() {
 	handle = nullptr;
 }
 
-DBsqliteKV::DBsqliteKV(OpenMode open_mode, const std::string &full_path, uint64_t max_db_size)
+DBsqliteKV::DBsqliteKV(OpenMode open_mode, const std::string &full_path, uint64_t max_tx_size)
     : full_path(full_path + ".sqlite") {
 	//	if ()
 	//		throw platform::sqlite::Error("SQLite cannot be used in read-only mode for now");
@@ -100,7 +99,7 @@ DBsqliteKV::DBsqliteKV(OpenMode open_mode, const std::string &full_path, uint64_
 	//	std::cout << "sqlite3_libversion=" << sqlite3_libversion() << std::endl;
 	//	create_directories_if_necessary(full_path);
 	bool created = false;
-	db_dbi.open_check_create(open_mode, this->full_path.c_str(), &created);
+	db_dbi.open_check_create(open_mode, platform::expand_path(this->full_path).c_str(), &created);
 	if (created)
 		db_dbi.exec("CREATE TABLE kv_table(kk BLOB PRIMARY KEY COLLATE BINARY, vv BLOB NOT NULL) WITHOUT ROWID");
 	stmt_get.prepare(db_dbi, "SELECT kk, vv FROM kv_table WHERE kk = ?");
@@ -122,7 +121,7 @@ size_t DBsqliteKV::get_approximate_items_count() const {
 	            //	return common::integer_cast<size_t>(sqlite3_column_int64(stmt_select_star.handle, 0));
 }
 
-static const size_t max_key_size = 128;
+static const size_t max_key_size = 255;
 
 DBsqliteKV::Cursor::Cursor(const DBsqliteKV *db,
     const sqlite::Dbi &db_dbi,
@@ -278,10 +277,9 @@ std::string DBsqliteKV::clean_key(const std::string &key) {
 }
 
 void DBsqliteKV::delete_db(const std::string &path) {
-	//	std::remove((path + "/data.mdb").c_str());
-	//	std::remove((path + "/lock.mdb").c_str());
-	std::remove((path + ".sqlite").c_str());
-	std::remove((path + ".sqlite-journal").c_str());
+	auto ep = platform::expand_path(path);
+	std::remove((ep + ".sqlite").c_str());
+	std::remove((ep + ".sqlite-journal").c_str());
 }
 void DBsqliteKV::backup_db(const std::string &path, const std::string &dst_path) {
 	throw platform::sqlite::Error("SQlite backed does not support hot backup - stop daemons, then copy database");

@@ -46,39 +46,46 @@ void make_generic_error_reponse(common::JsonValue &resp, const std::string &what
 }
 
 void Request::parse(const std::string &request_body, bool allow_empty_id) {
-	common::JsonValue ps_req;
+	stripped_req = common::JsonValue{};
 	try {
-		ps_req = common::JsonValue::from_string(request_body);
+		stripped_req = common::JsonValue::from_string(request_body);
 	} catch (const std::exception &ex) {
 		throw Error(PARSE_ERROR, common::what(ex));
 	}
-	if (!ps_req.is_object())
+	if (!stripped_req.is_object())
 		throw Error(INVALID_REQUEST, "Request is not a json object");
-	if (!ps_req.contains("jsonrpc"))
+	if (!stripped_req.contains("jsonrpc"))
 		throw Error(INVALID_REQUEST, "Request must include jsonrpc key");
-	auto &j = ps_req("jsonrpc");
-	if (!j.is_string() || j.get_string() != "2.0")
-		throw Error(INVALID_REQUEST, "jsonrpc value must be exactly \"2.0\"");
-	if (!ps_req.contains("method"))
+	{
+		auto &j = stripped_req("jsonrpc");
+		if (!j.is_string() || j.get_string() != "2.0")
+			throw Error(INVALID_REQUEST, "jsonrpc value must be exactly \"2.0\"");
+	}
+	stripped_req.erase("jsonrpc");
+	if (!stripped_req.contains("method"))
 		throw Error(INVALID_REQUEST, "Request must include method key");
-	auto &m = ps_req("method");
-	if (!m.is_string())
-		throw Error(INVALID_REQUEST, "method value must be string");
-	method = m.get_string();
-	if (ps_req.contains("id")) {
-		auto &p = ps_req("id");
-		if (!p.is_string() && !p.is_integer() && !p.is_nil())  // Json RPC spec 4.2
-			throw Error(INVALID_REQUEST, "id value must be an integer number, string or null");
+	{
+		auto &m = stripped_req("method");
+		if (!m.is_string())
+			throw Error(INVALID_REQUEST, "method value must be string");
+		method = m.get_string();
+	}
+	stripped_req.erase("method");
+	if (stripped_req.contains("id")) {
+		auto &p = stripped_req("id");
+		if (!p.is_string() && !p.is_number() && !p.is_nil())  // Json RPC spec 4.2
+			throw Error(INVALID_REQUEST, "id value must be number, string or null");
 		jid = std::move(p);
+		stripped_req.erase("id");
 	} else {
 		if (!allow_empty_id)
 			throw Error(INVALID_REQUEST, "id value is REQUIRED");
 	}
-	if (ps_req.contains("params")) {
-		auto &p = ps_req("params");
+	if (stripped_req.contains("params")) {
+		auto &p = stripped_req("params");
 		if (!p.is_object() && !p.is_array())  // Json RPC spec 4.2
 			throw Error(INVALID_REQUEST, "params value must be an object or array");
-		params = std::move(p);
+		//		params = std::move(p);
 	}
 }
 
@@ -99,8 +106,8 @@ void Response::parse(const std::string &response_body) {
 	if (!ps_req.contains("id"))
 		throw Error(INVALID_REQUEST, "id value is REQUIRED");
 	auto &p = ps_req("id");
-	if (!p.is_string() && !p.is_integer() && !p.is_nil())  // Json RPC spec 4.2
-		throw Error(INVALID_REQUEST, "id value must be an integer number, string or null");
+	if (!p.is_string() && !p.is_number() && !p.is_nil())  // Json RPC spec 4.2
+		throw Error(INVALID_REQUEST, "id value must be number, string or null");
 	jid = std::move(p);
 	if (ps_req.contains("result"))
 		result = std::move(ps_req("result"));

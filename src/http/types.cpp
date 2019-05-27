@@ -64,6 +64,8 @@ std::string RequestHeader::to_string() const {
 	   << "HTTP/" << http_version_major << "." << http_version_minor << "\r\n";
 	if (!host.empty())
 		ss << "Host: " << host << "\r\n";
+	if (!origin.empty())
+		ss << "Origin: " << origin << "\r\n";
 	for (auto &&h : headers)
 		ss << h.name << ": " << h.value << "\r\n";
 	if (!basic_authorization.empty())

@@ -3,6 +3,7 @@
 // details.
 
 #include "../Random.hpp"
+#include "Core/BlockChain.hpp"
 #include "Core/Config.hpp"
 #include "Core/WalletState.hpp"
 #include "logging/ConsoleLogger.hpp"
@@ -15,8 +16,8 @@ using namespace cn;
 class WalletStateTest : public WalletStateBasic {
 public:
 	std::map<KeyImage, std::vector<Hash>> memory_spent;
-	explicit WalletStateTest(logging::ILogger &log, const Config &config, const Currency &currency)
-	    : WalletStateBasic(log, config, currency, "test_wallet_state") {}
+	explicit WalletStateTest(logging::ILogger &log, const Config &config, const Currency &currency, DB &db)
+	    : WalletStateBasic(log, config, currency, db, "test") {}
 	bool add_incoming_output(const api::Output &output) override {
 		return WalletStateBasic::add_incoming_output(output);
 	}
@@ -245,9 +246,10 @@ void test_wallet_state(common::CommandLine &cmd) {
 	Currency currency("main");
 	Config config(cmd);
 	config.data_folder = "../tests/scratchpad";
-
-	BlockChain::DB::delete_db(config.data_folder + "/wallet_cache/test_wallet_state");
-	WalletStateTest ws(logger, config, currency);
+	const auto db_name = config.get_data_folder("wallet_cache") + "/test_wallet_state";
+	WalletStateTest::DB::delete_db(db_name);
+	WalletState::DB wallet_state_db(platform::O_OPEN_ALWAYS, db_name);
+	WalletStateTest ws(logger, config, currency, wallet_state_db);
 	WalletStateModel wm(currency);
 
 	std::map<Amount, size_t> next_si;

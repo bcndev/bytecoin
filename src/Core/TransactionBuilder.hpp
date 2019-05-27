@@ -4,6 +4,7 @@
 #pragma once
 
 #include "CryptoNote.hpp"
+#include "TransactionExtra.hpp"
 #include "Wallet.hpp"
 #include "logging/LoggerMessage.hpp"
 #include "rpc_api.hpp"
@@ -29,13 +30,14 @@ public:
 	struct OutputDesc {
 		Amount amount;
 		AccountAddress addr;
+		std::string message;
 		static bool less_amount(const OutputDesc &a, const OutputDesc &b) { return a.amount < b.amount; }
 	};
 	std::vector<OutputDesc> m_output_descs;
 
 	// before calling, make sure mix_outputs do not contain real_output...
 	void add_input(const std::vector<api::Output> &mix_outputs, size_t real_output_index);
-	void add_output(uint64_t amount, const AccountAddress &to);
+	void add_output(uint64_t amount, const AccountAddress &to, const std::string &message);
 
 	Transaction sign(
 	    const WalletStateBasic &wallet_state, Wallet *wallet, const std::set<AccountAddress> *only_records);
@@ -45,12 +47,19 @@ public:
 	static void generate_output_secrets(const Hash &output_seed, crypto::SecretKey *output_secret_scalar,
 	    crypto::PublicKey *output_secret_point, uint8_t *output_secret_address_type);
 	static OutputKey create_output(bool tx_amethyst, const AccountAddress &to, const SecretKey &tx_secret_key,
-	    const Hash &tx_inputs_hash, size_t output_index, const Hash &output_seed);
+	    const Hash &tx_inputs_hash, size_t output_index, const Hash &output_seed, PublicKey *output_shared_secret);
 	static bool detect_not_our_output(const Wallet *wallet, bool tx_amethyst, const Hash &tid,
 	    const Hash &tx_inputs_hash, boost::optional<Wallet::History> *, KeyPair *tx_keys, size_t out_index,
-	    const OutputKey &, AccountAddress *);
-	static bool detect_not_our_output_amethyst(
-	    const Hash &tx_inputs_hash, const Hash &output_seed, size_t out_index, const OutputKey &, AccountAddress *);
+	    const OutputKey &, AccountAddress *, PublicKey *output_shared_secret);
+	static bool detect_not_our_output_amethyst(const Hash &tx_inputs_hash, const Hash &output_seed, size_t out_index,
+	    const OutputKey &, AccountAddress *, PublicKey *output_shared_secret);
+
+	static BinaryArray encrypt_message_chunk(const std::string &message, const PublicKey &output_shared_secret,
+	    const Hash &tx_inputs_hash, const size_t &out_index, size_t mid);
+	static bool decrypt_message_chunk(std::string *message, const BinaryArray &encrypted_message,
+	    const PublicKey &output_shared_secret, const Hash &tx_inputs_hash, const size_t &out_index, size_t mid);
+	static std::string decrypt_message(const std::vector<extra::EncryptedMessage> &encrypted_messages,
+	    const PublicKey &output_shared_secret, const Hash &tx_inputs_hash, const size_t &out_index);
 };
 
 class UnspentSelector {

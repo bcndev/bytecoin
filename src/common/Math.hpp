@@ -28,8 +28,11 @@ T median_value(std::vector<T> *v) {
 
 template<typename Target, typename Source>
 void integer_cast_throw(const Source &arg) {
-	throw std::out_of_range(
-	    "Failed integer cast of " + common::to_string(arg) + " to " + common::demangle(typeid(Target).name()));
+	throw std::out_of_range("Cannot convert value " + common::to_string(arg) + " to integer in range [" +
+	                        common::to_string(std::numeric_limits<Target>::min()) + ".." +
+	                        common::to_string(std::numeric_limits<Target>::max()) + "]");
+	//	throw std::out_of_range(
+	//	    "Failed integer cast of " + common::to_string(arg) + " to " + common::demangle(typeid(Target).name()));
 }
 
 template<typename Target, typename Source>
@@ -82,7 +85,7 @@ inline bool has_sign(const std::string &arg) {
 	return pos != arg.size() && arg[pos] == '-';
 }
 
-inline bool has_tail(const std::string &arg, size_t pos) {
+inline bool has_tail(const std::string &arg, size_t &pos) {
 	while (pos != arg.size() && isspace(arg[pos]))
 		pos += 1;
 	return pos != arg.size();
@@ -93,20 +96,18 @@ inline Target integer_cast_is_integral(const Source &arg, std::false_type) {
 	const std::string &sarg = arg;          // creates tmp object if neccessary
 	if (std::is_unsigned<Target>::value) {  // Crazy stupid C++ standard :(
 		if (has_sign(sarg))
-			throw std::out_of_range("Failed integer cast of " + sarg + " to " +
-			                        common::demangle(typeid(Target).name()) + ", sign not allowed");
+			throw std::out_of_range("Cannot convert string '" + sarg + "' to integer, must be >= 0");
 		size_t pos = 0;
 		auto val   = std::stoull(sarg, &pos);
 		if (has_tail(sarg, pos))
-			throw std::out_of_range("Failed integer cast of " + sarg + " to " +
-			                        common::demangle(typeid(Target).name()) + ", excess characters not allowed");
+			throw std::out_of_range("Cannot convert string '" + sarg + "' to integer, excess characters not allowed");
 		return integer_cast_is_integral<Target>(val, std::true_type{});
 	}
 	size_t pos = 0;
 	auto val   = std::stoll(sarg, &pos);
 	if (has_tail(sarg, pos))
-		throw std::out_of_range("Failed integer cast of " + sarg + " to " + common::demangle(typeid(Target).name()) +
-		                        ", excess characters not allowed");
+		throw std::out_of_range("Cannot convert string '" + sarg + "' to integer, excess characters '" +
+		                        sarg.substr(pos) + "' not allowed");
 	return integer_cast_is_integral<Target>(val, std::true_type{});
 }
 

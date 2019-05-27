@@ -67,6 +67,7 @@ Config::Config(common::CommandLine &cmd)
     , walletd_bind_port(WALLET_RPC_DEFAULT_PORT)
     , walletd_bind_ip("127.0.0.1")  // Connection to wallet allows spending
     , rpc_sync_blocks_max_count(api::cnd::SyncBlocks::Request::MAX_COUNT)
+    , rpc_sync_blocks_max_size(api::cnd::SyncBlocks::Request::MAX_SIZE)
     , paranoid_checks(cmd.get_bool("--paranoid-checks"))
     , trusted_public_key(P2P_STAT_TRUSTED_PUBLIC_KEY)
     , payment_queue_confirmations(720) {
@@ -120,7 +121,7 @@ Config::Config(common::CommandLine &cmd)
 #else
 		const std::string emsg = "Command line option --" CRYPTONOTE_NAME "d-remote-address should be <ip>:<port>";
 #endif
-		if (addr.find(prefix) == 0) {
+		if (common::starts_with(addr, prefix)) {
 #if !platform_USE_SSL
 			throw ConfigError("Using https in --" CRYPTONOTE_NAME
 			                  "d-remote-address impossible - this binary is built without OpenSSL");
@@ -133,7 +134,7 @@ Config::Config(common::CommandLine &cmd)
 			bytecoind_remote_ip   = prefix + sip;
 		} else {
 			const std::string prefix2 = "http://";
-			if (addr.find(prefix2) == 0)
+			if (common::starts_with(addr, prefix2))
 				addr = addr.substr(prefix2.size());
 			ewrap(common::parse_ip_address_and_port(addr, &bytecoind_remote_ip, &bytecoind_remote_port),
 			    ConfigError(emsg));
@@ -164,6 +165,7 @@ Config::Config(common::CommandLine &cmd)
 	std::sort(seed_nodes.begin(), seed_nodes.end());
 	std::sort(priority_nodes.begin(), priority_nodes.end());
 
+#ifndef __EMSCRIPTEN__
 	data_folder = platform::get_app_data_folder(CRYPTONOTE_NAME);
 	if (net != "main")
 		data_folder += "_" + net + "net";
@@ -175,6 +177,14 @@ Config::Config(common::CommandLine &cmd)
 		if (!platform::create_folders_if_necessary(data_folder))  // Create only in default place
 			throw DataFolderError("Failed to create data folder " + data_folder);
 	}
+#endif
+}
+
+bool Config::good_bytecoind_auth(const std::string &auth) const {
+	return bytecoind_authorization.empty() || auth == bytecoind_authorization || good_bytecoind_auth_private(auth);
+}
+bool Config::good_bytecoind_auth_private(const std::string &auth) const {
+	return bytecoind_authorization_private.empty() || auth == bytecoind_authorization_private;
 }
 
 bool Config::use_multicast() const { return multicast_period != 0 && p2p_bind_ip != "127.0.0.1"; }
@@ -195,7 +205,9 @@ std::string Config::get_data_folder(const std::string &subdir) const {
 	std::string folder = data_folder;
 	// This code is called just several times at startup, so no caching
 	folder += "/" + subdir;
+#ifndef __EMSCRIPTEN__
 	if (!platform::create_folder_if_necessary(folder))
 		throw DataFolderError("Failed to create coin folder " + folder);
+#endif
 	return folder;
 }

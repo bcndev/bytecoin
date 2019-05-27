@@ -41,8 +41,9 @@ jobs:
     displayName: Echo predefined vars
 
   - script: |
-      sudo apt-get install -y libusb-1.0-0-dev
-    displayName: Install libusb-1.0
+      sudo apt-get update
+      sudo apt-get install -y libudev-dev
+    displayName: Install libudev
 
   - script: |
       mkdir bytecoin && cd bytecoin
@@ -71,12 +72,16 @@ jobs:
 
   - script: |
       mkdir bytecoin/build && cd bytecoin/build
-      cmake -DWITH_LEDGER=1 .. && make -j$(nproc)
+      cmake .. && make -j$(nproc)
     displayName: Build daemons
 
   - script: |
       zip -v -j $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-linux64.zip bytecoin/bin/bytecoind bytecoin/bin/minerd bytecoin/bin/walletd
     displayName: Zip daemons
+
+  - script: |
+      zip -v -r $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-linux64-crypto.zip bytecoin/libs/libbytecoin-crypto.a bytecoin/src/*
+    displayName: Zip artifacts for future desktop build
 
   - task: PublishBuildArtifacts@1
     inputs:
@@ -106,14 +111,6 @@ jobs:
     displayName: Install boost from Homebrew
 
   - script: |
-      curl -L -O https://github.com/libusb/libusb/releases/download/v1.0.22/libusb-1.0.22.tar.bz2
-      mkdir libusb && tar -xvf libusb-1.0.22.tar.bz2 --directory libusb --strip-components=1
-      cd libusb
-      ./configure --prefix=`pwd`
-      make install
-    displayName: Build libusb
-
-  - script: |
       mkdir bytecoin && cd bytecoin
       git init
       git remote add origin https://user:$(GithubPAT)@github.com/$(daemonsRepo)
@@ -135,12 +132,16 @@ jobs:
 
   - script: |
       mkdir bytecoin/build && cd bytecoin/build
-      cmake -DWITH_LEDGER=1 .. && make -j
+      cmake .. && make -j
     displayName: Build daemons
 
   - script: |
       zip -v -j $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-macos.zip bytecoin/bin/bytecoind bytecoin/bin/minerd bytecoin/bin/walletd
     displayName: Zip daemons
+
+  - script: |
+      zip -v -r $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-macos-crypto.zip bytecoin/libs/libbytecoin-crypto.a bytecoin/src/*
+    displayName: Zip artifacts for future desktop build
 
   - task: PublishBuildArtifacts@1
     inputs:
@@ -205,11 +206,6 @@ jobs:
     displayName: Fetch boost
 
   - bash: |
-      curl -L -O https://github.com/libusb/libusb/releases/download/v1.0.22/libusb-1.0.22.7z
-      7z x libusb-1.0.22.7z -olibusb
-    displayName: Fetch libusb
-
-  - bash: |
       git clone --single-branch --depth 1 https://github.com/bcndev/lmdb.git
     displayName: Clone LMDB
 
@@ -237,7 +233,7 @@ jobs:
 
   - bash: |
       mkdir bytecoin/build && cd bytecoin/build
-      "$(vsCMakeDir)"/cmake.exe -DWITH_LEDGER=1 -G "$(generatorName)" --config RelWithDebInfo ..
+      "$(vsCMakeDir)"/cmake.exe -G "$(generatorName)" --config RelWithDebInfo ..
       CL=/MP
       "$(vsMSBuildDir)"/msbuild.exe ALL_BUILD.vcxproj -maxcpucount -p:Configuration=RelWithDebInfo
     displayName: Build daemons
@@ -248,19 +244,18 @@ jobs:
     displayName: Move daemons from RelWithDebInfo to bin/ or libs/
 
   - bash: |
-      cp -v libusb/MS$(arch)/dll/libusb-1.0.dll bytecoin/bin
-    displayName: Copy libusb to bytecoin/bin
-
-  - bash: |
       7z a "$(Build.ArtifactStagingDirectory)"/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win$(arch).zip \
         ./bytecoin/bin/bytecoind.exe \
         ./bytecoin/bin/bytecoind.pdb \
         ./bytecoin/bin/minerd.exe \
         ./bytecoin/bin/minerd.pdb \
         ./bytecoin/bin/walletd.exe \
-        ./bytecoin/bin/walletd.pdb \
-        ./bytecoin/bin/libusb-1.0.dll
+        ./bytecoin/bin/walletd.pdb
     displayName: Zip daemons
+
+  - bash: |
+      7z a "$(Build.ArtifactStagingDirectory)"/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win$(arch)-crypto.zip bytecoin/libs/bytecoin-crypto.lib bytecoin/src
+    displayName: Zip artifacts for future desktop build
 
   - task: PublishBuildArtifacts@1
     inputs:
@@ -279,10 +274,8 @@ jobs:
   condition: |
     and(
       succeeded(),
-      or(
-        startsWith(variables['build.sourceBranch'], 'refs/heads/releases/'),
-        startsWith(variables['build.sourceBranch'], 'refs/tags/')
-    ))
+      startsWith(variables['build.sourceBranch'], 'refs/heads/releases/')
+    )
   steps:
   - checkout: none
 
@@ -330,3 +323,6 @@ jobs:
         https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win32.zip"
     displayName: Create github release in daemons repo
 
+  - script: |
+      curl -H "Authorization: token $(GithubPAT)" -X DELETE https://api.github.com/repos/$(daemonsRepo)/git/$(Build.SourceBranch)
+    displayName: Remove branch created for the build

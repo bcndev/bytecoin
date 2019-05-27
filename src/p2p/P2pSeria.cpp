@@ -45,7 +45,7 @@ typename std::enable_if<std::is_standard_layout<T>::value>::type serialize_as_bi
 }
 
 // P2pProtocolTypes
-void ser(UUID &v, seria::ISeria &s) { s.binary(&v, sizeof(v)); }
+bool ser(UUID &v, seria::ISeria &s) { return s.binary(&v, sizeof(v)); }
 
 void ser_members(PeerlistEntryLegacy &v, seria::ISeria &s) {
 	seria_kv("adr", v.adr, s);
@@ -226,20 +226,23 @@ void ser_members(p2p::SyncPool::Response &v, seria::ISeria &s) {
 	seria_kv("transaction_descs", v.transaction_descs, s);
 }
 
-void ser(NetworkAddress &v, seria::ISeria &s) {
+bool ser(NetworkAddress &v, seria::ISeria &s) {
 	if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
 		std::string str = common::ip_address_and_port_to_string(v.ip, v.port);
-		ser(str, s);
-	} else if (dynamic_cast<seria::JsonInputStream *>(&s)) {
-		std::string str;
-		ser(str, s);
-		common::parse_ip_address_and_port(str, &v.ip, &v.port);
-	} else {
-		s.begin_object();
-		seria_kv("ip", v.ip, s);
-		seria_kv("port", v.port, s);
-		s.end_object();
+		return ser(str, s);
 	}
+	if (dynamic_cast<seria::JsonInputStream *>(&s)) {
+		std::string str;
+		if (!ser(str, s))
+			return false;
+		common::parse_ip_address_and_port(str, &v.ip, &v.port);
+		return true;
+	}
+	bool result = s.begin_object();
+	seria_kv("ip", v.ip, s);
+	seria_kv("port", v.port, s);
+	s.end_object();
+	return result;
 }
 void ser_members(PeerlistEntry &v, seria::ISeria &s) {
 	seria_kv("peer_id", v.peer_id, s);

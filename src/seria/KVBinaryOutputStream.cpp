@@ -73,14 +73,13 @@ KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : ISer
 	m_target.write(&hdr.m_ver, 1);
 }
 
-bool KVBinaryOutputStream::object_key(common::StringView name, bool optional) {
+void KVBinaryOutputStream::object_key(common::StringView name, bool optional) {
 	invariant(!m_next_key.data(), "");
 	m_next_key = name;
-	return true;
 }
 void KVBinaryOutputStream::next_map_key(std::string &name) { m_next_key = name; }
 
-void KVBinaryOutputStream::begin_object() {
+bool KVBinaryOutputStream::begin_object() {
 	if (m_stack.empty()) {
 		invariant(m_expecting_root, "expecting only object");
 		m_expecting_root = false;
@@ -91,6 +90,7 @@ void KVBinaryOutputStream::begin_object() {
 	m_objects_stack.emplace_back();
 	if (verbose_debug)
 		std::cout << "begin_object m_objects_stack.push_back, m_stack.push_back name=" << std::endl;
+	return true;
 }
 
 void KVBinaryOutputStream::end_object() {
@@ -114,7 +114,7 @@ void KVBinaryOutputStream::end_object() {
 		std::cout << "OBJ c=" << level.count << std::endl;
 }
 
-void KVBinaryOutputStream::begin_array(size_t &size, bool fixed_size) {
+bool KVBinaryOutputStream::begin_array(size_t &size, bool fixed_size) {
 	write_element_prefix(BIN_KV_SERIALIZE_TYPE_ARRAY);
 
 	m_stack.push_back(Level(common::StringView(""), size));
@@ -131,6 +131,7 @@ void KVBinaryOutputStream::begin_array(size_t &size, bool fixed_size) {
 		if (verbose_tokens)
 			std::cout << "ARR t=" << int(BIN_KV_SERIALIZE_TYPE_STRING) << " c=" << size << std::endl;
 	}
+	return true;
 }
 
 void KVBinaryOutputStream::end_array() {

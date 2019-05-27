@@ -1,19 +1,40 @@
 ## Release Notes
 
+### v3.4.3 (Amethyst)
+
+- In `get_transfers` `walletd`'s method error is returned if `from_height` is larger than `to_height` or top block height.
+- `WALLET_FILE_EXISTS (209)` is correctly returned when `walletd` is instructed to overwrite an existing wallet.
+- Fixed a bug when wrong error message was displayed when passing some invalid addresses to `walletd`'s `create_transaction` RPC method.
+- LMDB virtual memory usage by `bytecoind` and `walletd` reduced from fixed 512Gb to approx. actual blockchain database/wallet cache size.
+- `walletd` will not undo sync progress, if connected node is behind wallet state and behind latest hard checkpoint. It will wait for a node to advance to a checkpoint.
+- Wallet cache now takes much less space, especially for wallets with small number of transactions.
+- For all TCP sockets `keep_alive` option is now set after they are created (with default timeouts for each system, common value is 2 hours), solving very rare bug when there would be no reply to long poll ever for external services (like block explorers) calling from remote machines.
+- All paths now subject to substitution of `~` (Mac & Linux) and `%appdata%` (Windows). Also, on Linux and Max backslash is no more considered path separator.
+
+*API tweaks*
+- JSON numbers are interpreted according to spec throughout API, for example 10.01E2 is now good value for height (1001). This helps integration with some weird languages.
+- Better error messages throughout API when required parameters are not specified.
+- More strict JSON RPC - excess fields on top level are no more allowed in requests.
+- `bytecoind`'s binary version of `sync_blocks` now uses separate zero overhead response to save traffic during sync.
+
+*Incompatible API changes*
+- `bytecoind`'s `getblocktemplate`, `submitblock` and JSON versions of `sync_blocks` and `sync_mempool` now require private authorization. This helps with preventing excess load on public nodes.
+- deprecated field `outs_count` in `bytecoind.get_random_outputs` removed.
+
 ### v3.4.2 (Amethyst)
 
 - Fixed merge mining related bug affecting blocks version 4 (amethyst). All miners not upgraded to 3.4.2 at the moment of consensus update will produce broken blocks.
 - Fixed crash when disconnecting Ledger while scanning blockchain.
-- Fixed behavior of the get_transfers method when transactions from a memory pool are wrongly returned for some `from_height` and `to_height` values. 
+- Fixed behavior of the `get_transfers` `walletd`'s method when transactions from a memory pool are wrongly returned for some `from_height` and `to_height` values.
 
 *Incompatible API changes*
 - In response to the `get_wallet_info` `walletd`'s method, boolean field `amethyst` changed to string `wallet_type`
 
-### v3.4.2-beta-20190412 (Amethyst)
+### v3.4.2-beta-20190412
 
 - Fixed a stagenet voting bug.
 
-### v3.4.2-beta-20190411 (Amethyst)
+### v3.4.2-beta-20190411
 
 - Fixed problem when `bytecoind` stops responding via JSON RPC API.
 - Tweaked random output distribution for mixins.

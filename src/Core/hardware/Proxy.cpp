@@ -3,7 +3,9 @@
 
 #include "Proxy.hpp"
 #include <iostream>
+#ifndef __EMSCRIPTEN__
 #include "Emulator.hpp"
+#endif
 #include "common/exception.hpp"
 
 using namespace crypto;
@@ -15,6 +17,7 @@ void Proxy::debug_set_mnemonic(const std::string &mnemonic) { debug_mnemonic = m
 
 Proxy::Proxy(std::unique_ptr<HardwareWallet> &&proxy) : m_proxy(std::move(proxy)) {
 	m_wallet_key = m_proxy->get_wallet_key();
+#ifndef __EMSCRIPTEN__
 	// Now we create emulator
 	try {
 		if (!debug_mnemonic.empty()) {
@@ -27,6 +30,7 @@ Proxy::Proxy(std::unique_ptr<HardwareWallet> &&proxy) : m_proxy(std::move(proxy)
 	} catch (const std::exception &ex) {
 		std::cout << "Failed to create hardware wallet emulator, reason=" << common::what(ex) << std::endl;
 	}
+#endif
 }
 
 Proxy::~Proxy() {}

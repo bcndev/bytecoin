@@ -173,6 +173,11 @@ bool RequestParser::process_ready_header(RequestHeader &req) {
 		req.headers.pop_back();
 		return true;
 	}
+	if (lowcase.name == "origin") {
+		req.origin = lowcase.value;
+		req.headers.pop_back();
+		return true;
+	}
 	if (lowcase.name == "connection") {
 		if (lowcase.value == "close") {
 			req.keep_alive = false;

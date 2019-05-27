@@ -13,14 +13,14 @@ using namespace cn;
 
 namespace seria {
 
-void ser(Hash &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
-void ser(KeyImage &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
-void ser(PublicKey &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
-void ser(SecretKey &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
-void ser(KeyDerivation &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
-void ser(Signature &v, ISeria &s) { s.binary(reinterpret_cast<uint8_t *>(&v), sizeof(Signature)); }
-void ser(crypto::EllipticCurveScalar &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
-void ser(crypto::EllipticCurvePoint &v, ISeria &s) { s.binary(v.data, sizeof(v.data)); }
+bool ser(Hash &v, ISeria &s) { return s.binary(v.data, sizeof(v.data)); }
+bool ser(KeyImage &v, ISeria &s) { return s.binary(v.data, sizeof(v.data)); }
+bool ser(PublicKey &v, ISeria &s) { return s.binary(v.data, sizeof(v.data)); }
+bool ser(SecretKey &v, ISeria &s) { return s.binary(v.data, sizeof(v.data)); }
+bool ser(KeyDerivation &v, ISeria &s) { return s.binary(v.data, sizeof(v.data)); }
+bool ser(Signature &v, ISeria &s) { return s.binary(reinterpret_cast<uint8_t *>(&v), sizeof(Signature)); }
+bool ser(crypto::EllipticCurveScalar &v, ISeria &s) { return s.binary(v.data, sizeof(v.data)); }
+bool ser(crypto::EllipticCurvePoint &v, ISeria &s) { return s.binary(v.data, sizeof(v.data)); }
 
 void ser_members(cn::AccountAddressLegacy &v, ISeria &s) {
 	seria_kv("spend", v.S, s);
@@ -55,7 +55,7 @@ void ser_members(cn::SendproofAmethyst &v, ISeria &s) {
 		seria_kv("address", v.address_simple, s);
 		seria_kv("derivation", v.derivation, s);
 		seria_kv("signature", v.signature, s);
-	} else if (v.version == 4) {
+	} else if (v.version == parameters::TRANSACTION_VERSION_AMETHYST) {
 		seria_kv("elements", v.elements, s);
 	} else
 		throw std::runtime_error(
@@ -326,9 +326,9 @@ void ser_members(RootBlock &v, ISeria &s, BlockSeriaType seria_type) {
 	seria_kv_binary("nonce", v.nonce, 4, s);
 
 	if (seria_type == BlockSeriaType::BLOCKHASH || seria_type == BlockSeriaType::LONG_BLOCKHASH) {
-		Hash miner_tx_hash = get_root_block_base_transaction_hash(v.base_transaction);
+		Hash miner_tx_hash = get_root_block_base_transaction_hash(v.coinbase_transaction);
 		Hash merkle_root   = crypto::tree_hash_from_branch(
-            v.base_transaction_branch.data(), v.base_transaction_branch.size(), miner_tx_hash, nullptr);
+            v.coinbase_transaction_branch.data(), v.coinbase_transaction_branch.size(), miner_tx_hash, nullptr);
 
 		seria_kv("merkle_root", merkle_root, s);
 	}
@@ -341,24 +341,24 @@ void ser_members(RootBlock &v, ISeria &s, BlockSeriaType seria_type) {
 
 	size_t branch_size = crypto_coinbase_tree_depth(v.transaction_count);
 	if (s.is_input()) {
-		v.base_transaction_branch.resize(branch_size);
+		v.coinbase_transaction_branch.resize(branch_size);
 	} else {
-		if (v.base_transaction_branch.size() != branch_size)
+		if (v.coinbase_transaction_branch.size() != branch_size)
 			throw std::runtime_error("Wrong miner transaction branch size");
 	}
 
 	s.object_key("coinbase_transaction_branch");
-	size_t btb_size = v.base_transaction_branch.size();
+	size_t btb_size = v.coinbase_transaction_branch.size();
 	s.begin_array(btb_size, true);
-	for (Hash &hash : v.base_transaction_branch) {
+	for (Hash &hash : v.coinbase_transaction_branch) {
 		ser(hash, s);
 	}
 	s.end_array();
 
-	seria_kv("coinbase_transaction", v.base_transaction, s);
+	seria_kv("coinbase_transaction", v.coinbase_transaction, s);
 
-	TransactionExtraMergeMiningTag mm_tag;
-	if (!extra_get_merge_mining_tag(v.base_transaction.extra, mm_tag))
+	extra::MergeMiningTag mm_tag;
+	if (!extra::get_merge_mining_tag(v.coinbase_transaction.extra, mm_tag))
 		throw std::runtime_error("Can't get extra merge mining tag");
 	if (mm_tag.depth > 8 * sizeof(Hash))
 		throw std::runtime_error("Wrong merge mining tag depth");
@@ -446,9 +446,9 @@ void ser_members(BlockHeader &v,
 #if bytecoin_ALLOW_CM
 	if (v.is_cm_mined()) {
 		if (seria_type == BlockSeriaType::LONG_BLOCKHASH) {
-			Hash cm_merkle_root = crypto::tree_hash_from_cm_branch(
-			    v.cm_merkle_branch, get_auxiliary_block_header_hash(v, body_proxy), cm_path);
-			// We should not allow adding merkle_root_hash twice to the long_hashing_array, so more
+			Hash cm_merkle_root =
+			    crypto::tree_hash_from_cm_branch(v.cm_merkle_branch, get_block_header_prehash(v, body_proxy), cm_path);
+			// We should not allow adding merkle_root_hash twice to the pow_hashing_array, so more
 			// flexible "pre_nonce" | root | "post_nonce" would be bad (allow mining of sidechains)
 			// We select "nonce" to be first, because this would allow compatibility with some weird
 			// ASICs which select algorithm based on block major version. Nonce could be made to contain
@@ -544,7 +544,7 @@ Hash cn::get_block_hash(const BlockHeader &bh, const BlockBodyProxy &body_proxy)
 	return ha2;
 }
 
-Hash cn::get_auxiliary_block_header_hash(const BlockHeader &bh, const BlockBodyProxy &body_proxy) {
+Hash cn::get_block_header_prehash(const BlockHeader &bh, const BlockBodyProxy &body_proxy) {
 	// get_object_hash prepends array size before hashing.
 	// this was a mistake of initial cryptonote developers
 	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::PREHASH, body_proxy));
@@ -552,7 +552,7 @@ Hash cn::get_auxiliary_block_header_hash(const BlockHeader &bh, const BlockBodyP
 	return ha2;
 }
 
-BinaryArray cn::get_block_long_hashing_data(const BlockHeader &bh,
+BinaryArray cn::get_block_pow_hashing_data(const BlockHeader &bh,
     const BlockBodyProxy &body_proxy,
     const Hash &genesis_block_hash) {
 	common::BinaryArray result;

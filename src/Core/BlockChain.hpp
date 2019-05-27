@@ -21,7 +21,7 @@ class Currency;
 
 class ConsensusError : public std::runtime_error {
 public:
-	ConsensusError(const std::string &str) : runtime_error(str) {}
+	using std::runtime_error::runtime_error;
 };
 
 class ConsensusErrorOutputDoesNotExist : public ConsensusError {
@@ -56,7 +56,7 @@ struct PreparedBlock {
 	size_t coinbase_tx_size  = 0;
 	size_t block_header_size = 0;
 	size_t parent_block_size = 0;
-	Hash long_block_hash;  // only if passed context != nullptr
+	Hash pow_hash;  // only if passed context != nullptr
 	boost::optional<ConsensusError> error;
 
 	explicit PreparedBlock(BinaryArray &&ba, const Currency &currency, crypto::CryptoNightContext *context);
@@ -82,10 +82,6 @@ public:
 	Height get_tip_height() const { return m_tip_height; }
 	CumulativeDifficulty get_tip_cumulative_difficulty() const { return m_tip_cumulative_difficulty; }
 	const api::BlockHeader &get_tip() const;
-	template<typename T>
-	void get_tips(Height, Height, T &) const;
-	template<typename T>
-	void get_txs(const std::vector<Hash> &, T &) const;
 
 	void for_each_reversed_tip_segment(const api::BlockHeader &prev_info, Height window, bool add_genesis,
 	    std::function<void(const api::BlockHeader &header)> &&fun) const;
@@ -94,9 +90,10 @@ public:
 	bool in_chain(Height height, Hash bid) const;
 	bool in_chain(Hash bid) const;
 	bool get_block(const Hash &bid, RawBlock *rb) const;
-	bool get_block(const Hash &bid, BinaryArray *block_data, RawBlock *rb) const;  // rb can be null here
+	bool get_block(const Hash &bid, BinaryArray *block_data, RawBlock *rb) const;  // block_data or rb can be null
 	bool has_header(const Hash &bid) const { return read_header_fast(bid, 0) != nullptr; }
 	bool get_header(const Hash &bid, api::BlockHeader *info, Height hint = 0) const;
+	bool get_header_data(const Hash &bid, BinaryArray *block_data, Height hint = 0) const;
 	bool get_transaction(
 	    const Hash &tid, BinaryArray *binary_tx, Height *block_height, Hash *block_hash, size_t *index_in_block) const;
 	bool has_transaction(const Hash &tid) const;
@@ -154,7 +151,6 @@ protected:
 	    const std::map<Hash, std::pair<Transaction, BinaryArray>> &undone_transactions, bool undone_blocks) = 0;
 
 	const Hash m_genesis_bid;
-	const std::string m_coin_folder;
 	Hash get_common_block(const Hash &bid1, const Hash &bid2, std::vector<Hash> *chain1,
 	    std::vector<Hash> *chain2) const;  // both can be null
 

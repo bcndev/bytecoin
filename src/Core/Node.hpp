@@ -3,11 +3,8 @@
 
 #pragma once
 
-#include <condition_variable>
 #include <functional>
 #include <iostream>
-#include <mutex>
-#include <thread>
 #include "BlockChainState.hpp"
 #include "http/BinaryRpc.hpp"
 #include "http/JsonRpc.hpp"
@@ -38,6 +35,8 @@ public:
 	// binary method
 	bool on_sync_blocks(http::Client *, http::RequestBody &&, json_rpc::Request &&, api::cnd::SyncBlocks::Request &&,
 	    api::cnd::SyncBlocks::Response &);
+	bool on_sync_blocks_bin(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+	    api::cnd::SyncBlocks::Request &&, api::cnd::SyncBlocks::ResponseCompact &);
 	bool on_sync_mempool(http::Client *, http::RequestBody &&, json_rpc::Request &&, api::cnd::SyncMemPool::Request &&,
 	    api::cnd::SyncMemPool::Response &);
 
@@ -98,7 +97,6 @@ protected:
 	std::list<LongPollClient> m_long_poll_http_clients;
 	void advance_long_poll();
 
-	bool m_block_chain_was_far_behind;
 	logging::LoggerRef m_log;
 	PeerDB m_peer_db;
 	P2P m_p2p;
@@ -207,8 +205,9 @@ protected:
 	static std::unordered_map<std::string, JSONRPCHandlerFunction> m_jsonrpc_handlers;
 	static const std::unordered_map<std::string, BINARYRPCHandlerFunction> m_binaryrpc_handlers;
 
-	void fill_transaction_info(
-	    const TransactionPrefix &tx, api::Transaction *api_tx, std::vector<std::vector<PublicKey>> *mixed_public_keys);
+	void fill_transaction_info(const TransactionPrefix &tx, api::Transaction *api_tx,
+	    std::vector<std::vector<PublicKey>> *mixed_public_keys) const;
+	std::vector<Hash> fill_sync_blocks_subchain(api::cnd::SyncBlocks::Request &, Height *start_height) const;
 	void check_sendproof(const BinaryArray &data_inside_base58, api::cnd::CheckSendproof::Response &resp) const;
 	void check_sendproof(const SendproofLegacy &sp, api::cnd::CheckSendproof::Response &resp) const;
 };

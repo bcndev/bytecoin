@@ -7,7 +7,6 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 11)
 set(CRYPTONOTE_NAME bytecoin)
 add_definitions(-DCRYPTONOTE_NAME=\"${CRYPTONOTE_NAME}\" -DNDEBUG=1)
-option(WITH_LEDGER "Builds with support of Ledger hardware wallets" OFF)
 option(USE_INSTRUMENTATION "For testing - builds with address sanitizer instrument" OFF)
 option(WITH_THREAD_SANITIZER "For testing - builds with thread sanitizer instrument, USE_INSTRUMENTATION must be also set" OFF)
 option(BETTER_DEBUG "Disables optimizations. We do not use standard debug/realease configurations because they change too much" OFF)
@@ -26,6 +25,7 @@ if(APPLE)
 endif()
 if(WIN32)
     add_definitions(-D_SCL_SECURE_NO_WARNINGS=1 -D_CRT_SECURE_NO_WARNINGS=1 -D_WIN32_WINNT=0x0501)
+    add_compile_options(/we4715)
 else()
     # We can build on old Ubuntu 14 with clang by adding next line (does not work with add_compile_options)
     # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
@@ -48,10 +48,9 @@ else()
         endif()
     endif()
 endif()
-include_directories(vendor/sqlite)
-include_directories(vendor/hmac)
-set(SRC_WARNINGS_DB vendor/sqlite/sqlite3.c)
-set(SRC_DB src/platform/DBsqlite3.cpp src/platform/DBsqlite3.hpp)
+include_directories(vendor)
+set(SRC_NO_WARNINGS vendor/sqlite/sqlite3.c)
+set(SRC_DB src/platform/DBsqlite3.cpp src/platform/DBsqlite3.hpp src/platform/DBmemory.cpp src/platform/DBmemory.hpp)
 if(USE_SQLITE)
     # Requires dl on Linux, we add it unconditionally for simplicity.
     message(STATUS "Database selected: SQLite 3")
@@ -62,7 +61,7 @@ else()
     if(NOT EXISTS "${PARENT_DIR}/lmdb/libraries/liblmdb/mdb.c")
         message(FATAL_ERROR "${PARENT_DIR}/lmdb/libraries/liblmdb/mdb.c not found. Make sure lmdb is cloned into ../lmdb/")
     endif()
-    set(SRC_WARNINGS_DB ${SRC_WARNINGS_DB} ../lmdb/libraries/liblmdb/mdb.c ../lmdb/libraries/liblmdb/midl.c)
+    set(SRC_NO_WARNINGS ${SRC_NO_WARNINGS} ../lmdb/libraries/liblmdb/mdb.c ../lmdb/libraries/liblmdb/midl.c)
     set(SRC_DB ${SRC_DB} src/platform/DBlmdb.cpp src/platform/DBlmdb.hpp)
 endif()
 
@@ -104,17 +103,41 @@ file(GLOB SRC_PLATFORM
         src/platform/PreventSleep.cpp src/platform/PreventSleep.hpp
         src/platform/Windows.hpp src/platform/DB.hpp
         )
+if(APPLE)
+    set(SRC_PLATFORM ${SRC_PLATFORM} src/platform/PathTools.mm)
+endif()
+
+include_directories(vendor/hidapi) # hid.c incorrectly reference hidapi.h
+if(WIN32)
+    set(HID_LIBRARY setupapi.lib)
+    set(SRC_NO_WARNINGS
+        ${SRC_NO_WARNINGS}
+        vendor/hidapi/windows/hid.c
+    )
+elseif(APPLE)
+    set(SRC_NO_WARNINGS
+        ${SRC_NO_WARNINGS}
+        vendor/hidapi/mac/hid.c
+    )
+else()
+    set(SRC_NO_WARNINGS
+        ${SRC_NO_WARNINGS}
+        vendor/hidapi/linux/hid.c
+    )
+    set(HID_LIBRARY "udev")
+endif()
+
 # We compile those folders with full optimization even in debug mode, otherwise binaries will run much slower in debug
 if(WIN32)
     set_property(SOURCE ${SRC_CRYPTO} PROPERTY COMPILE_FLAGS -Ot)
     set_property(SOURCE ${SRC_DB} PROPERTY COMPILE_FLAGS -Ot)
-    set_property(SOURCE ${SRC_WARNINGS_DB} PROPERTY COMPILE_FLAGS "-Ot -w")
+    set_property(SOURCE ${SRC_NO_WARNINGS} PROPERTY COMPILE_FLAGS "-Ot -w")
     set_property(SOURCE ${SRC_COMMON} PROPERTY COMPILE_FLAGS -Ot)
     set_property(SOURCE ${SRC_SERIA} PROPERTY COMPILE_FLAGS -Ot)
 else()
     set_property(SOURCE ${SRC_CRYPTO} PROPERTY COMPILE_FLAGS -O3)
     set_property(SOURCE ${SRC_DB} PROPERTY COMPILE_FLAGS -O3)
-    set_property(SOURCE ${SRC_WARNINGS_DB} PROPERTY COMPILE_FLAGS "-O3 -w")
+    set_property(SOURCE ${SRC_NO_WARNINGS} PROPERTY COMPILE_FLAGS "-O3 -w")
     set_property(SOURCE ${SRC_COMMON} PROPERTY COMPILE_FLAGS -O3)
     set_property(SOURCE ${SRC_SERIA} PROPERTY COMPILE_FLAGS -O3)
 endif()
@@ -122,7 +145,7 @@ include_directories(src)
 include_directories(${CMAKE_BINARY_DIR})
 set(SOURCE_FILES
     ${SRC_DB}
-    ${SRC_WARNINGS_DB}
+    ${SRC_NO_WARNINGS}
     ${SRC_COMMON}
     ${SRC_HTTP}
     ${SRC_CORE}
@@ -136,40 +159,16 @@ set(SOURCE_FILES
     src/version.hpp
 )
 
-
-if(WITH_LEDGER)
-    # on Linux - apt-get install libusb-1.0-0-dev
-    # permission problem - https://raw.githubusercontent.com/LedgerHQ/udev-rules/master/add_udev_rules.sh
-    add_definitions(-Dcn_WITH_LEDGER=1)
-    set(LIBUSB_ROOT ${PARENT_DIR}/libusb)
-if(WIN32)
-    # Link libusb dynamically.
-    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set(USBLIB_LIBRARY ${LIBUSB_ROOT}/MS64/dll/libusb-1.0.lib)
-    else()
-        set(USBLIB_LIBRARY ${LIBUSB_ROOT}/MS32/dll/libusb-1.0.lib)
-    endif()
-elseif(APPLE)
-    # Link libusb statically.
-    set(USBLIB_LIBRARY ${LIBUSB_ROOT}/lib/libusb-1.0.a "-framework Foundation" "-framework IOKit")
-else()
-    set(USBLIB_LIBRARY "usb-1.0")
-endif()
-    message(STATUS "With ledger " ${USBLIB_LIBRARY})
-    include_directories(${LIBUSB_ROOT}/include)
-else()
-endif()
-
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/libs")
 add_library(bytecoin-crypto ${SRC_CRYPTO})
+if(APPLE)
+    link_libraries(-dead_strip  "-framework Foundation")
+endif()
 add_library(bytecoin-core ${SOURCE_FILES})
-target_link_libraries(bytecoin-core bytecoin-crypto ${USBLIB_LIBRARY})
+target_link_libraries(bytecoin-core bytecoin-crypto ${HID_LIBRARY})
 
 link_libraries(bytecoin-crypto bytecoin-core)
-if(APPLE)
-    link_libraries(-dead_strip)
-endif()
 if(NOT WIN32)
     link_libraries(${LINK_OPENSSL} dl pthread)
 endif()
@@ -207,10 +206,10 @@ else()
 endif()
 include_directories(${Boost_INCLUDE_DIRS})
 
-target_link_libraries(walletd ${USBLIB_LIBRARY})
+target_link_libraries(walletd ${HID_LIBRARY})
 
 if(APPLE)
-    target_link_libraries(walletd "-framework Foundation" "-framework IOKit") # -dead_strip_dylibs
-    target_link_libraries(${CRYPTONOTE_NAME}d "-framework Foundation" "-framework IOKit") # -dead_strip_dylibs
+    target_link_libraries(walletd "-framework IOKit") # -dead_strip_dylibs
+    target_link_libraries(${CRYPTONOTE_NAME}d "-framework IOKit") # -dead_strip_dylibs
 endif()
 

@@ -1,6 +1,6 @@
 # Bytecoin
 
-[![Build Status](https://dev.azure.com/bcndev/bytecoin/_apis/build/status/bytecoin-daemons?branchName=releases/3.4.2)](https://dev.azure.com/bcndev/bytecoin/_build/latest?definitionId=1&branchName=releases/3.4.2)
+[![Build Status](https://dev.azure.com/bcndev/bytecoin/_apis/build/status/bytecoin-daemons?branchName=releases/3.4.3)](https://dev.azure.com/bcndev/bytecoin/_build/latest?definitionId=1&branchName=releases/3.4.3)
 
 ## About
 
@@ -31,6 +31,11 @@ To go futher you have to have a number of packages and utilities. You need at le
     $bcndev> sudo apt-get install build-essential
     ```
 
+* `libudev`:
+    ```
+    sudo apt-get install libudev-dev
+    ```
+    
 * CMake (3.0 or newer):
     ```
     $bcndev> sudo apt-get install cmake
@@ -40,12 +45,12 @@ To go futher you have to have a number of packages and utilities. You need at le
 
 * Boost (1.65 or newer):
     We use boost as a header-only library via find_boost package. So, if your system has boost installed and set up, it will be used automatically.
-    
+
     Note - there is a bug in `boost::asio` 1.66 that affects `bytecoind`. Please use either version 1.65 or 1.67+.
     ```
     $bcndev> sudo apt-get install libboost-dev
     ```
-    If the latest boost installed is too old (e.g. for Ubuntu 16.*), then you need to download and unpack boost into the `bcndev/boost` folder. 
+    If the latest boost installed is too old (e.g. for Ubuntu 16.*), then you need to download and unpack boost into the `bcndev/boost` folder.
 
     ```
     $bcndev> wget -c 'https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz'
@@ -57,10 +62,10 @@ To go futher you have to have a number of packages and utilities. You need at le
 * OpenSSL (1.1.1 or newer):
     Install OpenSSL to `bcndev/openssl` folder. (In below commands use switch `linux-x86_64-clang` instead of `linux-x86_64` if using clang.)
     ```
-    $bcndev> git clone https://github.com/openssl/openssl.git
+    $bcndev> git clone --single-branch --branch OpenSSL_1_1_1b --depth 1 https://github.com/openssl/openssl.git
     $bcndev> cd openssl
     $bcndev/openssl> ./Configure linux-x86_64 no-shared
-    $bcndev/openssl> make -j4
+    $bcndev/openssl> make -j8
     $bcndev/openssl> cd ..
     ```
 
@@ -84,7 +89,7 @@ Create build directory inside bytecoin, go there and run CMake and Make:
 $bcndev> mkdir -p bytecoin/build
 $bcndev> cd bytecoin/build
 $bcndev/bytecoin/build> cmake ..
-$bcndev/bytecoin/build> make -j4
+$bcndev/bytecoin/build> make -j8
 ```
 
 Check built binaries by running them from `../bin` folder
@@ -121,31 +126,11 @@ $~/Downloads/bcndev> git clone https://github.com/bcndev/lmdb.git
 
 Install OpenSSL to `bcndev/openssl` folder:
 ```
-$~/Downloads/bcndev> git clone https://github.com/openssl/openssl.git
+$~/Downloads/bcndev> git clone --single-branch --branch OpenSSL_1_1_1b --depth 1 https://github.com/openssl/openssl.git
 $~/Downloads/bcndev> cd openssl
-```
-
-If you need binaries to run on all versions of OS X starting from El Capitan, you need to build OpenSSL targeting El Capitan SDK.
-```
-$~/Downloads/bcndev/openssl> ./Configure darwin64-x86_64-cc no-shared -mmacosx-version-min=10.11 -isysroot/Users/user/Downloads/MacOSX10.11.sdk
-```
-Otherwise just use
-```
-$~/Downloads/bcndev/openssl> ./Configure darwin64-x86_64-cc no-shared
-```
-
-```
-$~/Downloads/bcndev/openssl> make -j4
+$~/Downloads/bcndev/openssl> ./Configure darwin64-x86_64-cc no-shared -mmacosx-version-min=10.11
+$~/Downloads/bcndev/openssl> make -j8
 $~/Downloads/bcndev/openssl> cd ..
-```
-
-Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into `bcndev/sqlite` folder (source files are referenced via relative paths, so you do not need to separately build it).
-Please, note the direct download link is periodically updated with old versions removed, so you might need to tweak instructions below
-```
-$~/Downloads/bcndev> wget -c https://www.sqlite.org/2018/sqlite-amalgamation-3260000.zip
-$~/Downloads/bcndev> unzip sqlite-amalgamation-3260000.zip
-$~/Downloads/bcndev> rm sqlite-amalgamation-3260000.zip
-$~/Downloads/bcndev> mv sqlite-amalgamation-3260000 sqlite
 ```
 
 Create build directory inside bytecoin, go there and run CMake and Make:
@@ -153,7 +138,7 @@ Create build directory inside bytecoin, go there and run CMake and Make:
 $~/Downloads/bcndev> mkdir bytecoin/build
 $~/Downloads/bcndev> cd bytecoin/build
 $~/Downloads/bcndev/bytecoin/build> cmake ..
-$~/Downloads/bcndev/bytecoin/build> make -j4
+$~/Downloads/bcndev/bytecoin/build> make -j8
 ```
 
 Check built binaries by running them from `../bin` folder:
@@ -189,7 +174,7 @@ Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack
 
 You need to build openssl, first install ActivePerl (select "add to PATH" option, then restart console):
 ```
-$C:\bcndev> git clone https://github.com/openssl/openssl.git
+$C:\bcndev> git clone --single-branch --branch OpenSSL_1_1_1b --depth 1 https://github.com/openssl/openssl.git
 $C:\bcndev> cd openssl
 $C:\bcndev\openssl> perl Configure VC-WIN64A no-shared no-asm
 $C:\bcndev\openssl> nmake
@@ -197,7 +182,7 @@ $C:\bcndev\openssl> cd ..
 ```
 If you want to build 32-bit binaries, you will also need 32-bit build of openssl in separate folder (configuring openssl changes header files, so there is no way to have both 32-bit and 64-bit versions in the same folder):
 ```
-$C:\bcndev> git clone https://github.com/openssl/openssl.git openssl32
+$C:\bcndev> git clone --single-branch --branch OpenSSL_1_1_1b --depth 1 https://github.com/openssl/openssl.git openssl32
 $C:\bcndev> cd openssl32
 $C:\bcndev\openssl> perl Configure VC-WIN32 no-shared no-asm
 $C:\bcndev\openssl> nmake
@@ -233,13 +218,3 @@ Currently bytecoin does not work out of the box on any Big-Endian platform, due 
 ## Building with parameters
 
 If you want to use tools like `clang-tidy`, run `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..` instead of `cmake ..`
-
-## Building daemons with hardware wallet support on Linux 64-bit
-
-1. Clone `trezor-core` repository into the same folder where `bytecoin` resides.
-2. Install all Google protobuf stuff:
-```
-sudo apt install protobuf-compiler libprotobuf-dev
-```
-3. If your version of proto buffers library is not `3.0.0`, you should run `protoc` on proto files in `trezor-core/vendor/trezor-common/protob` overwriting `bytecoin/src/Core/hardware/trezor/protob`.
-4. Clean your `bytecoin/build` folder if you have built the Bytecoin source code before.

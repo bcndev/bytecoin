@@ -4,10 +4,11 @@
 #include "Network.hpp"
 #include "Time.hpp"
 #include "common/MemoryStreams.hpp"
+#include "common/StringTools.hpp"
 #include "common/exception.hpp"
 #include "common/string.hpp"
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
 #include <ifaddrs.h>
 #endif
 
@@ -23,16 +24,62 @@ static std::pair<bool, std::string> split_ssl_address(const std::string &addr) {
 	bool ssl                  = false;
 	const std::string prefix1("https://");
 	const std::string prefix2("ssl://");
-	if (addr.find(prefix1) == 0) {
+	if (common::starts_with(addr, prefix1)) {
 		stripped_addr = addr.substr(prefix1.size());
 		ssl           = true;
-	} else if (addr.find(prefix2) == 0) {
+	} else if (common::starts_with(addr, prefix2)) {
 		stripped_addr = addr.substr(prefix2.size());
 		ssl           = true;
 	}
 	return std::make_pair(ssl, stripped_addr);
 }
-#if defined(__ANDROID__)
+#ifdef __EMSCRIPTEN__
+
+#include <emscripten.h>
+
+class Timer::Impl {
+public:
+	explicit Impl(Timer *owner) : owner(owner), pending_wait(false) {}
+	Timer *owner;
+	bool pending_wait;
+
+	void close() {
+		if (pending_wait) {
+			owner->impl.release();  // owned by JS now
+			owner = nullptr;
+		}
+	}
+	static void static_handle_timeout(void *arg) { reinterpret_cast<Impl *>(arg)->handle_timeout(); }
+	void handle_timeout() {
+		pending_wait = false;
+		if (owner)
+			return owner->a_handler();
+		delete this;  // was owned by JS
+	}
+	void start_timer(float after_seconds) {
+		// assert(pending_wait == false);
+		pending_wait = true;
+		emscripten_async_call(static_handle_timeout, this, static_cast<int>(after_seconds * 1000));
+	}
+};
+
+Timer::Timer(after_handler &&a_handler) : a_handler(std::move(a_handler)) {}
+
+Timer::~Timer() { cancel(); }
+
+void Timer::cancel() {
+	if (impl)
+		impl->close();
+}
+
+void Timer::once(float after_seconds) {
+	cancel();
+	if (!impl)
+		impl = std::make_unique<Impl>(this);
+	impl->start_timer(after_seconds / get_time_multiplier_for_tests());
+}
+
+#elif defined(__ANDROID__)
 #include <QSslSocket>
 
 Timer::Timer(after_handler a_handler) : a_handler(std::move(a_handler)), impl(nullptr) {
@@ -303,7 +350,6 @@ void TCPSocket::write_callback(CFWriteStreamRef stream, CFStreamEventType event,
 #include <algorithm>
 #include <boost/array.hpp>
 #include <boost/asio.hpp>
-#include <boost/bind.hpp>
 #include <iostream>
 
 using namespace std::placeholders;  // We enjoy standard bindings
@@ -429,8 +475,45 @@ EventLoop::~EventLoop() { current_loop = nullptr; }
 void EventLoop::cancel() { io_service.stop(); }
 
 void EventLoop::run() { io_service.run(); }
-void EventLoop::wake() {
-	io_service.post([]() {});
+void EventLoop::wake(std::function<void()> &&a_handler) { io_service.post(std::move(a_handler)); }
+
+class SafeMessage::Impl {
+public:
+	explicit Impl(SafeMessage *owner) : owner(owner), current_loop(EventLoop::current()) {}
+	SafeMessage *owner;
+	EventLoop *current_loop;
+	std::atomic<int> counter;
+
+	void close() {
+		if (counter != 0) {
+			owner->impl.release();  // owned by JS now
+			owner = nullptr;
+		}
+	}
+	void handle_event() {
+		auto after = --counter;
+		if (owner)
+			return owner->a_handler();
+		if (after == 0)
+			delete this;  // was owned by JS
+	}
+};
+
+SafeMessage::SafeMessage(after_handler &&a_handler) : a_handler(std::move(a_handler)) {
+	impl = std::make_unique<Impl>(this);
+}
+
+SafeMessage::~SafeMessage() { impl->close(); }
+
+void SafeMessage::cancel() {
+	impl->close();
+	if (!impl)
+		impl = std::make_unique<Impl>(this);
+}
+
+void SafeMessage::fire() {
+	++impl->counter;
+	impl->current_loop->wake(std::bind(&Impl::handle_event, impl.get()));
 }
 
 class Timer::Impl {
@@ -558,8 +641,20 @@ public:
 			socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ignored_ec);
 	}
 
+	void set_keepalive() {
+		boost::system::error_code ec;  // we will ignore error
+#if platform_USE_SSL
+		if (ssl_socket)
+			ssl_socket->lowest_layer().set_option(boost::asio::socket_base::keep_alive(true), ec);
+		else
+#endif
+			socket.set_option(boost::asio::socket_base::keep_alive(true), ec);
+		if (ec)
+			std::cout << "Cannot set keepalive on socket, ec=" << ec << std::endl;
+	}
 	void handle_connect(const boost::system::error_code &e) {
 		if (!e) {
+			set_keepalive();
 //			std::cout << std::hex << "Socket handle_connect this=" << (size_t)this << " owner=" << (size_t)owner << "
 // was_owner=" << std::dec << " flags" << pending_write << pending_read << pending_connect << std::endl;
 #if platform_USE_SSL
@@ -824,6 +919,7 @@ bool TCPAcceptor::accept(TCPSocket &socket, std::string &accepted_addr) {
 	}
 	accepted_addr          = endpoint.address().to_string();
 	socket.impl->connected = true;
+	socket.impl->set_keepalive();
 	socket.impl->start_read();
 	impl->start_accept();
 	return true;

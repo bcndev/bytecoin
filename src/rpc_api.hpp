@@ -62,7 +62,8 @@ struct Output {
 struct Transfer {
 	std::string address;
 	SignedAmount amount = 0;  // Will be negative if transfer is from that address
-	bool ours           = false;
+	std::string message;      // Will be encrypted so that only receiver and sender can decrypt it
+	bool ours = false;
 	// addresses not in wallet are recognized only for transcations we sent, subject to some limitations
 	bool locked = false;
 	// locked transfers should not be added to balance immediately.
@@ -187,7 +188,7 @@ enum return_code {
 // Returned from many methods
 struct ErrorAddress : public json_rpc::Error {
 	std::string address;
-	ErrorAddress() {}
+	ErrorAddress() = default;
 	ErrorAddress(int c, const std::string &msg, const std::string &address);
 	void seria_data_members(seria::ISeria &s) override;
 	enum { ADDRESS_FAILED_TO_PARSE = -4, ADDRESS_NOT_IN_WALLET = -1002 };
@@ -204,10 +205,10 @@ struct ErrorHashNotFound : public json_rpc::Error {
 };
 
 struct ErrorWrongHeight : public json_rpc::Error {
-	HeightOrDepth request_height = 0;
-	Height top_block_height      = 0;
-	ErrorWrongHeight()           = default;
-	ErrorWrongHeight(const std::string &msg, HeightOrDepth request_height, Height top_block_height);
+	int64_t request_height  = 0;  // int64_t fits both Height and HeightOrDepth
+	Height top_block_height = 0;
+	ErrorWrongHeight()      = default;
+	ErrorWrongHeight(const std::string &msg, int64_t request_height, Height top_block_height);
 	void seria_data_members(seria::ISeria &s) override;
 	enum { INVALID_HEIGHT_OR_DEPTH = -2 };
 	static Height fix_height_or_depth(api::HeightOrDepth ha, Height tip_height, bool throw_on_too_big_height,
@@ -415,6 +416,7 @@ struct GetTransfers {  // Can be used incrementally by high-performace clients t
 	};
 	enum {
 		INVALID_PARAMS          = -32602,  // from_height > to_height
+		INVALID_HEIGHT_OR_DEPTH = -2,      // from_height too high
 		ADDRESS_FAILED_TO_PARSE = -4,      // returns ErrorAddress
 		ADDRESS_NOT_IN_WALLET   = -1002    // returns ErrorAddress
 	};
@@ -438,8 +440,8 @@ struct CreateTransaction {
 		HeightOrDepth confirmed_height_or_depth = -DEFAULT_CONFIRMATIONS - 1;
 		// Mix-ins will be selected from the [0..confirmed_height] window.
 		// Reorganizations larger than confirmations may change mix-in global indices, making transaction invalid.
-		Amount fee_per_byte = std::numeric_limits<Amount>::max();  // Fee of created transaction will be close to the
-		                                                           // size of tx * fee_per_byte.
+		boost::optional<Amount> fee_per_byte;  // Fee of created transaction will be close to the
+		                                       // size of tx * fee_per_byte.
 		// You can check it in response.transaction.fee before sending, if you wish
 		std::string optimization;  // Wallet outputs optimization (fusion). Leave empty to use normal optimization, good
 		                           // for wallets with balanced sends to receives count. You can save on a few percent
@@ -476,7 +478,7 @@ struct CreateTransaction {
 	struct ErrorTransactionTooBig : public json_rpc::Error {
 		Amount max_amount               = 0;
 		Amount max_min_anonymity_amount = 0;
-		ErrorTransactionTooBig() {}
+		ErrorTransactionTooBig()        = default;
 		ErrorTransactionTooBig(const std::string &msg, Amount a, Amount a_zero);
 		void seria_data_members(seria::ISeria &s) override;
 		enum {
@@ -505,7 +507,7 @@ struct SendTransaction {
 	};
 	struct Error : public json_rpc::Error {
 		Height conflict_height = 0;
-		Error() {}
+		Error()                = default;
 		Error(int c, const std::string &msg, Height conflict_height)
 		    : json_rpc::Error(c, msg), conflict_height(conflict_height) {}
 		void seria_data_members(seria::ISeria &s) override;
@@ -562,8 +564,8 @@ struct GetStatus {
 struct GetRawBlock {
 	static std::string method() { return "get_raw_block"; }
 	struct Request {
-		Hash hash;
-		HeightOrDepth height_or_depth = std::numeric_limits<HeightOrDepth>::max();
+		boost::optional<Hash> hash;
+		boost::optional<HeightOrDepth> height_or_depth;
 	};
 	struct Response {
 		api::RawBlock block;
@@ -579,8 +581,8 @@ struct GetRawBlock {
 struct GetBlockHeader {
 	static std::string method() { return "get_block_header"; }
 	struct Request {
-		Hash hash;
-		HeightOrDepth height_or_depth = std::numeric_limits<HeightOrDepth>::max();
+		boost::optional<Hash> hash;
+		boost::optional<HeightOrDepth> height_or_depth;
 	};
 	struct Response {
 		BlockHeader block_header;
@@ -595,21 +597,41 @@ struct GetBlockHeader {
 
 struct SyncBlocks {  // Used by walletd, block explorer, etc to sync to bytecoind
 	static std::string method() { return "sync_blocks"; }
-	static std::string bin_method() { return "sync_blocks_v3.4.2"; }
+	static std::string bin_method() { return "sync_blocks_v3.4.3"; }
 	// we increment bin method version when binary format changes
+	static std::string url_prefix() { return "/sync_blocks/v3.4.3/"; }
+	// /sync_blocks/ver/aaa/bbb/ccc, where aaabbbccc is dec height
+	// we change url when binary format changes, so that we can set http to cache forever
+
+	static std::string get_filename(Height ha, std::string *subfolder = nullptr);
+	static bool parse_filename(const std::string &filename, Height *ha);
+	static bool is_static_redirect(const std::string &body, Height *ha);
 
 	struct Request {
 		static constexpr size_t MAX_COUNT = 1000;
+		static constexpr size_t MAX_SIZE  = 2 * 1024 * 1024;
 		std::vector<Hash> sparse_chain;
 		Timestamp first_block_timestamp = 0;
-		size_t max_count                = MAX_COUNT / 10;
-		size_t max_size                 = 1 * 1024 * 1024;  // No more than 1 megabytes of blocks + 1 block
-		bool need_redundant_data        = true;             // walletd and smart clients can save traffic
+		size_t max_count                = MAX_COUNT / 2;
+		size_t max_size                 = MAX_SIZE / 2;  // No more than ~1 megabytes of blocks + 1 block
+		bool need_redundant_data        = true;          // smart clients can save traffic
 	};
 	struct Response {
 		std::vector<RawBlock> blocks;
 		Height start_height = 0;  // Redundant, deprecated. Use blocks[0].header.height (if blocks empty, sync finished)
 		GetStatus::Response status;  // We save roundtrip during sync by also sending status here
+	};
+	struct RawBlockCompact {  // for binary method variant
+		api::BlockHeader header;
+		cn::Transaction base_transaction;
+		std::vector<TransactionPrefix> raw_transactions;
+		std::vector<Hash> transaction_hashes;                   // except coinbase
+		std::vector<size_t> transaction_sizes;                  // except coinbase
+		std::vector<std::vector<size_t>> output_stack_indexes;  // for each transaction + coinbase
+	};
+	struct ResponseCompact {
+		std::vector<RawBlockCompact> blocks;
+		GetStatus::Response status;  // in static responses, top_block_hash will be Hash{}
 	};
 };
 
@@ -783,7 +805,11 @@ struct GetCurrencyId {
 	static std::string method() { return "get_currency_id"; }
 	typedef EmptyStruct Request;
 	struct Response {
-		Hash currency_id_blob;  // hash of genesis block
+		Hash currency_id_blob;
+		// Usually hash of genesis block
+		// If 2 currencies fork, one would have to change id so they can fit in the same MM tree
+		// When currency id changes, miners will produce invalid blocks (similar to race condition)
+		// So, currency_id must be field in GetBlockTemplate response, not separate method
 	};
 };
 
@@ -858,8 +884,8 @@ void ser_members(cn::api::EmptyStruct &v, ISeria &s);
 void ser_members(cn::api::Output &v, ISeria &s, bool only_bytecoind_fields = false);
 void ser_members(cn::api::BlockHeader &v, ISeria &s);
 void ser_members(cn::api::cnd::BlockHeaderLegacy &v, ISeria &s);
-void ser_members(cn::api::Transfer &v, ISeria &s);
-void ser_members(cn::api::Transaction &v, ISeria &s);
+void ser_members(cn::api::Transfer &v, ISeria &s, bool with_message = true);
+void ser_members(cn::api::Transaction &v, ISeria &s, bool with_message = true);
 void ser_members(cn::api::Block &v, ISeria &s);
 void ser_members(cn::api::RawBlock &v, ISeria &s);
 void ser_members(cn::api::Balance &v, ISeria &s);
@@ -895,6 +921,8 @@ void ser_members(cn::api::cnd::GetRawBlock::Request &v, ISeria &s);
 void ser_members(cn::api::cnd::GetRawBlock::Response &v, ISeria &s);
 void ser_members(cn::api::cnd::SyncBlocks::Request &v, ISeria &s);
 void ser_members(cn::api::cnd::SyncBlocks::Response &v, ISeria &s);
+void ser_members(cn::api::cnd::SyncBlocks::RawBlockCompact &v, ISeria &s);
+void ser_members(cn::api::cnd::SyncBlocks::ResponseCompact &v, ISeria &s);
 void ser_members(cn::api::cnd::GetRawTransaction::Request &v, ISeria &s);
 void ser_members(cn::api::cnd::GetRawTransaction::Response &v, ISeria &s);
 void ser_members(cn::api::cnd::SyncMemPool::Request &v, ISeria &s);

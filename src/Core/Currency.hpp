@@ -8,7 +8,6 @@
 #include <vector>
 #include "CryptoNote.hpp"
 #include "Difficulty.hpp"
-#include "crypto/hash.hpp"
 
 namespace cn {
 
@@ -109,7 +108,7 @@ public:
 	Difficulty next_effective_difficulty(uint8_t block_major_version, std::vector<Timestamp> timestamps,
 	    std::vector<CumulativeDifficulty> cumulative_difficulties) const;
 
-	BinaryArray get_block_long_hashing_data(const BlockHeader &, const BlockBodyProxy &) const;
+	BinaryArray get_block_pow_hashing_data(const BlockHeader &, const BlockBodyProxy &) const;
 
 	bool is_block_or_timestamp_timestamp(BlockOrTimestamp unlock_time) const { return unlock_time >= max_block_height; }
 	bool is_block_or_timestamp_block(BlockOrTimestamp unlock_time) const { return unlock_time < max_block_height; }

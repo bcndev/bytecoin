@@ -35,7 +35,7 @@ public:
 #endif
 private:
 	explicit FileStream();
-	bool try_open(const std::string &filename, OpenMode mode);
+	bool try_open(const std::string &filename, OpenMode mode, bool *file_existed = nullptr);
 	// We want those funs to use FileStream without exceptions (greatly hinders debugging)
 	friend bool load_file(const std::string &filepath, std::string &buf);
 	friend bool load_file(const std::string &filepath, common::BinaryArray &buf);

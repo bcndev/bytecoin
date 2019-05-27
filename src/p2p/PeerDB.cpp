@@ -47,7 +47,7 @@ PeerDB::PeerDB(logging::ILogger &log, const Config &config, const std::string &d
 	if (version != version_current) {
 		if (!version.empty())
 			m_log(logging::INFO) << "PeerDB format different, old version=" << version
-			                     << " current version=" << version_current << ", clearing Peer DB..." << std::endl;
+			                     << " current version=" << version_current << ", clearing Peer DB...";
 		for (DB::Cursor cur = db.rbegin(std::string()); !cur.end(); cur.erase()) {
 		}
 		db.put("$version", version_current, true);
@@ -205,8 +205,8 @@ void PeerDB::merge_peerlist_from_p2p(const NetworkAddress &addr,
 		add_incoming_peer_impl(pp, now);
 	}
 	if (is_seed(addr)) {
-		m_log(logging::INFO) << "Delaying connect to seed " << addr << " because got peer list size=" << outer_bs.size()
-		                     << std::endl;
+		m_log(logging::INFO) << "Delaying connect to seed " << addr
+		                     << " because got peer list size=" << outer_bs.size();
 		delay_connection_attempt(addr, now);
 	}
 	trim(now);
@@ -223,8 +223,8 @@ void PeerDB::merge_peerlist_from_p2p(const NetworkAddress &addr,
 		add_incoming_peer_impl(na, now);
 	}
 	if (is_seed(addr)) {
-		m_log(logging::INFO) << "Delaying connect to seed " << addr << " because got peer list size=" << outer_bs.size()
-		                     << std::endl;
+		m_log(logging::INFO) << "Delaying connect to seed " << addr
+		                     << " because got peer list size=" << outer_bs.size();
 		delay_connection_attempt(addr, now);
 	}
 	trim(now);
@@ -341,7 +341,7 @@ void PeerDB::delay_connection_attempt(const NetworkAddress &addr, Timestamp now)
 }
 
 void PeerDB::set_peer_banned(const NetworkAddress &addr, const std::string &ban_reason, Timestamp now) {
-	m_log(logging::INFO) << "PeerDB peer " << addr << " banned, reason= " << ban_reason << std::endl;
+	m_log(logging::INFO) << "PeerDB peer " << addr << " banned, reason= " << ban_reason;
 	update_lists(addr, [&](Entry &entry) {
 		entry.ban_reason = ban_reason;
 		entry.ban_until = now + fix_time_delta(is_priority_or_seed(entry.address) ? config.p2p_reconnect_period_priority

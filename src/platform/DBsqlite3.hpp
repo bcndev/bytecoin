@@ -3,13 +3,13 @@
 
 #pragma once
 
-#include <sqlite3.h>
 #include <algorithm>
 #include <memory>
 #include <string>
 #include "Files.hpp"  // For OpenMode
 #include "common/BinaryArray.hpp"
 #include "common/Nocopy.hpp"
+#include "sqlite/sqlite3.h"
 
 namespace platform {
 
@@ -37,7 +37,11 @@ struct Stmt : private common::Nocopy {
 
 class Error : public std::runtime_error {
 public:
-	explicit Error(const std::string &msg) : std::runtime_error(msg) {}
+	using std::runtime_error::runtime_error;
+};
+class ErrorDBExists : public Error {
+public:
+	using Error::Error;
 };
 void check(int rc, const char *msg);
 
@@ -50,7 +54,7 @@ public:
 	sqlite::Dbi db_dbi;
 
 	explicit DBsqliteKV(
-	    OpenMode open_mode, const std::string &full_path, uint64_t max_db_size = 0);  // no max size in sqlite3
+	    OpenMode open_mode, const std::string &full_path, uint64_t max_tx_size = 0);  // no max size in sqlite3
 	const std::string &get_path() const { return full_path; }
 
 	void commit_db_txn();

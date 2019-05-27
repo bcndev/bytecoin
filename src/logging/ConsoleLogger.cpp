@@ -9,12 +9,16 @@ namespace logging {
 
 using common::console::Color;
 
+#ifndef __EMSCRIPTEN__
 std::mutex ConsoleLogger::mutex;
+#endif
 
 ConsoleLogger::ConsoleLogger(Level level) : CommonLogger(level) {}
 
 void ConsoleLogger::do_log_string(const std::string &message) {
+#ifndef __EMSCRIPTEN__
 	std::lock_guard<std::mutex> lock(mutex);
+#endif
 	bool changed_color = false;
 
 	for (size_t char_pos = 0; char_pos < message.size(); ++char_pos) {

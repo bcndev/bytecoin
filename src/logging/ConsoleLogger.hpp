@@ -3,7 +3,9 @@
 
 #pragma once
 
+#ifndef __EMSCRIPTEN__
 #include <mutex>
+#endif
 #include "CommonLogger.hpp"
 
 namespace logging {
@@ -16,6 +18,8 @@ protected:
 	virtual void do_log_string(const std::string &message) override;
 
 private:
+#ifndef __EMSCRIPTEN__
 	static std::mutex mutex;  // we can have 2 console loggers, for WalletNode and Node
+#endif
 };
 }  // namespace logging

@@ -27,6 +27,7 @@ constexpr UUID BYTECOIN_NETWORK = common::pfh<UUID>("111001111100010110110012101
 
 const Height UPGRADE_HEIGHT_V2                  = 546603;
 const Height UPGRADE_HEIGHT_V3                  = 985549;
+const Height UPGRADE_HEIGHT_V4                  = 1792117;
 const Height KEY_IMAGE_SUBGROUP_CHECKING_HEIGHT = 1267000;
 
 // Radical simplification of consensus rules starts from versions
@@ -216,7 +217,8 @@ constexpr const HardCheckpoint CHECKPOINTS[] = {
     {1670000, common::pfh<Hash>("58770b800108c72512a386783fd0a4326c74dc9f99b538337a195945b89a9a6f")},
     {1709000, common::pfh<Hash>("82185d3365e730074c4804b151c19d29ee4b2407772467853f96839567d8b45a")},
     {1740000, common::pfh<Hash>("769ef18196c1ebeab9ef372e40475c2ce8c65ca7e22b0894e41f3d675343ab49")},
-    {1764000, common::pfh<Hash>("b79c80df808d6447965e5e75d0e2a40ab07e591e9efa8efa1be3945fe3278669")}};
+    {1764000, common::pfh<Hash>("b79c80df808d6447965e5e75d0e2a40ab07e591e9efa8efa1be3945fe3278669")},
+    {1795000, common::pfh<Hash>("db3f1f99b45d8e771dce12eeadd2e9258743d0d7094f2a78b3d9a2af283d78a6")}};
 
 // When adding checkpoint and BEFORE release, you MUST check that daemon fully syncs both mainnet and stagenet.
 

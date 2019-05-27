@@ -21,7 +21,7 @@ class Bip32Key {
 public:
 	class Exception : public std::runtime_error {
 	public:
-		explicit Exception(const std::string &what) : std::runtime_error(what) {}
+		using std::runtime_error::runtime_error;
 	};
 	static std::string create_random_bip39_mnemonic(size_t bits);
 	static std::string check_bip39_mnemonic(const std::string &bip39_mnemonic);  // normalizes mnemonic

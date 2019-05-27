@@ -14,12 +14,16 @@ using namespace common;
 
 using namespace seria;
 
-void BinaryInputStream::begin_array(size_t &size, bool fixed_size) {
+bool BinaryInputStream::begin_array(size_t &size, bool fixed_size) {
 	if (!fixed_size)
 		size = stream.read_varint<size_t>();
+	return true;
 }
 
-void BinaryInputStream::begin_map(size_t &size) { size = stream.read_varint<size_t>(); }
+bool BinaryInputStream::begin_map(size_t &size) {
+	size = stream.read_varint<size_t>();
+	return true;
+}
 
 void BinaryInputStream::next_map_key(std::string &name) { ser(name, *this); }
 

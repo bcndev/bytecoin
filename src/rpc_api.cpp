@@ -4,17 +4,19 @@
 #include "rpc_api.hpp"
 #include "Core/CryptoNoteTools.hpp"
 #include "Core/TransactionExtra.hpp"
+#include "common/StringTools.hpp"
 #include "common/Varint.hpp"
+#include "seria/BinaryInputStream.hpp"
 #include "seria/JsonOutputStream.hpp"
 
 using namespace cn;
 
 api::ErrorAddress::ErrorAddress(int c, const std::string &msg, const std::string &address)
     : json_rpc::Error(c, msg + " address=" + address), address(address) {}
-api::ErrorWrongHeight::ErrorWrongHeight(const std::string &msg, HeightOrDepth request_height, Height top_block_height)
+api::ErrorWrongHeight::ErrorWrongHeight(const std::string &msg, int64_t request_height, Height top_block_height)
     : json_rpc::Error(INVALID_HEIGHT_OR_DEPTH,
-          msg + " request_height=" + common::to_string(request_height) +
-              " top_block_height=" + common::to_string(top_block_height))
+          msg + "=" + common::to_string(request_height) + " while top block height is " +
+              common::to_string(top_block_height))
     , request_height(request_height)
     , top_block_height(top_block_height) {}
 Height api::ErrorWrongHeight::fix_height_or_depth(
@@ -23,17 +25,19 @@ Height api::ErrorWrongHeight::fix_height_or_depth(
 		ha = static_cast<HeightOrDepth>(tip_height) + 1 + ha;
 		if (ha < 0) {
 			if (throw_on_too_big_depth)
-				throw ErrorWrongHeight("height_or_depth cannot be deeper than genesis block", ha, tip_height);
+				throw ErrorWrongHeight(
+				    "height_or_depth cannot be deeper than genesis block, actual height_or_depth=", ha, tip_height);
 			ha = 0;
 		}
 	}
 	if (max_depth != std::numeric_limits<Height>::max() && ha + max_depth < tip_height)
-		throw ErrorWrongHeight(
-		    "height_or_depth cannot be deeper than " + common::to_string(max_depth) + " blocks from top block", ha,
-		    tip_height);
+		throw ErrorWrongHeight("height_or_depth cannot be deeper than " + common::to_string(max_depth) +
+		                           " blocks from top block, actual height_or_depth=",
+		    ha, tip_height);
 	if (ha > static_cast<HeightOrDepth>(tip_height)) {
 		if (throw_on_too_big_height)
-			throw ErrorWrongHeight("height_or_depth cannot exceed top block height", ha, tip_height);
+			throw ErrorWrongHeight(
+			    "height_or_depth cannot exceed top block height, actual height_or_depth=", ha, tip_height);
 		return tip_height;
 	}
 	return static_cast<Height>(ha);
@@ -76,6 +80,53 @@ bool api::walletd::GetStatus::Response::ready_for_longpoll(const Request &other)
 		return true;
 	return !other.top_block_hash && !other.transaction_pool_version && !other.outgoing_peer_count &&
 	       !other.incoming_peer_count && !other.lower_level_error;
+}
+
+static std::string digit3(Height ha) {
+	auto a = common::to_string(ha);
+	return a.size() >= 3 ? a : std::string(3 - a.size(), '0') + a;
+}
+
+std::string api::cnd::SyncBlocks::get_filename(Height ha, std::string *subfolder) {
+	Height rem            = ha;
+	std::string file_name = digit3(rem % 1000);
+	rem /= 1000;
+	std::string sub_folder_name = digit3(rem % 1000);
+	rem /= 1000;
+	sub_folder_name = digit3(rem % 1000) + "/" + sub_folder_name;
+	if (subfolder)
+		*subfolder = sub_folder_name;
+	return sub_folder_name + "/" + file_name;
+}
+
+bool api::cnd::SyncBlocks::parse_filename(const std::string &filename, Height *ha) {
+	std::string aa[3];
+	if (!common::split_string(filename, "/", aa[0], aa[1], aa[2]))
+		return false;
+	Height h = 0;
+	try {
+		for (size_t i = 0; i != 3; ++i) {
+			Height part = common::integer_cast<Height>(aa[i]);
+			if (digit3(part) != aa[i])
+				return false;  // leading zeros, spaces, etc
+			h = h * 1000 + part;
+		}
+		*ha = h;
+		return true;
+	} catch (const std::exception &) {
+	}
+	return false;
+}
+
+bool api::cnd::SyncBlocks::is_static_redirect(const std::string &body, Height *ha) {
+	try {
+		if (body.size() < 10) {
+			*ha = common::integer_cast<Height>(body);
+			return true;
+		}
+	} catch (const std::exception &) {
+	}
+	return false;
 }
 
 namespace seria {
@@ -145,16 +196,18 @@ void ser_members(api::cnd::BlockHeaderLegacy &v, ISeria &s) {
 	seria_kv("total_fee_amount", v.transactions_fee, s);
 }
 
-void ser_members(api::Transfer &v, ISeria &s) {
+void ser_members(api::Transfer &v, ISeria &s, bool with_message) {
 	seria_kv("address", v.address, s);
 	seria_kv("amount", v.amount, s);
 	seria_kv("ours", v.ours, s);
 	seria_kv("locked", v.locked, s);
 	seria_kv("outputs", v.outputs, s);
 	seria_kv("transaction_hash", v.transaction_hash, s);
+	if (with_message)  // TODO - remove on next WalletState db version upgrade
+		seria_kv_optional("message", v.message, s);
 }
 
-void ser_members(api::Transaction &v, ISeria &s) {
+void ser_members(api::Transaction &v, ISeria &s, bool with_message) {
 	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
 	if (dynamic_cast<seria::JsonOutputStream *>(&s))
 		seria_kv("unlock_time", v.unlock_block_or_timestamp, s);  // deprecated
@@ -163,7 +216,7 @@ void ser_members(api::Transaction &v, ISeria &s) {
 	seria_kv("amount", v.amount, s);
 	seria_kv("fee", v.fee, s);
 	seria_kv("public_key", v.public_key, s);
-	seria_kv_optional("transfers", v.transfers, s);
+	seria_kv_optional("transfers", v.transfers, s, with_message);
 	seria_kv_optional("payment_id", v.payment_id, s);
 	seria_kv("anonymity", v.anonymity, s);
 	seria_kv("extra", v.extra, s);
@@ -258,7 +311,7 @@ void ser_members(api::walletd::GetWalletRecords::Response &v, ISeria &s) {
 }
 
 void ser_members(cn::api::walletd::SetAddressLabel::Request &v, ISeria &s) {
-	seria_kv("address", v.address, s);
+	seria_kv_strict("address", v.address, s);
 	seria_kv("label", v.label, s);
 }
 
@@ -305,13 +358,13 @@ void ser_members(api::walletd::GetTransfers::Request &v, ISeria &s) {
 
 void ser_members(api::walletd::GetTransfers::Response &v, ISeria &s) {
 	seria_kv("blocks", v.blocks, s);
-	seria_kv("unlocked_transfers", v.unlocked_transfers, s);
+	seria_kv("unlocked_transfers", v.unlocked_transfers, s, true);
 	seria_kv("next_from_height", v.next_from_height, s);
 	seria_kv("next_to_height", v.next_to_height, s);
 }
 
 void ser_members(api::walletd::CreateTransaction::Request &v, ISeria &s) {
-	seria_kv("transaction", v.transaction, s);
+	seria_kv_strict("transaction", v.transaction, s);
 	seria_kv("spend_addresses", v.spend_addresses, s);
 	seria_kv("any_spend_address", v.any_spend_address, s);
 	seria_kv("change_address", v.change_address, s);
@@ -331,7 +384,7 @@ void ser_members(api::walletd::CreateTransaction::Response &v, ISeria &s) {
 }
 
 void ser_members(api::walletd::CreateSendproof::Request &v, ISeria &s) {
-	seria_kv("transaction_hash", v.transaction_hash, s);
+	seria_kv_strict("transaction_hash", v.transaction_hash, s);
 	seria_kv("message", v.message, s);
 	seria_kv("addresses", v.addresses, s);
 }
@@ -389,7 +442,7 @@ void ser_members(api::cnd::GetRawBlock::Response &v, ISeria &s) {
 }
 
 void ser_members(api::cnd::SyncBlocks::Request &v, ISeria &s) {
-	seria_kv("sparse_chain", v.sparse_chain, s);
+	seria_kv_strict("sparse_chain", v.sparse_chain, s);
 	seria_kv("first_block_timestamp", v.first_block_timestamp, s);
 	seria_kv("max_count", v.max_count, s);
 	seria_kv("max_size", v.max_size, s);
@@ -402,7 +455,21 @@ void ser_members(api::cnd::SyncBlocks::Response &v, ISeria &s) {
 	seria_kv("status", v.status, s);
 }
 
-void ser_members(api::cnd::GetRawTransaction::Request &v, ISeria &s) { seria_kv("hash", v.hash, s); }
+void ser_members(cn::api::cnd::SyncBlocks::RawBlockCompact &v, ISeria &s) {
+	seria_kv("header", v.header, s);
+	seria_kv("base_transaction", v.base_transaction, s);
+	seria_kv("raw_transactions", v.raw_transactions, s);
+	seria_kv("transaction_hashes", v.transaction_hashes, s);
+	seria_kv("transaction_sizes", v.transaction_sizes, s);
+	seria_kv("output_stack_indexes", v.output_stack_indexes, s);
+}
+
+void ser_members(cn::api::cnd::SyncBlocks::ResponseCompact &v, ISeria &s) {
+	seria_kv("blocks", v.blocks, s);
+	seria_kv("status", v.status, s);
+}
+
+void ser_members(api::cnd::GetRawTransaction::Request &v, ISeria &s) { seria_kv_strict("hash", v.hash, s); }
 
 void ser_members(api::cnd::GetRawTransaction::Response &v, ISeria &s) {
 	seria_kv("transaction", v.transaction, s);
@@ -428,22 +495,20 @@ void ser_members(api::cnd::SyncMemPool::Response &v, ISeria &s) {
 }
 
 void ser_members(api::cnd::GetRandomOutputs::Request &v, ISeria &s) {
-	seria_kv("amounts", v.amounts, s);
-	seria_kv("output_count", v.output_count, s);
-	if (s.is_input())
-		seria_kv("outs_count", v.output_count, s);  // deprecated
+	seria_kv_strict("amounts", v.amounts, s);
+	seria_kv_strict("output_count", v.output_count, s);
 	seria_kv("confirmed_height_or_depth", v.confirmed_height_or_depth, s);
 }
 
 void ser_members(api::cnd::GetRandomOutputs::Response &v, ISeria &s) { seria_kv("outputs", v.outputs, s, true); }
 
 void ser_members(api::cnd::SendTransaction::Request &v, ISeria &s) {
-	seria_kv("binary_transaction", v.binary_transaction, s);
+	seria_kv_strict("binary_transaction", v.binary_transaction, s);
 }
 
 void ser_members(api::cnd::SendTransaction::Response &v, ISeria &s) { seria_kv("send_result", v.send_result, s); }
 
-void ser_members(api::cnd::CheckSendproof::Request &v, ISeria &s) { seria_kv("sendproof", v.sendproof, s); }
+void ser_members(api::cnd::CheckSendproof::Request &v, ISeria &s) { seria_kv_strict("sendproof", v.sendproof, s); }
 
 void ser_members(api::cnd::CheckSendproof::Response &v, ISeria &s) {
 	seria_kv("transaction_hash", v.transaction_hash, s);
@@ -488,13 +553,13 @@ void ser_members(api::cnd::GetArchive::Response &v, ISeria &s) {
 	seria_kv("checkpoints", v.checkpoints, s);
 }
 
-void ser_members(api::walletd::GetTransaction::Request &v, ISeria &s) { seria_kv("hash", v.hash, s); }
+void ser_members(api::walletd::GetTransaction::Request &v, ISeria &s) { seria_kv_strict("hash", v.hash, s); }
 
 void ser_members(api::walletd::GetTransaction::Response &v, ISeria &s) { seria_kv("transaction", v.transaction, s); }
 
 void ser_members(api::cnd::GetBlockTemplate::Request &v, ISeria &s) {
 	seria_kv("reserve_size", v.reserve_size, s);
-	seria_kv("wallet_address", v.wallet_address, s);
+	seria_kv_strict("wallet_address", v.wallet_address, s);
 	seria_kv("miner_secret", v.miner_secret, s);
 	seria_kv("top_block_hash", v.top_block_hash, s);
 	seria_kv("transaction_pool_version", v.transaction_pool_version, s);
@@ -518,7 +583,7 @@ void ser_members(api::cnd::GetCurrencyId::Response &v, ISeria &s) {
 }
 
 void ser_members(api::cnd::SubmitBlock::Request &v, ISeria &s) {
-	seria_kv("blocktemplate_blob", v.blocktemplate_blob, s);
+	seria_kv_strict("blocktemplate_blob", v.blocktemplate_blob, s);
 	seria_kv("cm_nonce", v.cm_nonce, s);
 	seria_kv("cm_merkle_branch", v.cm_merkle_branch, s);
 }
@@ -532,8 +597,10 @@ void ser_members(api::cnd::GetLastBlockHeaderLegacy::Response &v, ISeria &s) {
 	seria_kv("block_header", v.block_header, s);
 }
 
-void ser_members(api::cnd::GetBlockHeaderByHashLegacy::Request &v, ISeria &s) { seria_kv("hash", v.hash, s); }
+void ser_members(api::cnd::GetBlockHeaderByHashLegacy::Request &v, ISeria &s) { seria_kv_strict("hash", v.hash, s); }
 
-void ser_members(api::cnd::GetBlockHeaderByHeightLegacy::Request &v, ISeria &s) { seria_kv("height", v.height, s); }
+void ser_members(api::cnd::GetBlockHeaderByHeightLegacy::Request &v, ISeria &s) {
+	seria_kv_strict("height", v.height, s);
+}
 
 }  // namespace seria

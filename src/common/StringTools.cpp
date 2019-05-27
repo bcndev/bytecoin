@@ -108,6 +108,18 @@ std::string to_hex(const BinaryArray &data) {
 	return text;
 }
 
+bool starts_with(const std::string &str, const std::string &str2) {
+	if (str.length() < str2.length())
+		return false;
+	return str.compare(0, str2.length(), str2) == 0;
+}
+
+bool ends_with(const std::string &str, const std::string &str2) {
+	if (str.length() < str2.length())
+		return false;
+	return str.compare(str.length() - str2.length(), str2.length(), str2) == 0;
+}
+
 std::string extract(std::string &text, char delimiter) {
 	size_t delimiter_pos = text.find(delimiter);
 	std::string sub_text;

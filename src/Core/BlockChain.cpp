@@ -81,8 +81,8 @@ void PreparedBlock::prepare(const Currency &currency, crypto::CryptoNightContext
 	block_header_size     = seria::binary_size(static_cast<BlockHeader>(block.header));
 	base_transaction_hash = get_transaction_hash(block.header.base_transaction);
 	if (context) {
-		auto ba         = currency.get_block_long_hashing_data(block.header, body_proxy);
-		long_block_hash = context->cn_slow_hash(ba.data(), ba.size());
+		auto ba  = currency.get_block_pow_hashing_data(block.header, body_proxy);
+		pow_hash = context->cn_slow_hash(ba.data(), ba.size());
 	}
 	if (block.header.transaction_hashes.size() != raw_block.transactions.size()) {
 		error = ConsensusError{"Wrong transcation count in block template"};
@@ -131,7 +131,7 @@ BlockChain::BlockChain(logging::ILogger &log, const Config &config, const Curren
 	if (m_db.get("internal_import_chain", cha)) {
 		seria::from_binary(m_internal_import_chain, cha);
 		m_log(logging::INFO) << "BlockChain continue internal import of blocks, count="
-		                     << m_internal_import_chain.size() << std::endl;
+		                     << m_internal_import_chain.size();
 	}
 	//	m_db.debug_print_index_size(BLOCK_PREFIX);
 	//	m_db.debug_print_index_size(TRANSACTION_PREFIX);
@@ -146,11 +146,11 @@ BlockChain::BlockChain(logging::ILogger &log, const Config &config, const Curren
 
 void BlockChain::db_commit() {
 	m_log(logging::INFO) << "BlockChain::db_commit started... tip_height=" << m_tip_height
-	                     << " m_header_cache.size=" << m_header_cache.size() << std::endl;
+	                     << " m_header_cache.size=" << m_header_cache.size();
 	m_db.commit_db_txn();
 	m_header_cache.clear();  // Most simple cache policy ever
 	m_archive.db_commit();
-	m_log(logging::INFO) << "BlockChain::db_commit finished..." << std::endl;
+	m_log(logging::INFO) << "BlockChain::db_commit finished...";
 }
 
 bool BlockChain::add_block(
@@ -217,8 +217,7 @@ bool BlockChain::add_block(
 		throw;  // The only exception which is safe here
 	} catch (const std::exception &ex) {
 		m_log(logging::ERROR) << "Exception while reorganizing blockchain, probably out of disk space ex.what="
-		                      << common::what(ex) << ", database corrupted, please delete " << m_db.get_path()
-		                      << std::endl;
+		                      << common::what(ex) << ", database corrupted, please delete " << m_db.get_path();
 		std::exit(api::BYTECOIND_DATABASE_ERROR);
 	}
 	if (get_tip_height() % m_config.db_commit_every_n_blocks ==
@@ -532,14 +531,12 @@ bool BlockChain::get_block(const Hash &bid, BinaryArray *block_data, RawBlock *r
 		return false;
 	if (raw_block)
 		seria::from_binary(*raw_block, rb);
-	*block_data = std::move(rb);
+	if (block_data)
+		*block_data = std::move(rb);
 	return true;
 }
 
-bool BlockChain::get_block(const Hash &bid, RawBlock *raw_block) const {
-	BinaryArray rb;
-	return get_block(bid, &rb, raw_block);
-}
+bool BlockChain::get_block(const Hash &bid, RawBlock *raw_block) const { return get_block(bid, nullptr, raw_block); }
 
 bool BlockChain::has_block(const Hash &bid) const {
 	platform::DB::Value ms;
@@ -569,7 +566,7 @@ const api::BlockHeader *BlockChain::read_header_fast(const Hash &bid, Height hin
 	}
 	Hash bbid = bid;  // next lines can modify bid, because it can be reference to header inside cache
 	if (m_header_cache.size() > m_currency.largest_window() * 20) {
-		m_log(logging::INFO) << "BlockChain header cache reached max size and cleared" << std::endl;
+		m_log(logging::TRACE) << "BlockChain header cache reached max size and cleared";
 		m_header_cache.clear();  // very simple policy
 	}
 	BinaryArray rb;
@@ -587,6 +584,11 @@ bool BlockChain::get_header(const Hash &bid, api::BlockHeader *header, Height hi
 	if (result)
 		*header = *result;
 	return result != nullptr;
+}
+
+bool BlockChain::get_header_data(const Hash &bid, BinaryArray *block_data, Height hint) const {
+	auto key = HEADER_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + HEADER_SUFFIX;
+	return m_db.get(key, *block_data);
 }
 
 api::BlockHeader BlockChain::read_header(const Hash &bid, Height hint) const {
@@ -757,24 +759,29 @@ bool BlockChain::prune_branch(CumulativeDifficulty cd, Hash bid) {
 			return false;
 	auto bit = m_blods.find(bid);
 	if (bit != m_blods.end()) {
-		if (!bit->second.children.empty() || !bit->second.parent)
+		if (!bit->second.children.empty())
 			return false;
-		auto rit = std::remove(bit->second.parent->children.begin(), bit->second.parent->children.end(), &bit->second);
-		invariant(rit != bit->second.parent->children.end(), "");
-		bit->second.parent->children.erase(rit, bit->second.parent->children.end());
+		if (bit->second.parent) {
+			auto rit =
+			    std::remove(bit->second.parent->children.begin(), bit->second.parent->children.end(), &bit->second);
+			invariant(rit != bit->second.parent->children.end(), "");
+			bit->second.parent->children.erase(rit, bit->second.parent->children.end());
+		}
 		m_blods.erase(bit);
 	}
 	api::BlockHeader me = read_header(bid);
-	api::BlockHeader pa = read_header(me.previous_block_hash);
 	modify_children_counter(cd, bid, 1);
-	modify_children_counter(pa.cumulative_difficulty, me.previous_block_hash, -1);
+	if (bid != m_genesis_bid) {
+		api::BlockHeader pa = read_header(me.previous_block_hash);
+		modify_children_counter(pa.cumulative_difficulty, me.previous_block_hash, -1);
+	}
 	auto key = BLOCK_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + BLOCK_SUFFIX;
 	m_db.del(key, true);
 	auto key2 = HEADER_PREFIX + DB::to_binary_key(bid.data, sizeof(bid.data)) + HEADER_SUFFIX;
 	m_db.del(key2, true);
-	m_header_tip_window.clear();
-	api::BlockHeader tip_header = read_header(m_tip_bid);
-	m_header_tip_window.push_back(tip_header);
+	//	m_header_tip_window.clear();
+	//	api::BlockHeader tip_header = read_header(m_tip_bid);
+	//	m_header_tip_window.push_back(tip_header);
 	m_header_cache.erase(bid);
 	return true;
 }
@@ -879,7 +886,7 @@ void BlockChain::test_print_structure(Height n_confirmations) const {
 }
 
 void BlockChain::start_internal_import() {
-	m_log(logging::INFO) << "Blockchain database has old format, preparing for internal block import..." << std::endl;
+	m_log(logging::INFO) << "Blockchain database has old format, preparing for internal block import...";
 	if (m_internal_import_chain.empty()) {
 		const std::vector<std::string> former_prefixes{
 		    TIP_CHAIN_PREFIX + "B/", TIP_CHAIN_PREFIX + "1/", TIP_CHAIN_PREFIX + "/", TIP_CHAIN_PREFIX};
@@ -899,7 +906,7 @@ void BlockChain::start_internal_import() {
 	}
 	// we could wish to advance version on half-imported chain
 	std::set<Hash> main_chain_bids{m_internal_import_chain.begin(), m_internal_import_chain.end()};
-	m_log(logging::INFO) << "Found " << m_internal_import_chain.size() << " blocks from main chain" << std::endl;
+	m_log(logging::INFO) << "Found " << m_internal_import_chain.size() << " blocks from main chain";
 	size_t erased = 0, skipped = 0;
 	const size_t total_items          = m_db.get_approximate_items_count();
 	const std::string total_items_str = (total_items == std::numeric_limits<size_t>::max())
@@ -908,7 +915,7 @@ void BlockChain::start_internal_import() {
 	for (DB::Cursor cur = m_db.rbegin(std::string()); !cur.end();) {
 		if ((erased + skipped) % 1000000 == 0)
 			m_log(logging::INFO) << "Processing " << (erased + skipped) / 1000000 << "/" << total_items_str
-			                     << " million DB records" << std::endl;
+			                     << " million DB records";
 		if (cur.get_suffix().find(BLOCK_PREFIX) == 0 &&
 		    cur.get_suffix().substr(cur.get_suffix().size() - BLOCK_SUFFIX.size()) == BLOCK_SUFFIX) {
 			Hash bid;
@@ -926,7 +933,7 @@ void BlockChain::start_internal_import() {
 		erased += 1;
 	}
 	m_db.put("internal_import_chain", seria::to_binary(m_internal_import_chain), true);  // we've just erased it :)
-	m_log(logging::INFO) << "Deleted " << erased << " records, skipped " << skipped << " records" << std::endl;
+	m_log(logging::INFO) << "Deleted " << erased << " records, skipped " << skipped << " records";
 }
 
 bool BlockChain::internal_import() {
@@ -939,14 +946,14 @@ bool BlockChain::internal_import() {
 			RawBlock rb;
 			if (!get_block(bid, &rb)) {
 				m_log(logging::WARNING) << "Block not found during internal import for height=" << get_tip_height() + 1
-				                        << " bid=" << bid << std::endl;
+				                        << " bid=" << bid;
 				break;
 			}
 			PreparedBlock pb(std::move(rb), m_currency, nullptr);
 			api::BlockHeader info;
 			if (!add_block(pb, &info, false, "internal_import")) {
 				m_log(logging::WARNING) << "Block corrupted during internal import for height=" << get_tip_height() + 1
-				                        << " bid=" << bid << std::endl;
+				                        << " bid=" << bid;
 				break;
 			}
 			//		if (get_tip_height() % m_config.db_commit_every_n_blocks == 0)
@@ -958,9 +965,9 @@ bool BlockChain::internal_import() {
 		}
 	} catch (const std::exception &ex) {
 		m_log(logging::WARNING) << "Block corrupted during internal import for height=" << get_tip_height() + 1
-		                        << " exception=" << common::what(ex) << std::endl;
+		                        << " exception=" << common::what(ex);
 	}
-	m_log(logging::INFO) << "Finished internal importing of blocks, will continue downloading..." << std::endl;
+	m_log(logging::INFO) << "Finished internal importing of blocks, will continue downloading...";
 	m_internal_import_chain.clear();
 	m_db.del("internal_import_chain", true);
 	db_commit();
@@ -968,38 +975,45 @@ bool BlockChain::internal_import() {
 }
 
 void BlockChain::test_undo_everything(Height new_tip_height) {
-	while (true) {  // get_tip_height() > new_tip_height
+	for (DB::Cursor cur = m_db.begin(CHECKPOINT_PREFIX_STABLE); !cur.end(); cur.erase()) {
+	}
+	for (DB::Cursor cur = m_db.begin(CHECKPOINT_PREFIX_LATEST); !cur.end(); cur.erase()) {
+	}
+	test_print_tips();
+	while (test_prune_oldest()) {  // prunning side branches
+	}
+	test_print_tips();
+
+	while (true) {
 		RawBlock raw_block;
-		if (!get_block(get_tip_bid(), &raw_block))
-			break;
+		invariant(get_block(get_tip_bid(), &raw_block), "");
 		Block block(raw_block);
 		undo_block(get_tip_bid(), raw_block, block, m_tip_height);
 		if (get_tip_bid() == m_genesis_bid)
 			break;
 		pop_chain(block.header.previous_block_hash);
 		tip_changed();
-		if (get_tip_height() % m_config.db_commit_every_n_blocks == 1)
+		while (test_prune_oldest()) {  // prunning main branch
+		}
+		if (get_tip_height() % m_config.db_commit_every_n_blocks == 0)
 			db_commit();
 	}
+	invariant(m_header_tip_window.size() == 1 && m_tip_height == 0, "");
+	m_header_tip_window.clear();
+	m_db.del(TIP_CHAIN_PREFIX + common::write_varint_sqlite4(m_tip_height), true);
+	m_tip_height -= 1;
+	m_tip_bid                   = Hash{};
+	m_tip_cumulative_difficulty = 0;
+	test_prune_oldest();  // no while, after pruning genesis, invariant will fail
+	m_db.del("$version", true);
 	std::cout << "---- After undo everything ---- " << std::endl;
-	//
-	//	$version
-	//	T00
-	//	a}?FFFFF0
-	//	c/0
-	//	t'40gGOBMhv;@IX6{@yYbN1}J64V.]$z5
-	//	x-ch/7o4%rJZ=8Qe9zz8NCg@F{@G`f>KWmKf=
-	//	x-tips/0|yg2dz7o4%rJZ=8Qe9zz8NCg@F{@G`f>KWmKf=
 	int counter = 0;
 	for (DB::Cursor cur = m_db.begin(std::string()); !cur.end(); cur.next()) {
-		if (cur.get_suffix().find(BLOCK_PREFIX) == 0)
-			continue;
-		if (cur.get_suffix().find(HEADER_PREFIX) == 0)
-			continue;
 		std::cout << DB::clean_key(cur.get_suffix()) << std::endl;
-		if (counter++ > 1000)
+		if (counter++ > 1000)  // In case of incomplete undo, prevent too much output
 			break;
 	}
+	invariant(counter == 0, "Undo unsuccessfull");
 }
 
 std::vector<SignedCheckpoint> BlockChain::get_latest_checkpoints() const {
@@ -1114,9 +1128,9 @@ bool BlockChain::add_blod_impl(const api::BlockHeader &header) {
 			    blod.votes_for_upgrade_in_voting_window.end(), uint8_t(1));
 			if (count >= m_currency.upgrade_votes_required()) {
 				blod.upgrade_decided_height = blod.height + m_currency.upgrade_window;
-				m_log(logging::INFO) << "Consensus upgrade votes gathered on height=" << header.height
+				m_log(logging::INFO) << logging::Green << "Consensus upgrade votes gathered on height=" << header.height
 				                     << " upgrade_decided_height=" << blod.upgrade_decided_height
-				                     << " bid=" << header.hash << std::endl;
+				                     << " bid=" << header.hash;
 				blod.votes_for_upgrade_in_voting_window.clear();
 			}
 		}

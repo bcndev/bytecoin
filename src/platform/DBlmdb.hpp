@@ -53,7 +53,7 @@ struct Cur : private common::Nocopy {
 };
 class Error : public std::runtime_error {
 public:
-	explicit Error(const std::string &msg) : std::runtime_error(msg) {}
+	using std::runtime_error::runtime_error;
 	static void do_throw(const std::string &msg, int rc);
 };
 }  // namespace lmdb
@@ -64,9 +64,12 @@ class DBlmdb {
 	std::unique_ptr<lmdb::Dbi> db_dbi;
 	std::unique_ptr<lmdb::Txn> db_txn;
 
+	uint64_t max_tx_size;
+	void resize_and_begin_tx();
+
 public:
 	explicit DBlmdb(OpenMode open_mode, const std::string &full_path,
-	    uint64_t max_db_size = 0x8000000000);  // 0.5 Tb default, out of total 4 Tb on windows
+	    uint64_t max_tx_size = 0x100000000);  // 4 Gb default
 	const std::string &get_path() const { return full_path; }
 	void commit_db_txn();
 	size_t test_get_approximate_size() const;

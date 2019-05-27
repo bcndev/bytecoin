@@ -118,7 +118,7 @@ __Output:__
 #### About
 
 Returns an array of all addresses stored in a wallet file. If `view_only` flag is `true`, there are no
-secret spend keys in the file, so the `walletd` is allowed to spend money from any address.
+secret spend keys in the file, so the `walletd` is not allowed to spend money from any address.
 
 #### Input (params)
 
@@ -126,7 +126,7 @@ secret spend keys in the file, so the `walletd` is allowed to spend money from a
 |--------------------------|-----------------|-----------|---------------|-----------------------------------------------------|
 | `need_secret_spend_keys` | `bool`          | No        | `false`       | Send true if need secret spend keys.                |
 | `from_address`           | `uint32`        | No        | `0`           | Position of address in the wallet starting from `0`.|
-| `max_count`              | `uint32`        | No        | `2^64-1`      | Max number of addresses to show.                    |
+| `max_count`              | `uint32`        | No        | `2^32-1`      | Max number of addresses to show.                    |
 
 #### Output
 
@@ -255,7 +255,9 @@ Returns basic information about the wallet.
 
 #### Input (params)
 
-Empty
+| Field                    | Type            | Mandatory | Default value | Description                                                        |
+|--------------------------|-----------------|-----------|---------------|--------------------------------------------------------------------|
+| `need_secrets`           | `bool`          | No        | `false`       | Secret keys and/or mnemonic will be returned if set to true.       |
 
 #### Output
 
@@ -269,6 +271,10 @@ Empty
 | `total_address_count`         | `uint32`    | Total number of addresses in a wallet.                                                                  |
 | `first_address`               | `string`    | First address in the wallet.                                                                            |
 | `net`                         | `string`    | Shows the network `walletd` is launched on (`main`, `stage` or `test`).                                 |
+| `secret_view_key`             | `string`    | Secret view key                                                                                         |
+| `public_view_key`             | `string`    | Public view key                                                                                         |
+| `import_keys`                 | `string`    | Value for --import-keys (for legacy wallet)                                                             |
+| `mnemonic`                    | `string`    | BIP39 mnemonic (for amethyst wallet)                                                                    |
 
 #### Example 1
 
@@ -301,6 +307,25 @@ __Output:__
 }
 ```
 ### 5. `get_wallet_records`
+
+Gets (first creating if desired) wallet records (addresses). `index` and `count` define range, `create` determines if not yet existing addresses in the range will be created.
+
+
+#### Input (params)
+
+| Field                    | Type            | Mandatory | Default value | Description                                         |
+|--------------------------|-----------------|-----------|---------------|-----------------------------------------------------|
+| `index`                  | `uint32`        | No        | `0`           | Start of address range to return/create.            |
+| `count`                  | `uint32`        | No        | `2^32-1`      | End of address range to return/create               |
+| `create`                 | `bool`          | No        | `false`       | Create addresses in range if set to true.           |
+| `need_secrets`           | `bool`          | No        | `false`       | Also returns spend secret keys for addresses.       |
+
+#### Output
+
+| Field                         | Type        | Description                                                                     |
+|-------------------------------|-------------|---------------------------------------------------------------------------------|
+| `records`                     | `[]Record`  | Address records.                                                                |
+| `total_count`                 | `uint32`    | Total number of addresses in wallet.                                            |
 
 __Input:__
 ```
@@ -405,7 +430,7 @@ curl -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: appli
   "method": "create_sendproof",
   "params": {
     "transaction_hash": "fe331d318ffa931647cec4d046e93c00da53944e63a134f68a1ba4a3501411c5",
-    "message":"Luck I’m your father!"
+    "message":"Luke I’m your father!"
 }
 }'
 ```

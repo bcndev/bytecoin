@@ -38,6 +38,9 @@ std::string pod_to_hex(const T &s) {
 	return to_hex(&s, sizeof(s));
 }
 
+bool starts_with(const std::string &str, const std::string &str2);
+bool ends_with(const std::string &str, const std::string &str2);
+
 inline bool split_string_helper(const std::string &str, size_t pos, const std::string &, std::string &head) {
 	head = str.substr(pos);
 	return true;

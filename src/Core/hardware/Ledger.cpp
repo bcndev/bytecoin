@@ -15,18 +15,8 @@
 #include "ledger/bytecoin_ledger_api.h"
 #include "seria/BinaryInputStream.hpp"
 
-#if cn_WITH_LEDGER
-
 using namespace cn::hardware;
 using namespace crypto;
-
-#include <libusb-1.0/libusb.h>
-
-#ifdef _WIN32
-#include "platform/Windows.hpp"
-// libusb leaks windows.h garbage pile into our project, have to do damage prevention
-#endif
-// For now will work with only libusb as transport
 
 #define BTCHIP_VID 0x2c97
 #define BTCHIP_PID 0x0001
@@ -34,83 +24,27 @@ using namespace crypto;
 #define LEDGER_HID_PACKET_SIZE 64
 #define TAG_APDU 0x05
 
-USBLib::USBLib() {
-	if (libusb_init(nullptr) < 0)
-		throw std::runtime_error("USBLib init failed");
-}
-
-USBLib::~USBLib() { libusb_exit(nullptr); }
-
-void USBDevice::attach_kernel_driver(bool attach) {
-	if (attach == attached_kernel_driver)
-		return;
-	attached_kernel_driver = attach;
-	if (attach) {
-		libusb_release_interface(handle, 0);
-		libusb_attach_kernel_driver(handle, 0);
-	} else {
-		libusb_detach_kernel_driver(handle, 0);
-		libusb_claim_interface(handle, 0);
-		// TODO - error checks
-	}
-}
-
-USBDevice::~USBDevice() {
-	attach_kernel_driver(true);
-	libusb_close(handle);
-	handle = nullptr;
-}
-
 void Ledger::add_connected(std::vector<std::unique_ptr<HardwareWallet>> *result) try {
-	USBLib usb_lib;
-	//    libusb_device_handle *rd = libusb_open_device_with_vid_pid(NULL, BTCHIP_VID, BTCHIP_PID);
-
-	libusb_device **devs = nullptr;
-	ssize_t cnt          = libusb_get_device_list(nullptr, &devs);
-	if (cnt < 0)
+	enumeration_handle_t enum_list{hid_enumerate(BTCHIP_VID, BTCHIP_PID), &hid_free_enumeration};
+	if (!enum_list) {
+		printf("No Ledger devices connected\n");
 		return;
+	}
 
-	libusb_device *dev = nullptr;
-	int i = 0, j = 0;
-	uint8_t path[8];
-
-	while ((dev = devs[i++]) != NULL) {
-		struct libusb_device_descriptor desc {};
-		int r = libusb_get_device_descriptor(dev, &desc);
-		if (r < 0) {
-			fprintf(stderr, "failed to get device descriptor");
-			break;
+	for (const hid_device_info *dev_info = enum_list.get(); dev_info != nullptr; dev_info = dev_info->next) {
+		printf("Trying to open %s... ", dev_info->path);
+		device_handle_t dev_handle{hid_open_path(dev_info->path), &hid_close};
+		if (!dev_handle) {
+			printf("Failed to open %s\n", dev_info->path);
+			continue;
 		}
-		std::string spath;
-		const auto bn = libusb_get_bus_number(dev);
-		const auto da = libusb_get_device_address(dev);
-		printf("%04x:%04x (bus %d, device %d)", desc.idVendor, desc.idProduct, bn, da);
-		spath = "(bus " + common::to_string(bn) + ", device " + common::to_string(da) + ")";
-
-		r = libusb_get_port_numbers(dev, path, sizeof(path));
-		if (r > 0) {
-			printf(" path: %d", path[0]);
-			spath += ", path " + common::to_string(path[0]);
-			for (j = 1; j < r; j++) {
-				printf(".%d", path[j]);
-				spath += "." + common::to_string(path[j]);
-			}
-		}
-		printf("\n");
-		if (desc.idVendor == BTCHIP_VID && desc.idProduct == BTCHIP_PID) {
-			libusb_device_handle *dev_handle = nullptr;
-			int open_r                       = libusb_open(dev, &dev_handle);
-			if (open_r == 0) {
-				try {
-					result->push_back(std::make_unique<Ledger>(dev_handle, spath));
-				} catch (const std::exception &) {
-					// OK, this Ledger probably disconnected while we were communicating
-				}
-			} else
-				fprintf(stderr, "failed to open device");
+		printf("Success.\n");
+		try {
+			result->push_back(std::make_unique<Ledger>(std::move(dev_handle), dev_info->path));
+		} catch (const std::exception &) {
+			// OK, this Ledger probably disconnected while we were communicating
 		}
 	}
-	libusb_free_device_list(devs, 1);
 } catch (const std::exception &) {
 	// OK, no lib
 }
@@ -241,60 +175,67 @@ static int unwrapReponseApdu(unsigned int channel, const unsigned char *data, si
 
 size_t Ledger::get_scan_outputs_max_batch() const { return BYTECOIN_MAX_SCAN_OUTPUTS; }
 
+static int hid_write_wrapper(hid_device *device, const uint8_t *data, size_t length) {
+	std::unique_ptr<uint8_t[]> buffer{new uint8_t[length + 1]};
+	memcpy(buffer.get() + 1, data, length);
+	buffer[0]  = 0;  // hidapi requires report number
+	int result = hid_write(device, buffer.get(), length + 1);
+	if (result > 0)
+		--result;  // hidapi returns number of bytes written including report number
+	return result;
+}
+
 int Ledger::sendApdu(const uint8_t *data, size_t len, uint8_t *out, size_t out_len, unsigned *sw) {
 	static const size_t MAX_BLOCK = 64;
 	static const int TIMEOUT      = 600000;
 
 	unsigned char buffer[800]{};
-	int length = 0;
+	unsigned char paddingBuffer[MAX_BLOCK]{};
 
 	int send_size = wrapCommandApdu(DEFAULT_LEDGER_CHANNEL, data, len, LEDGER_HID_PACKET_SIZE, buffer, sizeof(buffer));
 	if (send_size < 0) {
 		return send_size;
 	}
-	int result = libusb_interrupt_transfer(m_device.handle, 0x02, buffer, send_size, &length, TIMEOUT);
-	if (result < 0) {
-		return result;
-	}
-	if (length != send_size) {
-		return -1;
-	}
-	result = libusb_interrupt_transfer(m_device.handle, 0x82, buffer, MAX_BLOCK, &length, TIMEOUT);
-	if (result < 0) {
-		return result;
-	}
-	if (length != MAX_BLOCK) {
-		return result;
-	}
-	size_t msg_size = (buffer[5] << 8U) + buffer[6];
-	size_t chunks =
-	    (msg_size <= MAX_BLOCK - 7) ? 1 : 1 + (msg_size - (MAX_BLOCK - 7) + MAX_BLOCK - 5 - 1) / (MAX_BLOCK - 5);
-	if (chunks * MAX_BLOCK > sizeof(buffer)) {
-		return -1;  // overflow
-	}
-	if (chunks > 1) {
-		result = libusb_interrupt_transfer(
-		    m_device.handle, 0x82, buffer + MAX_BLOCK, MAX_BLOCK * (chunks - 1), &length, TIMEOUT);
+	size_t remaining = static_cast<size_t>(send_size);
+	size_t offset    = 0;
+	int result       = 0;
+	while (remaining > 0) {
+		size_t blockSize = (remaining > MAX_BLOCK ? MAX_BLOCK : remaining);
+		memset(paddingBuffer, 0, MAX_BLOCK);
+		memcpy(paddingBuffer, buffer + offset, blockSize);
+		result = hid_write_wrapper(m_device_handle.get(), paddingBuffer, blockSize);
 		if (result < 0) {
 			return result;
 		}
-		if (size_t(length) != MAX_BLOCK * (chunks - 1)) {
-			return -1;
-		}
+		offset += blockSize;
+		remaining -= blockSize;
 	}
-	result =
-	    unwrapReponseApdu(DEFAULT_LEDGER_CHANNEL, buffer, chunks * MAX_BLOCK, LEDGER_HID_PACKET_SIZE, out, out_len);
+	result = hid_read_timeout(m_device_handle.get(), buffer, MAX_BLOCK, TIMEOUT);
 	if (result < 0) {
 		return result;
 	}
-	if (result < 2) {
-		return -1;  // No place for SW
+	if (result != MAX_BLOCK) {
+		return result;
 	}
-	length = result - 2;
+
+	offset = MAX_BLOCK;
+	while (true) {
+		result = unwrapReponseApdu(DEFAULT_LEDGER_CHANNEL, buffer, offset, LEDGER_HID_PACKET_SIZE, out, out_len);
+		if (result >= 2) {
+			result -= 2;
+			break;
+		}
+		if (result < 0 || result != 0)
+			return -1;
+		result = hid_read_timeout(m_device_handle.get(), buffer + offset, MAX_BLOCK, TIMEOUT);
+		if (result < 0)
+			return result;
+		offset += MAX_BLOCK;
+	}
 	if (sw) {
-		*sw = (out[length] << 8U) + out[length + 1];
+		*sw = (out[result] << 8U) + out[result + 1];
 	}
-	return length;
+	return result;
 }
 
 BinaryArray Ledger::sendApdu(uint8_t cmd, const BinaryArray &body) {
@@ -369,11 +310,12 @@ void Ledger::get_wallet_keys() {
 		throw std::runtime_error("excess data left in INS_GET_WALLET_KEYS");
 }
 
-Ledger::Ledger(libusb_device_handle *dev_handle, const std::string &path) : m_device(dev_handle), m_path(path) {
-	m_device.attach_kernel_driver(false);
+Ledger::Ledger(device_handle_t &&dev_handle, const std::string &path)
+    : m_device_handle(std::move(dev_handle)), m_path(path) {
+	//	m_device.attach_kernel_driver(false);
 
 	get_app_info();
-	if (m_app_info.major_version != 0 || m_app_info.minor_version != 1 || m_app_info.patch_version != 1)
+	if (m_app_info.major_version != 1 || m_app_info.minor_version != 0)
 		throw std::runtime_error("this version of the ledger app is incompatible");
 	get_wallet_keys();
 }
@@ -400,19 +342,6 @@ std::vector<cn::PublicKey> Ledger::scan_outputs(const std::vector<cn::PublicKey>
 	if (!vs.empty())
 		throw std::runtime_error("excess data left in INS_SCAN_OUTPUTS");
 	return result;
-
-	//	for (const auto &pk : output_public_keys) {
-	//		common::VectorStream vs;
-	//		vs.write(pk.data, sizeof(pk.data));
-
-	//		vs = common::VectorStream(sendApdu(INS_SCAN_OUTPUTS, vs.buffer()));
-	//		PublicKey rpk;
-	//		vs.read(rpk.data, sizeof(rpk.data));
-	//		if (!vs.empty())
-	//			throw std::runtime_error("excess data left in INS_SCAN_OUTPUTS");
-	//		result.push_back(rpk);
-	//	}
-	//	return result;
 }
 
 cn::KeyImage Ledger::generate_keyimage(const common::BinaryArray &output_secret_hash_arg, size_t address_index) {
@@ -606,5 +535,3 @@ void Ledger::export_view_only(SecretKey *audit_key_base_secret_key, SecretKey *v
 	if (!vs.empty())
 		throw std::runtime_error("excess data left in INS_EXPORT_VIEW_ONLY");
 }
-
-#endif  // cn_WITH_LEDGER

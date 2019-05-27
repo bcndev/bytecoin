@@ -96,8 +96,8 @@ platform::PreventSleep::~PreventSleep() {
 	}
 }
 
-#elif defined(__linux__)
-// Sorry, no power modes in '70s
+// #elif defined(__linux__) || defined(__EMSCRIPTEN__)
+#else
 platform::PreventSleep::PreventSleep(const char *reason) {}
 platform::PreventSleep::~PreventSleep() {}
 

@@ -28,15 +28,15 @@ Hash cn::get_root_block_base_transaction_hash(const RootBaseTransaction &tx) {
 
 void cn::set_root_extra_to_solo_mining_tag(BlockTemplate &block) {
 	if (block.is_merge_mined()) {
-		block.root_block                          = RootBlock{};
-		block.root_block.timestamp                = block.timestamp;
-		block.root_block.major_version            = 1;
-		block.root_block.transaction_count        = 1;
-		block.root_block.base_transaction.version = 1;
+		block.root_block                              = RootBlock{};
+		block.root_block.timestamp                    = block.timestamp;
+		block.root_block.major_version                = 1;
+		block.root_block.transaction_count            = 1;
+		block.root_block.coinbase_transaction.version = 1;
 
-		TransactionExtraMergeMiningTag mmTag;
-		mmTag.merkle_root = get_auxiliary_block_header_hash(block, get_body_proxy_from_template(block));
-		extra_add_merge_mining_tag(block.root_block.base_transaction.extra, mmTag);
+		extra::MergeMiningTag mmTag;
+		mmTag.merkle_root = get_block_header_prehash(block, get_body_proxy_from_template(block));
+		extra::add_merge_mining_tag(block.root_block.coinbase_transaction.extra, mmTag);
 	}
 }
 

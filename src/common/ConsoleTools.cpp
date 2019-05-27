@@ -14,7 +14,6 @@
 #else
 #include <termios.h>
 #include <unistd.h>
-#include <boost/concept_check.hpp>
 #include <cstring>
 #include <iostream>
 
@@ -78,8 +77,6 @@ UnicodeConsoleSetup::UnicodeConsoleSetup() {
 		SetConsoleCP(CP_UTF8);
 	}
 	old_buf = std::cout.rdbuf(this);
-#else
-	boost::ignore_unused_variable_warning(old_buf);
 #endif
 }
 UnicodeConsoleSetup::~UnicodeConsoleSetup() {

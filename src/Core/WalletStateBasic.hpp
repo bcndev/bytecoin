@@ -3,15 +3,6 @@
 
 #pragma once
 
-#include <boost/multi_index/composite_key.hpp>
-#include <boost/multi_index/identity.hpp>
-#include <boost/multi_index/member.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index_container.hpp>
-#include <condition_variable>
-#include <mutex>
-#include <thread>
-#include "BlockChainState.hpp"
 #include "CryptoNote.hpp"
 #include "Wallet.hpp"
 #include "platform/DB.hpp"
@@ -20,6 +11,34 @@
 namespace cn {
 
 class Config;
+
+struct PreparedWalletTransaction {
+	Hash tid;
+	size_t size = 0;
+	TransactionPrefix tx;
+	Hash prefix_hash;
+	Hash inputs_hash;
+	KeyDerivation derivation;  // Will be KeyDerivation{} if invalid or no tx_public_key
+	std::vector<PublicKey> address_public_keys;
+	std::vector<PublicKey> output_shared_secrets;
+
+	PreparedWalletTransaction() = default;
+	PreparedWalletTransaction(const Hash &tid, size_t size, TransactionPrefix &&tx,
+	    const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
+	PreparedWalletTransaction(const Hash &tid, size_t size, Transaction &&tx, const Wallet::OutputHandler &o_handler,
+	    const SecretKey &view_secret_key);
+
+	// TODO - remove constructors and always use prepare()?
+	void prepare(const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
+};
+
+struct PreparedWalletBlock {
+	api::cnd::SyncBlocks::RawBlockCompact raw_block;
+	std::vector<PreparedWalletTransaction> transactions;
+	// coinbase_transaction will be inserted before other transactions
+
+	void prepare(const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
+};
 
 class IWalletState {
 public:
@@ -35,13 +54,16 @@ class WalletStateBasic : protected IWalletState {
 public:
 	typedef platform::DB DB;
 
-	explicit WalletStateBasic(logging::ILogger &, const Config &, const Currency &, const std::string &cache_name);
+	explicit WalletStateBasic(
+	    logging::ILogger &, const Config &, const Currency &, DB &db, const std::string &cache_name);
 	const Currency &get_currency() const { return m_currency; };
 
+	//	bool is_version_compact()const { return m_version_compact; }
 	Hash get_tip_bid() const { return m_tip.hash; }
-	Height get_tip_height() const { return m_tip_height; }
+	Height get_tip_height() const { return m_tip.height; }
+	bool db_empty() const { return m_chain_height == Height(-1); }
 	const api::BlockHeader &get_tip() const { return m_tip; }
-	bool read_chain(Height, api::BlockHeader &) const;
+	bool read_chain(Height, api::BlockHeader *) const;
 
 	std::vector<Hash> get_sparse_chain() const;
 
@@ -87,14 +109,11 @@ protected:
 	const Currency &m_currency;
 	logging::LoggerRef m_log;
 
-	DB m_db;
+	DB &m_db;
 
 	void push_chain(const api::BlockHeader &);
-	void pop_chain();
-	bool empty_chain() const { return m_tip_height + 1 == m_tail_height; }
-	void reset_chain(Height new_tail_height);
-	Height get_tail_height() const { return m_tail_height; }
-	void fix_empty_chain();  // push genesis block
+	bool pop_chain();
+	void clear_db(bool everything);
 	api::BlockHeader read_chain(Height) const;
 
 	bool is_memory_spent(const api::Output &output) const {
@@ -120,8 +139,7 @@ protected:
 	std::string format_output(const api::Output &output);
 
 private:
-	Height m_tip_height  = -1;
-	Height m_tail_height = 0;
+	Height m_chain_height = -1;
 	api::BlockHeader m_tip;
 
 	//	void put_am_gi_he(const api::Output &output);
@@ -133,8 +151,9 @@ private:
 	UndoMap::iterator record_undo(UndoMap &undo_map, const std::string &key);
 	void put_with_undo(const std::string &key, const common::BinaryArray &value, bool nooverwrite);
 	void del_with_undo(const std::string &key, bool mustexist);
-	void save_db_state(Height state, const UndoMap &undo_map);
-	void undo_db_state(Height state);
+	void save_db_state(Height height, const UndoMap &undo_map);
+	bool undo_db_state(Height height);
+	static api::BlockHeader fill_genesis(Hash genesis_bid, const BlockTemplate &g);
 
 	// indices implemenation
 	bool add_incoming_output(const api::Output &, bool just_unlocked);

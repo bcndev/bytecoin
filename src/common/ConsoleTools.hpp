@@ -33,7 +33,9 @@ bool is_console_tty();
 
 // On windows we set up utf-8 console encoding and prevent splitting multibyte chars by cout
 class UnicodeConsoleSetup : public std::stringbuf {
+#ifdef _WIN32  // prevent unused variable warning
 	std::streambuf *old_buf = nullptr;
+#endif
 
 protected:
 	int sync() override;

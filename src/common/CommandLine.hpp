@@ -34,6 +34,7 @@ class CommandLine {  // Lean command line parsing. Best! :)
 
 public:
 	CommandLine(int argc, const char *const argv[]);
+	CommandLine() = default;  // Sometimes usefull in test code
 	// call show_help right after constructor
 	// help will be parsed so that show errors will print different text for
 	// unused options found in help (wrong context) and not found in help (typo)

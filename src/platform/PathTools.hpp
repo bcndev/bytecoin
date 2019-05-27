@@ -7,8 +7,12 @@
 #include <vector>
 #include "common/BinaryArray.hpp"
 
+#ifdef __APPLE__
+#include "TargetConditionals.h"
+#endif
+
 // For documentation
-#if defined(__MACH__)
+#if TARGET_OS_MAC
 #define platform_DEFAULT_DATA_FOLDER_PATH_PREFIX "~/Library/Application Support/"
 #elif defined(_WIN32)
 #define platform_DEFAULT_DATA_FOLDER_PATH_PREFIX "%appdata%/"
@@ -17,15 +21,6 @@
 #endif
 
 namespace platform {
-std::string get_default_data_directory(
-    const std::string &cryptonote_name);  // we avoid including app-specific headers into our platform code
-// Old method
-// Windows < Vista: C:\Documents and Settings\Username\Application Data\CRYPTONOTE_NAME
-// Windows >= Vista: C:\Users\Username\AppData\Roaming\CRYPTONOTE_NAME
-// Mac: ~/.CRYPTONOTE_NAME
-// Unix: ~/.CRYPTONOTE_NAME
-// Storing 40Gb in directory hidden from user (.bytecoin) is generally bad idea
-// Storing 40Gb in Roaming user profile was bad idea for corporate Windows users (should be in Local)
 
 // New method
 // Windows < Vista: C:\Documents and Settings\Username\Application Data/<app_name>
@@ -37,6 +32,7 @@ std::string get_app_data_folder(const std::string &app_name);
 std::string get_os_version_string();
 std::string get_platform_name();
 std::string normalize_folder(const std::string &path);
+std::string expand_path(const std::string &path);
 bool folder_exists(const std::string &path);
 bool create_folder_if_necessary(const std::string &path);   // Only last element
 bool create_folders_if_necessary(const std::string &path);  // Recursively all elements

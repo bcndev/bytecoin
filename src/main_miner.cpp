@@ -13,6 +13,7 @@
 #include "crypto/crypto.hpp"
 #include "http/Agent.hpp"
 #include "http/JsonRpc.hpp"
+#include "platform/Network.hpp"
 #include "rpc_api.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
@@ -52,8 +53,6 @@ struct MiningConfig {
 			    std::runtime_error("Command line option --" CRYPTONOTE_NAME "d-address has wrong format"));
 		} else
 			throw std::runtime_error("--" CRYPTONOTE_NAME "d-address=ip:port argument is mandatory");
-		if (cmd.get("--threads"))
-			throw std::runtime_error("Not implemented - just start several copies of minerd.");
 		if (const char *pa = cmd.get("--limit"))
 			blocks_limit = common::integer_cast<size_t>(pa);
 		if (const char *pa = cmd.get("--boast"))
@@ -120,7 +119,7 @@ public:
 		if (difficulty == 0)
 			return false;
 		nonce++;
-		BinaryArray long_hashing_data;
+		BinaryArray pow_hashing_data;
 		BinaryArray cm_nonce;
 		std::vector<crypto::CMBranchElement> cm_merkle_branch;
 		Hash cm_merkle_root;
@@ -142,14 +141,14 @@ public:
 			}
 			cm_merkle_root =
 			    crypto::tree_hash_from_cm_branch(cm_merkle_branch, block_response.cm_prehash, block_response.cm_path);
-			common::append(long_hashing_data, cm_nonce);
-			common::append(long_hashing_data, std::begin(cm_merkle_root.data), std::end(cm_merkle_root.data));
+			common::append(pow_hashing_data, cm_nonce);
+			common::append(pow_hashing_data, std::begin(cm_merkle_root.data), std::end(cm_merkle_root.data));
 		} else {
 			common::uint_le_to_bytes(block.root_block.nonce, 4, nonce);
-			auto body_proxy   = get_body_proxy_from_template(block);
-			long_hashing_data = get_block_long_hashing_data(block, body_proxy, currencyid_response.currency_id_blob);
+			auto body_proxy  = get_body_proxy_from_template(block);
+			pow_hashing_data = get_block_pow_hashing_data(block, body_proxy, currencyid_response.currency_id_blob);
 		}
-		Hash hash = crypto_context.cn_slow_hash(long_hashing_data.data(), long_hashing_data.size());
+		Hash hash = crypto_context.cn_slow_hash(pow_hashing_data.data(), pow_hashing_data.size());
 		if (check_hash(hash, difficulty)) {
 			common::console::set_text_color(common::console::BrightGreen);
 			std::cout << "Miner found block !!!, will send ASAP" << std::endl;

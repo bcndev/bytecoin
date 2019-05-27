@@ -48,13 +48,23 @@ static void generate_system_random_bytes(size_t n, void *result) {
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+static void random_err(int x, const char *msg) {
+#ifdef __EMSCRIPTEN__
+	puts(msg);
+	exit(EXIT_FAILURE);
+#else
+	err(EXIT_FAILURE, "%s", msg);
+#endif
+}
 
 static void generate_system_random_bytes(size_t n, void *result) {
 	int fd;
 	if ((fd = open("/dev/urandom", O_RDONLY | O_NOCTTY | O_CLOEXEC)) < 0) {
-		err(EXIT_FAILURE, "open /dev/urandom");
+		random_err(EXIT_FAILURE, "open /dev/urandom");
 	}
 	for (;;) {
 		ssize_t res = read(fd, result, n);
@@ -63,17 +73,17 @@ static void generate_system_random_bytes(size_t n, void *result) {
 		}
 		if (res < 0) {
 			if (errno != EINTR) {
-				err(EXIT_FAILURE, "read /dev/urandom");
+				random_err(EXIT_FAILURE, "read /dev/urandom");
 			}
 		} else if (res == 0) {
-			err(EXIT_FAILURE, "read /dev/urandom: end of file");
+			random_err(EXIT_FAILURE, "read /dev/urandom: end of file");
 		} else {
 			result = padd(result, (size_t)res);
 			n -= (size_t)res;
 		}
 	}
 	if (close(fd) < 0) {
-		err(EXIT_FAILURE, "close /dev/urandom");
+		random_err(EXIT_FAILURE, "close /dev/urandom");
 	}
 }
 

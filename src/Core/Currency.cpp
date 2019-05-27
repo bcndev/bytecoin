@@ -69,12 +69,12 @@ Currency::Currency(const std::string &net)
     , self_dust_threshold(SELF_DUST_THRESHOLD)
     , difficulty_target(std::max<Timestamp>(1,
           DIFFICULTY_TARGET / platform::get_time_multiplier_for_tests()))  // multiplier can be != 1 only in testnet
-    , upgrade_heights{UPGRADE_HEIGHT_V2, UPGRADE_HEIGHT_V3}
+    , upgrade_heights{UPGRADE_HEIGHT_V2, UPGRADE_HEIGHT_V3, UPGRADE_HEIGHT_V4}
     , key_image_subgroup_checking_height(KEY_IMAGE_SUBGROUP_CHECKING_HEIGHT)
     , amethyst_block_version(BLOCK_VERSION_AMETHYST)
     , amethyst_transaction_version(TRANSACTION_VERSION_AMETHYST)
     , upgrade_vote_minor(7)
-    , upgrade_indicator_minor(7)
+    , upgrade_indicator_minor(7)  // We may now not need separate upgrade_indicator_minor
     , upgrade_desired_major(4)
     , upgrade_voting_window(UPGRADE_VOTING_WINDOW)
     , upgrade_window(UPGRADE_WINDOW)
@@ -99,15 +99,15 @@ Currency::Currency(const std::string &net)
 		//			common::pfh<PublicKey>("9b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd088071");
 		//		PublicKey genesis_tx_public_key =
 		//			common::pfh<PublicKey>("3c086a48c15fb637a96991bc6d53caf77068b5ba6eeb3c82357228c49790584a");
-		//		Transaction base_transaction;
-		//		base_transaction.version                   = 1;
-		//		base_transaction.unlock_block_or_timestamp = mined_money_unlock_window;
-		//		base_transaction.inputs.push_back(CoinbaseInput{0});
-		//		base_transaction.outputs.push_back(TransactionOutput{money_supply >> emission_speed_factor,
+		//		Transaction coinbase_transaction;
+		//		coinbase_transaction.version                   = 1;
+		//		coinbase_transaction.unlock_block_or_timestamp = mined_money_unlock_window;
+		//		coinbase_transaction.inputs.push_back(CoinbaseInput{0});
+		//		coinbase_transaction.outputs.push_back(TransactionOutput{money_supply >> emission_speed_factor,
 		// KeyOutput{genesis_output_key}});
-		//		extra_add_transaction_public_key(base_transaction.extra, genesis_tx_public_key);
-		//		invariant(miner_tx_blob == seria::to_binary(base_transaction), "Demystified transaction does not match
-		// original one");
+		//		extra_add_transaction_public_key(coinbase_transaction.extra, genesis_tx_public_key);
+		//		invariant(miner_tx_blob == seria::to_binary(coinbase_transaction), "Demystified transaction does not
+		// match original one");
 	}
 	genesis_block_template.major_version = 1;
 	genesis_block_template.minor_version = 0;
@@ -142,7 +142,7 @@ Currency::Currency(const std::string &net)
 		                      sizeof(CHECKPOINT_PUBLIC_KEYS_STAGENET) / sizeof(*CHECKPOINT_PUBLIC_KEYS_STAGENET);
 	}
 	miner_tx_blob_reserved_size =
-	    get_maximum_tx_size(1, get_max_coinbase_outputs(), 0) + 1 + TransactionExtraNonce::MAX_COUNT;  // ~1k bytes
+	    get_maximum_tx_size(1, get_max_coinbase_outputs(), 0) + 1 + extra::Nonce::MAX_COUNT;  // ~1k bytes
 }
 
 Height Currency::upgrade_votes_required() const { return upgrade_voting_window * UPGRADE_VOTING_PERCENT / 100; }
@@ -297,7 +297,7 @@ Transaction Currency::construct_miner_tx(const Hash &miner_secret, uint8_t block
 	                    : TransactionBuilder::transaction_keys_from_seed(tx_inputs_hash, miner_secret);
 
 	if (!is_tx_amethyst)
-		extra_add_transaction_public_key(tx.extra, txkey.public_key);
+		extra::add_transaction_public_key(tx.extra, txkey.public_key);
 
 	std::vector<Amount> out_amounts;
 	decompose_amount(block_reward, min_dust_threshold, &out_amounts);
@@ -312,9 +312,10 @@ Transaction Currency::construct_miner_tx(const Hash &miner_secret, uint8_t block
 		const Hash output_seed =
 		    miner_secret == Hash{} ? crypto::rand<Hash>()
 		                           : TransactionBuilder::generate_output_seed(tx_inputs_hash, miner_secret, out_index);
-		OutputKey tk = TransactionBuilder::create_output(
-		    is_tx_amethyst, miner_address, txkey.secret_key, tx_inputs_hash, out_index, output_seed);
-		tk.amount = out_amounts.at(out_index);
+		PublicKey output_shared_secret;
+		OutputKey tk = TransactionBuilder::create_output(is_tx_amethyst, miner_address, txkey.secret_key,
+		    tx_inputs_hash, out_index, output_seed, &output_shared_secret);
+		tk.amount    = out_amounts.at(out_index);
 		summary_amounts += tk.amount;
 		tx.outputs.push_back(tk);
 	}
@@ -323,8 +324,13 @@ Transaction Currency::construct_miner_tx(const Hash &miner_secret, uint8_t block
 
 	tx.version = is_tx_amethyst ? amethyst_transaction_version : 1;
 	// if mining on old address, we maintain binary compatibility
-	if (block_major_version < amethyst_block_version)
+	if (block_major_version < amethyst_block_version) {
 		tx.unlock_block_or_timestamp = height + mined_money_unlock_window;
+		if (is_tx_amethyst)
+			throw api::ErrorAddress(api::ErrorAddress::ADDRESS_FAILED_TO_PARSE,
+			    "You cannot mine to amethyst address before consensus update to amethyst",
+			    account_address_as_string(miner_address));
+	}
 	return tx;
 }
 
@@ -406,7 +412,7 @@ static void c_ffw(Amount am, size_t digs, char *buf) {
 	while (digs-- > 0) {
 		Amount d  = am % 10;
 		am        = am / 10;
-		buf[digs] = '0' + d;
+		buf[digs] = static_cast<char>('0' + d);
 	}
 }
 
@@ -428,7 +434,7 @@ size_t c_format_amount(Amount amount, char *buffer, size_t len) {
 		ia       = ia / 10;
 		pos += 1;
 		memmove(buffer + 1, buffer, pos);
-		buffer[0] = '0' + d;
+		buffer[0] = static_cast<char>('0' + d);
 		if (ia == 0)
 			break;
 	}
@@ -576,8 +582,8 @@ Difficulty Currency::next_effective_difficulty(uint8_t block_major_version, std:
 	return difficulty;
 }
 
-BinaryArray Currency::get_block_long_hashing_data(const BlockHeader &bh, const BlockBodyProxy &body_proxy) const {
-	return cn::get_block_long_hashing_data(bh, body_proxy, genesis_block_hash);
+BinaryArray Currency::get_block_pow_hashing_data(const BlockHeader &bh, const BlockBodyProxy &body_proxy) const {
+	return cn::get_block_pow_hashing_data(bh, body_proxy, genesis_block_hash);
 }
 
 bool Currency::amount_allowed_in_output(uint8_t block_major_version, Amount amount) const {

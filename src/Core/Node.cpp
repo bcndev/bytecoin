@@ -11,6 +11,7 @@
 #include "TransactionExtra.hpp"
 #include "common/Base58.hpp"
 #include "common/JsonValue.hpp"
+#include "common/StringTools.hpp"
 #include "http/Client.hpp"
 #include "http/Server.hpp"
 #include "platform/PathTools.hpp"
@@ -27,7 +28,6 @@ using namespace cn;
 Node::Node(logging::ILogger &log, const Config &config, BlockChainState &block_chain)
     : m_block_chain(block_chain)
     , m_config(config)
-    , m_block_chain_was_far_behind(true)
     , m_log(log, "Node")
     , m_peer_db(log, config, "peer_db")
     , m_p2p(log, config, m_peer_db, std::bind(&Node::client_factory, this, _1))
@@ -38,9 +38,6 @@ Node::Node(logging::ILogger &log, const Config &config, BlockChainState &block_c
     , log_request_timestamp(std::chrono::steady_clock::now())
     , log_response_timestamp(std::chrono::steady_clock::now())
     , m_pow_checker(block_chain.get_currency(), platform::EventLoop::current()) {
-	const std::string old_path = platform::get_default_data_directory(CRYPTONOTE_NAME);
-	const std::string new_path = config.get_data_folder();
-
 	if (!config.bytecoind_bind_ip.empty() && config.bytecoind_bind_port != 0)
 		m_api = std::make_unique<http::Server>(config.bytecoind_bind_ip, config.bytecoind_bind_port,
 		    std::bind(&Node::on_api_http_request, this, _1, _2, _3),
@@ -73,12 +70,12 @@ void Node::on_multicast(const std::string &addr, const unsigned char *data, size
 		return;
 	if (common::parse_ip_address(addr, &na.ip)) {
 		if (m_peer_db.add_incoming_peer(na, m_p2p.get_local_time()))
-			m_log(logging::INFO) << "Adding peer from multicast announce addr=" << na << std::endl;
+			m_log(logging::INFO) << "Adding peer from multicast announce addr=" << na;
 	}
 	// We do not receive multicast from loopback, so we just guess peer could be from localhost
 	if (common::parse_ip_address("127.0.0.1", &na.ip)) {
 		if (m_peer_db.add_incoming_peer(na, m_p2p.get_local_time()))
-			m_log(logging::INFO) << "Adding local peer from multicast announce addr=" << na << std::endl;
+			m_log(logging::INFO) << "Adding local peer from multicast announce addr=" << na;
 	}
 	m_p2p.peers_updated();
 }
@@ -200,20 +197,18 @@ static const std::string beautiful_index_finish = " </td></tr></table></body></h
 static const std::string robots_txt             = "User-agent: *\r\nDisallow: /";
 
 bool Node::on_api_http_request(http::Client *who, http::RequestBody &&request, http::ResponseBody &response) {
-	response.r.add_headers_nocache();
 	if (request.r.uri == "/robots.txt") {
+		response.r.add_headers_nocache();
 		response.r.headers.push_back({"Content-Type", "text/plain; charset=UTF-8"});
 		response.r.status = 200;
 		response.set_body(std::string(robots_txt));
 		return true;
 	}
-	bool good_auth =
-	    m_config.bytecoind_authorization.empty() || request.r.basic_authorization == m_config.bytecoind_authorization;
-	bool good_auth_private = m_config.bytecoind_authorization_private.empty() ||
-	                         request.r.basic_authorization == m_config.bytecoind_authorization_private;
-	if (!good_auth && !good_auth_private)  // Private methods will check for private authorization again
-		throw http::ErrorAuthorization("Blockchain");
+	if (!m_config.good_bytecoind_auth(request.r.basic_authorization))
+		throw http::ErrorAuthorization("authorization");
+	// Private methods will check for private authorization again
 	if (request.r.uri == "/" || request.r.uri == "/index.html") {
+		response.r.add_headers_nocache();
 		response.r.headers.push_back({"Content-Type", "text/html; charset=UTF-8"});
 		response.r.status = 200;
 		auto stat         = create_status_response();
@@ -226,18 +221,21 @@ bool Node::on_api_http_request(http::Client *who, http::RequestBody &&request, h
 		return true;
 	}
 	if (request.r.uri == api::cnd::url()) {
+		response.r.add_headers_nocache();
 		if (!on_json_rpc(who, std::move(request), response))
 			return false;
 		response.r.status = 200;
 		return true;
 	}
 	if (request.r.uri == api::cnd::binary_url()) {
+		response.r.add_headers_nocache();
 		if (!on_binary_rpc(who, std::move(request), response))
 			return false;
 		response.r.status = 200;
 		return true;
 	}
 	response.r.status = 404;
+	response.r.headers.push_back({"Content-Type", "text/html; charset=UTF-8"});
 	response.set_body("<html><body>404 Not Found</body></html>");
 	return true;
 }
@@ -251,7 +249,7 @@ void Node::on_api_http_disconnect(http::Client *who) {
 }
 
 const std::unordered_map<std::string, Node::BINARYRPCHandlerFunction> Node::m_binaryrpc_handlers = {
-    {api::cnd::SyncBlocks::bin_method(), json_rpc::make_binary_member_method(&Node::on_sync_blocks)},
+    {api::cnd::SyncBlocks::bin_method(), json_rpc::make_binary_member_method(&Node::on_sync_blocks_bin)},
     {api::cnd::SyncMemPool::bin_method(), json_rpc::make_binary_member_method(&Node::on_sync_mempool)}};
 
 std::unordered_map<std::string, Node::JSONRPCHandlerFunction> Node::m_jsonrpc_handlers = {
@@ -337,8 +335,7 @@ bool Node::on_get_status(http::Client *who, http::RequestBody &&raw_request, jso
     api::cnd::GetStatus::Request &&req, api::cnd::GetStatus::Response &res) {
 	res = create_status_response();
 	if (!res.ready_for_longpoll(req)) {
-		//		m_log(logging::INFO) << "on_get_status will long poll, json="
-		// << raw_request.body << std::endl;
+		//	m_log(logging::INFO) << "on_get_status will long poll, json=" << raw_request.body;
 		LongPollClient lpc;
 		lpc.original_who          = who;
 		lpc.original_request      = raw_request;
@@ -380,34 +377,30 @@ api::cnd::GetStatistics::Response Node::create_statistics_response(const api::cn
 
 bool Node::on_get_statistics(http::Client *, http::RequestBody &&http_request, json_rpc::Request &&,
     api::cnd::GetStatistics::Request &&req, api::cnd::GetStatistics::Response &res) {
-	bool good_auth_private = m_config.bytecoind_authorization_private.empty() ||
-	                         http_request.r.basic_authorization == m_config.bytecoind_authorization_private;
-	if (!good_auth_private)
-		throw http::ErrorAuthorization("Statistics");
+	if (!m_config.good_bytecoind_auth_private(http_request.r.basic_authorization))
+		throw http::ErrorAuthorization("authorization-private");
 	res = create_statistics_response(req);
 	return true;
 }
 
 bool Node::on_get_archive(http::Client *, http::RequestBody &&http_request, json_rpc::Request &&,
     api::cnd::GetArchive::Request &&req, api::cnd::GetArchive::Response &resp) {
-	bool good_auth_private = m_config.bytecoind_authorization_private.empty() ||
-	                         http_request.r.basic_authorization == m_config.bytecoind_authorization_private;
-	if (!good_auth_private)
-		throw http::ErrorAuthorization("Archive");
+	if (!m_config.good_bytecoind_auth_private(http_request.r.basic_authorization))
+		throw http::ErrorAuthorization("authorization-private");
 	m_block_chain.read_archive(std::move(req), resp);
 	return true;
 }
 
 // mixed_public_keys can be null if keys not needed
-void Node::fill_transaction_info(
-    const TransactionPrefix &tx, api::Transaction *api_tx, std::vector<std::vector<PublicKey>> *mixed_public_keys) {
+void Node::fill_transaction_info(const TransactionPrefix &tx, api::Transaction *api_tx,
+    std::vector<std::vector<PublicKey>> *mixed_public_keys) const {
 	api_tx->unlock_block_or_timestamp = tx.unlock_block_or_timestamp;
 	api_tx->extra                     = tx.extra;
 	api_tx->anonymity                 = std::numeric_limits<size_t>::max();
-	api_tx->public_key                = extra_get_transaction_public_key(tx.extra);
+	api_tx->public_key                = extra::get_transaction_public_key(tx.extra);
 	api_tx->prefix_hash               = get_transaction_prefix_hash(tx);
 	api_tx->inputs_hash               = get_transaction_inputs_hash(tx);
-	extra_get_payment_id(tx.extra, api_tx->payment_id);
+	extra::get_payment_id(tx.extra, api_tx->payment_id);
 	Amount input_amount = 0;
 	for (const auto &input : tx.inputs) {
 		if (input.type() == typeid(InputKey)) {
@@ -426,43 +419,54 @@ void Node::fill_transaction_info(
 		api_tx->anonymity = 0;  // No key inputs
 }
 
-bool Node::on_sync_blocks(http::Client *, http::RequestBody &&, json_rpc::Request &&json_req,
-    api::cnd::SyncBlocks::Request &&req, api::cnd::SyncBlocks::Response &res) {
+std::vector<Hash> Node::fill_sync_blocks_subchain(api::cnd::SyncBlocks::Request &req, Height *start_height) const {
 	if (req.sparse_chain.empty())
 		throw std::runtime_error("Empty sparse chain - must include at least 1 block (usually genesis)");
 	if (req.sparse_chain.back() == Hash{})  // We allow to ask for "whatever genesis bid. Useful for explorer, etc."
 		req.sparse_chain.back() = m_block_chain.get_genesis_bid();
 	if (req.max_count > m_config.rpc_sync_blocks_max_count)
 		req.max_count = m_config.rpc_sync_blocks_max_count;
+	if (req.max_size > m_config.rpc_sync_blocks_max_size)
+		req.max_size = m_config.rpc_sync_blocks_max_size;
 	auto first_block_timestamp = req.first_block_timestamp < m_block_chain.get_currency().block_future_time_limit
 	                                 ? 0
 	                                 : req.first_block_timestamp - m_block_chain.get_currency().block_future_time_limit;
 	Height full_offset = m_block_chain.get_timestamp_lower_bound_height(first_block_timestamp);
-	Height start_height;
+	// We need range of blocks to cover req.timestamp, otherwise wallet cannot be sure it got the whole chain
+	if (full_offset != 0)
+		full_offset -= 1;
 	std::vector<Hash> subchain =
-	    m_block_chain.get_sync_headers_chain(req.sparse_chain, &start_height, req.max_count + 1);
+	    m_block_chain.get_sync_headers_chain(req.sparse_chain, start_height, req.max_count + 1);
 	// Will throw if no common subchain
-	if (!subchain.empty() && start_height != 0) {
+	if (!subchain.empty() && *start_height != 0) {
 		subchain.erase(subchain.begin());  // Caller never needs common block she already has
-		start_height += 1;                 // Except if genesis (caller knows hash, but has no block)
+		*start_height += 1;                // Except if genesis (caller knows hash, but has no block)
 	} else if (subchain.size() > req.max_count) {
 		subchain.pop_back();
 	}
-	if (full_offset >= start_height + subchain.size()) {
-		start_height = full_offset;
+	if (full_offset >= *start_height + subchain.size()) {
+		*start_height = full_offset;
 		subchain.clear();
 		while (subchain.size() < req.max_count) {
 			Hash ha;
-			if (!m_block_chain.get_chain(start_height + static_cast<Height>(subchain.size()), &ha))
+			if (!m_block_chain.get_chain(*start_height + static_cast<Height>(subchain.size()), &ha))
 				break;
 			subchain.push_back(ha);
 		}
-	} else if (full_offset > start_height) {
-		subchain.erase(subchain.begin(), subchain.begin() + (full_offset - start_height));
-		start_height = full_offset;
+	} else if (full_offset > *start_height) {
+		subchain.erase(subchain.begin(), subchain.begin() + (full_offset - *start_height));
+		*start_height = full_offset;
 	}
+	return subchain;
+}
 
-	res.start_height = start_height;
+bool Node::on_sync_blocks(http::Client *, http::RequestBody &&http_request, json_rpc::Request &&json_req,
+    api::cnd::SyncBlocks::Request &&req, api::cnd::SyncBlocks::Response &res) {
+	const bool is_binary = http_request.r.http_version_major == 0;
+	if ((!is_binary || req.need_redundant_data) &&
+	    !m_config.good_bytecoind_auth_private(http_request.r.basic_authorization))
+		throw http::ErrorAuthorization("authorization-private");  // slow variants are private
+	std::vector<Hash> subchain = fill_sync_blocks_subchain(req, &res.start_height);
 	res.blocks.resize(subchain.size());
 	size_t total_size = 0;
 	for (size_t i = 0; i != subchain.size(); ++i) {
@@ -471,40 +475,35 @@ bool Node::on_sync_blocks(http::Client *, http::RequestBody &&, json_rpc::Reques
 		invariant(
 		    m_block_chain.get_header(bhash, &res_block.header), "Block header must be there, but it is not there");
 
-		//		BlockChainState::BlockGlobalIndices output_indexes;
-		// if (res.blocks[i].header.timestamp >= req.first_block_timestamp) //
-		// commented out becuase empty Block cannot be serialized
-		{
-			RawBlock rb;
-			invariant(m_block_chain.get_block(bhash, &rb), "Block must be there, but it is not there");
-			Block block(rb);
-			res_block.transactions.resize(block.transactions.size() + 1);
-			res_block.transactions.at(0).hash = get_transaction_hash(block.header.base_transaction);
-			res_block.transactions.at(0).size = seria::binary_size(block.header.base_transaction);
-			if (req.need_redundant_data) {
-				fill_transaction_info(block.header.base_transaction, &res_block.transactions.at(0), nullptr);
-				res_block.transactions.at(0).block_height = start_height + static_cast<Height>(i);
-				res_block.transactions.at(0).block_hash   = bhash;
-				res_block.transactions.at(0).coinbase     = true;
-				res_block.transactions.at(0).timestamp    = block.header.timestamp;
-			}
-			res_block.raw_header = std::move(block.header);
-			res_block.raw_transactions.reserve(block.transactions.size());
-			for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
-				res_block.transactions.at(tx_index + 1).hash = res_block.raw_header.transaction_hashes.at(tx_index);
-				res_block.transactions.at(tx_index + 1).size = rb.transactions.at(tx_index).size();
-				if (req.need_redundant_data) {
-					fill_transaction_info(
-					    block.transactions.at(tx_index), &res_block.transactions.at(tx_index + 1), nullptr);
-					res_block.transactions.at(tx_index + 1).block_height = start_height + static_cast<Height>(i);
-					res_block.transactions.at(tx_index + 1).block_hash   = bhash;
-					res_block.transactions.at(tx_index + 1).timestamp    = res_block.raw_header.timestamp;
-				}
-				res_block.raw_transactions.push_back(std::move(block.transactions.at(tx_index)));
-			}
-			invariant(m_block_chain.read_block_output_global_indices(bhash, &res_block.output_stack_indexes),
-			    "Invariant dead - bid is in chain but blockchain has no block indices");
+		RawBlock rb;
+		invariant(m_block_chain.get_block(bhash, &rb), "Block must be there, but it is not there");
+		Block block(rb);
+		res_block.transactions.resize(block.transactions.size() + 1);
+		res_block.transactions.at(0).hash = get_transaction_hash(block.header.base_transaction);
+		res_block.transactions.at(0).size = seria::binary_size(block.header.base_transaction);
+		if (req.need_redundant_data) {
+			fill_transaction_info(block.header.base_transaction, &res_block.transactions.at(0), nullptr);
+			res_block.transactions.at(0).block_height = res_block.header.height;
+			res_block.transactions.at(0).block_hash   = bhash;
+			res_block.transactions.at(0).coinbase     = true;
+			res_block.transactions.at(0).timestamp    = res_block.header.timestamp;
 		}
+		res_block.raw_header = std::move(block.header);
+		res_block.raw_transactions.reserve(block.transactions.size());
+		for (size_t tx_index = 0; tx_index != block.transactions.size(); ++tx_index) {
+			res_block.transactions.at(tx_index + 1).hash = res_block.raw_header.transaction_hashes.at(tx_index);
+			res_block.transactions.at(tx_index + 1).size = rb.transactions.at(tx_index).size();
+			if (req.need_redundant_data) {
+				fill_transaction_info(
+				    block.transactions.at(tx_index), &res_block.transactions.at(tx_index + 1), nullptr);
+				res_block.transactions.at(tx_index + 1).block_height = res_block.header.height;
+				res_block.transactions.at(tx_index + 1).block_hash   = bhash;
+				res_block.transactions.at(tx_index + 1).timestamp    = res_block.raw_header.timestamp;
+			}
+			res_block.raw_transactions.push_back(std::move(block.transactions.at(tx_index)));
+		}
+		invariant(m_block_chain.read_block_output_global_indices(bhash, &res_block.output_stack_indexes),
+		    "Invariant dead - bid is in chain but blockchain has no block indices");
 		total_size += res_block.header.transactions_size;
 		if (total_size >= req.max_size) {
 			res.blocks.resize(i + 1);
@@ -515,8 +514,29 @@ bool Node::on_sync_blocks(http::Client *, http::RequestBody &&, json_rpc::Reques
 	return true;
 }
 
-bool Node::on_sync_mempool(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+bool Node::on_sync_blocks_bin(http::Client *, http::RequestBody &&http_request, json_rpc::Request &&json_req,
+    api::cnd::SyncBlocks::Request &&req, api::cnd::SyncBlocks::ResponseCompact &res) {
+	Height start_height        = 0;
+	std::vector<Hash> subchain = fill_sync_blocks_subchain(req, &start_height);
+
+	res.blocks.reserve(req.max_count);
+	size_t total_size = 0;
+	for (const auto &bid : subchain) {
+		res.blocks.push_back(m_block_chain.fill_sync_block_compact(bid));
+		total_size += res.blocks.back().header.transactions_size;  // Approximate, ok for our purpose
+		if (total_size >= req.max_size)
+			break;
+	}
+	res.status = create_status_response();
+	return true;
+}
+
+bool Node::on_sync_mempool(http::Client *, http::RequestBody &&http_request, json_rpc::Request &&,
     api::cnd::SyncMemPool::Request &&req, api::cnd::SyncMemPool::Response &res) {
+	const bool is_binary = http_request.r.http_version_major == 0;
+	if ((!is_binary || req.need_redundant_data) &&
+	    !m_config.good_bytecoind_auth_private(http_request.r.basic_authorization))
+		throw http::ErrorAuthorization("authorization-private");  // slow variants are private
 	const auto &pool = m_block_chain.get_memory_state_transactions();
 	for (auto &&ex : req.known_hashes)
 		if (pool.count(ex) == 0)
@@ -539,18 +559,19 @@ bool Node::on_sync_mempool(http::Client *, http::RequestBody &&, json_rpc::Reque
 
 bool Node::on_get_block_header(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::cnd::GetBlockHeader::Request &&request, api::cnd::GetBlockHeader::Response &response) {
-	if (request.hash != Hash{} && request.height_or_depth != std::numeric_limits<api::HeightOrDepth>::max())
-		throw json_rpc::Error(
-		    json_rpc::INVALID_REQUEST, "You cannot specify both hash and height_or_depth to this method");
-	if (request.hash != Hash{}) {
-		if (!m_block_chain.get_header(request.hash, &response.block_header))
-			throw api::ErrorHashNotFound("Block not found in either main or side chains", request.hash);
+	if (!request.hash && !request.height_or_depth)
+		throw json_rpc::Error(json_rpc::INVALID_REQUEST, "You must set either 'hash' or 'height_or_depth'");
+	if (request.hash && request.height_or_depth)
+		throw json_rpc::Error(json_rpc::INVALID_REQUEST, "You cannot set both 'hash' and 'height_or_depth'");
+	if (request.hash) {
+		if (!m_block_chain.get_header(request.hash.get(), &response.block_header))
+			throw api::ErrorHashNotFound("Block not found in either main or side chains", request.hash.get());
 	} else {
 		Height height_or_depth = api::ErrorWrongHeight::fix_height_or_depth(
-		    request.height_or_depth, m_block_chain.get_tip_height(), true, true);
-		invariant(
-		    m_block_chain.get_chain(height_or_depth, &request.hash), "");  // after fix_height it must always succeed
-		invariant(m_block_chain.get_header(request.hash, &response.block_header), "");
+		    request.height_or_depth.get(), m_block_chain.get_tip_height(), true, true);
+		Hash hash;
+		invariant(m_block_chain.get_chain(height_or_depth, &hash), "");  // after fix_height it must always succeed
+		invariant(m_block_chain.get_header(hash, &response.block_header), "");
 	}
 	response.orphan_status = !m_block_chain.in_chain(response.block_header.height, response.block_header.hash);
 	response.depth =
@@ -559,21 +580,22 @@ bool Node::on_get_block_header(http::Client *, http::RequestBody &&, json_rpc::R
 }
 bool Node::on_get_raw_block(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::cnd::GetRawBlock::Request &&request, api::cnd::GetRawBlock::Response &response) {
-	if (request.hash != Hash{} && request.height_or_depth != std::numeric_limits<api::HeightOrDepth>::max())
-		throw json_rpc::Error(
-		    json_rpc::INVALID_REQUEST, "You cannot specify both hash and height_or_depth to this method");
-	if (request.hash != Hash{}) {
-		if (!m_block_chain.get_header(request.hash, &response.block.header))
-			throw api::ErrorHashNotFound("Block not found in either main or side chains", request.hash);
+	if (!request.hash && !request.height_or_depth)
+		throw json_rpc::Error(json_rpc::INVALID_REQUEST, "You must set either 'hash' or 'height_or_depth'");
+	if (request.hash && request.height_or_depth)
+		throw json_rpc::Error(json_rpc::INVALID_REQUEST, "You cannot set both 'hash' and 'height_or_depth'");
+	if (request.hash) {
+		if (!m_block_chain.get_header(request.hash.get(), &response.block.header))
+			throw api::ErrorHashNotFound("Block not found in either main or side chains", request.hash.get());
 	} else {
 		Height height_or_depth = api::ErrorWrongHeight::fix_height_or_depth(
-		    request.height_or_depth, m_block_chain.get_tip_height(), true, true);
-		invariant(
-		    m_block_chain.get_chain(height_or_depth, &request.hash), "");  // after fix_height it must always succeed
-		invariant(m_block_chain.get_header(request.hash, &response.block.header), "");
+		    request.height_or_depth.get(), m_block_chain.get_tip_height(), true, true);
+		Hash hash;
+		invariant(m_block_chain.get_chain(height_or_depth, &hash), "");  // after fix_height it must always succeed
+		invariant(m_block_chain.get_header(hash, &response.block.header), "");
 	}
 	RawBlock rb;
-	invariant(m_block_chain.get_block(request.hash, &rb), "Block must be there, but it is not there");
+	invariant(m_block_chain.get_block(response.block.header.hash, &rb), "Block must be there, but it is not there");
 	Block block(rb);
 
 	api::RawBlock &b = response.block;
@@ -596,7 +618,7 @@ bool Node::on_get_raw_block(http::Client *, http::RequestBody &&, json_rpc::Requ
 		b.transactions.at(tx_index + 1).timestamp    = b.raw_header.timestamp;
 		b.raw_transactions.push_back(std::move(block.transactions.at(tx_index)));
 	}
-	m_block_chain.read_block_output_global_indices(request.hash, &b.output_stack_indexes);
+	m_block_chain.read_block_output_global_indices(response.block.header.hash, &b.output_stack_indexes);
 	// If block not in main chain - global indices will be empty
 	response.orphan_status = !m_block_chain.in_chain(b.header.height, b.header.hash);
 	response.depth = api::HeightOrDepth(b.header.height) - api::HeightOrDepth(m_block_chain.get_tip_height()) - 1;
@@ -706,7 +728,7 @@ void Node::check_sendproof(const SendproofLegacy &sp, api::cnd::CheckSendproof::
 		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION,
 		    "Transaction version too low to contain address of type other than simple");
 	auto &addr              = boost::get<AccountAddressLegacy>(address);
-	PublicKey tx_public_key = extra_get_transaction_public_key(tx.extra);
+	PublicKey tx_public_key = extra::get_transaction_public_key(tx.extra);
 	if (!crypto::check_sendproof(tx_public_key, addr.V, sp.derivation, message_hash, sp.signature)) {
 		throw api::cnd::CheckSendproof::Error(
 		    api::cnd::CheckSendproof::WRONG_SIGNATURE, "Proof object does not match transaction or was tampered with");
@@ -821,8 +843,9 @@ void Node::check_sendproof(const BinaryArray &data_inside_base58, api::cnd::Chec
 			continue;
 		const auto &el = sp.elements.back();
 		AccountAddress output_address;
+		PublicKey output_shared_secret;
 		if (!TransactionBuilder::detect_not_our_output_amethyst(
-		        tx_inputs_hash, el.output_seed, out_index, key_output, &output_address)) {
+		        tx_inputs_hash, el.output_seed, out_index, key_output, &output_address, &output_shared_secret)) {
 			throw api::cnd::CheckSendproof::Error(
 			    api::cnd::CheckSendproof::ADDRESS_NOT_IN_TRANSACTION, "Cannot underive address for proof output");
 		}
@@ -903,8 +926,10 @@ void Node::submit_block(const BinaryArray &blockblob, api::BlockHeader *info) {
 	advance_long_poll();
 }
 
-bool Node::on_submitblock(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+bool Node::on_submitblock(http::Client *, http::RequestBody &&http_request, json_rpc::Request &&,
     api::cnd::SubmitBlock::Request &&req, api::cnd::SubmitBlock::Response &res) {
+	if (!m_config.good_bytecoind_auth_private(http_request.r.basic_authorization))
+		throw http::ErrorAuthorization("authorization-private");
 	if (!req.cm_nonce.empty()) {
 #if bytecoin_ALLOW_CM
 		// Experimental, a bit hacky
@@ -915,7 +940,7 @@ bool Node::on_submitblock(http::Client *, http::RequestBody &&, json_rpc::Reques
 		bt.cm_merkle_branch    = req.cm_merkle_branch;
 		req.blocktemplate_blob = seria::to_binary(bt);
 		//		auto body_proxy = get_body_proxy_from_template(bt);
-		//		auto cm_prehash  = get_auxiliary_block_header_hash(bt, body_proxy);
+		//		auto cm_prehash  = get_block_header_prehash(bt, body_proxy);
 		//		std::cout << "submit CM data " << body_proxy.transactions_merkle_root << " " << cm_prehash << std::endl;
 #else
 		throw json_rpc::Error{

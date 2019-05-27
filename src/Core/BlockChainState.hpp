@@ -47,6 +47,8 @@ public:
 	    Timestamp block_timestamp, Timestamp block_median_timestamp) const;
 	typedef std::vector<std::vector<size_t>> BlockGlobalIndices;
 	bool read_block_output_global_indices(const Hash &bid, BlockGlobalIndices *) const;
+	bool read_block_output_global_indices_data(const Hash &bid, BinaryArray *) const;
+	api::cnd::SyncBlocks::RawBlockCompact fill_sync_block_compact(const Hash &bid) const;
 
 	Amount minimum_pool_fee_per_byte(bool zero_if_not_full, Hash *minimal_tid = nullptr) const;
 	bool add_transaction(const Hash &tid, const Transaction &, const BinaryArray &binary_tx, bool check_sigs,
@@ -74,8 +76,6 @@ public:
 	void create_mining_block_template(const Hash &, const AccountAddress &, const BinaryArray &extra_nonce,
 	    const Hash &miner_secret, BlockTemplate *, Difficulty *, Height *, size_t *) const;
 	bool add_mined_block(const BinaryArray &raw_block_template, RawBlock *, api::BlockHeader *);
-
-	static api::BlockHeader fill_genesis(Hash genesis_bid, const BlockTemplate &);
 
 	void dump_outputs_quality(size_t max_count) const;
 

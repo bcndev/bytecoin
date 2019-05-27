@@ -3,8 +3,12 @@
 // details.
 
 #include "Core/Wallet.hpp"
+#include "Core/WalletHD.hpp"
+#include "Core/WalletLegacy.hpp"
+#include "common/BIPs.hpp"
 #include "crypto/crypto.hpp"
 #include "logging/ConsoleLogger.hpp"
+#include "platform/DBmemory.hpp"
 #include "platform/PathTools.hpp"
 
 #include "test_wallet_file.hpp"
@@ -63,7 +67,7 @@ const std::string tmp_name("../tests/scratchpad/test_wallet_file.tmp");
 static void test_body(const Currency &currency, const std::string &path, const std::string &password,
     const std::vector<std::string> &addresses, bool view_only, bool test_create_addresses) {
 	logging::ConsoleLogger logger;
-	WalletContainerStorage wallet(currency, logger, tmp_name, password);
+	WalletLegacy wallet(currency, logger, tmp_name, password);
 	if (wallet.is_view_only() != view_only)
 		throw std::runtime_error("view_only test failed for " + path);
 	auto records = wallet.test_get_records();
@@ -130,7 +134,7 @@ static void test_single_file(const Currency &currency, const std::string &path, 
 	{
 		platform::FileStream fs(tmp_name, platform::O_READ_EXISTING);
 		auto si = fs.seek(0, SEEK_END);
-		if (si != WalletContainerStorage::wallet_file_size(addresses.size()))
+		if (si != WalletLegacy::wallet_file_size(addresses.size()))
 			throw std::runtime_error("truncated/overwritten wallet size wrong " + path);
 	}
 	test_body(currency, tmp_name, password, addresses, view_only, true);
@@ -138,7 +142,15 @@ static void test_single_file(const Currency &currency, const std::string &path, 
 }
 
 void test_wallet_file(const std::string &path_prefix) {
+	platform::DBmemory::run_tests();
+
 	Currency currency("main");
+
+	logging::ConsoleLogger logger;
+	WalletHDJson wa(currency, logger, cn::Bip32Key::create_random_bip39_mnemonic(128), 0, std::string{});
+	const auto da = wa.save_json_data();
+	WalletHDJson wa2(currency, logger, da);
+	invariant(wa.get_first_address() == wa2.get_first_address(), "");
 
 	test_single_file(currency, path_prefix + "/test01.simplewallet.wallet", "",
 	    {"24xTx43fFtNBUn5f6Fj1wC7y8JsbD4N1XS2s3Q8HzWxtfvERccTPX6e5ua"

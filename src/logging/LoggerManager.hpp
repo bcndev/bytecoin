@@ -5,7 +5,6 @@
 
 #include <memory>
 #include <vector>
-//#include <mutex>
 #include "LoggerGroup.hpp"
 #include "LoggerMessage.hpp"
 

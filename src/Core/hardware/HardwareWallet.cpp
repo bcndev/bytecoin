@@ -5,13 +5,16 @@
 #include <ctime>
 #include <iostream>
 #include "CryptoNote.hpp"
-#include "Emulator.hpp"
-#include "Ledger.hpp"
-#include "Trezor.hpp"
 #include "common/Invariant.hpp"
 #include "common/exception.hpp"
 #include "crypto/bernstein/crypto-ops.h"
 #include "crypto/crypto_helpers.hpp"
+
+#ifndef __EMSCRIPTEN__
+#include "Emulator.hpp"
+#include "Ledger.hpp"
+#include "Trezor.hpp"
+#endif
 
 using namespace cn::hardware;
 using namespace crypto;
@@ -20,15 +23,15 @@ using namespace common;
 std::vector<std::unique_ptr<HardwareWallet>> HardwareWallet::get_connected() {
 	std::vector<std::unique_ptr<HardwareWallet>> result;
 
+#ifndef __EMSCRIPTEN__
 	Trezor::add_connected(&result);
-#if cn_WITH_LEDGER
 	Ledger::add_connected(&result);
-#endif
 	if (!result.empty())
 		std::cout << "Connected hardware wallets" << std::endl;
 	for (auto &&r : result) {
 		std::cout << "\t" << r->get_hardware_type() << std::endl;
 	}
+#endif
 	return result;
 }
 

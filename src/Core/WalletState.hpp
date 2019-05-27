@@ -8,12 +8,8 @@
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index_container.hpp>
-#include "BlockChainState.hpp"
-#include "CryptoNote.hpp"
-#include "Multicore.hpp"
-#include "Wallet.hpp"
+#include <chrono>
 #include "WalletStateBasic.hpp"
-#include "platform/DB.hpp"
 
 namespace cn {
 
@@ -56,13 +52,16 @@ class WalletState : public WalletStateBasic {
 	};
 
 public:
-	explicit WalletState(Wallet &, logging::ILogger &, const Config &, const Currency &);
+	explicit WalletState(Wallet &, logging::ILogger &, const Config &, const Currency &, DB &db);
 
 	const Wallet &get_wallet() const { return m_wallet; }
 	Wallet &get_wallet() { return m_wallet; }
 
-	void sync_with_blockchain(std::vector<api::RawBlock> &&blocks);
-	bool sync_with_blockchain(api::cnd::SyncMemPool::Response &);  // We move from it
+	bool sync_with_blockchain(const std::vector<Hash> &removed_hashes);
+	bool sync_with_blockchain(const PreparedWalletBlock &pb, Height top_known_block_height);
+	bool sync_with_blockchain(const PreparedWalletTransaction &pwtx);
+	bool sync_with_blockchain_finished();
+	void fix_payment_queue_after_undo_redo();
 
 	std::vector<api::Output> api_get_locked_or_unconfirmed_unspent(
 	    const std::string &address, Height confirmed_height) const override;
@@ -92,12 +91,9 @@ public:
 	    const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now, std::vector<AccountAddress> *addresses);
 	void create_addresses(size_t count);
 
-	bool on_idle(Height top_known_block_height);
-	WalletPreparatorMulticore &get_preparator() { return preparator; }
-
 protected:
 	bool redo_block(
-	    const PreparedWalletBlock &block, const BlockChainState::BlockGlobalIndices &global_indices, Height height);
+	    const PreparedWalletBlock &block, const std::vector<std::vector<size_t>> &global_indices, Height height);
 
 	bool parse_raw_transaction(bool is_base, api::Transaction *ptx, std::vector<api::Transfer> *input_transfers,
 	    std::vector<api::Transfer> *output_transfers, Amount *output_amount, const PreparedWalletTransaction &pwtx,
@@ -127,9 +123,6 @@ private:
 	DeltaState m_memory_state;
 	std::set<Hash> m_pool_hashes;
 
-	bool sync_with_blockchain(const PreparedWalletBlock &pb, Height top_known_block_height);
-	bool sync_with_blockchain(const PreparedWalletTransaction &pwtx);
-
 	void add_transaction_to_mempool(Hash tid, const PreparedWalletTransaction &pwtx, bool from_pq);
 	void remove_transaction_from_mempool(Hash tid, bool from_pq);
 
@@ -146,10 +139,7 @@ private:
 	            boost::multi_index::member<QueueEntry, Height, &QueueEntry::remove_height>>>>
 	    PaymentQueue;
 	PaymentQueue payment_queue;
-	void fix_payment_queue_after_undo_redo();
 	const QueueEntry *find_in_payment_queue(const Hash &hash);
-
-	WalletPreparatorMulticore preparator;
 };
 
 }  // namespace cn

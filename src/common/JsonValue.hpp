@@ -29,11 +29,9 @@ public:
 	enum Type {
 		ARRAY,
 		BOOL,
-		SIGNED_INTEGER,
-		UNSIGNED_INTEGER,
+		NUMBER,
 		NIL,
 		OBJECT,
-		DOUBLE,
 		STRING
 	};  // We preserve semantic of very large 64-bit values by splitting into signed/unsigned
 
@@ -67,10 +65,12 @@ public:
 	JsonValue &operator=(Bool value);
 	JsonValue &operator=(Integer value);
 	JsonValue &operator=(Unsigned value);
+	JsonValue &operator=(Double value);
+	JsonValue &set_number(const std::string &number);  // for bigints, etc
+	JsonValue &set_number(std::string &&number);       // for bigints, etc
 	JsonValue &operator=(std::nullptr_t value);
 	JsonValue &operator=(const Object &value);
 	JsonValue &operator=(Object &&value);
-	JsonValue &operator=(Double value);
 	JsonValue &operator=(const String &value);
 	JsonValue &operator=(String &&value);
 	template<size_t size>
@@ -87,10 +87,9 @@ public:
 
 	bool is_array() const { return type == ARRAY; }
 	bool is_bool() const { return type == BOOL; }
-	bool is_integer() const { return type == SIGNED_INTEGER || type == UNSIGNED_INTEGER; }
+	bool is_number() const { return type == NUMBER; }
 	bool is_nil() const { return type == NIL; }
 	bool is_object() const { return type == OBJECT; }
-	bool is_double() const { return type == DOUBLE; }
 	bool is_string() const { return type == STRING; }
 
 	//	Type get_type() const { return type; }
@@ -99,9 +98,11 @@ public:
 	Bool get_bool() const;
 	Integer get_integer() const;
 	Unsigned get_unsigned() const;
+	Double get_double() const;
+	std::string &get_number();
+	const std::string &get_number() const;
 	Object &get_object();
 	const Object &get_object() const;
-	Double get_double() const;
 	String &get_string();
 	const String &get_string() const;
 
@@ -136,11 +137,9 @@ private:
 	union {
 		typename std::aligned_storage<sizeof(Array), alignof(Array)>::type value_array;
 		Bool value_bool;
-		Integer value_integer;
-		Unsigned value_unsigned;
 		typename std::aligned_storage<sizeof(Object), alignof(Object)>::type value_object;
-		Double value_real;
 		typename std::aligned_storage<sizeof(std::string), alignof(std::string)>::type value_string;
+		// We reuse value_string for number
 	};
 
 	void destruct_value();

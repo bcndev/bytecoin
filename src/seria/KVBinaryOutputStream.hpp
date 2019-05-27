@@ -13,14 +13,14 @@ class KVBinaryOutputStream : public ISeria {
 public:
 	explicit KVBinaryOutputStream(common::IOutputStream &target);
 
-	void begin_object() override;
-	bool object_key(common::StringView name, bool optional) override;
+	bool begin_object() override;
+	void object_key(common::StringView name, bool optional) override;
 	void end_object() override;
 
-	void begin_array(size_t &size, bool fixed_size) override;
+	bool begin_array(size_t &size, bool fixed_size) override;
 	void end_array() override;
 
-	void begin_map(size_t &) override { begin_object(); }
+	bool begin_map(size_t &) override { return begin_object(); }
 	void next_map_key(std::string &name) override;
 	void end_map() override { end_object(); }
 

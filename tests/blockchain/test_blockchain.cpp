@@ -74,7 +74,7 @@ public:
 		while (true) {
 			common::uint_le_to_bytes(block.root_block.nonce, 4, nonce);
 			//			block.nonce    = block.root_block.nonce;
-			BinaryArray ba = currency.get_block_long_hashing_data(block, body_proxy);
+			BinaryArray ba = currency.get_block_pow_hashing_data(block, body_proxy);
 			Hash hash      = cryptoContext.cn_slow_hash(ba.data(), ba.size());
 			if (check_hash(hash, difficulty))
 				break;

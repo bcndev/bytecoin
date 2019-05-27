@@ -14,11 +14,10 @@ using namespace seria;
 
 JsonOutputStreamValue::JsonOutputStreamValue() : root(JsonValue::NIL) {}
 
-bool JsonOutputStreamValue::object_key(common::StringView name, bool optional) {
+void JsonOutputStreamValue::object_key(common::StringView name, bool optional) {
 	invariant(!m_next_key.data(), "");
 	m_next_key    = name;
 	next_optional = optional;
-	return true;
 }
 
 void JsonOutputStreamValue::next_map_key(std::string &name) {
@@ -26,15 +25,19 @@ void JsonOutputStreamValue::next_map_key(std::string &name) {
 	m_next_key = name;
 }
 
-void JsonOutputStreamValue::begin_object() { chain.push_back(insert_or_push(JsonValue(JsonValue::OBJECT), false)); }
+bool JsonOutputStreamValue::begin_object() {
+	chain.push_back(insert_or_push(JsonValue(JsonValue::OBJECT), false));
+	return true;
+}
 
 void JsonOutputStreamValue::end_object() {
 	invariant(!chain.empty(), "");
 	chain.pop_back();
 }
 
-void JsonOutputStreamValue::begin_array(size_t &size, bool fixed_size) {
+bool JsonOutputStreamValue::begin_array(size_t &size, bool fixed_size) {
 	chain.push_back(insert_or_push(JsonValue(JsonValue::ARRAY), size == 0));
+	return true;
 }
 
 void JsonOutputStreamValue::end_array() {
@@ -126,11 +129,10 @@ bool JsonOutputStreamText::append_prefix(const std::string &value, bool skip_if_
 	return true;
 }
 
-bool JsonOutputStreamText::object_key(common::StringView name, bool optional) {
+void JsonOutputStreamText::object_key(common::StringView name, bool optional) {
 	invariant(!m_next_key.data(), "");
 	m_next_key    = name;
 	next_optional = optional;
-	return true;
 }
 
 void JsonOutputStreamText::next_map_key(std::string &name) {
@@ -138,10 +140,11 @@ void JsonOutputStreamText::next_map_key(std::string &name) {
 	m_next_key = name;
 }
 
-void JsonOutputStreamText::begin_object() {
+bool JsonOutputStreamText::begin_object() {
 	if (!append_prefix("{", false))
-		return;
+		return true;
 	chain.push_back(std::make_pair(JsonValue::OBJECT, 0));
+	return true;
 }
 
 void JsonOutputStreamText::end_object() {
@@ -150,13 +153,14 @@ void JsonOutputStreamText::end_object() {
 	chain.pop_back();
 }
 
-void JsonOutputStreamText::begin_array(size_t &size, bool fixed_size) {
+bool JsonOutputStreamText::begin_array(size_t &size, bool fixed_size) {
 	if (!append_prefix(std::string(), size == 0)) {
 		chain.push_back(std::make_pair(JsonValue::NIL, 0));  // NIL to mark empty optional array
-		return;
+		return true;
 	}
 	text += "[";
 	chain.push_back(std::make_pair(JsonValue::ARRAY, 0));
+	return true;
 }
 
 void JsonOutputStreamText::end_array() {
@@ -178,7 +182,7 @@ bool JsonOutputStreamText::seria_v(int64_t &value) {
 
 bool JsonOutputStreamText::seria_v(std::string &value) {
 	if (!append_prefix("\"", value.empty()))
-		return false;
+		return true;
 	text += JsonValue::escape_string(value);
 	text += "\"";
 	return true;
@@ -198,7 +202,7 @@ bool JsonOutputStreamText::binary(void *value, size_t size) {
 	std::string hex = common::to_hex(value, size);
 	bool all_zeroes = hex.find_first_not_of('0') == std::string::npos;
 	if (!append_prefix("\"", all_zeroes))
-		return false;
+		return true;
 	text += all_zeroes ? std::string() : hex;
 	text += "\"";
 	return true;

@@ -292,12 +292,13 @@ void Emulator::add_output_or_change(uint64_t amount, uint8_t dst_address_tag, Pu
 	uint8_t output_tag = cn::OutputKey::type_tag;
 
 	*encrypted_address_type = dst_address_tag ^ output_secret_address_type;
+	PublicKey output_shared_secret;  // TODO - return from fun
 	if (dst_address_tag == cn::AccountAddressLegacy::type_tag) {
 		*public_key = linkable_derive_output_public_key(output_secret_scalar, sign.tx_inputs_hash, sign.outputs_counter,
-		    dst_address_s, dst_address_s_v, encrypted_secret);
+		    dst_address_s, dst_address_s_v, encrypted_secret, &output_shared_secret);
 	} else {
 		*public_key = unlinkable_derive_output_public_key(output_secret_point, sign.tx_inputs_hash,
-		    sign.outputs_counter, dst_address_s, dst_address_s_v, encrypted_secret);
+		    sign.outputs_counter, dst_address_s, dst_address_s_v, encrypted_secret, &output_shared_secret);
 	}
 
 	sign.tx_prefix_stream.append_byte(output_tag);

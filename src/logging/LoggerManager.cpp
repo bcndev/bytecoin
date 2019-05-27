@@ -2,7 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "LoggerManager.hpp"
-#include <thread>
+//#include <thread>
 #include "ConsoleLogger.hpp"
 #include "FileLogger.hpp"
 #include "platform/PathTools.hpp"

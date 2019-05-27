@@ -51,6 +51,8 @@ public:
 
 	std::string bytecoind_authorization;
 	std::string bytecoind_authorization_private;
+	bool good_bytecoind_auth(const std::string &auth) const;
+	bool good_bytecoind_auth_private(const std::string &auth) const;
 	uint16_t bytecoind_bind_port;
 	std::string bytecoind_bind_ip;
 	uint16_t bytecoind_remote_port = 0;
@@ -93,6 +95,7 @@ public:
 	Timestamp p2p_no_outgoing_message_ping_timeout         = 60 * 4;
 
 	size_t rpc_sync_blocks_max_count;
+	size_t rpc_sync_blocks_max_size;
 
 	Height p2p_outgoing_peer_max_lag = 5;
 	// if peer we are connected to is/starts lagging by 5 blocks or more, we will
@@ -111,7 +114,6 @@ public:
 
 	Timestamp wallet_sync_timestamp_granularity = 86400 * 30;
 	// Sending exact timestamp of wallet to public node allows tracking
-	size_t wallet_sync_request_max_size      = 1024 * 1024;
 	size_t wallet_sync_preparator_queue_size = 10 * 1024 * 1024;
 
 	std::vector<NetworkAddress> seed_nodes;

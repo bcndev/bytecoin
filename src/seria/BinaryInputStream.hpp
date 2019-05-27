@@ -13,15 +13,15 @@ class BinaryInputStream : public ISeria {
 public:
 	explicit BinaryInputStream(common::IInputStream &strm) : ISeria(true), stream(strm) {}
 
-	void begin_object() override {}
-	bool object_key(common::StringView, bool optional) override { return true; }
+	bool begin_object() override { return true; }
+	void object_key(common::StringView, bool optional) override {}
 	void end_object() override {}
 
-	void begin_map(size_t &size) override;
+	bool begin_map(size_t &size) override;
 	void next_map_key(std::string &name) override;
 	void end_map() override {}
 
-	void begin_array(size_t &size, bool fixed_size) override;
+	bool begin_array(size_t &size, bool fixed_size) override;
 	void end_array() override {}
 
 	bool seria_v(int64_t &value) override;

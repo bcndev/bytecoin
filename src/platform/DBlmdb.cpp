@@ -78,18 +78,34 @@ platform::lmdb::Cur::~Cur() {
 	handle = nullptr;
 }
 
-DBlmdb::DBlmdb(OpenMode open_mode, const std::string &full_path, uint64_t max_db_size)
-    : full_path(full_path), db_env(open_mode == O_READ_EXISTING) {
+DBlmdb::DBlmdb(OpenMode open_mode, const std::string &full_path, uint64_t max_tx_size)
+    : full_path(full_path), db_env(open_mode == O_READ_EXISTING), max_tx_size(max_tx_size) {
 	//	std::cout << "lmdb libversion=" << mdb_version(nullptr, nullptr, nullptr) << std::endl;
-	lmdb_check(::mdb_env_set_mapsize(db_env.handle, max_db_size), "mdb_env_set_mapsize ");
-	// VALGRIND is limited to 32GB, modify line above to use (max_db_size > 28000000000 ? 28000000000 : max_db_size)
 	create_folders_if_necessary(full_path);
-	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(),
+	lmdb_check(::mdb_env_open(db_env.handle, platform::expand_path(full_path).c_str(),
 	               MDB_NOMETASYNC | (open_mode == O_READ_EXISTING ? MDB_RDONLY : 0), 0644),
 	    "Failed to open database " + full_path + " in mdb_env_open ");
 	// MDB_NOMETASYNC - We agree to trade chance of losing 1 last transaction for 2x performance boost
-	db_txn = std::make_unique<lmdb::Txn>(db_env);
+	resize_and_begin_tx();
 	db_dbi = std::make_unique<lmdb::Dbi>(*db_txn);
+}
+
+void DBlmdb::resize_and_begin_tx() {
+	// VALGRIND is limited to 32GB, modify code appropriately
+
+	MDB_envinfo mei{};
+	lmdb_check(::mdb_env_info(db_env.handle, &mei), "mdb_env_info ");
+	MDB_stat sta{};
+	lmdb_check(::mdb_env_stat(db_env.handle, &sta), "mdb_env_stat ");
+	mdb_size_t size_used = sta.ms_psize * mei.me_last_pgno;
+	//	std::cout << "size_used=" << size_used << " mapsize=" << mei.me_mapsize << " max_tx_size=" << max_tx_size <<
+	// std::endl;
+	if (size_used + max_tx_size > mei.me_mapsize) {
+		lmdb_check(::mdb_env_set_mapsize(db_env.handle, mei.me_mapsize + max_tx_size), "mdb_env_set_mapsize");
+	} else if (mei.me_mapsize > size_used + max_tx_size * 10) {
+		lmdb_check(::mdb_env_set_mapsize(db_env.handle, size_used + max_tx_size * 2), "mdb_env_set_mapsize");
+	}
+	db_txn = std::make_unique<lmdb::Txn>(db_env);
 }
 
 size_t DBlmdb::test_get_approximate_size() const {
@@ -168,7 +184,7 @@ DBlmdb::Cursor DBlmdb::rbegin(const std::string &prefix, const std::string &midd
 void DBlmdb::commit_db_txn() {
 	db_txn->commit();
 	db_txn.reset();
-	db_txn = std::make_unique<lmdb::Txn>(db_env);
+	resize_and_begin_tx();
 }
 
 void DBlmdb::put(const std::string &key, const common::BinaryArray &value, bool nooverwrite) {
@@ -246,16 +262,17 @@ std::string DBlmdb::clean_key(const std::string &key) {
 }
 
 void DBlmdb::delete_db(const std::string &full_path) {
-	std::remove((full_path + "/data.mdb").c_str());
-	std::remove((full_path + "/lock.mdb").c_str());
-	std::remove(full_path.c_str());
+	auto ep = platform::expand_path(full_path);
+	std::remove((ep + "/data.mdb").c_str());
+	std::remove((ep + "/lock.mdb").c_str());
+	std::remove(ep.c_str());
 }
 
 void DBlmdb::backup_db(const std::string &full_path, const std::string &dst_path) {
 	lmdb::Env db_env(true);
-	lmdb_check(::mdb_env_open(db_env.handle, full_path.c_str(), MDB_RDONLY, 0600),
+	lmdb_check(::mdb_env_open(db_env.handle, platform::expand_path(full_path).c_str(), MDB_RDONLY, 0600),
 	    "Failed to open database " + full_path + " for doing backup");
-	lmdb_check(::mdb_env_copy2(db_env.handle, dst_path.c_str(), MDB_CP_COMPACT),
+	lmdb_check(::mdb_env_copy2(db_env.handle, platform::expand_path(dst_path).c_str(), MDB_CP_COMPACT),
 	    "Failed to backup database " + full_path + " into " + dst_path);
 }
 

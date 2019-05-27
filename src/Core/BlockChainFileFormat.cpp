@@ -261,9 +261,9 @@ bool LegacyBlockChainWriter::export_blockchain2(const std::string &index_file_na
 		if (ha % 10000 == 0)
 			std::cout << "Exporting block " << ha << "/" << block_chain.get_tip_height() << std::endl;
 		//		Block block(raw_block);
-		//		if(block.header.is_merge_mined() && block.header.root_block.base_transaction.version >= 2)
+		//		if(block.header.is_merge_mined() && block.header.root_block.coinbase_transaction.version >= 2)
 		//			std::cout << "Base transaction with strange version found, height=" << ha << " version=" <<
-		// block.header.root_block.base_transaction.version << std::endl;
+		// block.header.root_block.coinbase_transaction.version << std::endl;
 		//		for (auto &&tr : block.transactions) {
 		//			for (auto &&input : tr.inputs)
 		//				if (input.type() == typeid(InputKey)) {
