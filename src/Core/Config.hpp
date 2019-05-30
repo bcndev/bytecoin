@@ -51,6 +51,7 @@ public:
 
 	std::string bytecoind_authorization;
 	std::string bytecoind_authorization_private;
+	bool bytecoind_cors_asterisk = false;
 	bool good_bytecoind_auth(const std::string &auth) const;
 	bool good_bytecoind_auth_private(const std::string &auth) const;
 	uint16_t bytecoind_bind_port;

@@ -7,13 +7,16 @@
 #include "TransactionBuilder.hpp"
 #include "TransactionExtra.hpp"
 #include "common/Math.hpp"
-#include "http/Client.hpp"
 #include "http/Server.hpp"
 #include "platform/Time.hpp"
 #include "seria/BinaryInputStream.hpp"
 #include "seria/BinaryOutputStream.hpp"
 #include "seria/KVBinaryInputStream.hpp"
 #include "seria/KVBinaryOutputStream.hpp"
+
+#ifndef __EMSCRIPTEN__
+#include "Node.hpp"
+#endif
 
 using namespace cn;
 
@@ -52,8 +55,10 @@ bool WalletNode::on_api_http_request(http::Client *who, http::RequestBody &&requ
 		if (method_found)
 			return result;
 	}
+#ifndef __EMSCRIPTEN__
 	if (m_inproc_node)
 		return m_inproc_node->on_json_rpc(who, std::move(request), response);
+#endif
 	m_log(logging::INFO) << "http_request node tunneling url=" << request.r.uri
 	                     << " start of body=" << request.body.substr(0, 200);
 	http::RequestBody original_request;
@@ -68,7 +73,7 @@ bool WalletNode::on_api_http_request(http::Client *who, http::RequestBody &&requ
 		    send_response.r.http_version_minor = wc.original_request.r.http_version_minor;
 		    send_response.r.keep_alive         = wc.original_request.r.keep_alive;
 		    // bytecoind never sends connection-close, so we are safe to retain all headers
-		    wc.original_who->write(std::move(send_response));
+		    http::Server::write(wc.original_who, std::move(send_response));
 	    },
 	    [](const WaitingClient &wc, std::string err) {
 		    http::ResponseBody send_response;
@@ -76,7 +81,7 @@ bool WalletNode::on_api_http_request(http::Client *who, http::RequestBody &&requ
 		    send_response.r.http_version_minor = wc.original_request.r.http_version_minor;
 		    send_response.r.keep_alive         = wc.original_request.r.keep_alive;
 		    send_response.r.status             = 504;  // TODO -test this code path
-		    wc.original_who->write(std::move(send_response));
+		    http::Server::write(wc.original_who, std::move(send_response));
 	    });
 	return false;
 }
@@ -556,6 +561,7 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 	// We ask excess output for the case of collision with our output
 	// We ask minimum anonymity, though less than requested might be returned
 	ra_request.amounts = selector.get_ra_amounts();
+#ifndef __EMSCRIPTEN__
 	if (m_inproc_node) {
 		api::cnd::GetRandomOutputs::Response ra_response;
 		m_inproc_node->on_get_random_outputs(
@@ -585,7 +591,7 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 		response.transaction = ptx;
 		return true;
 	}
-
+#endif
 	http::RequestBody new_request =
 	    json_rpc::create_request(api::cnd::url(), api::cnd::GetRandomOutputs::method(), ra_request);
 	new_request.r.basic_authorization = m_config.bytecoind_authorization;
@@ -632,7 +638,7 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 			    last_response.transaction.size = last_response.binary_transaction.size();
 			    last_http_response.set_body(json_rpc::create_response_body(last_response, wc.original_jsonrpc_id));
 		    }
-		    wc.original_who->write(std::move(last_http_response));
+		    http::Server::write(wc.original_who, std::move(last_http_response));
 	    },
 	    [=](const WaitingClient &wc, std::string err) mutable {
 		    m_log(logging::INFO) << "got error to get_random_outputs from " CRYPTONOTE_NAME "d, " << err;
@@ -641,7 +647,7 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 		    last_http_response.r.status = 200;
 		    last_http_response.set_body(json_rpc::create_error_response_body(
 		        json_rpc::Error(json_rpc::INTERNAL_ERROR, err), wc.original_jsonrpc_id));
-		    wc.original_who->write(std::move(last_http_response));
+		    http::Server::write(wc.original_who, std::move(last_http_response));
 	    });
 	return false;
 }
@@ -692,7 +698,7 @@ bool WalletNode::on_create_sendproof(http::Client *who, http::RequestBody &&raw_
 		    last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 		    last_http_response.r.status = 200;
 		    last_http_response.set_body(json_rpc::create_response_body(last_response, wc.original_jsonrpc_id));
-		    wc.original_who->write(std::move(last_http_response));
+		    http::Server::write(wc.original_who, std::move(last_http_response));
 	    },
 	    [=](const WaitingClient &wc, std::string err) mutable {
 		    m_log(logging::INFO) << "got error to get_raw_transaction from " CRYPTONOTE_NAME "d, " << err;
@@ -701,7 +707,7 @@ bool WalletNode::on_create_sendproof(http::Client *who, http::RequestBody &&raw_
 		    last_http_response.r.status = 200;
 		    last_http_response.set_body(json_rpc::create_error_response_body(
 		        json_rpc::Error(json_rpc::INTERNAL_ERROR, err), wc.original_jsonrpc_id));
-		    wc.original_who->write(std::move(last_http_response));
+		    http::Server::write(wc.original_who, std::move(last_http_response));
 	    });
 	return false;
 }
@@ -711,11 +717,13 @@ bool WalletNode::on_send_transaction(http::Client *who, http::RequestBody &&raw_
     api::cnd::SendTransaction::Response &response) {
 	m_wallet_state.add_to_payment_queue(request.binary_transaction, true);
 	advance_long_poll();
+#ifndef __EMSCRIPTEN__
 	if (m_inproc_node) {
 		m_inproc_node->on_send_transaction(
 		    nullptr, std::move(raw_request), std::move(raw_js_request), std::move(request), response);
 		return true;
 	}
+#endif
 	http::RequestBody new_request;
 	new_request.set_body(std::move(raw_request.body));  // We save on copying body here
 	new_request.r.set_firstline("POST", api::cnd::url(), 1, 1);
@@ -726,7 +734,7 @@ bool WalletNode::on_send_transaction(http::Client *who, http::RequestBody &&raw_
 		    resp.r.http_version_major = wc2.original_request.r.http_version_major;
 		    resp.r.http_version_minor = wc2.original_request.r.http_version_minor;
 		    resp.r.keep_alive         = wc2.original_request.r.keep_alive;
-		    wc2.original_who->write(std::move(resp));
+		    http::Server::write(wc2.original_who, std::move(resp));
 	    },
 	    [](const WaitingClient &wc2, std::string err) {
 		    http::ResponseBody resp(wc2.original_request.r);
@@ -734,7 +742,7 @@ bool WalletNode::on_send_transaction(http::Client *who, http::RequestBody &&raw_
 		    resp.r.status = 200;
 		    resp.set_body(json_rpc::create_error_response_body(
 		        json_rpc::Error(json_rpc::INTERNAL_ERROR, err), wc2.original_jsonrpc_id));
-		    wc2.original_who->write(std::move(resp));
+		    http::Server::write(wc2.original_who, std::move(resp));
 	    });
 	return false;
 }
@@ -819,15 +827,18 @@ void WalletNode::advance_long_poll() {
 
 	for (auto lit = m_long_poll_http_clients.begin(); lit != m_long_poll_http_clients.end();)
 		if (resp.ready_for_longpoll(lit->original_get_status)) {
+			LongPollClient cli = std::move(*lit);
+			lit                = m_long_poll_http_clients.erase(lit);
+			// We erase first, because on some platforms on_api_http_disconnect will be called
+			// synchronously in Server::write, and will also attempt to erase from m_long_poll_http_clients
 			http::ResponseBody last_http_response;
 			last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 			last_http_response.r.status             = 200;
-			last_http_response.r.http_version_major = lit->original_request.r.http_version_major;
-			last_http_response.r.http_version_minor = lit->original_request.r.http_version_minor;
-			last_http_response.r.keep_alive         = lit->original_request.r.keep_alive;
-			last_http_response.set_body(json_rpc::create_response_body(resp, lit->original_jsonrpc_id));
-			lit->original_who->write(std::move(last_http_response));
-			lit = m_long_poll_http_clients.erase(lit);
+			last_http_response.r.http_version_major = cli.original_request.r.http_version_major;
+			last_http_response.r.http_version_minor = cli.original_request.r.http_version_minor;
+			last_http_response.r.keep_alive         = cli.original_request.r.keep_alive;
+			last_http_response.set_body(json_rpc::create_response_body(resp, cli.original_jsonrpc_id));
+			http::Server::write(cli.original_who, std::move(last_http_response));
 		} else
 			++lit;
 }

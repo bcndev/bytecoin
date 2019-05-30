@@ -84,7 +84,16 @@ int main(int argc, const char *argv[]) try {
 			return 1;
 		return 0;
 	}
-	if (const char *pa = cmd.get("--print-structure")) {  // Undocumented for now
+	if (const char *pa = cmd.get("--export-sync-blocks")) {  // Experimental, for public nodes
+		const auto export_sync_blocks = platform::normalize_folder(pa);
+		if (cmd.show_errors("cannot be used with --export-sync-blocks"))
+			return api::BYTECOIND_WRONG_ARGS;
+		logging::ConsoleLogger log_console;
+		BlockChainState block_chain_read_only(log_console, config, currency, true);
+		Node::export_static_sync_blocks(block_chain_read_only, export_sync_blocks);
+		return 0;
+	}
+	if (const char *pa = cmd.get("--print-structure")) {  // Undocumented, used for debugging
 		if (cmd.show_errors("cannot be used with --print-structure"))
 			return api::BYTECOIND_WRONG_ARGS;
 		logging::ConsoleLogger log_console;
@@ -92,7 +101,7 @@ int main(int argc, const char *argv[]) try {
 		block_chain_read_only.test_print_structure(common::integer_cast<Height>(pa));
 		return 0;
 	}
-	if (const char *pa = cmd.get("--dump-outputs-quality")) {  // Undocumented for now
+	if (const char *pa = cmd.get("--dump-outputs-quality")) {  // Undocumented, used for debugging
 		if (cmd.show_errors("cannot be used with --dump-outputs-quality"))
 			return api::BYTECOIND_WRONG_ARGS;
 		logging::ConsoleLogger log_console;

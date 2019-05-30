@@ -12,7 +12,6 @@
 #include "common/Base58.hpp"
 #include "common/JsonValue.hpp"
 #include "common/StringTools.hpp"
-#include "http/Client.hpp"
 #include "http/Server.hpp"
 #include "platform/PathTools.hpp"
 #include "platform/PreventSleep.hpp"
@@ -165,6 +164,7 @@ void Node::advance_long_poll() {
 		last_http_response.r.http_version_major = lit->original_request.r.http_version_major;
 		last_http_response.r.http_version_minor = lit->original_request.r.http_version_minor;
 		last_http_response.r.keep_alive         = lit->original_request.r.keep_alive;
+		fill_cors(lit->original_request, last_http_response);
 		if (method_status) {
 			last_http_response.set_body(json_rpc::create_response_body(resp, jid));
 		} else {
@@ -181,7 +181,7 @@ void Node::advance_long_poll() {
 				last_http_response.set_body(json_rpc::create_error_response_body(json_err, jid));
 			}
 		}
-		lit->original_who->write(std::move(last_http_response));
+		http::Server::write(lit->original_who, std::move(last_http_response));
 		lit = m_long_poll_http_clients.erase(lit);
 	}
 }
@@ -196,7 +196,26 @@ static const std::string beautiful_index_start =
 static const std::string beautiful_index_finish = " </td></tr></table></body></html>";
 static const std::string robots_txt             = "User-agent: *\r\nDisallow: /";
 
+void Node::fill_cors(const http::RequestBody & req, http::ResponseBody & res) {
+	if (req.r.origin.empty() || !m_config.bytecoind_cors_asterisk)
+		return;
+	res.r.headers.push_back({"Access-Control-Allow-Origin", "*"});
+	res.r.headers.push_back({"Access-Control-Allow-Methods", "GET, POST, OPTIONS"});
+	res.r.headers.push_back({"Access-Control-Allow-Headers",
+		"DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range"});
+	if (req.r.method == "OPTIONS")
+		return;
+	res.r.headers.push_back({"Access-Control-Expose-Headers", "Content-Length,Content-Range"});
+}
+
 bool Node::on_api_http_request(http::Client *who, http::RequestBody &&request, http::ResponseBody &response) {
+	fill_cors(request, response);
+	if (request.r.method == "OPTIONS") {
+		response.r.headers.push_back({"Content-Type", "text/plain"});
+		response.r.headers.push_back({"Access-Control-Max-Age", "172800"});  // 2 days
+		response.r.status = 200;
+		return true;
+	}
 	if (request.r.uri == "/robots.txt") {
 		response.r.add_headers_nocache();
 		response.r.headers.push_back({"Content-Type", "text/plain; charset=UTF-8"});
@@ -233,6 +252,40 @@ bool Node::on_api_http_request(http::Client *who, http::RequestBody &&request, h
 			return false;
 		response.r.status = 200;
 		return true;
+	}
+	// We emulate nginx here, will remove later
+	if (m_config.bytecoind_cors_asterisk && common::starts_with(request.r.uri, api::cnd::SyncBlocks::url_prefix())) {
+		Height height = 0;
+		if (api::cnd::SyncBlocks::parse_filename(
+		        request.r.uri.substr(api::cnd::SyncBlocks::url_prefix().size()), &height)) {
+			if (height > m_block_chain.get_currency().last_hard_checkpoint().height) {
+				response.r.headers.push_back({"Content-Type", "text/html; charset=UTF-8"});
+				response.r.status = 404;
+				response.set_body(
+				    "<html><body>404 Not Found - static blocks can be queried only up to last hard checkpoint</body></html>");
+				return true;
+			}
+			response.r.headers.push_back({"Content-Type", "application/octet-stream"});
+			response.r.headers.push_back({"Cache-Control", "max-age=2628000, public"});  // month
+			response.r.status = 200;
+			if (height % 10 != 0) {
+				// Emulate static link
+				response.set_body(common::to_string(height - height % 10));
+				return true;
+			}
+			api::cnd::SyncBlocks::ResponseCompact res;
+			size_t total_size = 0;
+			Hash hash;
+			while (m_block_chain.get_chain(height + static_cast<Height>(res.blocks.size()), &hash)) {
+				res.blocks.push_back(m_block_chain.fill_sync_block_compact(hash));
+				total_size += res.blocks.back().header.block_size;
+				if (total_size >= 1024 * 1024 || height + static_cast<Height>(res.blocks.size()) >
+				                                     m_block_chain.get_currency().last_hard_checkpoint().height)
+					break;
+			}
+			response.set_body(json_rpc::create_binary_response_body(res, common::JsonValue(nullptr)));
+			return true;
+		}
 	}
 	response.r.status = 404;
 	response.r.headers.push_back({"Content-Type", "text/html; charset=UTF-8"});
@@ -951,4 +1004,60 @@ bool Node::on_submitblock(http::Client *, http::RequestBody &&http_request, json
 	res.orphan_status = !m_block_chain.in_chain(res.block_header.height, res.block_header.hash);
 	res.depth = api::HeightOrDepth(res.block_header.height) - api::HeightOrDepth(m_block_chain.get_tip_height()) - 1;
 	return true;
+}
+
+void Node::export_static_sync_blocks(const BlockChainState &block_chain, const std::string &folder) {
+	if (block_chain.get_tip_height() < block_chain.get_currency().last_hard_checkpoint().height)
+		throw std::runtime_error("Daemon must be synced at least to last hard checkpoint");
+	if (!platform::folder_exists(folder))
+		throw std::runtime_error("Folder for static sync_blocks must exist " + folder);
+	api::cnd::SyncBlocks::Request req;
+	req.max_size            = 1024 * 1024;
+	req.max_count           = 1000;
+	req.need_redundant_data = false;
+	std::vector<Hash> all_chain(block_chain.get_currency().last_hard_checkpoint().height + 1);
+	std::cout << "Reading chain, can take a minute or two..." << std::endl;
+	for (Height i = 0; i != block_chain.get_currency().last_hard_checkpoint().height + 1; ++i)
+		invariant(block_chain.get_chain(i, &all_chain.at(i)), "");
+	Height ha = 0;
+	api::cnd::SyncBlocks::ResponseCompact res;
+	size_t max_total_count     = 0;
+	size_t min_total_count     = std::numeric_limits<size_t>::max();
+	size_t sum_total_size_real = 0;
+	size_t sum_total_size_link = 0;
+	while (ha <= block_chain.get_currency().last_hard_checkpoint().height) {
+		res.blocks.clear();
+		size_t total_size = 0;
+		while (ha + res.blocks.size() <= block_chain.get_currency().last_hard_checkpoint().height) {
+			res.blocks.push_back(block_chain.fill_sync_block_compact(all_chain.at(ha + res.blocks.size())));
+			total_size += seria::binary_size(res.blocks.back());
+			if (total_size >= req.max_size)
+				break;
+		}
+		invariant(!res.blocks.empty(), "");
+		auto ba = json_rpc::create_binary_response_body(res, common::JsonValue(nullptr));
+		std::cout << "Saving chunk start=" << ha << ", count=" << res.blocks.size() << ", size=" << ba.size()
+		          << std::endl;
+		sum_total_size_real += ba.size();
+		for (size_t d = 0; d != res.blocks.size(); ++d) {
+			if (d == 1) {
+				ba = common::to_string(ha);
+				sum_total_size_link += ba.size() * (res.blocks.size() - 1);
+			}
+			std::string subfolder;
+			auto file_name = api::cnd::SyncBlocks::get_filename(Height(ha + d), &subfolder);
+			invariant(
+			    platform::create_folders_if_necessary(folder + api::cnd::SyncBlocks::url_prefix() + "/" + subfolder),
+			    "");
+			invariant(platform::save_file(
+			              folder + api::cnd::SyncBlocks::url_prefix() + "/" + file_name, ba.data(), ba.size()),
+			    "");
+		}
+		ha += res.blocks.size();
+		max_total_count = std::max(max_total_count, res.blocks.size());
+		min_total_count = std::min(min_total_count, res.blocks.size());
+	}
+	std::cout << "min_total_count=" << min_total_count << " max_total_count=" << max_total_count << std::endl;
+	std::cout << "sum_total_size_real=" << sum_total_size_real << " sum_total_size_link=" << sum_total_size_link
+	          << std::endl;
 }

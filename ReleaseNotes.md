@@ -1,5 +1,10 @@
 ## Release Notes
 
+### v3.4.4 (Amethyst)
+
+- `walletd` can now sync most of the blockchain from static files (tremendously increasing efficiency for public nodes), reverting to RPC only for the (small) part of blockchain after last hard checkpoint.
+- Fixed bug when during wallet sync some transactions from memory pool were requested and processed more than once
+
 ### v3.4.3 (Amethyst)
 
 - In `get_transfers` `walletd`'s method error is returned if `from_height` is larger than `to_height` or top block height.

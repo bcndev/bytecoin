@@ -343,7 +343,8 @@ bool WalletState::sync_with_blockchain_finished() {
 }
 
 bool WalletState::sync_with_blockchain(const PreparedWalletBlock &pb, Height top_known_block_height) {
-	if (db_empty() && pb.raw_block.header.height != 0 && pb.raw_block.header.timestamp > m_wallet.get_oldest_timestamp()) {
+	if (db_empty() && pb.raw_block.header.height != 0 &&
+	    pb.raw_block.header.timestamp > m_wallet.get_oldest_timestamp()) {
 		// pb.raw_block.header.height != 0 for case when genesis does not start with timestamp 0
 		m_log(logging::INFO) << "WalletState redo skipping block after undo beyond history bid="
 		                     << pb.raw_block.header.hash << " oldest_timestamp=" << m_wallet.get_oldest_timestamp();
@@ -392,6 +393,7 @@ std::vector<Hash> WalletState::get_tx_pool_hashes() const {
 bool WalletState::sync_with_blockchain(const PreparedWalletTransaction &pwtx) {
 	try {
 		add_transaction_to_mempool(pwtx.tid, pwtx, false);
+		m_pool_hashes.insert(pwtx.tid);
 	} catch (const hardware::HardwareWallet::Exception &ex) {
 		m_log(logging::INFO) << "Hardware wallet disconnected, will try reconnection after some delay, err="
 		                     << common::what(ex);

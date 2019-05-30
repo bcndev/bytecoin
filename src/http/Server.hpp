@@ -6,7 +6,12 @@
 #include <deque>
 #include <map>
 #include <memory>
-#include "platform/Network.hpp"
+#include <stdexcept>
+#include <functional>
+
+namespace platform {
+class TCPAcceptor;
+}
 #include "types.hpp"
 
 namespace http {
@@ -29,15 +34,28 @@ public:
 	    const std::string &address, uint16_t port, request_handler &&r_handler, disconnect_handler &&d_handler);
 	~Server();
 
+	static void write(Client *who, ResponseBody &&response);
+
+#ifdef __EMSCRIPTEN__
+	void global_request(std::unique_ptr<Client> &&client, RequestBody &&request);
+	void global_disconnect(Client *client);
+#endif
 private:
+	friend class Client;
+	std::map<Client *, std::unique_ptr<Client>> clients;  // Alas, no way to look for an element in set<unique_ptr<_>>
+#ifdef __EMSCRIPTEN__
+	void on_client_disconnected(Client *who);
+#else
 	std::unique_ptr<platform::TCPAcceptor> la_socket;
 
-	std::map<Client *, std::unique_ptr<Client>> clients;  // Alas, no way to look for an element in set<unique_ptr<_>>
 	std::unique_ptr<Client> next_client;
 
-	void on_client_disconnected(Client *who);
 	void on_client_handler(Client *who);
+	void on_client_disconnected(Client *who);
 	void accept_all();
+#endif
+
+	void on_client_handle_request(Client *who, RequestBody &&request);
 
 	request_handler r_handler;
 	disconnect_handler d_handler;

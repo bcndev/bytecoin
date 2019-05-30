@@ -317,7 +317,7 @@ int main(int argc, const char *argv[]) try {
 	Config config(cmd);
 	Currency currency(config.net);
 	const std::string coin_folder = config.get_data_folder();
-	if (const char *pa = cmd.get("--emulate-hardware-wallet"))  // Undocumented, used by devs
+	if (const char *pa = cmd.get("--emulate-hardware-wallet"))  // Undocumented, used for debugging
 		hardware::Proxy::debug_set_mnemonic(pa);
 
 	// --wallet-password and --walletd-http-auth are insecure but important for testing

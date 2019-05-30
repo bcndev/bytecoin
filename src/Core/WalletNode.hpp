@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "Node.hpp"
 #include "WalletSync.hpp"
 
 namespace http {
@@ -11,6 +10,7 @@ class Server;
 class Client;
 }  // namespace http
 namespace cn {
+class Node;
 
 class WalletNode : public WalletSync {
 public:

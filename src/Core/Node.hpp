@@ -85,6 +85,8 @@ public:
 	BlockChainState &m_block_chain;
 	const Config &m_config;
 
+	static void export_static_sync_blocks(const BlockChainState &block_chain, const std::string &folder);
+
 protected:
 	std::unique_ptr<http::Server> m_api;
 	std::unique_ptr<platform::PreventSleep> m_prevent_sleep;
@@ -199,6 +201,7 @@ protected:
 	void broadcast(P2PProtocolBytecoin *exclude, const BinaryArray &data);
 	void broadcast(P2PProtocolBytecoin *exclude, const BinaryArray &data_v1, const BinaryArray &data_v4);
 
+	void fill_cors(const http::RequestBody & req, http::ResponseBody & res);
 	bool on_api_http_request(http::Client *, http::RequestBody &&, http::ResponseBody &);
 	void on_api_http_disconnect(http::Client *);
 

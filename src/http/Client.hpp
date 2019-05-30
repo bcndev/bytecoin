@@ -17,13 +17,13 @@ class Client {
 public:
 	typedef std::function<void()> handler;
 
-	explicit Client(handler &&r_handler, handler &&d_handler);
-	bool read_next(RequestBody &request);
-	void write(ResponseBody &&response);
-
-	void disconnect();
+	explicit Client();
 
 private:
+	void write(ResponseBody &&response);
+	void disconnect();
+	bool read_next(RequestBody &request);
+
 	void clear();
 	friend class Server;
 

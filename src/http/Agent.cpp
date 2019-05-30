@@ -70,7 +70,7 @@ public:
 		std::vector<const char *> pheaders(req.r.headers.size() + 1);  // trailing nullptr
 		for (size_t i = 0; i != headers.size(); ++i) {
 			headers[i] = req.r.headers[i].name + ": " + req.r.headers[i].value;
-			std::cout << "header " << headers[i] << std::endl;
+//			std::cout << "header " << headers[i] << std::endl;
 			pheaders[i] = headers[i].c_str();
 		}
 		attr.requestHeaders = pheaders.data();
@@ -80,7 +80,7 @@ public:
 		if (!common::starts_with(owner->address, prefix1) && !common::starts_with(owner->address, prefix2))
 			addr = prefix2 + addr;
 		addr += ":" + common::to_string(owner->port) + req.r.uri;
-		std::cout << "fetch " << addr << " size=" << attr.requestDataSize << std::endl;
+//		std::cout << "fetch " << addr << " size=" << attr.requestDataSize << std::endl;
 		pending_wait = true;
 		emscripten_fetch(&attr, addr.c_str());
 	}

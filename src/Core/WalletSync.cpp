@@ -55,10 +55,8 @@ void WalletSync::set_sync_error(const std::string &str, bool immediate_sync) {
 		m_log(logging::INFO) << "Sync successfully continues from state " << m_sync_error;
 	if (m_sync_error.empty() && !str.empty())
 		m_log(logging::INFO) << "Sync stopped with error " << str;
-	if (m_sync_error != str) {
-		m_sync_error = str;
-		m_state_changed_handler();
-	}
+	m_sync_error = str;
+	m_state_changed_handler();  // Not only sync error changed
 	if (immediate_sync)
 		advance_sync();
 }
@@ -87,40 +85,6 @@ void WalletSync::on_prepared_chunk_finished() {
 	advance_sync();
 	m_state_changed_handler();
 }
-
-/*void WalletSync::something_prepared() {
-    std::deque<PreparedWalletBlock> blocks;
-    std::deque<PreparedWalletTransaction> transactions;
-    preparator.get_ready_work(&blocks, &transactions);
-    if (blocks.empty() && transactions.empty())
-        return;
-    //	m_log(logging::INFO) << "WalletSync::on_idle queue size=" << preparator.get_total_block_size() << " count=" <<
-    // ppb.size();
-    while (!blocks.empty()) {
-        if (m_wallet_state.sync_with_blockchain(blocks.front(), m_last_node_status.top_known_block_height)) {
-            blocks.pop_front();
-        } else {
-            preparator.return_ready_work(std::move(blocks));
-            break;
-        }
-    }
-    while (!transactions.empty()) {
-        if (m_wallet_state.sync_with_blockchain(transactions.front())) {
-            transactions.pop_front();
-        } else {
-            preparator.return_ready_work(std::move(transactions));
-            break;
-        }
-    }
-    if (preparator.is_wallet_connected() && preparator.get_total_block_size() == 0) {
-        // Only after blockchain is synced. Otherwise we will waste CPU to reapply
-        // transaction every time used output is discovered or O(#inputs)
-        m_wallet_state.sync_with_blockchain_finished();
-    }
-    m_wallet_state.fix_payment_queue_after_undo_redo();
-    advance_sync();
-    m_state_changed_handler();
-}*/
 
 void WalletSync::db_commit() {
 	m_wallet_state.db_commit();
@@ -164,7 +128,7 @@ void WalletSync::send_get_status() {
 			    return;
 		    }
 		    m_last_node_status = resp;
-		    advance_sync();
+		    set_sync_error(std::string{}, true);
 	    },
 	    [&](std::string err) {
 		    m_sync_request.reset();
@@ -183,7 +147,7 @@ void WalletSync::advance_sync() {
 		m_log(logging::INFO) << "Allowing computer sleep after sync wallet";
 		prevent_sleep = nullptr;
 	}
-	if (m_sync_request)
+	if (m_sync_request || m_status_timer.is_set())
 		return;
 	if (!m_wallet_state.db_empty() && !next_sparse_chain.empty() &&
 	    preparator.get_total_block_size() < m_config.wallet_sync_preparator_queue_size) {
@@ -219,10 +183,6 @@ void WalletSync::advance_sync() {
 	    m_last_node_status.transaction_pool_version != m_last_syncpool_status.transaction_pool_version) {
 		send_sync_pool();
 		return;
-	}
-	if (m_sync_error != std::string()) {
-		m_sync_error = std::string();
-		m_state_changed_handler();
 	}
 	send_get_status();
 }
@@ -363,8 +323,8 @@ void WalletSync::send_get_blocks() {
 				    next_sparse_chain.push_back(resp.blocks.at(resp.blocks.size() - 1 - i).header.hash);
 			    next_static_block = resp.blocks.back().header.height + 1;
 		    }
-			m_log(logging::DEBUGGING) << "SyncBlocks received " << resp.blocks.size() << " blocks, starting from "
-			                         << (resp.blocks.empty() ? 0 : resp.blocks.at(0).header.height);
+		    m_log(logging::DEBUGGING) << "SyncBlocks received " << resp.blocks.size() << " blocks, starting from "
+		                              << (resp.blocks.empty() ? 0 : resp.blocks.at(0).header.height);
 		    preparator.add_work(std::move(resp.blocks));
 		    set_sync_error(std::string{}, true);
 	    },

@@ -23,6 +23,7 @@ public:
 	~Timer();
 
 	void once(float after_seconds);  // cancels previous once first
+	bool is_set()const;
 	void cancel();
 
 private:
@@ -114,6 +115,7 @@ public:
 	~Timer() { cancel(); }
 
 	void once(float after_seconds);  // cancels previous once first
+	bool is_set()const;
 	void cancel();
 
 private:
@@ -228,6 +230,7 @@ public:
 	~Timer() { cancel(); }
 
 	void once(float after_seconds);  // cancels previous once first
+	bool is_set()const;
 	void cancel();
 
 private:

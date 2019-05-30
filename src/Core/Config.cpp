@@ -61,6 +61,7 @@ Config::Config(common::CommandLine &cmd)
     , multicast_port(P2P_DEFAULT_PORT)
     , multicast_period(net == "main" ? 0 : 60.0f)  // No multicast in main net due to anonymity
     , secrets_via_api(cmd.get_bool("--secrets-via-api"))
+    , bytecoind_cors_asterisk(cmd.get_bool("--CORS"))  // Experimental, for public nodes
     , bytecoind_bind_port(RPC_DEFAULT_PORT)
     , bytecoind_bind_ip("127.0.0.1")  // Less attack vectors from outside for ordinary uses
     , bytecoind_remote_ip("127.0.0.1")
@@ -149,7 +150,7 @@ Config::Config(common::CommandLine &cmd)
 	std::vector<NetworkAddress> exclusive_nodes_list;
 	parse_peer_and_add_to_container(cmd, exclusive_nodes_list, "--exclusive-node-address");
 	parse_peer_and_add_to_container(
-	    cmd, exclusive_nodes_list, "--exclusive-node-address", "Use --exclusive-node-address instead");
+	    cmd, exclusive_nodes_list, "--add-exclusive-node", "Use --exclusive-node-address instead");
 	if (!priority_nodes.empty() && !exclusive_nodes_list.empty())
 		throw ConfigError("Priority nodes and exclusive nodes cannot be used together");
 	if (!exclusive_nodes_list.empty()) {

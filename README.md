@@ -1,6 +1,6 @@
 # Bytecoin
 
-[![Build Status](https://dev.azure.com/bcndev/bytecoin/_apis/build/status/bytecoin-daemons?branchName=releases/3.4.3)](https://dev.azure.com/bcndev/bytecoin/_build/latest?definitionId=1&branchName=releases/3.4.3)
+[![Build Status](https://dev.azure.com/bcndev/bytecoin/_apis/build/status/bytecoin-daemons?branchName=releases/3.4.4)](https://dev.azure.com/bcndev/bytecoin/_build/latest?definitionId=1&branchName=releases/3.4.4)
 
 ## About
 

@@ -72,6 +72,10 @@ void Timer::cancel() {
 		impl->close();
 }
 
+bool Timer::is_set()const {
+	return impl && impl->pending_wait;
+}
+
 void Timer::once(float after_seconds) {
 	cancel();
 	if (!impl)
@@ -201,6 +205,10 @@ void Timer::cancel() {
 	CFRunLoopTimerInvalidate(impl);
 	CFRelease(impl);
 	impl = nullptr;
+}
+
+bool Timer::is_set()const {
+	return impl;
 }
 
 void Timer::once(float after_seconds) {
@@ -554,6 +562,10 @@ public:
 void Timer::cancel() {
 	if (impl)
 		impl->close();
+}
+
+bool Timer::is_set()const {
+	return impl && impl->pending_wait;
 }
 
 void Timer::once(float after_seconds) {

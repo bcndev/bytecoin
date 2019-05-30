@@ -10,12 +10,10 @@
 
 using namespace http;
 
-Client::Client(handler &&r_handler, handler &&d_handler)
+Client::Client()
     : buffer(8192)
     , receiving_body(false)
     , waiting_write_response(false)
-    , r_handler(std::move(r_handler))
-    , d_handler(std::move(d_handler))
     , sock([this](bool, bool) { advance_state(true); }, std::bind(&Client::on_disconnect, this))
     , keep_alive(true) {}
 
