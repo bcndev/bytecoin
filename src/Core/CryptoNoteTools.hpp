@@ -10,9 +10,9 @@
 
 namespace cn {
 
-template<class T>
-Hash get_object_hash(const T &object, size_t *size = nullptr) {
-	BinaryArray ba = seria::to_binary(object);
+template<class T, typename... Context>
+Hash get_object_hash(const T &object, size_t *size, Context... context) {
+	BinaryArray ba = seria::to_binary(object, context...);
 	if (size)
 		*size = ba.size();
 	return crypto::cn_fast_hash(ba.data(), ba.size());

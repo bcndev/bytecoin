@@ -2,7 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "TransactionExtra.hpp"
-
+#include "CryptoNoteConfig.hpp"
 #include "CryptoNoteTools.hpp"
 #include "common/MemoryStreams.hpp"
 #include "common/StringTools.hpp"
@@ -14,95 +14,98 @@
 using namespace cn;
 
 template<typename T, typename U>
-bool set_field_good(const T &, U &) {
+bool set_field_good(const T &, U &, std::false_type) {
 	return false;
 }
 template<typename T>
-bool set_field_good(const T &a, T &b) {
+bool set_field_good(const T &a, T &b, std::true_type) {
 	b = a;  // If more than one specified, we take the first field
 	return true;
 }
-bool set_field_good(const extra::EncryptedMessage &a, std::vector<extra::EncryptedMessage> &b) {
-	b.push_back(a);  // We take all messages
-	return false;
+template<typename T>
+bool set_field_good(const BinaryArray &field_data, T &b, std::true_type) {
+	seria::from_binary(b, field_data);
+	return true;
+}
+bool set_field_good(const BinaryArray &field_data, std::vector<extra::EncryptedMessage> &b, std::true_type) {
+	extra::EncryptedMessage a;
+	seria::from_binary(a, field_data);
+	b.push_back(a);
+	return false;  // We do not stop parsing on first message
 }
 
 template<typename T>
-bool find_field_in_extra(const BinaryArray &extra, T &field, bool *valid = nullptr) {
+bool find_field_in_extra(const BinaryArray &extra, T &field) {
 	try {
-		if (valid)
-			*valid = true;  // Presumption
 		common::MemoryInputStream iss(extra.data(), extra.size());
-		seria::BinaryInputStream ar(iss);
 
 		while (!iss.empty()) {
-			int c = iss.read_byte();
-			switch (c) {
-			case extra::Padding::tag: {
+			uint8_t c = iss.read_byte();
+			if (c == extra::Padding::tag) {
 				extra::Padding value{1 + iss.size()};
 				// tag is itself '0', counts towards padding size
 				// bytes usually set to zero, but we do not care
-				return set_field_good(value, field);  // last field
+				return set_field_good(value, field, std::is_same<T, extra::Padding>{});  // last field
 			}
-			case extra::TransactionPublicKey::tag: {
+			if (c == extra::TransactionPublicKey::tag) {
 				extra::TransactionPublicKey value;
 				iss.read(value.public_key.data, sizeof(value.public_key.data));
-				if (set_field_good(value, field))
+				if (set_field_good(value, field, std::is_same<T, extra::TransactionPublicKey>{}))
 					return true;
-				break;
+				continue;
 			}
-			case extra::Nonce::tag: {
-				extra::Nonce value;
-				uint8_t size = iss.read_byte();  // TODO - turn into varint after Amethyst fork
-				value.nonce.resize(size);
-				iss.read(value.nonce.data(), value.nonce.size());
+			// other tags have uniform format
+			BinaryArray field_data;
+			auto size = iss.read_varint<size_t>();
+			iss.read(field_data, size);
+			switch (c) {
+			case extra::Nonce::tag:
 				// We have some base transactions (like in blocks 558479, 558984)
-				// which have wrong extra nonce size, so they will not parse and
-				// throw here from iss.read
-				if (set_field_good(value, field))
+				// which have wrong extra nonce size, so they will throw here
+				if (set_field_good(extra::Nonce{field_data}, field, std::is_same<T, extra::Nonce>{}))
 					return true;
 				break;
-			}
-			case extra::MergeMiningTag::tag: {
-				extra::MergeMiningTag value;
-				std::string field_data;
-				ser(field_data, ar);
-				common::MemoryInputStream stream(field_data.data(), field_data.size());
-				seria::BinaryInputStream input(stream);
-				ser(value, input);
-				if (set_field_good(value, field))
+			case extra::MergeMiningTag::tag:
+				if (set_field_good(field_data, field, std::is_same<T, extra::MergeMiningTag>{}))
 					return true;
 				break;
-			}
-			case extra::BlockCapacityVote::tag: {
-				extra::BlockCapacityVote value;
-				std::string field_data;
-				ser(field_data, ar);
-				common::MemoryInputStream stream(field_data.data(), field_data.size());
-				seria::BinaryInputStream input(stream);
-				ser(value, input);
-				if (set_field_good(value, field))
+			case extra::BlockCapacityVote::tag:
+				if (set_field_good(field_data, field, std::is_same<T, extra::BlockCapacityVote>{}))
 					return true;
 				break;
-			}
-			case extra::EncryptedMessage::tag: {
-				extra::EncryptedMessage value;
-				ser(value.message, ar);
-				if (set_field_good(value, field))
+			case extra::EncryptedMessage::tag:
+				if (set_field_good(field_data, field, std::is_same<T, std::vector<extra::EncryptedMessage>>{}))
 					return true;
 				break;
-			}
-			default: {  // We hope to skip unknown tags
-				std::string field_data;
-				ser(field_data, ar);
-			}
 			}
 		}
 	} catch (std::exception &) {
-		if (valid)
-			*valid = false;
 	}
 	return false;  // Not found
+}
+
+bool cn::extra::is_valid(const BinaryArray &extra) {
+	try {
+		common::MemoryInputStream iss(extra.data(), extra.size());
+
+		while (!iss.empty()) {
+			int c = iss.read_byte();
+			if (c == extra::Padding::tag)
+				return true;  // last field
+			if (c == extra::TransactionPublicKey::tag) {
+				extra::TransactionPublicKey value;
+				iss.read(value.public_key.data, sizeof(value.public_key.data));
+				continue;
+			}
+			// other tags have uniform format
+			BinaryArray field_data;
+			auto size = iss.read_varint<size_t>();
+			iss.read(field_data, size);
+		}
+		return true;
+	} catch (std::exception &) {
+	}
+	return false;
 }
 
 PublicKey cn::extra::get_transaction_public_key(const BinaryArray &tx_extra) {
@@ -170,16 +173,24 @@ bool cn::extra::get_payment_id(const BinaryArray &tx_extra, Hash &payment_id) {
 	return true;
 }
 
+size_t cn::extra::get_encrypted_message_size(size_t size) {
+	extra::EncryptedMessage em;
+	em.message.resize(size);
+	auto ba = seria::binary_size(em);
+	return 1 + common::get_varint_data(ba).size() + ba;
+}
+
 std::vector<extra::EncryptedMessage> cn::extra::get_encrypted_messages(const BinaryArray &tx_extra) {
 	std::vector<extra::EncryptedMessage> field;
 	find_field_in_extra(tx_extra, field);
 	return field;
 }
 
-void cn::extra::add_encrypted_message(BinaryArray &tx_extra, const BinaryArray &message) {
+void cn::extra::add_encrypted_message(BinaryArray &tx_extra, const EncryptedMessage &message) {
+	BinaryArray blob = seria::to_binary(message);
 	tx_extra.push_back(EncryptedMessage::tag);
-	common::append(tx_extra, common::get_varint_data(message.size()));
-	common::append(tx_extra, message);
+	common::append(tx_extra, common::get_varint_data(blob.size()));
+	common::append(tx_extra, blob);
 }
 
 void seria::ser_members(extra::MergeMiningTag &v, ISeria &s) {
@@ -188,3 +199,8 @@ void seria::ser_members(extra::MergeMiningTag &v, ISeria &s) {
 }
 
 void seria::ser_members(extra::BlockCapacityVote &v, ISeria &s) { seria_kv("block_capacity", v.block_capacity, s); }
+
+void seria::ser_members(extra::EncryptedMessage &v, ISeria &s) {
+	seria_kv("output", v.output, s, true);  // amethyst output
+	seria_kv("message", v.message, s);
+}

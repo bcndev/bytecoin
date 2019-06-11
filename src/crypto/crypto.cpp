@@ -79,7 +79,7 @@ PublicKey KeccakStream::hash_to_good_point() { return bytes_to_good_point(cn_fas
 static std::mutex random_lock;
 #endif
 
-void generate_random_bytes(void *result, size_t n) {
+void generate_random_bytes(unsigned char *result, size_t n) {
 #ifndef __EMSCRIPTEN__
 	std::lock_guard<std::mutex> lock(random_lock);
 #endif
@@ -261,6 +261,8 @@ RingSignature generate_ring_signature(const Hash &prefix_hash, const KeyImage &i
 
 bool check_ring_signature(
     const Hash &prefix_hash, const KeyImage &image, const std::vector<PublicKey> &pubs, const RingSignature &sig) {
+	if (sig.size() != pubs.size())
+		return false;
 	P3 image_p3;
 	if (!image_p3.frombytes_vartime(image))
 		return false;  // key_image is considered part of signature, we do not throw

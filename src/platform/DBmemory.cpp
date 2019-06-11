@@ -11,12 +11,12 @@
 
 using namespace platform;
 
-int DBmemory::Key::compare(const Key &other) const {
-	size_t s = std::min(data.size(), other.data.size());
-	int res  = memcmp(data.data(), other.data.data(), s);
+int DBmemory::CmpByUnsigned::compare(const std::string &a, const std::string &b) const {
+	size_t s = std::min(a.size(), b.size());
+	int res  = memcmp(a.data(), b.data(), s);
 	if (res != 0)
 		return res;
-	return int(data.size()) - int(other.data.size());
+	return int(a.size()) - int(b.size());
 }
 
 DBmemory::DBmemory(OpenMode open_mode, const std::string &full_path, uint64_t max_tx_size)
@@ -39,9 +39,9 @@ DBmemory::Cursor::Cursor(DBmemory *db, const std::string &prefix, const std::str
 	if (finish.size() < db->max_key_size)
 		finish += std::string(db->max_key_size - finish.size(), char(0xff));  // char('~')
 	if (forward)
-		it = db->storage.lower_bound(Key{start});
+		it = db->storage.lower_bound(start);
 	else {
-		it = db->storage.upper_bound(Key{finish});
+		it = db->storage.upper_bound(finish);
 		if (it == db->storage.begin())
 			it = db->storage.end();
 		else
@@ -53,11 +53,11 @@ DBmemory::Cursor::Cursor(DBmemory *db, const std::string &prefix, const std::str
 void DBmemory::Cursor::check_prefix() {
 	if (it == db->storage.end())
 		return;
-	if (!common::starts_with(it->first.data, prefix)) {
+	if (!common::starts_with(it->first, prefix)) {
 		it = db->storage.end();
 		return;
 	}
-	suffix = it->first.data.substr(prefix.size());
+	suffix = it->first.substr(prefix.size());
 }
 
 void DBmemory::Cursor::next() {
@@ -77,8 +77,9 @@ void DBmemory::Cursor::next() {
 void DBmemory::Cursor::erase() {
 	if (it == db->storage.end())
 		return;
-	db->total_size -= it->first.data.size() + it->second.size();
-	db->journal.push_back(JournalEntry{it->first.data, common::BinaryArray{}, true});
+	db->total_size -= it->first.size() + it->second.size();
+	if (db->use_journal)
+		db->journal.push_back(JournalEntry{it->first, common::BinaryArray{}, true});
 	it = db->storage.erase(it);
 	if (!forward) {
 		if (it == db->storage.begin())
@@ -92,24 +93,25 @@ void DBmemory::Cursor::erase() {
 std::string DBmemory::Cursor::get_value_string() const { return common::as_string(it->second); }
 common::BinaryArray DBmemory::Cursor::get_value_array() const { return it->second; }
 
-DBmemory::Cursor DBmemory::begin(const std::string &prefix, const std::string &middle) const {
-	return Cursor(const_cast<DBmemory *>(this), prefix, middle, true);
+DBmemory::Cursor DBmemory::begin(const std::string &prefix, const std::string &middle, bool forward) const {
+	return Cursor(const_cast<DBmemory *>(this), prefix, middle, forward);
 }
 
 DBmemory::Cursor DBmemory::rbegin(const std::string &prefix, const std::string &middle) const {
-	return Cursor(const_cast<DBmemory *>(this), prefix, middle, false);
+	return begin(prefix, middle, false);
 }
 
 void DBmemory::commit_db_txn() {}
 
 void DBmemory::put(const std::string &key, const common::BinaryArray &value, bool nooverwrite) {
-	auto res = storage.emplace(Key{key}, value);
+	auto res = storage.emplace(key, value);
 	if (res.second) {
 		total_size += key.size() + value.size();
 		if (key.size() > max_key_size)
 			std::cout << "max_key_size=" << key.size() << std::endl;
 		max_key_size = std::max(max_key_size, key.size());
-		journal.push_back(JournalEntry{key, value, false});
+		if (use_journal)
+			journal.push_back(JournalEntry{key, value, false});
 		return;
 	}
 	if (nooverwrite)
@@ -117,7 +119,8 @@ void DBmemory::put(const std::string &key, const common::BinaryArray &value, boo
 	total_size -= res.first->second.size();
 	total_size += value.size();
 	res.first->second = value;
-	journal.push_back(JournalEntry{key, value, false});
+	if (use_journal)
+		journal.push_back(JournalEntry{key, value, false});
 }
 
 void DBmemory::put(const std::string &key, const std::string &svalue, bool nooverwrite) {
@@ -125,7 +128,7 @@ void DBmemory::put(const std::string &key, const std::string &svalue, bool noove
 }
 
 bool DBmemory::get(const std::string &key, common::BinaryArray &value) const {
-	auto it = storage.find(Key{key});
+	auto it = storage.find(key);
 	if (it == storage.end())
 		return false;
 	value = it->second;
@@ -133,7 +136,7 @@ bool DBmemory::get(const std::string &key, common::BinaryArray &value) const {
 }
 
 bool DBmemory::get(const std::string &key, std::string &value) const {
-	auto it = storage.find(Key{key});
+	auto it = storage.find(key);
 	if (it == storage.end())
 		return false;
 	value = common::as_string(it->second);
@@ -141,7 +144,7 @@ bool DBmemory::get(const std::string &key, std::string &value) const {
 }
 
 void DBmemory::del(const std::string &key, bool mustexist) {
-	auto it = storage.find(Key{key});
+	auto it = storage.find(key);
 	if (it == storage.end()) {
 		if (mustexist)
 			throw std::runtime_error("DBmemory::del row does not exits");
@@ -149,7 +152,8 @@ void DBmemory::del(const std::string &key, bool mustexist) {
 	}
 	total_size -= key.size() + it->second.size();
 	it = storage.erase(it);
-	journal.push_back(JournalEntry{key, common::BinaryArray{}, true});
+	if (use_journal)
+		journal.push_back(JournalEntry{key, common::BinaryArray{}, true});
 }
 
 std::string DBmemory::to_ascending_key(uint32_t key) {

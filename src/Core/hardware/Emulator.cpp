@@ -4,7 +4,7 @@
 #include "Emulator.hpp"
 #include <ctime>
 #include <iostream>
-#include "Core/TransactionBuilder.hpp"
+#include "Core/Wallet.hpp"
 #include "CryptoNote.hpp"
 #include "common/BIPs.hpp"
 #include "common/Invariant.hpp"
@@ -176,7 +176,7 @@ KeyImage Emulator::generate_keyimage(const common::BinaryArray &output_secret_ha
 }
 
 Hash Emulator::generate_output_seed(const Hash &tx_inputs_hash, size_t out_index) {
-	return cn::TransactionBuilder::generate_output_seed(tx_inputs_hash, m_view_seed, out_index);
+	return cn::Wallet::generate_output_seed(tx_inputs_hash, m_view_seed, out_index);
 }
 
 void Emulator::sign_start(size_t version, uint64_t ut, size_t inputs_size, size_t outputs_size, size_t extra_size) {
@@ -275,14 +275,13 @@ void Emulator::sign_add_input(uint64_t amount, const std::vector<size_t> &output
 void Emulator::add_output_or_change(uint64_t amount, uint8_t dst_address_tag, PublicKey dst_address_s,
     PublicKey dst_address_s_v, PublicKey *public_key, PublicKey *encrypted_secret,
     uint8_t *encrypted_address_type) const {
-	Hash output_seed =
-	    cn::TransactionBuilder::generate_output_seed(sign.tx_inputs_hash, m_view_seed, sign.outputs_counter);
+	Hash output_seed = cn::Wallet::generate_output_seed(sign.tx_inputs_hash, m_view_seed, sign.outputs_counter);
 	if (debug_print)
 		std::cout << "output_seed=" << output_seed << std::endl;
 	SecretKey output_secret_scalar;
 	PublicKey output_secret_point;
 	uint8_t output_secret_address_type = 0;
-	cn::TransactionBuilder::generate_output_secrets(
+	cn::Wallet::generate_output_secrets(
 	    output_seed, &output_secret_scalar, &output_secret_point, &output_secret_address_type);
 	if (debug_print) {
 		std::cout << "output_secret_scalar=" << output_secret_scalar << std::endl;

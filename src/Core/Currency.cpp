@@ -11,6 +11,7 @@
 #include "Difficulty.hpp"
 #include "TransactionBuilder.hpp"
 #include "TransactionExtra.hpp"
+#include "Wallet.hpp"
 #include "common/Base58.hpp"
 #include "common/StringTools.hpp"
 #include "common/Varint.hpp"
@@ -57,7 +58,6 @@ Currency::Currency(const std::string &net)
     , mined_money_unlock_window(MINED_MONEY_UNLOCK_WINDOW)
     , block_future_time_limit(BLOCK_FUTURE_TIME_LIMIT)
     , money_supply(MONEY_SUPPLY)
-    , emission_speed_factor(EMISSION_SPEED_FACTOR)
     , median_block_size_window(MEIDAN_BLOCK_SIZE_WINDOW)
     , block_capacity_vote_window(BLOCK_CAPACITY_VOTE_WINDOW)
     , max_header_size(MAX_HEADER_SIZE)
@@ -73,8 +73,8 @@ Currency::Currency(const std::string &net)
     , key_image_subgroup_checking_height(KEY_IMAGE_SUBGROUP_CHECKING_HEIGHT)
     , amethyst_block_version(BLOCK_VERSION_AMETHYST)
     , amethyst_transaction_version(TRANSACTION_VERSION_AMETHYST)
-    , upgrade_vote_minor(7)
-    , upgrade_indicator_minor(7)  // We may now not need separate upgrade_indicator_minor
+    , upgrade_vote_minor(8)
+    , upgrade_indicator_minor(8)  // We may now not need separate upgrade_indicator_minor
     , upgrade_desired_major(4)
     , upgrade_voting_window(UPGRADE_VOTING_WINDOW)
     , upgrade_window(UPGRADE_WINDOW)
@@ -103,7 +103,7 @@ Currency::Currency(const std::string &net)
 		//		coinbase_transaction.version                   = 1;
 		//		coinbase_transaction.unlock_block_or_timestamp = mined_money_unlock_window;
 		//		coinbase_transaction.inputs.push_back(CoinbaseInput{0});
-		//		coinbase_transaction.outputs.push_back(TransactionOutput{money_supply >> emission_speed_factor,
+		//		coinbase_transaction.outputs.push_back(TransactionOutput{money_supply >> EMISSION_SPEED_FACTOR,
 		// KeyOutput{genesis_output_key}});
 		//		extra_add_transaction_public_key(coinbase_transaction.extra, genesis_tx_public_key);
 		//		invariant(miner_tx_blob == seria::to_binary(coinbase_transaction), "Demystified transaction does not
@@ -256,9 +256,8 @@ size_t Currency::minimum_anonymity(uint8_t block_major_version) const {
 Amount Currency::get_base_block_reward(
     uint8_t block_major_version, Height height, Amount already_generated_coins) const {
 	invariant(already_generated_coins <= money_supply, "");
-	invariant(emission_speed_factor > 0 && emission_speed_factor <= 8 * sizeof(Amount), "");
 
-	return (money_supply - already_generated_coins) >> emission_speed_factor;
+	return (money_supply - already_generated_coins) >> EMISSION_SPEED_FACTOR;
 }
 
 Amount Currency::get_block_reward(uint8_t block_major_version, Height height, size_t effective_median_size,
@@ -292,9 +291,8 @@ Transaction Currency::construct_miner_tx(const Hash &miner_secret, uint8_t block
 	tx.inputs.push_back(InputCoinbase{height});
 
 	Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
-	KeyPair txkey       = miner_secret == Hash{}
-	                    ? crypto::random_keypair()
-	                    : TransactionBuilder::transaction_keys_from_seed(tx_inputs_hash, miner_secret);
+	KeyPair txkey       = miner_secret == Hash{} ? crypto::random_keypair()
+	                                       : Wallet::transaction_keys_from_seed(tx_inputs_hash, miner_secret);
 
 	if (!is_tx_amethyst)
 		extra::add_transaction_public_key(tx.extra, txkey.public_key);
@@ -309,9 +307,9 @@ Transaction Currency::construct_miner_tx(const Hash &miner_secret, uint8_t block
 
 	Amount summary_amounts = 0;
 	for (size_t out_index = 0; out_index < out_amounts.size(); out_index++) {
-		const Hash output_seed =
-		    miner_secret == Hash{} ? crypto::rand<Hash>()
-		                           : TransactionBuilder::generate_output_seed(tx_inputs_hash, miner_secret, out_index);
+		const Hash output_seed = miner_secret == Hash{}
+		                             ? crypto::rand<Hash>()
+		                             : Wallet::generate_output_seed(tx_inputs_hash, miner_secret, out_index);
 		PublicKey output_shared_secret;
 		OutputKey tk = TransactionBuilder::create_output(is_tx_amethyst, miner_address, txkey.secret_key,
 		    tx_inputs_hash, out_index, output_seed, &output_shared_secret);

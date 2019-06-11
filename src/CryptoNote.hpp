@@ -74,7 +74,7 @@ typedef boost::variant<OutputKey> TransactionOutput;
 struct TransactionPrefix {
 	// version is serialized as varint, but value > 127 will throw on parsing
 	uint8_t version                            = 0;
-	BlockOrTimestamp unlock_block_or_timestamp = 0;
+	BlockOrTimestamp unlock_block_or_timestamp = 0;  // In boron, only 1st output is locked
 	std::vector<TransactionInput> inputs;
 	std::vector<TransactionOutput> outputs;
 	BinaryArray extra;
@@ -270,7 +270,7 @@ void ser_members(cn::TransactionSignatures &v, ISeria &s, const cn::TransactionP
 
 void ser_members(cn::OutputKey &v, ISeria &s, bool is_tx_amethyst);
 
-void ser_members(cn::TransactionPrefix &v, ISeria &s);
+void ser_members(cn::TransactionPrefix &v, ISeria &s, bool is_root = false);
 void ser_members(cn::RootBaseTransaction &v, ISeria &s);
 void ser_members(cn::Transaction &v, ISeria &s);
 

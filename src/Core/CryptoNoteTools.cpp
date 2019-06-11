@@ -12,7 +12,7 @@ using namespace cn;
 
 Hash cn::get_root_block_base_transaction_hash(const RootBaseTransaction &tx) {
 	if (tx.version < 2)
-		return get_object_hash(tx);
+		return get_object_hash(tx, nullptr);
 	// XMR(XMO) as popular MM root, see details in monero/src/cryptonote_basic/cryptonote_format_utils.cpp
 	// bc36789e7a1e281436464229828f817d6612f7b477d66591ff96a9e064bcc98a = hash(1 zero byte (RCTTypeNull))
 	crypto::KeccakStream hasher;
@@ -20,7 +20,7 @@ Hash cn::get_root_block_base_transaction_hash(const RootBaseTransaction &tx) {
 	    0x29, 0x82, 0x8f, 0x81, 0x7d, 0x66, 0x12, 0xf7, 0xb4, 0x77, 0xd6, 0x65, 0x91, 0xff, 0x96, 0xa9, 0xe0, 0x64,
 	    0xbc, 0xc9, 0x8a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-	const Hash ha                              = get_object_hash(static_cast<const TransactionPrefix &>(tx));
+	const Hash ha = get_object_hash(static_cast<const TransactionPrefix &>(tx), nullptr, true);
 	hasher.append(ha);
 	hasher.append(append_data, sizeof(append_data));
 	return hasher.cn_fast_hash();

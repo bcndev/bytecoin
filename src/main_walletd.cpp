@@ -32,7 +32,7 @@ Usage:
 
 Creating wallets:
   --create-wallet                       Create wallet file with existing BIP39 mnemonic read as a line from stdin.
-  --wallet-type=<type>                  Possible values are 'amethyst', 'legacy', 'hardware' [default: 'amethyst']
+  --wallet-type=<type>                  Possible values are 'amethyst', 'legacy', 'hardware' [default: 'amethyst'].
   --creation-timestamp=<t>              Set wallet creation timestamp (unix timestamp or 'now') [default: 0].
   --address-count=<c>                   Immediately generate number of addresses [default: 1].
   --import-keys                         Import keys read as a line from stdin (only for 'legacy' wallet type).
@@ -41,35 +41,36 @@ Modifying wallets:
   --set-password                        Read new password as a line from stdin (twice) and re-encrypt wallet file, then exit.
                                         Can be used with --export-view-only or --backup-wallet-data to set destination wallet password.
   --export-view-only=<file-path>        Export view-only version of wallet file, then exit.
-  --view-outgoing-addresses             Used only with --export-view-only and 'amethyst' wallet. Exported view-only wallet
+  --view-outgoing-addresses             Used only with --export-view-only and 'amethyst' wallet. Exported view-only wallet.
                                         will be able to see destination addresses in tracked transactions.
-  --export-keys                         Export unencrypted wallet keys to stdout, then exit. (Only for 'legacy' wallets)
-  --export-mnemonic                     Export mnemonic to stdout, then exit. (Only for 'amethyst' wallets)
+  --export-keys                         Export unencrypted wallet keys to stdout, then exit (only for 'legacy' wallets).
+  --export-mnemonic                     Export mnemonic to stdout, then exit (only for 'amethyst' wallets).
   --import-view-key                     Import view key from hardware wallet into wallet file, greatly increasing blockchain scan speed.
   --backup-wallet-data=<folder-path>    Hot backup of wallet file, history, payment queue and cache into specified empty folder, then exit.
 
 Running with selected wallet:
   --secrets-via-api                     Allow getting secrets using 'get_wallet_info' json RPC method.
-  --launch-after-command                Continue launching after --create-wallet, --set-password and --import-view-key
+  --launch-after-command                Launch daemon in case of using --create-wallet, --set-password, and --import-view-key flags.
   --walletd-bind-address=<ip:port>      IP and port for walletd RPC API [default: 127.0.0.1:8070].
   --data-folder=<folder-path>           Folder for wallet cache, blockchain, logs and peer DB [default: %appdata%/bytecoin].
-  --bytecoind-remote-address=<ip:port>  Connect to remote bytecoind and suppress running built-in bytecoind.
-                                        Set this option to https://<host:port> instead, to connect to remote bytecoind via https
-  --bytecoind-authorization=<user:pass> HTTP basic authentication credentials for RPC API.
-  --net=<main|stage|test>               Configure for mainnet or testnet [default: main].
+  --bytecoind-remote-address=<address>  Connect to remote bytecoind suppressing running built-in daemon.
+                                        Use <ip:port> or http://<ip:port> format to connect to a daemon via HTTP.
+                                        Use https://<host:port> format to connect to a daemon via HTTPS.
+  --bytecoind-authorization=<user:pass> HTTP basic authentication credentials for RPC API [default: ""].
+  --net=<main|stage|test>               Configure for mainnet, stagenet, or testnet [default: main].
 
-Options for BIP39 mnemonic creation
+Options for BIP39 mnemonic creation:
   --create-mnemonic                     Create a new random BIP39 mnemonic, then exit.
   --mnemonic-strength=<bits>            Used with --create-mnemonic, [default: 256].
 
-Options for built-in bytecoind (run when no --bytecoind-remote-address specified):
+Options for built-in bytecoind (allowed when no --bytecoind-remote-address specified):
 DEPRECATED AND NOT RECOMMENDED as entailing security risk. Please always run bytecoind as a separate process.
   --p2p-bind-address=<ip:port>          IP and port for P2P network protocol [default: 0.0.0.0:8080].
   --p2p-external-port=<port>            External port for P2P network protocol, if port forwarding used with NAT [default: 8080].
   --bytecoind-bind-address=<ip:port>    IP and port for bytecoind RPC [default: 127.0.0.1:8081].
   --seed-node-address=<ip:port>         Specify node (one or more) to start connecting to.
   --priority-node-address=<ip:port>     Specify node (one or more) to connect to and attempt to keep the connection open.
-  --exclusive-node-address=<ip:port>     Specify node (one or more) to exclusive connect to, ignoring all other nodes.)";
+  --exclusive-node-address=<ip:port>    Specify node (one or more) to exclusive connect to, ignoring all other nodes.)";
 
 static const bool separate_thread_for_bytecoind = true;
 

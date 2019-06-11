@@ -14,8 +14,8 @@
 using common::JsonValue;
 using namespace seria;
 
-JsonInputStreamValue::JsonInputStreamValue(const common::JsonValue &value, bool allow_unused_object_keys)
-    : value(value), allow_unused_object_keys(allow_unused_object_keys) {}
+JsonInputStreamValue::JsonInputStreamValue(const common::JsonValue &root_value, bool allow_unused_object_keys)
+    : root_value(root_value), allow_unused_object_keys(allow_unused_object_keys) {}
 
 void JsonInputStreamValue::object_key(common::StringView name, bool optional) {
 	const JsonValue *parent = chain.back();
@@ -113,6 +113,10 @@ bool JsonInputStreamValue::seria_v(int64_t &value) {
 	const JsonValue *val = get_value();
 	if (!val)
 		return false;
+	if (val->is_string()) {  // We allow languages like JavaScript to send 64-bit values as string
+		value = common::integer_cast<int64_t>(val->get_string());
+		return true;
+	}
 	value = val->get_integer();
 	return true;
 }
@@ -121,6 +125,10 @@ bool JsonInputStreamValue::seria_v(uint64_t &value) {
 	const JsonValue *val = get_value();
 	if (!val)
 		return false;
+	if (val->is_string()) {  // We allow languages like JavaScript to send 64-bit values as string
+		value = common::integer_cast<uint64_t>(val->get_string());
+		return true;
+	}
 	value = val->get_unsigned();
 	return true;
 }
@@ -163,7 +171,7 @@ bool JsonInputStreamValue::seria_v(common::BinaryArray &value) {
 
 const JsonValue *JsonInputStreamValue::get_value() {
 	if (chain.empty())
-		return &value;
+		return &root_value;
 	if (!chain.back())  // Optional object
 		return nullptr;
 	const JsonValue &val = *chain.back();

@@ -31,7 +31,6 @@ public:
 	Timestamp block_future_time_limit;
 
 	Amount money_supply;
-	unsigned int emission_speed_factor;
 
 	Height median_block_size_window;
 	Height block_capacity_vote_window;

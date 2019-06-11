@@ -17,13 +17,16 @@
 #include "platform/DB.hpp"
 #include "version.hpp"
 
-#include "../tests/blockchain/test_blockchain.hpp"
 #include "../tests/crypto/benchmarks.hpp"
 #include "../tests/crypto/test_crypto.hpp"
 #include "../tests/hash/test_hash.hpp"
 #include "../tests/json/test_json.hpp"
+
+#ifndef __EMSCRIPTEN__
+#include "../tests/blockchain/test_blockchain.hpp"
 #include "../tests/wallet_file/test_wallet_file.hpp"
 #include "../tests/wallet_state/test_wallet_state.hpp"
+#endif
 
 void test_bip32() {
 	// TODO move this code to a proper test suite
@@ -83,25 +86,33 @@ int main(int argc, const char *argv[]) {
 	    "This is the default when building the project with CMake.\n"
 	    "Available options (each runs corresponding test)\n");
 	common::CommandLine cmd(argc, argv);
-	if (cmd.show_help(USAGE.c_str(), cn::app_version()))
-		return 0;
 
 	std::map<std::string, std::function<void()>> all;
 
+	std::string test_folder = "../tests";
+#ifdef __EMSCRIPTEN__
+	test_folder = "/tests";
+#endif
+
 	std::vector<std::string> crypto_function_tests{};
-	all["--crypto"]       = std::bind(test_crypto, "../tests/crypto", crypto_function_tests, "", false);
-	all["--bip32"]        = test_bip32;
-	all["--benchmark"]    = std::bind(benchmark_crypto_ops, 10000, std::ref(std::cout));
+	all["--crypto"]    = std::bind(test_crypto, "../tests/crypto", crypto_function_tests, "", false);
+	all["--bip32"]     = test_bip32;
+	all["--benchmark"] = std::bind(benchmark_crypto_ops, 10000, std::ref(std::cout));
+	all["--hash"]      = std::bind(test_hashes, test_folder + "/hash");
+#ifndef __EMSCRIPTEN__
 	all["--blockchain"]   = std::bind(test_blockchain, std::ref(cmd));
 	all["--db"]           = platform::DB::run_tests;
-	all["--json"]         = std::bind(test_json, "../tests/json");
-	all["--hash"]         = std::bind(test_hashes, "../tests/hash");
-	all["--wallet"]       = std::bind(test_wallet_file, "../tests/wallet_file");
+	all["--json"]         = std::bind(test_json, test_folder + "/json");
+	all["--wallet"]       = std::bind(test_wallet_file, test_folder + "/wallet_file");
 	all["--wallet-state"] = std::bind(test_wallet_state, std::ref(cmd));
+#endif
+	for (const auto &t : all)
+		USAGE += "    " + t.first + "\n";
+	if (cmd.show_help(USAGE.c_str(), cn::app_version()))
+		return 0;
 
 	int found_on_cmd_line = 0;
 	for (const auto &t : all) {
-		USAGE += "    " + t.first + "\n";
 		if (cmd.get_bool(t.first.c_str()))
 			found_on_cmd_line += 1;
 	}

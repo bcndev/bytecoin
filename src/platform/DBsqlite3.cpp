@@ -179,12 +179,12 @@ void DBsqliteKV::Cursor::step_and_check() {
 std::string DBsqliteKV::Cursor::get_value_string() const { return std::string(data, size); }
 common::BinaryArray DBsqliteKV::Cursor::get_value_array() const { return common::BinaryArray(data, data + size); }
 
-DBsqliteKV::Cursor DBsqliteKV::begin(const std::string &prefix, const std::string &middle) const {
-	return Cursor(this, db_dbi, prefix, middle, true);
+DBsqliteKV::Cursor DBsqliteKV::begin(const std::string &prefix, const std::string &middle, bool forward) const {
+	return Cursor(this, db_dbi, prefix, middle, forward);
 }
 
 DBsqliteKV::Cursor DBsqliteKV::rbegin(const std::string &prefix, const std::string &middle) const {
-	return Cursor(this, db_dbi, prefix, middle, false);
+	return begin(prefix, middle, false);
 }
 
 void DBsqliteKV::commit_db_txn() {

@@ -93,7 +93,7 @@ public:
 		void next();
 		void erase();  // moves to the next value
 	};
-	Cursor begin(const std::string &prefix, const std::string &middle = std::string()) const;
+	Cursor begin(const std::string &prefix, const std::string &middle = std::string(), bool forward = true) const;
 	Cursor rbegin(const std::string &prefix, const std::string &middle = std::string()) const;
 
 	static std::string to_binary_key(const unsigned char *data, size_t size) {

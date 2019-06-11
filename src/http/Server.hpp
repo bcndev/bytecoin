@@ -4,10 +4,10 @@
 #pragma once
 
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <stdexcept>
-#include <functional>
 
 namespace platform {
 class TCPAcceptor;

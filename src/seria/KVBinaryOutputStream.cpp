@@ -58,7 +58,7 @@ size_t write_array_size(IOutputStream &s, size_t val) {
 		return pack_varint<uint16_t>(s, PORTABLE_RAW_SIZE_MARK_WORD, val);
 	if (val <= 1073741823)
 		return pack_varint<uint32_t>(s, PORTABLE_RAW_SIZE_MARK_DWORD, val);
-	if (val > 4611686018427387903)  // Warning here on 32-bit platforms
+	if (static_cast<uint64_t>(val) > 4611686018427387903)  // Upcast to prevent warning here on 32-bit platforms
 		throw std::runtime_error("failed to pack varint - too big amount");
 	return pack_varint<uint64_t>(s, PORTABLE_RAW_SIZE_MARK_INT64, val);
 }

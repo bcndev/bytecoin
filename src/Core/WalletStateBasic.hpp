@@ -3,42 +3,11 @@
 
 #pragma once
 
-#include "CryptoNote.hpp"
-#include "Wallet.hpp"
+#include "WalletStatePrepared.hpp"
 #include "platform/DB.hpp"
 #include "rpc_api.hpp"
 
 namespace cn {
-
-class Config;
-
-struct PreparedWalletTransaction {
-	Hash tid;
-	size_t size = 0;
-	TransactionPrefix tx;
-	Hash prefix_hash;
-	Hash inputs_hash;
-	KeyDerivation derivation;  // Will be KeyDerivation{} if invalid or no tx_public_key
-	std::vector<PublicKey> address_public_keys;
-	std::vector<PublicKey> output_shared_secrets;
-
-	PreparedWalletTransaction() = default;
-	PreparedWalletTransaction(const Hash &tid, size_t size, TransactionPrefix &&tx,
-	    const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
-	PreparedWalletTransaction(const Hash &tid, size_t size, Transaction &&tx, const Wallet::OutputHandler &o_handler,
-	    const SecretKey &view_secret_key);
-
-	// TODO - remove constructors and always use prepare()?
-	void prepare(const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
-};
-
-struct PreparedWalletBlock {
-	api::cnd::SyncBlocks::RawBlockCompact raw_block;
-	std::vector<PreparedWalletTransaction> transactions;
-	// coinbase_transaction will be inserted before other transactions
-
-	void prepare(const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key);
-};
 
 class IWalletState {
 public:
@@ -70,12 +39,15 @@ public:
 	// methods used by API
 	bool api_add_unspent(std::vector<api::Output> *result, Amount *total_amount, const std::string &address,
 	    Height confirmed_height, Amount max_amount = std::numeric_limits<Amount>::max()) const;
+	std::vector<api::Block> api_get_transfers_legacy(const std::string &address, Height *from_height, Height *to_height,
+	    bool forward,
+	    size_t desired_tx_count = std::numeric_limits<size_t>::max()) const;  // TODO - remove after testing
 	std::vector<api::Block> api_get_transfers(const std::string &address, Height *from_height, Height *to_height,
 	    bool forward, size_t desired_tx_count = std::numeric_limits<size_t>::max()) const;
 	virtual std::vector<api::Output> api_get_locked_or_unconfirmed_unspent(
 	    const std::string &address, Height height) const;
 	virtual api::Balance get_balance(const std::string &address, Height height) const;
-	std::vector<api::Transfer> api_get_unlocked_transfers(
+	std::vector<api::Transfer> api_get_unlocked_transfers_legacy(
 	    const std::string &address, Height from_height, Height to_height = std::numeric_limits<Height>::max()) const;
 	bool get_transaction(Hash tid, TransactionPrefix *tx, api::Transaction *ptx) const;
 	bool has_transaction(Hash tid) const;

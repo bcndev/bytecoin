@@ -126,7 +126,7 @@ int main(int argc, const char *argv[]) try {
 		    import_blocks + "/" + config.blocks_file_name, &block_chain);
 		return 0;
 	}
-	//	block_chain.test_undo_everything(0);
+	//	block_chain.test_undo_everything(1790000);
 	//	return 0;
 	boost::asio::io_service io;
 	platform::EventLoop run_loop(io);

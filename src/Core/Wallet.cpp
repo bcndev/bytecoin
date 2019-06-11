@@ -86,3 +86,36 @@ bool Wallet::prepare_input_for_spend(uint8_t tx_version, const KeyDerivation &kd
 	return detect_our_output(tx_version, tx_inputs_hash, kd, out_index, address_S, *output_shared_secret, key_output,
 	    &amount, output_secret_key_s, output_secret_key_a, &other_address, record_index, &key_image);
 }
+
+Hash Wallet::generate_output_seed(const Hash &tx_inputs_hash, const size_t &out_index) const {
+	return generate_output_seed(tx_inputs_hash, get_view_seed(), out_index);
+}
+
+Hash Wallet::generate_output_seed(const Hash &tx_inputs_hash, const Hash &view_seed, const size_t &out_index) {
+	auto add = common::get_varint_data(out_index);
+	BinaryArray ba;
+	common::append(ba, std::begin(view_seed.data), std::end(view_seed.data));
+	common::append(ba, std::begin(tx_inputs_hash.data), std::end(tx_inputs_hash.data));
+	common::append(ba, add);
+
+	return crypto::cn_fast_hash(ba);
+}
+
+KeyPair Wallet::transaction_keys_from_seed(const Hash &tx_inputs_hash, const Hash &view_seed) {
+	BinaryArray ba;
+	common::append(ba, std::begin(tx_inputs_hash.data), std::end(tx_inputs_hash.data));
+	common::append(ba, std::begin(view_seed.data), std::end(view_seed.data));
+
+	KeyPair tx_keys{};
+	tx_keys.secret_key = crypto::hash_to_scalar(ba.data(), ba.size());
+	crypto::secret_key_to_public_key(tx_keys.secret_key, &tx_keys.public_key);
+	return tx_keys;
+}
+
+void Wallet::generate_output_secrets(const Hash &output_seed, SecretKey *output_secret_scalar,
+    PublicKey *output_secret_point, uint8_t *output_secret_address_type) {
+	*output_secret_scalar                = crypto::bytes_to_scalar(output_seed);
+	*output_secret_point                 = crypto::bytes_to_good_point(output_seed);
+	Hash output_secret_address_type_hash = crypto::cn_fast_hash(output_seed.data, sizeof(output_seed.data));
+	*output_secret_address_type          = output_secret_address_type_hash.data[0];
+}

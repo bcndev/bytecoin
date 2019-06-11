@@ -85,54 +85,6 @@ void seria::ser_members(WalletStateBasic::UndoValue &v, seria::ISeria &s) {
 	seria_kv("value", v.value, s);
 }
 
-PreparedWalletTransaction::PreparedWalletTransaction(const Hash &tid, size_t size, TransactionPrefix &&ttx,
-    const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key)
-    : tid(tid), size(size), tx(std::move(ttx)) {
-	prepare(o_handler, view_secret_key);
-}
-
-PreparedWalletTransaction::PreparedWalletTransaction(const Hash &tid, size_t size, Transaction &&tx,
-    const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key)
-    : PreparedWalletTransaction(
-          tid, size, std::move(static_cast<TransactionPrefix &&>(tx)), o_handler, view_secret_key) {}
-
-void PreparedWalletTransaction::prepare(const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key) {
-	// We ignore results of most crypto calls here and absence of tx_public_key
-	// All errors will lead to spend_key not found in our wallet for legacy crypto
-	PublicKey tx_public_key = extra::get_transaction_public_key(tx.extra);
-	if (tx_public_key != PublicKey{})
-		derivation = generate_key_derivation(tx_public_key, view_secret_key);
-
-	prefix_hash = get_transaction_prefix_hash(tx);
-	inputs_hash = get_transaction_inputs_hash(tx);
-
-	KeyPair tx_keys;
-	address_public_keys.resize(tx.outputs.size());
-	output_shared_secrets.resize(tx.outputs.size());
-	for (size_t out_index = 0; out_index != tx.outputs.size(); ++out_index) {
-		const auto &output = tx.outputs.at(out_index);
-		if (output.type() != typeid(OutputKey))
-			continue;
-		const auto &key_output = boost::get<OutputKey>(output);
-		o_handler(tx.version, derivation, inputs_hash, out_index, key_output, &address_public_keys.at(out_index),
-		    &output_shared_secrets.at(out_index));
-	}
-}
-
-void PreparedWalletBlock::prepare(const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key) {
-	transactions.reserve(raw_block.raw_transactions.size());
-	const Hash base_transaction_hash   = get_transaction_hash(this->raw_block.base_transaction);
-	const size_t base_transaction_size = seria::binary_size(this->raw_block.base_transaction);
-	// We pass copies because we wish to keep raw_block as is
-	transactions.emplace_back(base_transaction_hash, base_transaction_size, Transaction(raw_block.base_transaction),
-	    o_handler, view_secret_key);
-	for (size_t tx_index = 0; tx_index != raw_block.raw_transactions.size(); ++tx_index) {
-		const Hash transaction_hash = raw_block.transaction_hashes.at(tx_index);
-		const size_t size           = raw_block.transaction_sizes.at(tx_index);
-		transactions.emplace_back(transaction_hash, size, TransactionPrefix(raw_block.raw_transactions.at(tx_index)),
-		    o_handler, view_secret_key);
-	}
-}
 WalletStateBasic::WalletStateBasic(
     logging::ILogger &log, const Config &config, const Currency &currency, DB &db, const std::string &cache_name)
     : m_genesis_bid(currency.genesis_block_hash)
@@ -555,7 +507,124 @@ bool WalletStateBasic::api_add_unspent(std::vector<api::Output> *result, Amount 
 	});
 }
 
+static void parse_lock_key(const std::string &suffix, BlockOrTimestamp *unl, size_t *global_index) {
+	const char *be = suffix.data();
+	const char *en = be + suffix.size();
+	*unl           = common::integer_cast<BlockOrTimestamp>(common::read_varint_sqlite4(be, en));
+	*global_index  = common::integer_cast<size_t>(common::read_varint_sqlite4(be, en));
+	invariant(en - be == 0, "");
+}
+
 std::vector<api::Block> WalletStateBasic::api_get_transfers(
+    const std::string &address, Height *from_height, Height *to_height, bool forward, size_t desired_tx_count) const {
+	std::vector<api::Block> result;
+	if (*from_height >= *to_height)
+		return result;
+	auto prefix = INDEX_ADDRESS_HEIGHT_TID + address + "/";
+	std::string middle =
+	    common::write_varint_sqlite4(forward ? *from_height : *to_height - 1);  // to_height != 0 checked in if above
+	size_t total_transactions_found = 0;
+	// Moving 2 cursors at once is cumbersome
+	DB::Cursor cur  = m_db.begin(prefix, middle, forward);
+	DB::Cursor cur2 = m_db.begin(UNLOCKED_INDEX_REALHE_GI_to_OUTPUT, middle, forward);
+	bool finished   = true;
+	Height height   = 0;
+	Hash tid;
+	if (!cur.end()) {
+		const std::string &suf = cur.get_suffix();
+		const char *be         = suf.data();
+		const char *en         = be + suf.size();
+		height                 = common::integer_cast<Height>(common::read_varint_sqlite4(be, en));
+		invariant(en - be == sizeof(tid.data), "CD_TIPS_PREFIX corrupted");
+		DB::from_binary_key(cur.get_suffix(), cur.get_suffix().size() - sizeof(tid.data), tid.data, sizeof(tid.data));
+		finished = false;
+	}
+	bool finished2 = true;
+	Height height2 = 0;
+	if (!cur2.end()) {
+		BlockOrTimestamp unl = 0;
+		size_t global_index  = 0;
+		parse_lock_key(cur2.get_suffix(), &unl, &global_index);
+		height2   = common::integer_cast<Height>(unl);
+		finished2 = false;
+	}
+	while (!finished || !finished2) {
+		bool use_first = !finished;
+		if (!finished && !finished2) {
+			if (forward)
+				use_first = height < height2;
+			else
+				use_first = height > height2;
+		}
+		const Height use_height = use_first ? height : height2;
+		if (forward && use_height >= *to_height)
+			break;
+		if (!forward && use_height < *from_height)
+			break;
+		if (result.empty() || result.back().header.height != use_height) {
+			if (total_transactions_found >= desired_tx_count) {
+				if (forward)
+					*to_height = use_height;
+				else
+					*from_height = use_height + 1;
+				break;
+			}
+			result.resize(result.size() + 1);
+			read_chain(use_height, &result.back().header);
+		}
+		if (use_first) {
+			total_transactions_found += 1;  // TODO - after testing, move 2 lines up
+			TransactionPrefix ptx;
+			api::Transaction tx;
+			get_transaction(tid, &ptx, &tx);
+			result.back().transactions.push_back(std::move(tx));
+			cur.next();
+			if (cur.end()) {
+				finished = true;
+			} else {
+				const std::string &suf = cur.get_suffix();
+				const char *be         = suf.data();
+				const char *en         = be + suf.size();
+				height                 = common::integer_cast<Height>(common::read_varint_sqlite4(be, en));
+				invariant(en - be == sizeof(tid.data), "CD_TIPS_PREFIX corrupted");
+				DB::from_binary_key(
+				    cur.get_suffix(), cur.get_suffix().size() - sizeof(tid.data), tid.data, sizeof(tid.data));
+			}
+			continue;
+		}
+		api::Output output;
+		seria::from_binary(output, cur2.get_value_array());
+		if (address.empty() || output.address == address) {
+			size_t ti = result.back().unlocked_transfers.size();  // outputs to several addresses are most likely mixed
+			for (size_t i = 0; i != result.back().unlocked_transfers.size(); ++i)
+				if (result.back().unlocked_transfers[i].transaction_hash == output.transaction_hash &&
+				    result.back().unlocked_transfers[i].address == output.address) {
+					ti = i;
+					break;
+				}
+			if (ti == result.back().unlocked_transfers.size()) {
+				result.back().unlocked_transfers.push_back(api::Transfer{});
+				result.back().unlocked_transfers.back().address          = output.address;
+				result.back().unlocked_transfers.back().transaction_hash = output.transaction_hash;
+				result.back().unlocked_transfers.back().ours             = true;
+			}
+			result.back().unlocked_transfers.at(ti).amount += output.amount;
+			result.back().unlocked_transfers.at(ti).outputs.push_back(std::move(output));
+		}
+		cur2.next();
+		if (cur2.end()) {
+			finished2 = true;
+		} else {
+			BlockOrTimestamp unl = 0;
+			size_t global_index  = 0;
+			parse_lock_key(cur2.get_suffix(), &unl, &global_index);
+			height2 = common::integer_cast<Height>(unl);
+		}
+	}
+	return result;
+}
+
+std::vector<api::Block> WalletStateBasic::api_get_transfers_legacy(
     const std::string &address, Height *from_height, Height *to_height, bool forward, size_t desired_tx_count) const {
 	std::vector<api::Block> result;
 	if (*from_height >= *to_height)
@@ -580,15 +649,15 @@ std::vector<api::Block> WalletStateBasic::api_get_transfers(
 		TransactionPrefix ptx;
 		api::Transaction tx;
 		get_transaction(tid, &ptx, &tx);
-		if (!address.empty()) {
-			for (auto tit = tx.transfers.begin(); tit != tx.transfers.end();)
-				if (tit->address == address)
-					++tit;
-				else
-					tit = tx.transfers.erase(tit);
-			if (tx.transfers.empty())
-				continue;
-		}
+		//		if (!address.empty()) {
+		//			for (auto tit = tx.transfers.begin(); tit != tx.transfers.end();)
+		//				if (tit->address == address)
+		//					++tit;
+		//				else
+		//					tit = tx.transfers.erase(tit);
+		//			if (tx.transfers.empty())
+		//				continue;
+		//		}
 		if (current_block.header.height != height && !current_block.transactions.empty()) {
 			result.push_back(std::move(current_block));
 			current_block = api::Block();
@@ -611,7 +680,6 @@ std::vector<api::Block> WalletStateBasic::api_get_transfers(
 	}
 	return result;
 }
-
 std::vector<api::Output> WalletStateBasic::api_get_locked_or_unconfirmed_unspent(const std::string &address,
     Height confirmed_height) const {
 	std::vector<api::Output> result;
@@ -722,14 +790,6 @@ bool WalletStateBasic::get_transaction(Hash tid, TransactionPrefix *tx, api::Tra
 	return true;
 }
 
-static void parse_lock_key(const std::string &suffix, BlockOrTimestamp *unl, size_t *global_index) {
-	const char *be = suffix.data();
-	const char *en = be + suffix.size();
-	*unl           = common::integer_cast<BlockOrTimestamp>(common::read_varint_sqlite4(be, en));
-	*global_index  = common::integer_cast<size_t>(common::read_varint_sqlite4(be, en));
-	invariant(en - be == 0, "");
-}
-
 void WalletStateBasic::read_unlock_index(std::map<size_t, api::Output> *add, const std::string &index_prefix,
     const std::string &address, BlockOrTimestamp begin, BlockOrTimestamp end) const {
 	if (begin >= end)  // optimization
@@ -760,7 +820,7 @@ std::map<size_t, api::Output> WalletStateBasic::get_unlocked_outputs(const std::
 	return unlocked;
 }
 
-std::vector<api::Transfer> WalletStateBasic::api_get_unlocked_transfers(
+std::vector<api::Transfer> WalletStateBasic::api_get_unlocked_transfers_legacy(
     const std::string &address, Height from_height, Height to_height) const {
 	auto unlocked = get_unlocked_outputs(address, from_height, to_height);
 	std::map<std::pair<Hash, std::string>, api::Transfer> transfers;

@@ -35,7 +35,7 @@ static std::pair<bool, std::string> split_ssl_address(const std::string &addr) {
 }
 #ifdef __EMSCRIPTEN__
 
-#include <emscripten.h>
+#include <emscripten/emscripten.h>
 
 class Timer::Impl {
 public:
@@ -72,9 +72,7 @@ void Timer::cancel() {
 		impl->close();
 }
 
-bool Timer::is_set()const {
-	return impl && impl->pending_wait;
-}
+bool Timer::is_set() const { return impl && impl->pending_wait; }
 
 void Timer::once(float after_seconds) {
 	cancel();
@@ -207,9 +205,7 @@ void Timer::cancel() {
 	impl = nullptr;
 }
 
-bool Timer::is_set()const {
-	return impl;
-}
+bool Timer::is_set() const { return impl; }
 
 void Timer::once(float after_seconds) {
 	cancel();
@@ -564,9 +560,7 @@ void Timer::cancel() {
 		impl->close();
 }
 
-bool Timer::is_set()const {
-	return impl && impl->pending_wait;
-}
+bool Timer::is_set() const { return impl && impl->pending_wait; }
 
 void Timer::once(float after_seconds) {
 	cancel();
@@ -770,7 +764,7 @@ public:
 			return;
 		}
 		if (e != boost::asio::error::operation_aborted) {
-			std::cout << e << " " << e.message() << std::endl;
+			std::cout << "SSL Handshake Error - check that server supports ssl/https, " << e.message() << std::endl;
 			close(true);
 		}
 	}

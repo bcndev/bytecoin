@@ -126,18 +126,19 @@ void BlockChainState::DeltaState::clear(Height new_block_height) {
 }
 
 // returns reward for coinbase transaction or fee for non-coinbase one
-static Amount validate_semantic(const Currency &currency, uint8_t block_major_version, bool generating,
+static Amount validate_semantic(const Currency &currency, uint8_t block_major_version, bool coinbase,
     const Transaction &tx, bool check_keys, bool key_image_subgroup_check) {
-	if (tx.inputs.empty())
-		throw ConsensusError("Empty inputs");
 	//	TODO - uncomment during next hard fork, finally prohibiting old signatures, outputs without secrets
 	//	We cannot do it at once, because mem pool will have v1 transactions during switch
-
 	// for compatibility, we create v1 coinbase transaction if mining on legacy address
-	const bool is_tx_amethyst = tx.version >= currency.amethyst_transaction_version;
-	if (block_major_version < currency.amethyst_block_version && is_tx_amethyst)
+	const bool is_tx_amethyst = tx.version == currency.amethyst_transaction_version;
+
+	if ((block_major_version < currency.amethyst_block_version && is_tx_amethyst) ||
+	    (tx.version != 1 && !is_tx_amethyst))
 		throw ConsensusError(common::to_string(
 		    "Wrong transaction version", int(tx.version), "in block version", int(block_major_version)));
+	if (block_major_version >= currency.amethyst_block_version && !extra::is_valid(tx.extra))
+		throw ConsensusError("Extra has wrong format");
 	// Subgroup check policy is as following:
 	// 1. output keys and encrypted output secrets are checked here
 	// 2. keyimage is checked here (this is changed in amethyst)
@@ -168,13 +169,15 @@ static Amount validate_semantic(const Currency &currency, uint8_t block_major_ve
 	}
 	Amount summary_input_amount = 0;
 	std::unordered_set<KeyImage> ki;
+	if (tx.inputs.empty())
+		throw ConsensusError("Empty inputs");
 	for (const auto &input : tx.inputs) {
 		Amount amount = 0;
 		if (input.type() == typeid(InputCoinbase)) {
-			if (!generating)
+			if (!coinbase)
 				throw ConsensusError("Coinbase input in non-coinbase transaction");
 		} else if (input.type() == typeid(InputKey)) {
-			if (generating)
+			if (coinbase)
 				throw ConsensusError("Key input in coinbase transaction");
 			const InputKey &in = boost::get<InputKey>(input);
 			amount             = in.amount;
@@ -190,10 +193,10 @@ static Amount validate_semantic(const Currency &currency, uint8_t block_major_ve
 		if (!add_amount(summary_input_amount, amount))
 			throw ConsensusError("Outputs amounts overflow");
 	}
-	if (summary_output_amount > summary_input_amount && !generating)
+	if (summary_output_amount > summary_input_amount && !coinbase)
 		throw ConsensusError("Sum of outputs > sum of inputs in non-coinbase transaction");
 	//	Types/count of signatures is derived from tx body during transaction serialization
-	if (generating)
+	if (coinbase)
 		return summary_output_amount;
 	return summary_input_amount - summary_output_amount;
 }
@@ -938,7 +941,7 @@ std::vector<PublicKey> BlockChainState::get_mixed_public_keys(const InputKey &in
 	return output_keys;
 }
 
-void BlockChainState::redo_transaction(uint8_t major_block_version, bool generating, const Transaction &transaction,
+void BlockChainState::redo_transaction(uint8_t major_block_version, bool coinbase, const Transaction &transaction,
     DeltaState *delta_state, BlockGlobalIndices *global_indices, Hash *newest_referenced_bid, bool check_sigs) const {
 	const bool check_outputs  = check_sigs;
 	const bool is_tx_amethyst = transaction.version >= m_currency.amethyst_transaction_version;

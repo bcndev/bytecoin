@@ -255,6 +255,8 @@ bool WalletHDBase::on_first_output_found(Timestamp ts) {
 bool WalletHDBase::create_look_ahead_records(size_t count) {
 	if (count <= m_used_address_count)
 		return false;
+	m_log(logging::INFO) << "Wallet address created because found in block chain, now total_address_count=" << count
+	                     << std::endl;
 	m_used_address_count = count;
 	generate_ahead();
 	return true;

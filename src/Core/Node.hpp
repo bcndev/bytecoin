@@ -201,7 +201,7 @@ protected:
 	void broadcast(P2PProtocolBytecoin *exclude, const BinaryArray &data);
 	void broadcast(P2PProtocolBytecoin *exclude, const BinaryArray &data_v1, const BinaryArray &data_v4);
 
-	void fill_cors(const http::RequestBody & req, http::ResponseBody & res);
+	void fill_cors(const http::RequestBody &req, http::ResponseBody &res);
 	bool on_api_http_request(http::Client *, http::RequestBody &&, http::ResponseBody &);
 	void on_api_http_disconnect(http::Client *);
 
