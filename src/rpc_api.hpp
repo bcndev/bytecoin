@@ -75,8 +75,10 @@ struct Transfer {
 struct Transaction {
 	// Fields for new transactions.
 	BlockOrTimestamp unlock_block_or_timestamp = 0;
-	std::vector<api::Transfer> transfers;  // includes only transfers we can view
-	Hash payment_id;                       // Will be DEPRECATED in future
+	std::vector<api::Transfer> transfers;
+	// includes only transfers we can view
+	// transfers are sorted, spends first, then sending, then change
+	Hash payment_id;  // Will be DEPRECATED in future
 	size_t anonymity = 0;
 
 	// Filled after transaction is created
@@ -130,6 +132,7 @@ struct BlockHeader {
 struct Block {
 	api::BlockHeader header;
 	std::vector<api::Transaction> transactions;
+	std::vector<api::Transfer> unlocked_transfers;
 	// If got from walletd, will contain only transactions with transfers we can view.
 };
 
@@ -191,16 +194,17 @@ struct ErrorAddress : public json_rpc::Error {
 	ErrorAddress() = default;
 	ErrorAddress(int c, const std::string &msg, const std::string &address);
 	void seria_data_members(seria::ISeria &s) override;
-	enum { ADDRESS_FAILED_TO_PARSE = -4, ADDRESS_NOT_IN_WALLET = -1002 };
+	enum { ADDRESS_FAILED_TO_PARSE = -4, ADDRESS_NOT_IN_TRANSACTION = -204, ADDRESS_NOT_IN_WALLET = -1002 };
 };
 
-struct ErrorHashNotFound : public json_rpc::Error {
+struct ErrorHash : public json_rpc::Error {
 	Hash hash;
-	ErrorHashNotFound() = default;
-	ErrorHashNotFound(const std::string &msg, const Hash &hash);
+	ErrorHash() = default;
+	ErrorHash(const std::string &msg, const Hash &hash) : ErrorHash(HASH_NOT_FOUND, msg, hash) {}
+	ErrorHash(int c, const std::string &msg, const Hash &hash);
 	void seria_data_members(seria::ISeria &s) override;
 	enum {
-		HASH_NOT_FOUND = -5  // Neither in main nor in side chain
+		HASH_NOT_FOUND = -5,  // Neither in main nor in side chain
 	};
 };
 
@@ -409,7 +413,7 @@ struct GetTransfers {  // Can be used incrementally by high-performace clients t
 	};
 	struct Response {
 		std::vector<api::Block> blocks;  // includes only blocks with transactions with transfers we can view
-		std::vector<api::Transfer> unlocked_transfers;  // Previous transfers unlocked between from_height and to_height
+		std::vector<api::Transfer> unlocked_transfers;  // deprecated, moved into blocks
 		Height next_from_height = 0;  // When desired_transaction_count != max you can pass next* to corresponding
 		                              // Request fields to continue iteration
 		Height next_to_height = 0;
@@ -470,10 +474,11 @@ struct CreateTransaction {
 		NOT_ENOUGH_FUNDS        = -301,
 		NOT_ENOUGH_ANONYMITY    = -303,
 		VIEW_ONLY_WALLET        = -304,
-		TOO_MUCH_ANONYMITY      = -305,  // For white addresses, anonymity should be 0 when sending
-		ADDRESS_FAILED_TO_PARSE = -4,    // returns ErrorAddress
-		INVALID_HEIGHT_OR_DEPTH = -2,    // height_or_depth too low or too high
-		ADDRESS_NOT_IN_WALLET   = -1002  // returns ErrorAddress
+		TOO_MUCH_ANONYMITY      = -305,
+		ADDRESS_FAILED_TO_PARSE = -4,     // returns ErrorAddress
+		INVALID_HEIGHT_OR_DEPTH = -2,     // height_or_depth too low or too high
+		ADDRESS_NOT_IN_WALLET   = -1002,  // returns ErrorAddress
+		BYTECOIND_REQUEST_ERROR = -1003   // bytecoind returned error
 	};
 	struct ErrorTransactionTooBig : public json_rpc::Error {
 		Amount max_amount               = 0;
@@ -503,7 +508,8 @@ struct SendTransaction {
 		WRONG_OUTPUT_REFERENCE = -102,  // wrong signature or referenced outputs changed during reorg. Bad output
 		// height is reported in conflict_height. If output index > max current index, conflict_height will be set to
 		// currency.max_block_number
-		OUTPUT_ALREADY_SPENT = -103  // conflight height reported in error
+		OUTPUT_ALREADY_SPENT    = -103,  // conflight height reported in error
+		BYTECOIND_REQUEST_ERROR = -1003  // bytecoind returned error
 	};
 	struct Error : public json_rpc::Error {
 		Height conflict_height = 0;
@@ -521,14 +527,19 @@ struct CreateSendproof {
 		Hash transaction_hash;
 		std::string message;  // Add any user message to proof. Changing message will invlidate proof (which works like
 		                      // digital signature of message)
-		std::vector<std::string> addresses;  // Leave empty to create proof for all "not ours" addresses
+		std::string address;
+		std::vector<std::string> addresses;  // Deprecated, use address
+		bool reveal_secret_message = false;  // Experimental
 	};
 
 	struct Response {
-		std::vector<std::string> sendproofs;
+		std::string sendproof;
+		std::vector<std::string> sendproofs;  // Deprecated, use sendproof
 	};
 	enum {
-		ADDRESS_FAILED_TO_PARSE = -4,  // returns ErrorAddress
+		ADDRESS_FAILED_TO_PARSE    = -4,    // returns ErrorAddress
+		ADDRESS_NOT_IN_TRANSACTION = -204,  // returns ErrorAddress
+		BYTECOIND_REQUEST_ERROR    = -1003  // bytecoind returned error
 	};
 };
 
@@ -701,15 +712,18 @@ struct CheckSendproof {
 		Amount amount = 0;
 		std::string message;
 		std::vector<size_t> output_indexes;
-	};  // All errors are reported as json rpc errors
-	enum {
-		FAILED_TO_PARSE            = -201,
-		NOT_IN_MAIN_CHAIN          = -202,
-		WRONG_SIGNATURE            = -203,
-		ADDRESS_NOT_IN_TRANSACTION = -204,
-		WRONG_AMOUNT               = -205
+		HeightOrDepth depth = 0;     // Experimental
+		std::string secret_message;  // Experimental
 	};
-	typedef json_rpc::Error Error;
+	// PROOF_FAILED_TO_PARSE is reported as json rpc error
+	// all others return hash of transaction and destination address
+	enum { PROOF_FAILED_TO_PARSE = -201, PROOF_NOT_IN_MAIN_CHAIN = -202, PROOF_WRONG_SIGNATURE = -203 };
+	struct Error : public json_rpc::Error {
+		Hash transaction_hash;
+		Error() = default;
+		Error(int c, const std::string &msg, const Hash &transaction_hash);
+		void seria_data_members(seria::ISeria &s) override;
+	};
 };
 
 struct GetStatistics {

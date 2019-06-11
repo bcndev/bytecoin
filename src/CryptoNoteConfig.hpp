@@ -40,7 +40,7 @@ const size_t MINIMUM_ANONYMITY      = 3;
 // Emission and formats
 const Amount MONEY_SUPPLY            = std::numeric_limits<uint64_t>::max();
 const unsigned EMISSION_SPEED_FACTOR = 18;
-static_assert(EMISSION_SPEED_FACTOR <= 8 * sizeof(uint64_t), "Bad EMISSION_SPEED_FACTOR");
+static_assert(EMISSION_SPEED_FACTOR > 0 && EMISSION_SPEED_FACTOR <= 8 * sizeof(uint64_t), "Bad EMISSION_SPEED_FACTOR");
 
 const size_t DISPLAY_DECIMAL_POINT = 8;
 const Amount MIN_DUST_THRESHOLD    = 1000000;            // Everything smaller will be split in groups of 3 digits

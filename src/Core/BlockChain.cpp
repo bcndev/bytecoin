@@ -991,6 +991,11 @@ void BlockChain::test_undo_everything(Height new_tip_height) {
 		undo_block(get_tip_bid(), raw_block, block, m_tip_height);
 		if (get_tip_bid() == m_genesis_bid)
 			break;
+		if (m_tip_height <= new_tip_height) {
+			std::cout << "Partial undo finished" << std::endl;
+			db_commit();
+			return;
+		}
 		pop_chain(block.header.previous_block_hash);
 		tip_changed();
 		while (test_prune_oldest()) {  // prunning main branch

@@ -23,14 +23,14 @@ public:
 	explicit Error(const std::string &msg) : std::logic_error(msg) {}
 };
 
-void generate_random_bytes(void *result, size_t n);  // thread-safe
+void generate_random_bytes(unsigned char *result, size_t n);  // thread-safe
 SecretKey random_scalar();
 
 template<typename T>
 T rand() {
 	static_assert(std::is_standard_layout<T>::value, "T must be Standard Layout");
 	T res;
-	generate_random_bytes(&res, sizeof(T));
+	generate_random_bytes(reinterpret_cast<unsigned char *>(&res), sizeof(T));
 	return res;
 }
 
@@ -178,7 +178,7 @@ BinaryArray get_output_secret_hash_arg(
 
 // Linkable crypto, output_secret_hash is temporary value that is expensive to calc, we pass it around
 // Old addresses use improved crypto in amethyst, because we need to enforce unique output public keys
-// on crypto level. Enforcing on daemon DB index level does not work (each of 2 solutions is vulnerable attack).
+// on crypto level. Enforcing on daemon DB index level does not work (each of 2 solutions is vulnerable to attack).
 
 // sender, sending
 PublicKey linkable_derive_output_public_key(const SecretKey &output_secret, const Hash &tx_inputs_hash,

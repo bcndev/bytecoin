@@ -171,14 +171,13 @@ common::BinaryArray DBlmdb::Cursor::get_value_array() const {
 	return common::BinaryArray(data.data(), data.data() + data.size());
 }
 
-DBlmdb::Cursor DBlmdb::begin(const std::string &prefix, const std::string &middle) const {
+DBlmdb::Cursor DBlmdb::begin(const std::string &prefix, const std::string &middle, bool forward) const {
 	int max_key_size = ::mdb_env_get_maxkeysize(db_env.handle);
-	return Cursor(lmdb::Cur(*db_txn, *db_dbi), prefix, middle, max_key_size, true);
+	return Cursor(lmdb::Cur(*db_txn, *db_dbi), prefix, middle, max_key_size, forward);
 }
 
 DBlmdb::Cursor DBlmdb::rbegin(const std::string &prefix, const std::string &middle) const {
-	int max_key_size = ::mdb_env_get_maxkeysize(db_env.handle);
-	return Cursor(lmdb::Cur(*db_txn, *db_dbi), prefix, middle, max_key_size, false);
+	return begin(prefix, middle, false);
 }
 
 void DBlmdb::commit_db_txn() {

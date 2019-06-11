@@ -456,7 +456,6 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction *ptx,
 	ptx->public_key                = extra::get_transaction_public_key(tx.extra);
 	ptx->extra                     = tx.extra;
 	extra::get_payment_id(tx.extra, ptx->payment_id);
-	auto encrypted_messages = extra::get_encrypted_messages(tx.extra);
 
 	bool our_inputs  = false;
 	bool our_outputs = false;
@@ -492,13 +491,15 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction *ptx,
 	// We combine outputs into transfers by address
 	Amount output_amount = 0;
 	std::map<AccountAddress, api::Transfer> transfer_map_outputs[2];  // We index by ours
+	size_t key_out_index = 0;
 	for (size_t out_index = 0; out_index != tx.outputs.size(); ++out_index) {
 		const auto &output = tx.outputs.at(out_index);
 		if (output.type() != typeid(OutputKey))
 			continue;
 		const auto &key_output         = boost::get<OutputKey>(output);
-		const auto &address_S          = pwtx.address_public_keys.at(out_index);
-		PublicKey output_shared_secret = pwtx.output_shared_secrets.at(out_index);
+		const auto &address_S          = pwtx.address_public_keys.at(key_out_index);
+		PublicKey output_shared_secret = pwtx.output_shared_secrets.at(key_out_index);
+		key_out_index += 1;
 		if (!add_amount(output_amount, key_output.amount))
 			return false;
 		api::Output out;
@@ -514,8 +515,7 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction *ptx,
 
 		AccountAddress address;
 		size_t record_index = 0;
-		SecretKey output_secret_key_s;
-		SecretKey output_secret_key_a;
+		SecretKey output_secret_key_s, output_secret_key_a;
 		if (m_wallet.detect_our_output(tx.version, pwtx.inputs_hash, pwtx.derivation, out_index, address_S,
 		        output_shared_secret, key_output, &out.amount, &output_secret_key_s, &output_secret_key_a, &address,
 		        &record_index, &out.key_image)) {
@@ -526,10 +526,13 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction *ptx,
 			if (try_add_incoming_output(out)) {
 				transfer.amount += out.amount;
 				transfer.outputs.push_back(out);
-				transfer.message += TransactionBuilder::decrypt_message(
-				    encrypted_messages, output_shared_secret, pwtx.inputs_hash, out_index);
+				our_outputs = true;
+			} else {
+				if (transfer.outputs.empty()) {
+					// Rare situation. We so not want transfers without outputs
+					transfer_map_outputs[true].erase(address);
+				}
 			}
-			our_outputs = true;
 			continue;
 		}
 		if (!our_inputs)
@@ -542,21 +545,54 @@ bool WalletState::parse_raw_transaction(bool is_base, api::Transaction *ptx,
 			out.address = transfer.address;
 			transfer.amount += key_output.amount;
 			transfer.outputs.push_back(out);
-			transfer.message += TransactionBuilder::decrypt_message(
-			    encrypted_messages, output_shared_secret, pwtx.inputs_hash, out_index);
-		} else {
-			if (is_tx_amethyst && m_wallet.can_view_outgoing_addresses())
-				m_log(logging::WARNING) << "Auditor warning - failed to detect destination address for output #"
-				                        << out_index << " in tx " << tid;
+			continue;
 		}
+		if (is_tx_amethyst && m_wallet.can_view_outgoing_addresses())
+			m_log(logging::WARNING) << "Auditor warning - failed to detect destination address for output #"
+			                        << out_index << " in tx " << tid;
+	}
+	auto encrypted_messages = extra::get_encrypted_messages(tx.extra);
+	for (size_t m_index = 0; m_index != encrypted_messages.size(); ++m_index) {
+		const auto &em                 = encrypted_messages.at(m_index);
+		const size_t fake_output_index = tx.outputs.size() + m_index;
+		const auto &address_S          = pwtx.address_public_keys.at(key_out_index);
+		PublicKey output_shared_secret = pwtx.output_shared_secrets.at(key_out_index);
+		key_out_index += 1;
+
+		Amount amount = 0;
+		AccountAddress address;
+		size_t record_index = 0;
+		KeyImage key_image;
+		SecretKey output_secret_key_s, output_secret_key_a;
+		if (m_wallet.detect_our_output(tx.version, pwtx.inputs_hash, pwtx.derivation, fake_output_index, address_S,
+		        output_shared_secret, em.output, &amount, &output_secret_key_s, &output_secret_key_a, &address,
+		        &record_index, &key_image)) {
+			api::Transfer &transfer = transfer_map_outputs[true][address];
+			if (transfer.address.empty())
+				transfer.address = m_currency.account_address_as_string(address);
+			transfer.message += TransactionBuilder::decrypt_message_chunk(em.message, output_shared_secret);
+			continue;
+		}
+		if (!our_inputs)
+			continue;
+		if (TransactionBuilder::detect_not_our_output(&m_wallet, is_tx_amethyst, tid, pwtx.inputs_hash, &history,
+		        &tx_keys, fake_output_index, em.output, &address, &output_shared_secret)) {
+			api::Transfer &transfer = transfer_map_outputs[false][address];
+			if (transfer.address.empty())
+				transfer.address = m_currency.account_address_as_string(address);
+			transfer.message += TransactionBuilder::decrypt_message_chunk(em.message, output_shared_secret);
+			continue;
+		}
+		if (is_tx_amethyst && m_wallet.can_view_outgoing_addresses())
+			m_log(logging::WARNING) << "Auditor warning - failed to detect destination address for encrypted message #"
+			                        << m_index << " in tx " << tid;
 	}
 	for (bool ours : {false, true})
 		for (auto &&tm : transfer_map_outputs[ours]) {
 			tm.second.locked           = ptx->unlock_block_or_timestamp != 0;
 			tm.second.ours             = ours;
 			tm.second.transaction_hash = tid;
-			if (tm.second.amount != 0)  // We use map as a map of addresses
-				output_transfers->push_back(std::move(tm.second));
+			output_transfers->push_back(std::move(tm.second));
 		}
 	ptx->amount = output_amount;
 	if (output_amount > input_amount && !is_base)
@@ -690,7 +726,7 @@ bool WalletState::api_get_transaction(Hash tid, bool check_pool, TransactionPref
 
 std::string WalletState::api_create_proof(const TransactionPrefix &tx,
     const std::vector<std::vector<PublicKey>> &mixed_public_keys, const std::string &addr_str, const Hash &tid,
-    const std::string &message) const {
+    const std::string &message, bool reveal_secret_message) const {
 	const Hash tx_inputs_hash = get_transaction_inputs_hash(tx);
 	const Hash message_hash   = crypto::cn_fast_hash(message.data(), message.size());
 	AccountAddress address;
@@ -704,7 +740,7 @@ std::string WalletState::api_create_proof(const TransactionPrefix &tx,
 		sp.address_simple   = boost::get<AccountAddressLegacy>(address);
 		sp.message          = message;
 		sp.transaction_hash = tid;
-		KeyPair tx_keys     = TransactionBuilder::transaction_keys_from_seed(tx_inputs_hash, m_wallet.get_view_seed());
+		KeyPair tx_keys     = Wallet::transaction_keys_from_seed(tx_inputs_hash, m_wallet.get_view_seed());
 		const auto &addr    = boost::get<AccountAddressLegacy>(address);
 		sp.derivation       = crypto::generate_key_derivation(addr.V, tx_keys.secret_key);
 		sp.signature =
@@ -736,12 +772,7 @@ std::string WalletState::api_create_proof(const TransactionPrefix &tx,
 		if (output.type() != typeid(OutputKey))
 			continue;
 		const auto &key_output = boost::get<OutputKey>(output);
-		Hash output_seed;
-		if (m_wallet.get_hw()) {
-			output_seed = m_wallet.get_hw()->generate_output_seed(tx_inputs_hash, out_index);
-		} else {
-			output_seed = TransactionBuilder::generate_output_seed(tx_inputs_hash, m_wallet.get_view_seed(), out_index);
-		}
+		Hash output_seed       = m_wallet.generate_output_seed(tx_inputs_hash, out_index);
 		PublicKey output_shared_secret;
 		OutputKey should_be_output = TransactionBuilder::create_output(
 		    true, address, SecretKey{}, tx_inputs_hash, out_index, output_seed, &output_shared_secret);
@@ -752,6 +783,22 @@ std::string WalletState::api_create_proof(const TransactionPrefix &tx,
 		sp.elements.push_back(SendproofAmethyst::Element{out_index, output_seed});
 		//		all_output_det_keys.push_back(output_seed_keys);
 		total_amount += key_output.amount;
+	}
+	if (reveal_secret_message) {
+		auto encrypted_messages = extra::get_encrypted_messages(tx.extra);
+		for (size_t m_index = 0; m_index != encrypted_messages.size(); ++m_index) {
+			const auto &em                 = encrypted_messages.at(m_index);
+			const size_t fake_output_index = tx.outputs.size() + m_index;
+			Hash output_seed               = m_wallet.generate_output_seed(tx_inputs_hash, fake_output_index);
+			PublicKey output_shared_secret;
+			OutputKey should_be_output = TransactionBuilder::create_output(
+			    true, address, SecretKey{}, tx_inputs_hash, fake_output_index, output_seed, &output_shared_secret);
+			if (should_be_output.public_key != em.output.public_key ||
+			    should_be_output.encrypted_secret != em.output.encrypted_secret ||
+			    should_be_output.encrypted_address_type != em.output.encrypted_address_type)
+				continue;  // output to different address or crypto protocol violated
+			sp.elements.push_back(SendproofAmethyst::Element{fake_output_index, output_seed});
+		}
 	}
 	const auto proof_body = seria::to_binary(sp);
 	//	std::cout << "Proof body: " << common::to_hex(proof_body) << std::endl;
@@ -832,15 +879,18 @@ api::Block WalletState::api_get_pool_as_history(const std::string &address) cons
 	for (const auto &hit : m_memory_state.get_transactions()) {
 		auto tx         = hit.second.atx;
 		tx.block_height = get_tip_height() + 1;
-		if (!address.empty()) {
-			for (auto tit = tx.transfers.begin(); tit != tx.transfers.end();)
-				if (tit->address == address)
-					++tit;
-				else
-					tit = tx.transfers.erase(tit);
-		}
 		if (tx.transfers.empty())  // We also have to keep not ours transaction in pool
 			continue;
+		if (!address.empty()) {
+			bool address_found = false;
+			for (const auto &tr : tx.transfers)
+				if (tr.address == address) {
+					address_found = true;
+					break;
+				}
+			if (!address_found)
+				continue;
+		}
 		current_block.transactions.push_back(std::move(tx));
 	}
 	return current_block;

@@ -71,6 +71,7 @@ public:
 	    const PublicKey &address_S, const PublicKey &output_shared_secret, const OutputKey &, Amount *,
 	    SecretKey *output_secret_key_s, SecretKey *output_secret_key_a, AccountAddress *, size_t *record_index,
 	    KeyImage *keyimage) override;
+	Hash generate_output_seed(const Hash &tx_inputs_hash, const size_t &out_index) const override;
 };
 
 }  // namespace cn

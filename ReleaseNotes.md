@@ -1,5 +1,19 @@
 ## Release Notes
 
+### v3.4.5 (Amethyst)
+
+- Tiny fixes in mining-related code. All miners are advised to update.
+
+*API tweaks*
+- In `get_transfers` response, when filtering by address, filtering does not remove transfers from transactions, only returns less transactions
+- In `check_sendproof` error response, hash of referenced transaction is returned if proof is successfully parsed
+- In `check_sendproof` errors `ADDRESS_NOT_IN_TRANSACTION (-204)` and `ADDRESS_FAILED_TO_PARSE (-4)` removed, `PROOF_WRONG_SIGNATURE (-203)` will be reported instead.
+- `walletd` methods which do request to `bytecoind` - `create_transaction`, `send_transaction`, `create_sendproof` will now return special error `BYTECOIND_REQUEST_ERROR (-1003)` instead of `INTERNAL_ERROR (-32603)` when json RPC call to `bytecoind` fails.
+
+*API deprecations (will be removed in future)*
+- In `get_transfers` response, `unlocked_transfers` for range of blocks deprecated, unlocked transfers are returned in corresponding blocks.
+- In `create_sendproof` request/response, `addresses/sendproofs` fields are deprecated, use `address/sendproof` instead. If using `address` field and proof canno be created, json RPC error `ADDRESS_NOT_IN_TRANSACTION (-204)` will be returned, instead of empty proof, as it was before.
+
 ### v3.4.4 (Amethyst)
 
 - `walletd` can now sync most of the blockchain from static files (tremendously increasing efficiency for public nodes), reverting to RPC only for the (small) part of blockchain after last hard checkpoint.

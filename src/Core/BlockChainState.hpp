@@ -133,7 +133,7 @@ private:
 	bool read_hidden_amount_output(size_t hidden_index, OutputIndexData *) const;
 	void spend_output(OutputIndexData &&, size_t hidden_index, size_t trigger_input_index, size_t level, bool spent);
 
-	void redo_transaction(uint8_t major_block_version, bool generating, const Transaction &, DeltaState *,
+	void redo_transaction(uint8_t major_block_version, bool coinbase, const Transaction &, DeltaState *,
 	    BlockGlobalIndices *, Hash *newest_referenced_bid,
 	    bool check_sigs) const;  // throws ConsensusError
 	void redo_block(

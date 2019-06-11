@@ -118,6 +118,12 @@ public:
 	bool prepare_input_for_spend(uint8_t tx_version, const KeyDerivation &kd, const Hash &tx_inputs_hash,
 	    size_t out_index, const OutputKey &, PublicKey *output_shared_secret, SecretKey *output_secret_key_s,
 	    SecretKey *output_secret_key_a, size_t *record_index);
+
+	virtual Hash generate_output_seed(const Hash &tx_inputs_hash, const size_t &out_index) const;
+	static Hash generate_output_seed(const Hash &tx_inputs_hash, const Hash &view_seed, const size_t &out_index);
+	static KeyPair transaction_keys_from_seed(const Hash &tx_inputs_hash, const Hash &view_seed);
+	static void generate_output_secrets(const Hash &output_seed, SecretKey *output_secret_scalar,
+	    PublicKey *output_secret_point, uint8_t *output_secret_address_type);
 };
 
 }  // namespace cn

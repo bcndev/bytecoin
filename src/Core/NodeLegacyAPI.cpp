@@ -194,7 +194,7 @@ bool Node::on_get_last_block_header(http::Client *, http::RequestBody &&, json_r
 bool Node::on_get_block_header_by_hash(http::Client *, http::RequestBody &&, json_rpc::Request &&,
     api::cnd::GetBlockHeaderByHashLegacy::Request &&request, api::cnd::GetBlockHeaderByHashLegacy::Response &response) {
 	if (!m_block_chain.get_header(request.hash, &response.block_header))
-		throw api::ErrorHashNotFound("Block is neither in main nor in any side chain", request.hash);
+		throw api::ErrorHash("Block is neither in main nor in any side chain", request.hash);
 	response.block_header.orphan_status =
 	    !m_block_chain.in_chain(response.block_header.height, response.block_header.hash);
 	response.block_header.depth = api::HeightOrDepth(m_block_chain.get_tip_height() - response.block_header.height);

@@ -4,8 +4,8 @@
 #pragma once
 
 #include "CryptoNote.hpp"
-#include "Wallet.hpp"            // for OutputHandler
-#include "WalletStateBasic.hpp"  // for PreparedWallet*
+#include "Wallet.hpp"  // for OutputHandler
+#include "WalletStatePrepared.hpp"
 #include "rpc_api.hpp"
 
 namespace cn { namespace hardware {
@@ -16,19 +16,14 @@ class HardwareWallet;
 // We do it by confining threads to "boxes"
 
 #ifdef __EMSCRIPTEN__
-#define cn_SINGLE_THREAD_MULTICORE_WALLET
-#else
-//#define cn_SINGLE_THREAD_MULTICORE_WALLET
-#endif
 
-#ifdef cn_SINGLE_THREAD_MULTICORE_WALLET
-
-#include "platform/Network.hpp"
+#include <emscripten/emscripten.h>
 
 namespace cn {
 
 class WalletPreparatorMulticore {
 	struct Worker {
+		worker_handle handle{};
 		size_t total_work_size = 0;
 	};
 	std::vector<Worker> workers;
@@ -43,8 +38,6 @@ class WalletPreparatorMulticore {
 
 	std::deque<WorkItem> work;
 	std::deque<WorkItem> sent_work;
-	//	std::deque<PreparedWalletBlock> ready_work_block;
-	//	std::deque<PreparedWalletTransaction> ready_work_tx;
 
 	size_t total_block_size    = 0;
 	size_t total_mempool_count = 0;
@@ -57,13 +50,13 @@ class WalletPreparatorMulticore {
 	std::function<bool(const PreparedWalletTransaction &)> t_handler;
 	std::function<void()> c_handler;
 
-	platform::Timer debug_timer;
-	void on_debug_timer();
-
 	void send_work();
 	void broadcast_received_work();
-	void post_block_prepare(size_t wi, common::BinaryArray &&ba);
-	void post_transaction_prepare(size_t wi, common::BinaryArray &&ba);
+
+	static void on_block_prepared_handler(char *data, int size, void *arg);
+	static void on_transaction_prepared_handler(char *data, int size, void *arg);
+	void on_block_prepared(const char *data, size_t size);
+	void on_transaction_prepared(const char *data, size_t size);
 
 public:
 	WalletPreparatorMulticore(hardware::HardwareWallet *hw_copy, Wallet::OutputHandler &&o_handler,
@@ -76,9 +69,6 @@ public:
 	void wallet_reconnected() {}
 	size_t get_total_block_size() const { return total_block_size; }
 	size_t get_total_mempool_count() const { return total_mempool_count; }
-
-	void on_block_prepared(size_t wi, const void *data, size_t size);
-	void on_transaction_prepared(size_t wi, const void *data, size_t size);
 };
 
 }  // namespace cn

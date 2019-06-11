@@ -12,8 +12,8 @@
 
 #ifdef __EMSCRIPTEN__
 
-#include <emscripten.h>
 #include <emscripten/bind.h>
+#include <emscripten/emscripten.h>
 
 static http::Server *global_server = nullptr;
 // If we later need more than 1, we will make a map of port->servers

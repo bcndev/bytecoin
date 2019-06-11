@@ -142,7 +142,7 @@ else()
     set_property(SOURCE ${SRC_SERIA} PROPERTY COMPILE_FLAGS -O3)
 endif()
 include_directories(src)
-include_directories(${CMAKE_BINARY_DIR})
+#include_directories(${CMAKE_BINARY_DIR})
 set(SOURCE_FILES
     ${SRC_DB}
     ${SRC_NO_WARNINGS}

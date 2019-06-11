@@ -6,6 +6,7 @@
 
 #include <fstream>
 
+#include <map>
 #include "../io.hpp"
 #include "common/Invariant.hpp"
 #include "common/StringTools.hpp"
@@ -40,42 +41,42 @@ static void slow_hash(const void *data, size_t length, cryptoHash *hash) {
 	invariant(chash == hash2, "");
 }
 
-extern "C" typedef void hash_f(const void *, size_t, cryptoHash *);
+typedef std::function<void(const void *, size_t, cryptoHash *)> hash_f;
 
-struct hash_func {
-	const std::string name;
-	hash_f &f;
-} hashes[] = {{"fast", crypto_cn_fast_hash}, {"slow", slow_hash}, {"tree", hash_tree},
-    {"extra-blake", crypto_hash_extra_blake}, {"extra-groestl", crypto_hash_extra_groestl},
-    {"extra-jh", crypto_hash_extra_jh}, {"extra-skein", crypto_hash_extra_skein}};
+std::map<std::string, hash_f> hashes{{"fast", &crypto_cn_fast_hash}, {"slow", &slow_hash}, {"tree", &hash_tree},
+    {"extra-blake", &crypto_hash_extra_blake}, {"extra-groestl", &crypto_hash_extra_groestl},
+    {"extra-jh", &crypto_hash_extra_jh}, {"extra-skein", &crypto_hash_extra_skein}};
 
-void test_hash(const char *test_fun_name, const std::string &test_vectors_filename) {
-	hash_f *f = nullptr;
-	std::fstream input;
+void test_hash(const std::string &test_fun_name, const std::string &test_file_path) {
 	std::vector<char> data;
 	crypto::Hash expected, actual;
 	size_t test = 0;
-	for (hash_func *hf = hashes;; hf++) {
-		if (hf >= &hashes[sizeof(hashes) / sizeof(hash_func)]) {
-			std::cerr << "Unknown function" << std::endl;
-			throw std::runtime_error("test_hash failed");
-		}
-		if (test_fun_name == hf->name) {
-			f = &hf->f;
-			break;
-		}
+	auto hit    = hashes.find(test_fun_name);
+	if (hit == hashes.end()) {
+		std::cerr << "Unknown function" << std::endl;
+		throw std::runtime_error("test_hash failed");
 	}
-	input.open(test_vectors_filename, std::ios_base::in);
-	for (;;) {
+	hash_f f = hit->second;
+
+	std::fstream input(test_file_path, std::ios_base::in);
+	if (!input.is_open()) {
+		std::cerr << "Could not open test vectors with name \"" << test_file_path << std::endl;
+		return;
+	}
+	input.exceptions(std::ios_base::badbit);
+	std::string line;
+	for (size_t i = 1; getline(input, line); ++i) {
+		std::stringstream line_stream(line);
+		//	for (;;) {
 		++test;
-		input.exceptions(std::ios_base::badbit);
-		get(input, expected);
-		if (input.rdstate() & std::ios_base::eofbit) {
-			break;
-		}
-		input.exceptions(std::ios_base::badbit | std::ios_base::failbit | std::ios_base::eofbit);
-		input.clear(input.rdstate());
-		get(input, data);
+		//		input.exceptions(std::ios_base::badbit);
+		get(line_stream, expected);
+		//		if (input.rdstate() & std::ios_base::eofbit) {
+		//			break;
+		//		}
+		//		input.exceptions(std::ios_base::badbit | std::ios_base::failbit | std::ios_base::eofbit);
+		//		input.clear(input.rdstate());
+		get(line_stream, data);
 		f(data.data(), data.size(), &actual);
 		if (expected != actual) {
 			std::cerr << "Hash mismatch on test " << test << std::endl;

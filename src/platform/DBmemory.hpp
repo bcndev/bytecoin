@@ -20,12 +20,20 @@ public:
 		common::BinaryArray value;
 		bool is_deleted = false;
 	};
+	typedef common::BinaryArray Value;
+	struct CmpByUnsigned {
+		int compare(const std::string &a, const std::string &b) const;
+		bool operator()(const std::string &a, const std::string &b) const { return compare(a, b) < 0; }
+	};
+	typedef std::map<std::string, common::BinaryArray, CmpByUnsigned> Storage;
 
 	explicit DBmemory(
 	    OpenMode open_mode, const std::string &full_path, uint64_t max_tx_size = 0);  // no max size in memory
 	const std::string &get_path() const { return full_path; }
 
 	std::vector<JournalEntry> move_journal();
+	const Storage &get_storage() const { return storage; }
+
 	void commit_db_txn();
 	size_t test_get_approximate_size() const;
 	size_t get_approximate_items_count() const;
@@ -36,18 +44,6 @@ public:
 	bool get(const std::string &key, common::BinaryArray &value) const;
 	bool get(const std::string &key, std::string &value) const;
 
-	typedef common::BinaryArray Value;
-	struct Key {  // custom, because char is signed
-		std::string data;
-		int compare(const Key &other) const;
-		bool operator<(const Key &other) const { return compare(other) < 0; }
-		bool operator<=(const Key &other) const { return compare(other) <= 0; }
-		bool operator==(const Key &other) const { return compare(other) == 0; }
-		bool operator!=(const Key &other) const { return compare(other) != 0; }
-		bool operator>(const Key &other) const { return compare(other) > 0; }
-		bool operator>=(const Key &other) const { return compare(other) >= 0; }
-	};
-
 	void del(const std::string &key, bool mustexist);
 
 	class Cursor {
@@ -55,7 +51,7 @@ public:
 		std::string suffix;
 		const std::string prefix;
 		bool forward = false;
-		std::map<Key, common::BinaryArray>::iterator it;
+		std::map<std::string, common::BinaryArray>::iterator it;
 		friend class DBmemory;
 		void check_prefix();
 		Cursor(DBmemory *db, const std::string &prefix, const std::string &middle, bool forward);
@@ -69,7 +65,7 @@ public:
 		void erase();  // moves to the next value
 	};
 	friend class Cursor;
-	Cursor begin(const std::string &prefix, const std::string &middle = std::string()) const;
+	Cursor begin(const std::string &prefix, const std::string &middle = std::string(), bool forward = true) const;
 	Cursor rbegin(const std::string &prefix, const std::string &middle = std::string()) const;
 
 	static std::string to_binary_key(const unsigned char *data, size_t size) {
@@ -91,8 +87,9 @@ public:
 	static void backup_db(const std::string &path, const std::string &dst_path);
 
 private:
-	std::map<Key, common::BinaryArray> storage;
+	Storage storage;
 	std::vector<JournalEntry> journal;
+	bool use_journal    = false;
 	size_t total_size   = 0;
 	size_t max_key_size = 0;
 };

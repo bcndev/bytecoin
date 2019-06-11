@@ -18,7 +18,7 @@ public:
 
 class JsonInputStreamValue : public JsonInputStream, private common::Nocopy {
 public:
-	explicit JsonInputStreamValue(const common::JsonValue &value, bool allow_unused_object_keys);
+	explicit JsonInputStreamValue(const common::JsonValue &root_value, bool allow_unused_object_keys);
 
 	bool begin_object() override;
 	void object_key(common::StringView name, bool optional) override;
@@ -40,7 +40,7 @@ public:
 	bool binary(void *value, size_t size) override;
 
 private:
-	const common::JsonValue &value;
+	const common::JsonValue &root_value;
 	const bool allow_unused_object_keys;
 	const common::JsonValue *object_key_value = nullptr;
 	std::vector<const common::JsonValue *> chain;

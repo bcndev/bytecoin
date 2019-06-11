@@ -51,7 +51,7 @@ void ser_members(cn::SendproofAmethyst &v, ISeria &s) {
 		throw std::runtime_error("Sendproof disambiguition fails");
 	seria_kv("version", v.version, s);
 	seria_kv("transaction_hash", v.transaction_hash, s);
-	if (v.version == 1 || v.version == 2 || v.version == 3) {
+	if (v.version == 1) {
 		seria_kv("address", v.address_simple, s);
 		seria_kv("derivation", v.derivation, s);
 		seria_kv("signature", v.signature, s);
@@ -288,16 +288,18 @@ void ser_members(OutputKey &v, ISeria &s, bool is_tx_amethyst) {
 	}
 }
 
-void ser_members(TransactionPrefix &v, ISeria &s) {
+void ser_members(TransactionPrefix &v, ISeria &s, bool is_root) {
 	seria_kv("version", v.version, s);
-	const bool is_tx_amethyst = (v.version >= parameters::TRANSACTION_VERSION_AMETHYST);
+	const bool is_tx_amethyst = (v.version == parameters::TRANSACTION_VERSION_AMETHYST);
+	if (!is_root && v.version != 1 && !is_tx_amethyst)
+		throw std::runtime_error("Unknown transaction version " + common::to_string(v.version));
 	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
 	seria_kv("inputs", v.inputs, s);
-	seria_kv("outputs", v.outputs, s, is_tx_amethyst);
+	seria_kv("outputs", v.outputs, s, !is_root && is_tx_amethyst);
 	seria_kv("extra", v.extra, s);
 }
 void ser_members(RootBaseTransaction &v, ISeria &s) {
-	ser_members(static_cast<TransactionPrefix &>(v), s);
+	ser_members(static_cast<TransactionPrefix &>(v), s, true);
 	if (v.version >= 2) {
 		size_t ignored = 0;
 		seria_kv("ignored", ignored, s);
@@ -538,7 +540,7 @@ Hash cn::get_transaction_hash(const Transaction &tx) {
 Hash cn::get_block_hash(const BlockHeader &bh, const BlockBodyProxy &body_proxy) {
 	// get_object_hash prepends array size before hashing.
 	// this was a mistake of initial cryptonote developers
-	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::BLOCKHASH, body_proxy));
+	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::BLOCKHASH, body_proxy), nullptr);
 	//	std::cout << "ha: " << ha2 << " ba: " << common::to_hex(seria::to_binary(bh, BlockSeriaType::BLOCKHASH,
 	// body_proxy)) << std::endl;
 	return ha2;
@@ -547,7 +549,7 @@ Hash cn::get_block_hash(const BlockHeader &bh, const BlockBodyProxy &body_proxy)
 Hash cn::get_block_header_prehash(const BlockHeader &bh, const BlockBodyProxy &body_proxy) {
 	// get_object_hash prepends array size before hashing.
 	// this was a mistake of initial cryptonote developers
-	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::PREHASH, body_proxy));
+	Hash ha2 = get_object_hash(seria::to_binary(bh, BlockSeriaType::PREHASH, body_proxy), nullptr);
 	//	std::cout << "ha: " << ha2 << " ba: " << common::to_hex(result.data(), result.size()) << std::endl;
 	return ha2;
 }

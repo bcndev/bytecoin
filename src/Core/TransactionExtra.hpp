@@ -36,13 +36,16 @@ struct BlockCapacityVote {
 };
 
 struct EncryptedMessage {
-	common::BinaryArray message;
-	enum { tag = 0x05, CRC_SIZE = 8 };
+	OutputKey output;
+	common::BinaryArray message;  // No CRC needed because we run normal coin detection algorithm
+	enum { tag = 0x05 };
 };
 // tx_extra_field format, except Padding, TransactionPublicKey:
 //   varint tag;
 //   varint size | byte size
 //   varint data[];
+
+bool is_valid(const BinaryArray &tx_extra);
 
 PublicKey get_transaction_public_key(const BinaryArray &tx_extra);
 void add_transaction_public_key(BinaryArray &tx_extra, const PublicKey &tx_pub_key);
@@ -58,8 +61,9 @@ bool get_block_capacity_vote(const BinaryArray &tx_extra, size_t *block_capacity
 void add_payment_id(BinaryArray &tx_extra, const Hash &payment_id);
 bool get_payment_id(const BinaryArray &tx_extra, Hash &payment_id);
 
+size_t get_encrypted_message_size(size_t size);
 std::vector<EncryptedMessage> get_encrypted_messages(const BinaryArray &tx_extra);
-void add_encrypted_message(BinaryArray &tx_extra, const BinaryArray &message);
+void add_encrypted_message(BinaryArray &tx_extra, const EncryptedMessage &message);
 
 }}  // namespace cn::extra
 
@@ -67,4 +71,5 @@ namespace seria {
 class ISeria;
 void ser_members(cn::extra::MergeMiningTag &v, ISeria &s);
 void ser_members(cn::extra::BlockCapacityVote &v, ISeria &s);
+void ser_members(cn::extra::EncryptedMessage &v, ISeria &s);
 }  // namespace seria

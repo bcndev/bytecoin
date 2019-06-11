@@ -27,7 +27,7 @@ OutputKey TransactionBuilder::create_output(bool tx_amethyst, const AccountAddre
 	SecretKey output_secret_scalar;
 	PublicKey output_secret_point;
 	uint8_t output_secret_address_type = 0;
-	TransactionBuilder::generate_output_secrets(
+	Wallet::generate_output_secrets(
 	    output_seed, &output_secret_scalar, &output_secret_point, &output_secret_address_type);
 	//	std::cout << "generate_output_secrets=" << output_secret_scalar << " " << output_secret_point << " "
 	//	          << output_secret_address_type << std::endl;
@@ -71,7 +71,7 @@ bool TransactionBuilder::detect_not_our_output(const Wallet *wallet, bool tx_ame
 			*history = wallet->load_history(tid);
 		if (!history->get().empty()) {
 			if (tx_keys->secret_key == SecretKey{})
-				*tx_keys = transaction_keys_from_seed(tx_inputs_hash, wallet->get_view_seed());
+				*tx_keys = Wallet::transaction_keys_from_seed(tx_inputs_hash, wallet->get_view_seed());
 			for (const auto &addr : history->get()) {
 				const KeyDerivation derivation = generate_key_derivation(addr.V, tx_keys->secret_key);
 				const PublicKey guess_key      = crypto::derive_output_public_key(derivation, out_index, addr.S);
@@ -85,12 +85,7 @@ bool TransactionBuilder::detect_not_our_output(const Wallet *wallet, bool tx_ame
 		return false;
 	}
 	// In amethyst, we should always detect out outputs if we know view_seed
-	Hash output_seed;
-	if (wallet->get_hw()) {
-		output_seed = wallet->get_hw()->generate_output_seed(tx_inputs_hash, out_index);
-	} else {
-		output_seed = TransactionBuilder::generate_output_seed(tx_inputs_hash, wallet->get_view_seed(), out_index);
-	}
+	Hash output_seed = wallet->generate_output_seed(tx_inputs_hash, out_index);
 	return detect_not_our_output_amethyst(
 	    tx_inputs_hash, output_seed, out_index, key_output, address, output_shared_secret);
 }
@@ -100,7 +95,7 @@ bool TransactionBuilder::detect_not_our_output_amethyst(const Hash &tx_inputs_ha
 	SecretKey output_secret_scalar;
 	PublicKey output_secret_point;
 	uint8_t output_secret_address_type = 0;
-	TransactionBuilder::generate_output_secrets(
+	Wallet::generate_output_secrets(
 	    output_seed, &output_secret_scalar, &output_secret_point, &output_secret_address_type);
 
 	const uint8_t address_type = key_output.encrypted_address_type ^ output_secret_address_type;
@@ -121,8 +116,12 @@ bool TransactionBuilder::detect_not_our_output_amethyst(const Hash &tx_inputs_ha
 	return false;
 }
 
-void TransactionBuilder::add_output(uint64_t amount, const AccountAddress &to, const std::string &message) {
-	m_output_descs.push_back(OutputDesc{amount, to, std::string{}});
+void TransactionBuilder::add_output(const AccountAddress &to, uint64_t amount) {
+	m_output_descs.push_back(OutputDesc{to, amount});
+}
+
+void TransactionBuilder::add_message(const AccountAddress &to, const std::string &message) {
+	//	m_message_descs.push_back(MessageDesc{to, message});
 }
 
 static bool APIOutputLessGlobalIndex(const api::Output &a, const api::Output &b) {
@@ -136,93 +135,29 @@ void TransactionBuilder::add_input(const std::vector<api::Output> &mix_outputs, 
 	m_input_descs.push_back(InputDesc{mix_outputs, real_output_index});
 }
 
-KeyPair TransactionBuilder::transaction_keys_from_seed(const Hash &tx_inputs_hash, const Hash &view_seed) {
-	BinaryArray ba;
-	common::append(ba, std::begin(tx_inputs_hash.data), std::end(tx_inputs_hash.data));
-	common::append(ba, std::begin(view_seed.data), std::end(view_seed.data));
+BinaryArray TransactionBuilder::encrypt_message_chunk(
+    const std::string &message, const PublicKey &output_shared_secret) {
+	auto key = crypto::chacha_key{crypto::cn_fast_hash(output_shared_secret.as_binary_array())};
+	common::BinaryArray em(message.size());
+	crypto::chacha(20, message.data(), message.size(), key, crypto::chacha_iv{}, em.data());
 
-	KeyPair tx_keys{};
-	tx_keys.secret_key = crypto::hash_to_scalar(ba.data(), ba.size());
-	crypto::secret_key_to_public_key(tx_keys.secret_key, &tx_keys.public_key);
-	return tx_keys;
-}
-
-Hash TransactionBuilder::generate_output_seed(
-    const Hash &tx_inputs_hash, const Hash &view_seed, const size_t &out_index) {
-	auto add = common::get_varint_data(out_index);
-	BinaryArray ba;
-	common::append(ba, std::begin(view_seed.data), std::end(view_seed.data));
-	common::append(ba, std::begin(tx_inputs_hash.data), std::end(tx_inputs_hash.data));
-	common::append(ba, add);
-
-	return crypto::cn_fast_hash(ba);
-}
-
-void TransactionBuilder::generate_output_secrets(const Hash &output_seed, SecretKey *output_secret_scalar,
-    PublicKey *output_secret_point, uint8_t *output_secret_address_type) {
-	*output_secret_scalar                = crypto::bytes_to_scalar(output_seed);
-	*output_secret_point                 = crypto::bytes_to_good_point(output_seed);
-	Hash output_secret_address_type_hash = crypto::cn_fast_hash(output_seed.data, sizeof(output_seed.data));
-	*output_secret_address_type          = output_secret_address_type_hash.data[0];
-}
-
-BinaryArray TransactionBuilder::encrypt_message_chunk(const std::string &message, const PublicKey &output_shared_secret,
-    const Hash &tx_inputs_hash, const size_t &out_index, size_t mid) {
-	const BinaryArray key_data = output_shared_secret.as_binary_array() | tx_inputs_hash.as_binary_array() |
-	                             get_varint_data(out_index) | as_binary_array("message");
-	auto key = crypto::chacha_key{crypto::cn_fast_hash(key_data)};
-	crypto::chacha_iv iv;
-	common::uint_be_to_bytes(iv.data, 8, mid);
-
-	std::string msg_crc = message + std::string(extra::EncryptedMessage::CRC_SIZE, '\0');
-	common::BinaryArray em(msg_crc.size());
-	crypto::chacha(20, msg_crc.data(), msg_crc.size(), key, iv, em.data());
-
-	std::string other;
-	invariant(
-	    decrypt_message_chunk(&other, em, output_shared_secret, tx_inputs_hash, out_index, mid) && other == message,
-	    "");
+	invariant(decrypt_message_chunk(em, output_shared_secret) == message, "");
 	return em;
 }
 
-bool TransactionBuilder::decrypt_message_chunk(std::string *message, const BinaryArray &encrypted_message,
-    const PublicKey &output_shared_secret, const Hash &tx_inputs_hash, const size_t &out_index, size_t mid) {
-	if (encrypted_message.size() < extra::EncryptedMessage::CRC_SIZE)
-		return false;
-	const BinaryArray key_data = output_shared_secret.as_binary_array() | tx_inputs_hash.as_binary_array() |
-	                             get_varint_data(out_index) | as_binary_array("message");
-	auto key = crypto::chacha_key{crypto::cn_fast_hash(key_data)};
-	crypto::chacha_iv iv;
-	common::uint_be_to_bytes(iv.data, 8, mid);
-
+std::string TransactionBuilder::decrypt_message_chunk(const BinaryArray &encrypted_message,
+    const PublicKey &output_shared_secret) {
+	auto key = crypto::chacha_key{crypto::cn_fast_hash(output_shared_secret.as_binary_array())};
 	common::BinaryArray dec(encrypted_message.size());
-	crypto::chacha(20, encrypted_message.data(), encrypted_message.size(), key, iv, dec.data());
-	for (size_t i = 0; i != extra::EncryptedMessage::CRC_SIZE; ++i, dec.pop_back())
-		if (dec.back() != 0)
-			return false;
-	*message = common::as_string(dec);
-	return true;
-}
-
-std::string TransactionBuilder::decrypt_message(const std::vector<extra::EncryptedMessage> &encrypted_messages,
-    const PublicKey &output_shared_secret, const Hash &tx_inputs_hash, const size_t &out_index) {
-	// When sending we can decide to split message for obfuscation of # of recipients
-	std::string result;
-	for (size_t mid = 0; mid != encrypted_messages.size(); ++mid) {
-		std::string msg;
-		if (TransactionBuilder::decrypt_message_chunk(
-		        &msg, encrypted_messages.at(mid).message, output_shared_secret, tx_inputs_hash, out_index, mid))
-			result += msg;
-	}
-	if (!result.empty())
-		std::cout << "Secret message decrypted: " << result << std::endl;
-	return result;
+	crypto::chacha(20, encrypted_message.data(), encrypted_message.size(), key, crypto::chacha_iv{}, dec.data());
+	return common::as_string(dec);
 }
 
 Transaction TransactionBuilder::sign(
     const WalletStateBasic &wallet_state, Wallet *wallet, const std::set<AccountAddress> *only_records) {
 	std::shuffle(m_output_descs.begin(), m_output_descs.end(), crypto::random_engine<size_t>{});
 	std::shuffle(m_input_descs.begin(), m_input_descs.end(), crypto::random_engine<size_t>{});
+	std::shuffle(m_message_descs.begin(), m_message_descs.end(), crypto::random_engine<size_t>{});
 	std::stable_sort(m_output_descs.begin(), m_output_descs.end(), OutputDesc::less_amount);
 	std::stable_sort(m_input_descs.begin(), m_input_descs.end(), InputDesc::less_amount);
 	std::cout << "TransactionBuilder::sign" << std::endl << std::endl;
@@ -284,14 +219,13 @@ Transaction TransactionBuilder::sign(
 
 		m_transaction.inputs.push_back(input_key);
 	}
-	std::vector<BinaryArray> encrypted_messages;
-	size_t additional_extra = 0;
-	for (const auto &ou : m_output_descs)
-		if (!ou.message.empty())
-			additional_extra += 1 + extra::EncryptedMessage::CRC_SIZE + ou.message.size();
+	const size_t initial_extra_size = m_transaction.extra.size();
+	size_t additional_extra_size    = 0;
+	for (const auto &md : m_message_descs)
+		additional_extra_size += extra::get_encrypted_message_size(md.message.size());
 	if (wallet->get_hw()) {
 		wallet->get_hw()->sign_start(m_transaction.version, m_transaction.unlock_block_or_timestamp,
-		    m_input_descs.size(), m_output_descs.size(), additional_extra + m_transaction.extra.size());
+		    m_input_descs.size(), m_output_descs.size(), additional_extra_size + m_transaction.extra.size());
 		for (size_t i = 0; i != m_input_descs.size(); ++i) {
 			const InputKey &input_key = boost::get<InputKey>(m_transaction.inputs.at(i));
 			wallet->get_hw()->sign_add_input(
@@ -301,7 +235,7 @@ Transaction TransactionBuilder::sign(
 	// Deterministic generation of tx private key.
 	const Hash tx_inputs_hash = get_transaction_inputs_hash(m_transaction);
 	//	std::cout << "tx_inputs_hash=" << tx_inputs_hash << std::endl;
-	const KeyPair tx_keys = transaction_keys_from_seed(tx_inputs_hash, wallet->get_view_seed());
+	const KeyPair tx_keys = Wallet::transaction_keys_from_seed(tx_inputs_hash, wallet->get_view_seed());
 
 	if (!is_tx_amethyst)  // Never in case of hw, because we set extra size beforehand
 		extra::add_transaction_public_key(m_transaction.extra, tx_keys.public_key);
@@ -311,11 +245,7 @@ Transaction TransactionBuilder::sign(
 		OutputKey out_key;
 		Amount amount            = m_output_descs.at(out_index).amount;
 		const AccountAddress &to = m_output_descs.at(out_index).addr;
-		std::string message      = m_output_descs.at(out_index).message;
-		PublicKey output_shared_secret;
 		if (wallet->get_hw()) {
-			output_shared_secret = crypto::rand<PublicKey>();
-			//	TODO - get shared_secret from hardware wallet
 			size_t record_index = 0;
 			WalletRecord record;
 			if (wallet->get_record(to, &record_index, &record)) {
@@ -334,20 +264,27 @@ Transaction TransactionBuilder::sign(
 					throw std::runtime_error("TransactionBuilder::sign unknown address type");
 			}
 		} else {
-			Hash output_seed = generate_output_seed(tx_inputs_hash, wallet->get_view_seed(), out_index);
-			out_key          = TransactionBuilder::create_output(is_tx_amethyst, m_output_descs.at(out_index).addr,
-                tx_keys.secret_key, tx_inputs_hash, out_index, output_seed, &output_shared_secret);
+			PublicKey output_shared_secret;
+			Hash output_seed = wallet->generate_output_seed(tx_inputs_hash, out_index);
+			out_key          = TransactionBuilder::create_output(
+                is_tx_amethyst, to, tx_keys.secret_key, tx_inputs_hash, out_index, output_seed, &output_shared_secret);
 		}
 		out_key.amount                      = amount;
 		m_transaction.outputs.at(out_index) = out_key;
-		if (!message.empty()) {
-			common::BinaryArray em = encrypt_message_chunk(
-			    message, output_shared_secret, tx_inputs_hash, out_index, encrypted_messages.size());
-			encrypted_messages.push_back(em);
-		}
 	}
-	for (const auto &em : encrypted_messages)
+	for (size_t m_index = 0; m_index != m_message_descs.size(); ++m_index) {
+		const AccountAddress &to   = m_message_descs.at(m_index).addr;
+		const std::string &message = m_message_descs.at(m_index).message;
+		Hash output_seed           = wallet->generate_output_seed(tx_inputs_hash, m_index + m_output_descs.size());
+		PublicKey output_shared_secret;
+		extra::EncryptedMessage em;
+		em.output        = TransactionBuilder::create_output(is_tx_amethyst, to, tx_keys.secret_key, tx_inputs_hash,
+            m_index + m_output_descs.size(), output_seed, &output_shared_secret);
+		em.output.amount = 0;
+		em.message       = encrypt_message_chunk(message, output_shared_secret);
 		extra::add_encrypted_message(m_transaction.extra, em);
+	}
+	invariant(initial_extra_size + additional_extra_size == m_transaction.extra.size(), "");
 	if (wallet->get_hw()) {
 		wallet->get_hw()->sign_add_extra(m_transaction.extra);
 	}

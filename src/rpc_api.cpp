@@ -46,9 +46,17 @@ void api::ErrorWrongHeight::seria_data_members(seria::ISeria &s) {
 	seria_kv("request_height", request_height, s);
 	seria_kv("top_block_height", top_block_height, s);
 }
-api::ErrorHashNotFound::ErrorHashNotFound(const std::string &msg, const Hash &hash)
-    : json_rpc::Error(HASH_NOT_FOUND, msg + " request_hasht=" + common::pod_to_hex(hash)), hash(hash) {}
-void api::ErrorHashNotFound::seria_data_members(seria::ISeria &s) { seria_kv("hash", hash, s); }
+api::ErrorHash::ErrorHash(int c, const std::string &msg, const Hash &hash)
+    : json_rpc::Error(c, msg + " request_hash=" + common::pod_to_hex(hash)), hash(hash) {}
+void api::ErrorHash::seria_data_members(seria::ISeria &s) { seria_kv("hash", hash, s); }
+
+api::cnd::CheckSendproof::Error::Error(int c, const std::string &msg, const Hash &transaction_hash)
+    : json_rpc::Error(c, msg + " transaction_hash=" + common::pod_to_hex(transaction_hash))
+    , transaction_hash(transaction_hash) {}
+
+void api::cnd::CheckSendproof::Error::seria_data_members(seria::ISeria &s) {
+	seria_kv("transaction_hash", transaction_hash, s);
+};
 
 api::walletd::CreateTransaction::ErrorTransactionTooBig::ErrorTransactionTooBig(
     const std::string &msg, Amount a, Amount a_zero)
@@ -65,7 +73,7 @@ void api::walletd::SendTransaction::Error::seria_data_members(seria::ISeria &s) 
 }
 void api::cnd::GetArchive::Error::seria_data_members(seria::ISeria &s) { seria_kv("archive_id", archive_id, s); }
 
-Hash Checkpoint::get_message_hash() const { return get_object_hash(*this); }
+Hash Checkpoint::get_message_hash() const { return get_object_hash(*this, nullptr); }
 
 bool api::walletd::GetStatus::Response::ready_for_longpoll(const Request &other) const {
 	if (other.top_block_hash && top_block_hash != other.top_block_hash.get())
@@ -237,6 +245,7 @@ void ser_members(api::Transaction &v, ISeria &s, bool with_message) {
 void ser_members(api::Block &v, ISeria &s) {
 	seria_kv("header", v.header, s);
 	seria_kv("transactions", v.transactions, s);
+	seria_kv("unlocked_transfers", v.unlocked_transfers, s);
 }
 
 void ser_members(api::RawBlock &v, ISeria &s) {
@@ -387,6 +396,7 @@ void ser_members(api::walletd::CreateSendproof::Request &v, ISeria &s) {
 	seria_kv_strict("transaction_hash", v.transaction_hash, s);
 	seria_kv("message", v.message, s);
 	seria_kv("addresses", v.addresses, s);
+	seria_kv("reveal_secret_message", v.reveal_secret_message, s);
 }
 
 void ser_members(api::walletd::CreateSendproof::Response &v, ISeria &s) { seria_kv("sendproofs", v.sendproofs, s); }
@@ -516,6 +526,8 @@ void ser_members(api::cnd::CheckSendproof::Response &v, ISeria &s) {
 	seria_kv("amount", v.amount, s);
 	seria_kv("message", v.message, s);
 	seria_kv("output_indexes", v.output_indexes, s);
+	seria_kv("depth", v.depth, s);
+	seria_kv("secret_message", v.secret_message, s);
 }
 
 void ser_members(cn::api::cnd::GetStatistics::Request &v, ISeria &s) {

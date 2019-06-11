@@ -425,7 +425,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 						}
 			from_height = ha;
 			to_height   = ha + 1;
-			auto unl2   = ws.api_get_unlocked_transfers(addr, from_height, to_height);
+			auto unl2   = ws.api_get_unlocked_transfers_legacy(addr, from_height, to_height);
 			for (auto &&u : unl2)
 				if (addr.empty() || u.address == addr) {
 					invariant(!u.address.empty(), "");

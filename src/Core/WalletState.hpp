@@ -79,7 +79,7 @@ public:
 	// Read state
 	std::string api_create_proof(const TransactionPrefix &tx,
 	    const std::vector<std::vector<PublicKey>> &mixed_public_keys, const std::string &addr_str, const Hash &tid,
-	    const std::string &message) const;
+	    const std::string &message, bool reveal_secret_message) const;
 	api::Block api_get_pool_as_history(const std::string &address) const;
 
 	size_t get_tx_pool_version() const { return m_tx_pool_version; }

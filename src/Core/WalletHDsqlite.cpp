@@ -623,3 +623,9 @@ bool WalletHDsqlite::detect_our_output(uint8_t tx_version, const Hash &tx_inputs
 	*amount = key_output.amount;
 	return true;
 }
+
+Hash WalletHDsqlite::generate_output_seed(const Hash &tx_inputs_hash, const size_t &out_index) const {
+	if (m_hw)
+		return m_hw->generate_output_seed(tx_inputs_hash, out_index);
+	return WalletHDBase::generate_output_seed(tx_inputs_hash, out_index);
+}
