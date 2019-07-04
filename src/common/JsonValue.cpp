@@ -63,12 +63,17 @@ JsonValue::JsonValue(Type value_type) {
 	case ARRAY:
 		new (&value_array) Array;
 		break;
+	case BOOL:
+		value_bool = false;
+		break;
 	case NIL:
 		break;
 	case OBJECT:
 		new (&value_object) Object;
 		break;
 	case NUMBER:
+		new (&value_string) String("0");
+		break;
 	case STRING:
 		new (&value_string) String;
 		break;

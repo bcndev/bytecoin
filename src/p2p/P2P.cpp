@@ -170,35 +170,6 @@ void P2P::on_client_disconnected(P2PClient *who, std::string ban_reason) {
 		connect_all();
 }
 
-// void P2P::broadcast(P2PProtocol *exclude_who, const BinaryArray &data, bool incoming, bool outgoing) {
-//	for (int inc = 0; inc != 2; ++inc) {
-//		if (!incoming && inc == 0)
-//			continue;
-//		if (!outgoing && inc == 1)
-//			continue;
-//		for (auto &&cli : clients[inc]) {
-//			if (cli.first->get_protocol()->handshake_ok() && cli.first->get_protocol() != exclude_who) {
-//				cli.first->send(BinaryArray(data));
-//			}
-//		}
-//	}
-//}
-
-// P2PClient *P2P::find_connecting_client(const NetworkAddress &address) {
-//	const bool incoming = false;
-//	for (auto &&cli : clients[incoming])
-//		if (cli.first->get_address() == address)
-//			return cli.first;
-//	return nullptr;
-//}
-
-// P2PClient *P2P::find_client(const NetworkAddress &address, bool incoming) {
-//	for (auto &&cli : clients[incoming])
-//		if (cli.first->handshake_ok() && cli.first->get_address() == address)
-//			return cli.first;
-//	return nullptr;
-//}
-
 void P2P::accept_all() {
 	if (!la_socket)
 		return;
@@ -223,14 +194,14 @@ void P2P::accept_all() {
 			auto now = std::chrono::steady_clock::now();
 			if (std::chrono::duration_cast<std::chrono::milliseconds>(now - m_log_banned_timestamp).count() > 100) {
 				m_log_banned_timestamp = now;
-				log(logging::INFO) << "Accepted from banned address " << addr << " disconnecting immediately";
+				m_log(logging::INFO) << "Accepted from banned address " << addr << " disconnecting immediately";
 			}
 			next_client[incoming]->sock.close();
 			continue;
 		}
 		P2PClient *who                                 = next_client[incoming].get();
 		clients[incoming][next_client[incoming].get()] = std::move(next_client[incoming]);
-		log(logging::INFO) << "Accepted from addr=" << addr;
+		m_log(logging::INFO) << "Accepted from addr=" << addr;
 		who->set_protocol(c_factory(who));
 	}
 }
@@ -249,7 +220,7 @@ bool P2P::connect_one(const NetworkAddress &address) {
 	next_client[incoming]->address = address;
 	P2PClient *who                 = next_client[incoming].get();
 	clients[incoming][who]         = std::move(next_client[incoming]);
-	log(logging::INFO) << "Connecting to=" << common::ip_address_and_port_to_string(address.ip, address.port);
+	m_log(logging::DEBUGGING) << "Connecting to=" << common::ip_address_and_port_to_string(address.ip, address.port);
 	who->set_protocol(c_factory(who));
 	return true;
 }
@@ -269,15 +240,11 @@ void P2P::connect_all_nodelay() {
 		for (auto &&cit : clients[incoming]) {
 			connected.insert(cit.first->address);
 		}
-		//		NetworkAddress self_connected;
-		//		common::parse_ip_address("127.0.0.1", &self_connected.ip);
-		//		self_connected.port = m_config.p2p_bind_port;
-		//		connected.insert(self_connected);
 
 		NetworkAddress best_address;
 		if (!peers.get_peer_to_connect(best_address, connected, get_local_time())) {
-			log(logging::TRACE) << "No peers to connect to, will try again after "
-			                    << m_config.p2p_network_unreachable_delay << " seconds";
+			m_log(logging::DEBUGGING) << "No peers to connect to, will try again after "
+			                          << m_config.p2p_network_unreachable_delay << " seconds";
 			reconnect_timer.once(m_config.p2p_network_unreachable_delay);
 			return;
 		}
@@ -286,8 +253,8 @@ void P2P::connect_all_nodelay() {
 			immediate_attempts += 1;
 		if (immediate_attempts >=
 		    m_config.p2p_max_outgoing_connections) {  // When network is not reachable, we try just a handfull times
-			log(logging::INFO) << "Connect repeatedly fails, will try again after "
-			                   << m_config.p2p_network_unreachable_delay << " seconds";
+			m_log(logging::INFO) << "Connect repeatedly fails, will try again after "
+			                     << m_config.p2p_network_unreachable_delay << " seconds";
 			reconnect_timer.once(m_config.p2p_network_unreachable_delay);
 			return;
 		}
@@ -301,7 +268,7 @@ void P2P::peers_updated() {
 
 P2P::P2P(logging::ILogger &log, const Config &config, PeerDB &peers, client_factory &&c_factory)
     : m_config(config)
-    , log(log, "P2P")
+    , m_log(log, "P2P")
     , peers(peers)
     , m_log_banned_timestamp(std::chrono::steady_clock::now())
     , reconnect_timer(std::bind(&P2P::connect_all_nodelay, this))
@@ -311,9 +278,12 @@ P2P::P2P(logging::ILogger &log, const Config &config, PeerDB &peers, client_fact
 	try {
 		la_socket = std::make_unique<platform::TCPAcceptor>(
 		    config.p2p_bind_ip, config.p2p_bind_port, std::bind(&P2P::accept_all, this));
+		common::console::set_text_color(common::console::BrightGreen);
+		m_log(logging::INFO) << "P2P listening on " << config.p2p_bind_ip << ":" << config.p2p_bind_port;
+		common::console::set_text_color(common::console::Default);
 	} catch (const std::runtime_error &ex) {
-		this->log(logging::WARNING) << " failed to create listening socket, what=" << common::what(ex)
-		                            << ", working with outbound connections only";
+		m_log(logging::WARNING) << " failed to create listening socket, what=" << common::what(ex)
+		                        << ", working with outbound connections only";
 	}
 	connect_all();
 	accept_all();
@@ -323,13 +293,3 @@ P2P::P2P(logging::ILogger &log, const Config &config, PeerDB &peers, client_fact
 Timestamp P2P::get_p2p_time() const { return get_local_time(); }
 
 Timestamp P2P::get_local_time() const { return platform::now_unix_timestamp(); }
-
-// std::vector<NetworkAddress> P2P::good_clients(bool incoming) const {
-//	std::vector<NetworkAddress> result;
-//	for (auto &&cit : clients[incoming]) {
-//		if (cit.first->get_protocol()->handshake_ok()) {
-//			result.push_back(cit.first->address);
-//		}
-//	}
-//	return result;
-//}

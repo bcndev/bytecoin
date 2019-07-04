@@ -295,7 +295,7 @@ void BlockChainState::check_standalone_consensus(
 		if (pb.block_header_size > m_currency.max_header_size)
 			throw ConsensusError(common::to_string(
 			    "Header size too big,", pb.block_header_size, "should be <=", m_currency.max_header_size));
-		info->block_size = pb.block_header_size + common::get_varint_data(pb.raw_block.transactions.size()).size();
+		info->block_size = pb.block_header_size + common::get_varint_data_size(pb.raw_block.transactions.size());
 		info->block_size += info->transactions_size;
 	} else {
 		if (get_tip_bid() == prev_info.hash)  // Optimization for most common case
@@ -599,7 +599,7 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 		if (!extra_nonce.empty())
 			extra::add_nonce(b->base_transaction.extra, extra_nonce);
 		*reserved_back_offset =
-		    common::get_varint_data(b->transaction_hashes.size()).size() + sizeof(Hash) * b->transaction_hashes.size();
+		    common::get_varint_data_size(b->transaction_hashes.size()) + sizeof(Hash) * b->transaction_hashes.size();
 		return;
 	}
 	// two-phase miner transaction generation: we don't know exact block size
@@ -645,7 +645,7 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 			}
 		}
 		*reserved_back_offset =
-		    common::get_varint_data(b->transaction_hashes.size()).size() + sizeof(Hash) * b->transaction_hashes.size();
+		    common::get_varint_data_size(b->transaction_hashes.size()) + sizeof(Hash) * b->transaction_hashes.size();
 		*reserved_back_offset += b->base_transaction.extra.size() - extra_size_without_delta;
 		invariant(cumulative_size == txs_size + seria::binary_size(b->base_transaction), "miner_tx case 2");
 		return;

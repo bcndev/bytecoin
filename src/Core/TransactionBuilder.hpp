@@ -93,7 +93,6 @@ public:
 	void select_optimal_outputs(size_t max_transaction_size, size_t anonymity, size_t min_anonymity,
 	    Amount total_amount, size_t total_outputs, Amount fee_per_byte, std::string optimization_level, Amount *change,
 	    Amount *receiver_fee);
-	Amount get_used_total() const { return m_used_total; }
 	const std::vector<Amount> &get_ra_amounts() const { return m_ra_amounts; }
 };
 

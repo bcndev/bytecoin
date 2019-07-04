@@ -3,18 +3,10 @@
 
 #pragma once
 
-#include "c_types.h"
-#include <stdint.h>
+#include "fe.h"
 #if defined(__cplusplus)
 extern "C" {
 #endif
-
-/* From fe.h */
-
-typedef int32_t fe[10];
-
-void fe_copy(fe h, const fe f);
-void fe_1(fe h);
 
 /* From ge.h */
 

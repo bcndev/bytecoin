@@ -46,12 +46,12 @@ void JsonOutputStreamValue::end_array() {
 }
 
 bool JsonOutputStreamValue::seria_v(uint64_t &value) {
-	insert_or_push(JsonValue(value), value == 0);
+	insert_or_push(numbers_as_strings ? JsonValue(common::to_string(value)) : JsonValue(value), value == 0);
 	return true;
 }
 
 bool JsonOutputStreamValue::seria_v(int64_t &value) {
-	insert_or_push(JsonValue(value), value == 0);
+	insert_or_push(numbers_as_strings ? JsonValue(common::to_string(value)) : JsonValue(value), value == 0);
 	return true;
 }
 
@@ -171,12 +171,18 @@ void JsonOutputStreamText::end_array() {
 }
 
 bool JsonOutputStreamText::seria_v(uint64_t &value) {
-	append_prefix(common::to_string(value), value == 0);
+	if (numbers_as_strings)
+		append_prefix("\"" + common::to_string(value) + "\"", value == 0);
+	else
+		append_prefix(common::to_string(value), value == 0);
 	return true;
 }
 
 bool JsonOutputStreamText::seria_v(int64_t &value) {
-	append_prefix(common::to_string(value), value == 0);
+	if (numbers_as_strings)
+		append_prefix("\"" + common::to_string(value) + "\"", value == 0);
+	else
+		append_prefix(common::to_string(value), value == 0);
 	return true;
 }
 

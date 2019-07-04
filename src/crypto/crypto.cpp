@@ -22,13 +22,13 @@
 
 namespace crypto {
 
-//#define DEBUG_PRINT(expr) do {         		expr;             	}
-// while (0)
+// clang-format off
+//#define DEBUG_PRINT(expr) do { expr; } while (0)
 #define DEBUG_PRINT(expr)
 
-//#define PARANOID_CHECK(expr, msg) 	do { 	if (!(expr))  throw
-// Error(msg);	} while (0)
+//#define PARANOID_CHECK(expr, msg) do { if (!(expr)) throw Error(msg); } while (0)
 #define PARANOID_CHECK(expr, msg)
+// clang-format on
 
 PublicKey get_G() { return to_bytes(G_p3); }  // 5866666666666666666666666666666666666666666666666666666666666666
 

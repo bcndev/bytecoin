@@ -111,7 +111,7 @@ public:
 
 private:
 	const Config &m_config;
-	logging::LoggerRef log;
+	logging::LoggerRef m_log;
 	PeerDB &peers;
 	std::chrono::steady_clock::time_point m_log_banned_timestamp;
 

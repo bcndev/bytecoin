@@ -1,5 +1,12 @@
 ## Release Notes
 
+### v3.5.0 (Beryl)
+
+*API tweaks*
+
+- All numbers in JSON RPC requests can be sent as strings, "123" instead of 123. This helps integration with JavaScript.
+- All JSON RPC requests get optional boolean "numbers_as_strings" parameter (default false). If set to true, all numbers will be returned as strings. This helps integration with JavaScript.
+
 ### v3.4.5 (Amethyst)
 
 - Tiny fixes in mining-related code. All miners are advised to update.

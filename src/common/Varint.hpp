@@ -11,22 +11,29 @@
 
 namespace common {
 
-template<typename OutputIt, typename T>
-typename std::enable_if<std::is_integral<T>::value && std::is_unsigned<T>::value, void>::type write_varint(
-    OutputIt &&dest, T i) {
-	while (i >= 0x80) {
-		*dest++ = (static_cast<uint8_t>(i) & 0x7f) | 0x80;
-		i >>= 7;
+template<typename OutputIt>
+void write_varint(OutputIt &&dest, uint64_t v) {
+	while (v >= 0x80) {
+		*dest++ = (static_cast<uint8_t>(v) & 0x7f) | 0x80;
+		v >>= 7;
 	}
-	*dest++ = static_cast<uint8_t>(i);
+	*dest++ = static_cast<uint8_t>(v);
 }
 
-template<typename t_type>
-BinaryArray get_varint_data(const t_type &v) {
-	unsigned char output_index[(sizeof(t_type) * 8 + 6) / 7];
+inline BinaryArray get_varint_data(uint64_t v) {
+	unsigned char output_index[(sizeof(uint64_t) * 8 + 6) / 7];
 	unsigned char *end = output_index;
 	write_varint(end, v);
 	return BinaryArray(output_index, end);
+}
+
+inline size_t get_varint_data_size(uint64_t v) {
+	size_t result = 0;
+	while (v >= 0x80) {
+		result++;
+		v >>= 7;
+	}
+	return result + 1;
 }
 
 template<int bits, typename InputIt, typename T>

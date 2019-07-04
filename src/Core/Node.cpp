@@ -37,11 +37,15 @@ Node::Node(logging::ILogger &log, const Config &config, BlockChainState &block_c
     , log_request_timestamp(std::chrono::steady_clock::now())
     , log_response_timestamp(std::chrono::steady_clock::now())
     , m_pow_checker(block_chain.get_currency(), platform::EventLoop::current()) {
-	if (!config.bytecoind_bind_ip.empty() && config.bytecoind_bind_port != 0)
+	if (config.bytecoind_bind_port != 0) {
 		m_api = std::make_unique<http::Server>(config.bytecoind_bind_ip, config.bytecoind_bind_port,
 		    std::bind(&Node::on_api_http_request, this, _1, _2, _3),
 		    std::bind(&Node::on_api_http_disconnect, this, _1));
-
+		common::console::set_text_color(common::console::BrightGreen);
+		m_log(logging::INFO) << "Node RPC listening on " << config.bytecoind_bind_ip << ":"
+		                     << config.bytecoind_bind_port;
+		common::console::set_text_color(common::console::Default);
+	}
 	m_commit_timer.once(float(m_config.db_commit_period_blockchain));
 	advance_long_poll();
 	send_multicast();
@@ -157,32 +161,33 @@ void Node::advance_long_poll() {
 			++lit;
 			continue;
 		}
-		const common::JsonValue &jid = lit->original_json_request.get_id().get();
+		LongPollClient cli = std::move(*lit);
+		lit                = m_long_poll_http_clients.erase(lit);
+
 		http::ResponseBody last_http_response;
 		last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 		last_http_response.r.status             = 200;
-		last_http_response.r.http_version_major = lit->original_request.r.http_version_major;
-		last_http_response.r.http_version_minor = lit->original_request.r.http_version_minor;
-		last_http_response.r.keep_alive         = lit->original_request.r.keep_alive;
-		fill_cors(lit->original_request, last_http_response);
+		last_http_response.r.http_version_major = cli.original_request.r.http_version_major;
+		last_http_response.r.http_version_minor = cli.original_request.r.http_version_minor;
+		last_http_response.r.keep_alive         = cli.original_request.r.keep_alive;
+		fill_cors(cli.original_request, last_http_response);
 		if (method_status) {
-			last_http_response.set_body(json_rpc::create_response_body(resp, jid));
+			last_http_response.set_body(json_rpc::create_response_body(resp, cli.original_json_request));
 		} else {
 			try {
 				api::cnd::GetBlockTemplate::Request gbt_req;
-				lit->original_json_request.load_params(gbt_req);
+				cli.original_json_request.load_params(gbt_req);
 				api::cnd::GetBlockTemplate::Response gbt_res;
 				getblocktemplate(gbt_req, gbt_res);
-				last_http_response.set_body(json_rpc::create_response_body(gbt_res, jid));
+				last_http_response.set_body(json_rpc::create_response_body(gbt_res, cli.original_json_request));
 			} catch (const json_rpc::Error &err) {
-				last_http_response.set_body(json_rpc::create_error_response_body(err, jid));
+				last_http_response.set_body(json_rpc::create_error_response_body(err, cli.original_json_request));
 			} catch (const std::exception &e) {
 				json_rpc::Error json_err(json_rpc::INTERNAL_ERROR, common::what(e));
-				last_http_response.set_body(json_rpc::create_error_response_body(json_err, jid));
+				last_http_response.set_body(json_rpc::create_error_response_body(json_err, cli.original_json_request));
 			}
 		}
-		http::Server::write(lit->original_who, std::move(last_http_response));
-		lit = m_long_poll_http_clients.erase(lit);
+		http::Server::write(cli.original_who, std::move(last_http_response));
 	}
 }
 

@@ -21,10 +21,12 @@ bool Node::on_json_rpc(http::Client *who, http::RequestBody &&request, http::Res
 	response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 
 	common::JsonValue jid(nullptr);
+	bool nas = false;
 
 	try {
 		json_rpc::Request json_req(request.body);
 		jid = json_req.get_id().get();
+		nas = json_req.get_numbers_as_strings();
 
 		auto it = m_jsonrpc_handlers.find(json_req.get_method());
 		if (it == m_jsonrpc_handlers.end()) {
@@ -40,10 +42,10 @@ bool Node::on_json_rpc(http::Client *who, http::RequestBody &&request, http::Res
 			return false;
 		response.set_body(std::move(response_body));
 	} catch (const json_rpc::Error &err) {
-		response.set_body(json_rpc::create_error_response_body(err, jid));
+		response.set_body(json_rpc::create_error_response_body(err, jid, nas));
 	} catch (const std::exception &e) {
 		json_rpc::Error json_err(json_rpc::INTERNAL_ERROR, common::what(e));
-		response.set_body(json_rpc::create_error_response_body(json_err, jid));
+		response.set_body(json_rpc::create_error_response_body(json_err, jid, nas));
 	}
 	response.r.status = 200;
 	return true;

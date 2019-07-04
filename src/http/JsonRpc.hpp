@@ -56,16 +56,16 @@ public:
 			std::throw_with_nested(std::runtime_error(
 			    "Error while deserializing json rpc request of type '" + common::demangle(typeid(T).name()) + "'"));
 		}
-		//		if (params)
-		//			seria::from_json_value_strict(v, params.get());
 	}
 	const std::string &get_method() const { return method; }
 	const OptionalJsonValue &get_id() const { return jid; }
+	bool get_numbers_as_strings() const { return numbers_as_strings; }
 
 private:
 	void parse(const std::string &request_body, bool allow_empty_id);
 
 	common::JsonValue stripped_req;  // req with params and excess fields
+	bool numbers_as_strings = false;
 	OptionalJsonValue jid;
 	std::string method;
 };
@@ -103,7 +103,7 @@ std::string prepare_result_prefix(const common::JsonValue &jid);
 // Always POST HTTP/1.1
 template<typename ParamsType>
 http::RequestBody create_request(const std::string &uri, const std::string &method, const ParamsType &params,
-    const OptionalJsonValue &jid = common::JsonValue(nullptr)) {
+    const OptionalJsonValue &jid = common::JsonValue(common::JsonValue::NUMBER)) {
 	common::JsonValue ps_req(common::JsonValue::OBJECT);
 	ps_req.set("jsonrpc", std::string("2.0"));
 	ps_req.set("method", method);
@@ -118,9 +118,10 @@ http::RequestBody create_request(const std::string &uri, const std::string &meth
 }
 
 template<typename ResultType>
-std::string create_response_body(const ResultType &result, const common::JsonValue &jid) {
+std::string create_response_body(const ResultType &result, const common::JsonValue &jid, bool numbers_as_strings) {
 	std::string result_body = prepare_result_prefix(jid);
 	seria::JsonOutputStreamText s(result_body);
+	s.set_numbers_as_strings(numbers_as_strings);
 	ser(const_cast<ResultType &>(result), s);
 	result_body += "}";
 	return result_body;
@@ -130,7 +131,13 @@ std::string create_response_body(const ResultType &result, const common::JsonVal
 	//	ps_req.set("result", seria::to_json_value(result));
 	//	return ps_req.to_string();
 }
-std::string create_error_response_body(const Error &error, const common::JsonValue &jid);
+template<typename ResultType>
+std::string create_response_body(const ResultType &result, const Request &req) {
+	return create_response_body(result, req.get_id().get(), req.get_numbers_as_strings());
+}
+
+std::string create_error_response_body(const Error &error, const common::JsonValue &jid, bool numbers_as_strings);
+std::string create_error_response_body(const Error &error, const Request &req);
 
 template<typename ResultType>  //, typename ErrorType
 bool parse_response(const std::string &body, ResultType &result, Error &error, OptionalJsonValue *jid = nullptr) {
@@ -152,10 +159,11 @@ bool invoke_method(
 	json_req.load_params(params);
 
 	common::JsonValue jid = json_req.get_id().get();
+	bool nas              = json_req.get_numbers_as_strings();
 	bool success          = handler(agent, std::move(http_request), std::move(json_req), std::move(params), result);
 
 	if (success)
-		raw_response = create_response_body(result, jid);
+		raw_response = create_response_body(result, jid, nas);
 	return success;
 }
 

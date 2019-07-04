@@ -11,8 +11,12 @@ namespace seria {
 
 // Common base for use with dynamic_cast in ser() methods
 class JsonOutputStream : public ISeria {
+protected:
+	bool numbers_as_strings = false;
+
 public:
 	JsonOutputStream() : ISeria(false) {}
+	void set_numbers_as_strings(bool v) { numbers_as_strings = v; }
 };
 
 class JsonOutputStreamValue : public JsonOutputStream {

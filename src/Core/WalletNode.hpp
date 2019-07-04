@@ -62,13 +62,13 @@ private:
 		http::Client *original_who = nullptr;
 		http::RequestBody request;
 		http::RequestBody original_request;
-		common::JsonValue original_jsonrpc_id;
+		json_rpc::Request original_json_request;
 		std::function<void(const WaitingClient &wc, http::ResponseBody &&resp)> fun;
 		std::function<void(const WaitingClient &wc, std::string)> err_fun;
 	};
 	std::deque<WaitingClient> m_waiting_command_requests;
 	void add_waiting_command(http::Client *who, http::RequestBody &&original_request,
-	    const common::JsonValue &original_rpc_id, http::RequestBody &&request,
+	    json_rpc::Request &&original_json_request, http::RequestBody &&request,
 	    std::function<void(const WaitingClient &wc, http::ResponseBody &&resp)> &&fun,
 	    std::function<void(const WaitingClient &wc, std::string)> &&err_fun);
 	void send_next_waiting_command();
@@ -78,7 +78,7 @@ private:
 	struct LongPollClient {
 		http::Client *original_who = nullptr;
 		http::RequestBody original_request;
-		common::JsonValue original_jsonrpc_id;
+		json_rpc::Request original_json_request;
 		api::walletd::GetStatus::Request original_get_status;
 	};
 	std::list<LongPollClient> m_long_poll_http_clients;

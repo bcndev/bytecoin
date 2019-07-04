@@ -86,6 +86,13 @@ void Request::parse(const std::string &request_body, bool allow_empty_id) {
 		if (!p.is_object() && !p.is_array())  // Json RPC spec 4.2
 			throw Error(INVALID_REQUEST, "params value must be an object or array");
 		//		params = std::move(p);
+		if (p.contains("numbers_as_strings")) {
+			auto &n = p("numbers_as_strings");
+			if (!n.is_bool())
+				throw Error(INVALID_REQUEST, "'numbers_as_strings' must be true or false");
+			numbers_as_strings = n.get_bool();
+			p.erase("numbers_as_strings");
+		}
 	}
 }
 
@@ -123,11 +130,18 @@ void Response::parse(const std::string &response_body) {
 		throw Error(INVALID_REQUEST, "Response must contain either error or result");
 }
 
-std::string create_error_response_body(const Error &error, const common::JsonValue &jid) {
+std::string create_error_response_body(const Error &error, const Request &req) {
+	return create_error_response_body(error, req.get_id().get(), req.get_numbers_as_strings());
+}
+
+std::string create_error_response_body(const Error &error, const common::JsonValue &jid, bool numbers_as_strings) {
 	common::JsonValue ps_req(common::JsonValue::OBJECT);
 	ps_req.set("jsonrpc", std::string("2.0"));
 	ps_req.set("id", jid);
-	ps_req.set("error", seria::to_json_value(error));
+	seria::JsonOutputStreamValue s;
+	s.set_numbers_as_strings(numbers_as_strings);
+	ser(const_cast<Error &>(error), s);
+	ps_req.set("error", s.move_value());
 	return ps_req.to_string();
 }
 std::string create_binary_response_error_body(const Error &error, const common::JsonValue &jid) {

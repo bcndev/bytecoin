@@ -52,6 +52,16 @@ T to_bytes(const P3 &other) {
 	return result;
 }
 
+#if crypto_CRYPTO128
+constexpr G3_type G{};
+constexpr P3 I{ge_p3{{0}, {1, 0}, {1, 0}, {0}}};
+constexpr P3 H{ge_p3{{1238364572342387, 511019468147982, 2037248038744755, 1790205373038460, 1715834670489604},
+    {342040195458443, 1746005628638707, 1484107488641719, 1009716338237674, 354016121901985}, {1, 0, 0, 0, 0},
+    {1908846832760925, 1960202731132578, 1264573804519519, 220054133280410, 1751608742250222}}};
+constexpr P3 G_p3{ge_p3{{1738742601995546, 1146398526822698, 2070867633025821, 562264141797630, 587772402128613},
+    {1801439850948184, 1351079888211148, 450359962737049, 900719925474099, 1801439850948198}, {1, 0, 0, 0, 0},
+    {1841354044333475, 16398895984059, 755974180946558, 900171276175154, 1821297809914039}}};
+#else
 constexpr G3_type G{};
 constexpr P3 I{ge_p3{{0}, {1, 0}, {1, 0}, {0}}};
 constexpr P3 H{ge_p3{{7329926, -15101362, 31411471, 7614783, 27996851, -3197071, -11157635, -6878293, 466949, -7986503},
@@ -63,6 +73,7 @@ constexpr P3 G_p3{
         {-26843541, -6710886, 13421773, -13421773, 26843546, 6710886, -13421773, 13421773, -26843546, -6710886},
         {1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
         {28827062, -6116119, -27349572, 244363, 8635006, 11264893, 19351346, 13413597, 16611511, -6414980}}};
+#endif
 
 inline P3::P3(const G3_type &other) : p3(G_p3.p3) {}  // here, due to order of definitions
 
@@ -153,9 +164,8 @@ inline EllipticCurveScalar &operator+=(EllipticCurveScalar &a, const EllipticCur
 	return a;
 }
 
-PublicKey get_G();       // slow, for reference only
-PublicKey get_H();       // slow, for reference only
-PublicKey test_get_H();  // even more slow, performs actual steps to calc H_p3
+PublicKey get_G();  // slow, for reference only
+PublicKey get_H();  // slow, for reference only
 
 inline SecretKey sc_invert(const EllipticCurveScalar &sec) {
 	SecretKey result;

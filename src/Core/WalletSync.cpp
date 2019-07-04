@@ -51,9 +51,9 @@ void WalletSync::set_sync_error(const std::string &str, bool immediate_sync) {
 		else
 			m_status_timer.once(STATUS_ERROR_PERIOD);
 	}
-	if (!m_sync_error.empty() && str.empty())
+	if (str.empty() && !m_sync_error.empty())
 		m_log(logging::INFO) << "Sync successfully continues from state " << m_sync_error;
-	if (m_sync_error.empty() && !str.empty())
+	if (!str.empty() && m_sync_error != str)
 		m_log(logging::INFO) << "Sync stopped with error " << str;
 	m_sync_error = str;
 	m_state_changed_handler();  // Not only sync error changed

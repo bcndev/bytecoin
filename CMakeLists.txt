@@ -10,6 +10,7 @@ add_definitions(-DCRYPTONOTE_NAME=\"${CRYPTONOTE_NAME}\" -DNDEBUG=1)
 option(USE_INSTRUMENTATION "For testing - builds with address sanitizer instrument" OFF)
 option(WITH_THREAD_SANITIZER "For testing - builds with thread sanitizer instrument, USE_INSTRUMENTATION must be also set" OFF)
 option(BETTER_DEBUG "Disables optimizations. We do not use standard debug/realease configurations because they change too much" OFF)
+option(CRYPTO128 "Uses faster crypto" OFF)
 get_filename_component(PARENT_DIR ${CMAKE_SOURCE_DIR} DIRECTORY)
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -74,7 +75,8 @@ add_definitions(-Dplatform_USE_SSL=1)
 file(GLOB SRC_CRYPTO
         src/crypto/*.cpp src/crypto/*.hpp
         src/crypto/*.c src/crypto/*.h
-        src/crypto/bernstein/*.h src/crypto/bernstein/*.c
+        src/crypto/bernstein/*.h src/crypto/bernstein/chacha8.c
+        src/crypto/bernstein/crypto-ops.c
         src/crypto/blake/*.h src/crypto/blake/*.c
         src/crypto/groestl/*.h src/crypto/groestl/*.c
         src/crypto/jh/*.h src/crypto/jh/*.c
@@ -82,6 +84,13 @@ file(GLOB SRC_CRYPTO
         src/crypto/oaes/*.h src/crypto/oaes/*.c
         src/crypto/skein/*.h src/crypto/skein/*.c
 )
+if(CRYPTO128)
+    message(STATUS "Fast crypto using int128 selected - do not use for production builds until fully tested")
+    add_definitions(-Dcrypto_CRYPTO128=1)
+    set(SRC_CRYPTO ${SRC_CRYPTO} src/crypto/bernstein/crypto-ops-data_51.c src/crypto/bernstein/fe_51.c)
+else()
+    set(SRC_CRYPTO ${SRC_CRYPTO} src/crypto/bernstein/crypto-ops-data_25_5.c src/crypto/bernstein/fe_25_5.c)
+endif()
 file(GLOB SRC_COMMON src/common/*.cpp src/common/*.hpp)
 file(GLOB SRC_SERIA src/seria/*.cpp src/seria/*.hpp)
 file(GLOB SRC_LOGGING src/logging/*.cpp src/logging/*.hpp)

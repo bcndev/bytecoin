@@ -39,10 +39,15 @@ const WalletNode::HandlersMap WalletNode::m_jsonrpc_handlers = {
 WalletNode::WalletNode(Node *inproc_node, logging::ILogger &log, const Config &config, WalletState &wallet_state)
     : WalletSync(log, config, wallet_state, std::bind(&WalletNode::advance_long_poll, this))
     , m_inproc_node(inproc_node) {
-	if (!config.walletd_bind_ip.empty() && config.walletd_bind_port != 0)
+	if (config.walletd_bind_port != 0) {
 		m_api = std::make_unique<http::Server>(config.walletd_bind_ip, config.walletd_bind_port,
 		    std::bind(&WalletNode::on_api_http_request, this, _1, _2, _3),
 		    std::bind(&WalletNode::on_api_http_disconnect, this, _1));
+		common::console::set_text_color(common::console::BrightGreen);
+		m_log(logging::INFO) << "Wallet RPC listening on " << wallet_state.get_config().walletd_bind_ip << ":"
+		                     << wallet_state.get_config().walletd_bind_port;
+		common::console::set_text_color(common::console::Default);
+	}
 }
 
 WalletNode::~WalletNode() {}  // we have unique_ptr to incomplete type
@@ -67,7 +72,7 @@ bool WalletNode::on_api_http_request(http::Client *who, http::RequestBody &&requ
 	request.r.http_version_minor  = 1;
 	request.r.keep_alive          = true;
 	request.r.basic_authorization = m_config.bytecoind_authorization;
-	add_waiting_command(who, std::move(original_request), common::JsonValue(nullptr), std::move(request),
+	add_waiting_command(who, std::move(original_request), json_rpc::Request{}, std::move(request),
 	    [](const WaitingClient &wc, http::ResponseBody &&send_response) mutable {
 		    send_response.r.http_version_major = wc.original_request.r.http_version_major;
 		    send_response.r.http_version_minor = wc.original_request.r.http_version_minor;
@@ -81,6 +86,7 @@ bool WalletNode::on_api_http_request(http::Client *who, http::RequestBody &&requ
 		    send_response.r.http_version_minor = wc.original_request.r.http_version_minor;
 		    send_response.r.keep_alive         = wc.original_request.r.keep_alive;
 		    send_response.r.status             = 504;  // TODO -test this code path
+		    send_response.set_body(std::string{});
 		    http::Server::write(wc.original_who, std::move(send_response));
 	    });
 	return false;
@@ -104,10 +110,12 @@ bool WalletNode::on_json_rpc(
 	response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 
 	common::JsonValue jid(nullptr);
+	bool nas = false;
 
 	try {
 		json_rpc::Request json_req(request.body);
 		jid = json_req.get_id().get();
+		nas = json_req.get_numbers_as_strings();
 
 		auto it = m_jsonrpc_handlers.find(json_req.get_method());
 		if (it == m_jsonrpc_handlers.end()) {
@@ -125,10 +133,10 @@ bool WalletNode::on_json_rpc(
 			return false;
 		response.set_body(std::move(response_body));
 	} catch (const json_rpc::Error &err) {
-		response.set_body(json_rpc::create_error_response_body(err, jid));
+		response.set_body(json_rpc::create_error_response_body(err, jid, nas));
 	} catch (const std::exception &e) {
 		json_rpc::Error json_err(json_rpc::INTERNAL_ERROR, common::what(e));
-		response.set_body(json_rpc::create_error_response_body(json_err, jid));
+		response.set_body(json_rpc::create_error_response_body(json_err, jid, nas));
 	}
 	response.r.status = 200;
 	return true;
@@ -157,11 +165,11 @@ bool WalletNode::on_get_status(http::Client *who, http::RequestBody &&raw_reques
 		//		m_log(logging::INFO) << "on_get_status will long poll, json="
 		// << raw_request.body;
 		LongPollClient lpc;
-		lpc.original_who        = who;
-		lpc.original_request    = raw_request;
-		lpc.original_jsonrpc_id = raw_js_request.get_id().get();
-		lpc.original_get_status = request;
-		m_long_poll_http_clients.push_back(lpc);
+		lpc.original_who          = who;
+		lpc.original_request      = std::move(raw_request);
+		lpc.original_json_request = std::move(raw_js_request);
+		lpc.original_get_status   = std::move(request);
+		m_long_poll_http_clients.push_back(std::move(lpc));
 		return false;
 	}
 	return true;
@@ -616,7 +624,7 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 	    json_rpc::create_request(api::cnd::url(), api::cnd::GetRandomOutputs::method(), ra_request);
 	new_request.r.basic_authorization = m_config.bytecoind_authorization;
 	m_log(logging::TRACE) << "sending get_random_outputs, body=" << new_request.body;
-	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id().get(), std::move(new_request),
+	add_waiting_command(who, std::move(raw_request), std::move(raw_js_request), std::move(new_request),
 	    [=](const WaitingClient &wc, http::ResponseBody &&random_response) mutable {
 		    m_log(logging::TRACE) << "got response to get_random_outputs, status=" << random_response.r.status
 		                          << " body " << random_response.body;
@@ -654,10 +662,10 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 		            last_response.binary_transaction.size())) {
 			    last_http_response.set_body(json_rpc::create_error_response_body(
 			        json_rpc::Error(json_rpc::INTERNAL_ERROR, "Created transaction cannot be parsed"),
-			        wc.original_jsonrpc_id));
+			        wc.original_json_request));
 		    } else {
 			    last_response.transaction.size = last_response.binary_transaction.size();
-			    last_http_response.set_body(json_rpc::create_response_body(last_response, wc.original_jsonrpc_id));
+			    last_http_response.set_body(json_rpc::create_response_body(last_response, wc.original_json_request));
 		    }
 		    http::Server::write(wc.original_who, std::move(last_http_response));
 	    },
@@ -668,7 +676,7 @@ bool WalletNode::on_create_transaction(http::Client *who, http::RequestBody &&ra
 		    last_http_response.r.status = 200;
 		    last_http_response.set_body(json_rpc::create_error_response_body(
 		        json_rpc::Error(api::walletd::CreateTransaction::BYTECOIND_REQUEST_ERROR, err),
-		        wc.original_jsonrpc_id));
+		        wc.original_json_request));
 		    http::Server::write(wc.original_who, std::move(last_http_response));
 	    });
 	return false;
@@ -698,7 +706,7 @@ bool WalletNode::on_create_sendproof(http::Client *who, http::RequestBody &&raw_
 	    json_rpc::create_request(api::cnd::url(), api::cnd::GetRawTransaction::method(), ra_request);
 	new_request.r.basic_authorization = m_config.bytecoind_authorization;
 	m_log(logging::TRACE) << "sending get_raw_transaction, body=" << new_request.body;
-	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id().get(), std::move(new_request),
+	add_waiting_command(who, std::move(raw_request), std::move(raw_js_request), std::move(new_request),
 	    [=](const WaitingClient &wc, http::ResponseBody &&raw_transaction_response) mutable {
 		    m_log(logging::TRACE) << "got response to get_raw_transaction, status=" << raw_transaction_response.r.status
 		                          << " body " << raw_transaction_response.body;
@@ -732,7 +740,7 @@ bool WalletNode::on_create_sendproof(http::Client *who, http::RequestBody &&raw_
 		    http::ResponseBody last_http_response(wc.original_request.r);
 		    last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 		    last_http_response.r.status = 200;
-		    last_http_response.set_body(json_rpc::create_response_body(last_response, wc.original_jsonrpc_id));
+		    last_http_response.set_body(json_rpc::create_response_body(last_response, wc.original_json_request));
 		    http::Server::write(wc.original_who, std::move(last_http_response));
 	    },
 	    [=](const WaitingClient &wc, std::string err) mutable {
@@ -741,7 +749,8 @@ bool WalletNode::on_create_sendproof(http::Client *who, http::RequestBody &&raw_
 		    last_http_response.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 		    last_http_response.r.status = 200;
 		    last_http_response.set_body(json_rpc::create_error_response_body(
-		        json_rpc::Error(api::walletd::CreateSendproof::BYTECOIND_REQUEST_ERROR, err), wc.original_jsonrpc_id));
+		        json_rpc::Error(api::walletd::CreateSendproof::BYTECOIND_REQUEST_ERROR, err),
+		        wc.original_json_request));
 		    http::Server::write(wc.original_who, std::move(last_http_response));
 	    });
 	return false;
@@ -763,7 +772,7 @@ bool WalletNode::on_send_transaction(http::Client *who, http::RequestBody &&raw_
 	new_request.set_body(std::move(raw_request.body));  // We save on copying body here
 	new_request.r.set_firstline("POST", api::cnd::url(), 1, 1);
 	new_request.r.basic_authorization = m_config.bytecoind_authorization;
-	add_waiting_command(who, std::move(raw_request), raw_js_request.get_id().get(), std::move(new_request),
+	add_waiting_command(who, std::move(raw_request), std::move(raw_js_request), std::move(new_request),
 	    [](const WaitingClient &wc2, http::ResponseBody &&send_response) mutable {
 		    http::ResponseBody resp(std::move(send_response));
 		    resp.r.http_version_major = wc2.original_request.r.http_version_major;
@@ -776,7 +785,8 @@ bool WalletNode::on_send_transaction(http::Client *who, http::RequestBody &&raw_
 		    resp.r.headers.push_back({"Content-Type", "application/json; charset=utf-8"});
 		    resp.r.status = 200;
 		    resp.set_body(json_rpc::create_error_response_body(
-		        json_rpc::Error(api::walletd::SendTransaction::BYTECOIND_REQUEST_ERROR, err), wc2.original_jsonrpc_id));
+		        json_rpc::Error(api::walletd::SendTransaction::BYTECOIND_REQUEST_ERROR, err),
+		        wc2.original_json_request));
 		    http::Server::write(wc2.original_who, std::move(resp));
 	    });
 	return false;
@@ -841,16 +851,16 @@ void WalletNode::send_next_waiting_command() {
 }
 
 void WalletNode::add_waiting_command(http::Client *who, http::RequestBody &&original_request,
-    const common::JsonValue &original_rpc_id, http::RequestBody &&request,
+    json_rpc::Request &&original_json_request, http::RequestBody &&request,
     std::function<void(const WalletNode::WaitingClient &wc, http::ResponseBody &&resp)> &&fun,
     std::function<void(const WalletNode::WaitingClient &wc, std::string)> &&err_fun) {
 	WaitingClient wc2;
-	wc2.original_who        = who;
-	wc2.original_request    = std::move(original_request);
-	wc2.original_jsonrpc_id = original_rpc_id;
-	wc2.fun                 = std::move(fun);
-	wc2.err_fun             = std::move(err_fun);
-	wc2.request             = std::move(request);
+	wc2.original_who          = who;
+	wc2.original_request      = std::move(original_request);
+	wc2.original_json_request = std::move(original_json_request);
+	wc2.fun                   = std::move(fun);
+	wc2.err_fun               = std::move(err_fun);
+	wc2.request               = std::move(request);
 	m_waiting_command_requests.push_back(wc2);
 	send_next_waiting_command();
 }
@@ -872,7 +882,7 @@ void WalletNode::advance_long_poll() {
 			last_http_response.r.http_version_major = cli.original_request.r.http_version_major;
 			last_http_response.r.http_version_minor = cli.original_request.r.http_version_minor;
 			last_http_response.r.keep_alive         = cli.original_request.r.keep_alive;
-			last_http_response.set_body(json_rpc::create_response_body(resp, cli.original_jsonrpc_id));
+			last_http_response.set_body(json_rpc::create_response_body(resp, cli.original_json_request));
 			http::Server::write(cli.original_who, std::move(last_http_response));
 		} else
 			++lit;

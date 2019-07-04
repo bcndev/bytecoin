@@ -177,7 +177,7 @@ size_t cn::extra::get_encrypted_message_size(size_t size) {
 	extra::EncryptedMessage em;
 	em.message.resize(size);
 	auto ba = seria::binary_size(em);
-	return 1 + common::get_varint_data(ba).size() + ba;
+	return 1 + common::get_varint_data_size(ba) + ba;
 }
 
 std::vector<extra::EncryptedMessage> cn::extra::get_encrypted_messages(const BinaryArray &tx_extra) {

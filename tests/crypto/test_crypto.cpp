@@ -5,6 +5,7 @@
 //#include <cstddef>
 //#include <cstring>
 //#include <sys/param.h>
+#include <crypto/bernstein/crypto-ops-data.h>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <common/MemoryStreams.hpp>
 #include <fstream>
@@ -317,8 +318,8 @@ PublicKey test_get_H() {
 	Hash hash   = cn_fast_hash(g.data, sizeof(g.data));
 	PublicKey hash_as_pk;
 	memcpy(hash_as_pk.data, hash.data, 32);  // reintrepret hash as a point :)
-	return to_bytes(bytes_to_good_point_p3(hash));
-	//	return ge_tobytes(ge_p1p1_to_p3(ge_mul8(ge_frombytes_vartime(hash_as_pk))));
+	                                         //	return hash_as_pk;//to_bytes(bytes_to_bad_point_p3(hash));
+	return to_bytes(P3(hash_as_pk).mul8());
 }
 
 // FIXME
@@ -388,6 +389,15 @@ std::istream &operator>>(std::istream &stream, std::vector<T> &value) {
 }
 
 // FIXME
+
+bool test_elligator(std::istream &input) {
+	Hash arg;
+	PublicKey expected;
+	get(input, arg);
+	get(input, expected);
+	const auto actual = crypto::bytes_to_bad_point(arg);
+	return expected == actual;
+}
 
 bool test_check_ring_signature_amethyst(std::istream &input) {
 	Hash prefix_hash;
@@ -648,12 +658,46 @@ void run_test_suite(const std::string &name, std::fstream &input, std::map<std::
 
 static const size_t FAILED_TEST_COUNT_PRINT_LIMIT = 40;
 
+/*static void print_fe(const char * name, const char * text){
+    auto ba = common::from_hex(text);
+    fe f;
+    if (fe_frombytes_vartime(f, ba.data()) < 0 ) {
+        std::cout << "error" << std::endl;
+        return;
+    }
+    std::cout << name << " {" << f[0];
+
+    for(size_t i = 1; i < FE25519_COUNT; ++i)
+        std::cout << ", " << f[i];
+    std::cout << "}" << std::endl;
+}
+
+static void print_be(const char * name, const fe f){
+    common::BinaryArray ba(32);
+    fe_tobytes(ba.data(), f);
+    std::cout << name << " " << common::to_hex(ba) << std::endl;
+}
+
+void test_fe(){
+    common::BinaryArray ba = common::from_hex("458c26bb949f16e7f9d03f27abd55343277bc2d541bdb75087a9e2593575b380");
+
+    fe res, res2;
+    fe_fromfe_frombytes_vartime(res, ba.data());
+
+    fe_sq2(res2, res);
+
+    fe_tobytes(ba.data(), res2);
+    std::cout << "1 " << common::to_hex(ba) << std::endl;
+}*/
+
 void test_crypto(const std::string &test_vectors_folder,
     const std::vector<std::string> &selected_test_cases = std::vector<std::string>(),
     const std::string &test_results_log = "", const bool break_on_failure = false) {
-	test_boron();
+	//	test_fe();
+	//	test_beryl();
 
 	std::map<std::string, test_case> test_function;
+	test_function["elligator"]                            = test_elligator;
 	test_function["check_key"]                            = test_check_key;
 	test_function["check_ring_signature"]                 = test_check_ring_signature;
 	test_function["check_ring_signature_amethyst"]        = test_check_ring_signature_amethyst;
