@@ -3,15 +3,16 @@
 
 #pragma once
 
+#include <stdexcept>
 #include <string>
 
 namespace common {
-void invariant_violated(const char *expr, const char *file, int line, const std::string &msg);
+std::string invariant_violated(const char *expr, const char *file, int line, const std::string &msg);
 }
 
 // We cannot use F/IL/E macro because of anonymity concerns
-#define invariant(expr, msg)                                      \
-	do {                                                          \
-		if (!(expr))                                              \
-			common::invariant_violated(#expr, "", __LINE__, msg); \
+#define invariant(expr, msg)                                                              \
+	do {                                                                                  \
+		if (!(expr))                                                                      \
+			throw std::logic_error(common::invariant_violated(#expr, "", __LINE__, msg)); \
 	} while (0)

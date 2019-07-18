@@ -4,16 +4,16 @@
 #include "tree-hash.h"
 #include <assert.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
-#ifdef _WIN32
-#include <malloc.h>
-#define alloca _alloca
-#else
-#include <alloca.h>
-#endif
+
+// We defined funs for count == 0 to avoid special cases
 
 void crypto_tree_hash(const struct cryptoHash hashes[], size_t count, struct cryptoHash *root_hash) {
-	assert(count > 0);
+	if (count == 0) {
+		memset(root_hash->data, 0, sizeof(root_hash->data));
+		return;
+	}
 	if (count == 1) {
 		*root_hash = *hashes;
 		return;
@@ -26,12 +26,7 @@ void crypto_tree_hash(const struct cryptoHash hashes[], size_t count, struct cry
 	size_t cnt = 1;
 	while (cnt * 2 < count)
 		cnt *= 2;
-	//    size_t cnt = count - 1;
-	//    for (i = 1; i < 8 * sizeof(size_t); i <<= 1) {
-	//      cnt |= cnt >> i;
-	//    }
-	//    cnt &= ~(cnt >> 1);
-	struct cryptoHash *ints = (struct cryptoHash *)alloca(cnt * sizeof(struct cryptoHash));
+	struct cryptoHash *ints = (struct cryptoHash *)malloc(cnt * sizeof(struct cryptoHash));
 	memcpy(ints, hashes, (2 * cnt - count) * sizeof(struct cryptoHash));
 	for (i = 2 * cnt - count, j = 2 * cnt - count; j < cnt; i += 2, ++j) {
 		crypto_cn_fast_hash(hashes + i, 2 * sizeof(struct cryptoHash), ints + j);
@@ -44,36 +39,25 @@ void crypto_tree_hash(const struct cryptoHash hashes[], size_t count, struct cry
 		}
 	}
 	crypto_cn_fast_hash(ints, 2 * sizeof(struct cryptoHash), root_hash);
+	free(ints);
 }
 
 size_t crypto_coinbase_tree_depth(size_t count) {
-	assert(count > 0);
+	if (count == 0)
+		return 0;
 	size_t depth = 0;
-	while ((1ULL << (depth + 1)) <= count)
+	while (depth < 63 && (1ULL << (depth + 1)) <= count)
 		depth += 1;
-	//  for (i = sizeof(size_t) << 2; i > 0; i >>= 1) {
-	//    if (count >> i > 0) {
-	//      count >>= i;
-	//      depth += i;
-	//    }
-	//  }
 	return depth;
 }
 
 void crypto_coinbase_tree_branch(const struct cryptoHash hashes[], size_t count, struct cryptoHash branch[]) {
-	assert(count > 0);
+	if (count == 0)
+		return;
 	size_t i, j;
-	size_t depth = crypto_coinbase_tree_depth(count);
-	size_t cnt   = (size_t)1U << depth;
-	//  for (i = sizeof(size_t) << 2; i > 0; i >>= 1) {
-	//    if (cnt << i <= count) {
-	//      cnt <<= i;
-	//      depth += i;
-	//    }
-	//  }
-	//  assert(cnt == 1ULL << depth);
-	//  assert(depth == coinbase_tree_depth(count));
-	struct cryptoHash *ints = (struct cryptoHash *)alloca((cnt - 1) * sizeof(struct cryptoHash));
+	size_t depth            = crypto_coinbase_tree_depth(count);
+	size_t cnt              = (size_t)1U << depth;
+	struct cryptoHash *ints = (struct cryptoHash *)malloc((cnt - 1) * sizeof(struct cryptoHash));
 	memcpy(ints, hashes + 1, (2 * cnt - count - 1) * sizeof(struct cryptoHash));
 	for (i = 2 * cnt - count, j = 2 * cnt - count - 1; j < cnt - 1; i += 2, ++j) {
 		crypto_cn_fast_hash(hashes + i, 2 * sizeof(struct cryptoHash), ints + j);
@@ -81,13 +65,14 @@ void crypto_coinbase_tree_branch(const struct cryptoHash hashes[], size_t count,
 	assert(i == count);
 	while (depth > 0) {
 		assert(cnt == (size_t)1U << depth);
-		cnt >>= 1;
+		cnt >>= 1U;
 		--depth;
 		branch[depth] = ints[0];
 		for (i = 1, j = 0; j < cnt - 1; i += 2, ++j) {
 			crypto_cn_fast_hash(ints + i, 2 * sizeof(struct cryptoHash), ints + j);
 		}
 	}
+	free(ints);
 }
 
 void crypto_tree_hash_from_branch(const struct cryptoHash branch[], size_t depth, const struct cryptoHash *leaf,
@@ -101,7 +86,7 @@ void crypto_tree_hash_from_branch(const struct cryptoHash branch[], size_t depth
 	struct cryptoHash *leaf_path, *branch_path;
 	while (depth > 0) {
 		--depth;
-		if (path && (path->data[depth >> 3] & (1 << (depth & 7))) != 0) {
+		if (path && (path->data[depth >> 3U] & (1U << (depth & 7U))) != 0) {
 			leaf_path   = buffer + 1;
 			branch_path = buffer + 0;
 		} else {

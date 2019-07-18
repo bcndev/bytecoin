@@ -1,9 +1,9 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
-#include <boost/algorithm/string.hpp>
 #include "Core/BlockChainFileFormat.hpp"
 #include "Core/Config.hpp"
+#include "Core/Currency.hpp"
 #include "Core/Node.hpp"
 #include "common/CommandLine.hpp"
 #include "common/ConsoleTools.hpp"
@@ -48,7 +48,7 @@ int main(int argc, const char *argv[]) try {
 		return 0;
 
 	Config config(cmd);
-	Currency currency(config.net);
+	Currency currency(config);
 
 	const std::string coin_folder = config.get_data_folder();
 	if (const char *pa = cmd.get("--backup-blockchain")) {
@@ -73,8 +73,8 @@ int main(int argc, const char *argv[]) try {
 	if (const char *pa = cmd.get("--export-blocks")) {
 		const auto export_blocks = platform::normalize_folder(pa);
 		Height max_height        = std::numeric_limits<Height>::max();
-		if (const char *pa = cmd.get("--max-height"))
-			max_height = common::integer_cast<Height>(pa);
+		if (const char *pa2 = cmd.get("--max-height"))
+			max_height = common::integer_cast<Height>(pa2);
 		if (cmd.show_errors("cannot be used with --export-blocks"))
 			return api::BYTECOIND_WRONG_ARGS;
 		logging::ConsoleLogger log_console;

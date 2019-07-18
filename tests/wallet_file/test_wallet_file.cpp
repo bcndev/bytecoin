@@ -2,10 +2,12 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for
 // details.
 
+#include "Core/Config.hpp"
 #include "Core/Wallet.hpp"
 #include "Core/WalletHD.hpp"
 #include "Core/WalletLegacy.hpp"
 #include "common/BIPs.hpp"
+#include "common/CommandLine.hpp"
 #include "crypto/crypto.hpp"
 #include "logging/ConsoleLogger.hpp"
 #include "platform/DBmemory.hpp"
@@ -144,7 +146,9 @@ static void test_single_file(const Currency &currency, const std::string &path, 
 void test_wallet_file(const std::string &path_prefix) {
 	platform::DBmemory::run_tests();
 
-	Currency currency("main");
+	common::CommandLine cmd;
+	Config config(cmd);
+	Currency currency(config);
 
 	logging::ConsoleLogger logger;
 	WalletHDJson wa(currency, logger, cn::Bip32Key::create_random_bip39_mnemonic(128), 0, std::string{});

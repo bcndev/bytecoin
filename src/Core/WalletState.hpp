@@ -78,7 +78,7 @@ public:
 
 	// Read state
 	std::string api_create_proof(const TransactionPrefix &tx,
-	    const std::vector<std::vector<PublicKey>> &mixed_public_keys, const std::string &addr_str, const Hash &tid,
+	    const std::vector<std::vector<api::Output>> &mixed_outputs, const std::string &addr_str, const Hash &tid,
 	    const std::string &message, bool reveal_secret_message) const;
 	api::Block api_get_pool_as_history(const std::string &address) const;
 
@@ -91,15 +91,17 @@ public:
 	    const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now, std::vector<AccountAddress> *addresses);
 	void create_addresses(size_t count);
 
+	void db_commit() override;
+
 protected:
 	bool redo_block(
-	    const PreparedWalletBlock &block, const std::vector<std::vector<size_t>> &global_indices, Height height);
+	    const PreparedWalletBlock &block, const std::vector<std::vector<size_t>> &stack_indexes, Height height);
 
 	bool parse_raw_transaction(bool is_base, api::Transaction *ptx, std::vector<api::Transfer> *input_transfers,
 	    std::vector<api::Transfer> *output_transfers, Amount *output_amount, const PreparedWalletTransaction &pwtx,
-	    Hash tid, const std::vector<size_t> &global_indices, size_t start_global_key_output_index,
+	    Hash tid, const std::vector<size_t> &stack_indexes, size_t start_global_key_output_index,
 	    Height block_heights) const;
-	bool redo_transaction(const PreparedWalletTransaction &pwtx, const std::vector<size_t> &global_indices,
+	bool redo_transaction(const PreparedWalletTransaction &pwtx, const std::vector<size_t> &stack_indexes,
 	    size_t start_global_key_output_index, IWalletState *delta_state, bool is_base, Hash tid, Height block_height,
 	    Hash bid, Timestamp tx_timestamp) const;
 	const std::map<KeyImage, std::vector<Hash>> &get_mempool_keyimages() const override;
@@ -116,7 +118,7 @@ protected:
 	};
 
 private:
-	size_t m_tx_pool_version = 0;
+	size_t m_tx_pool_version = 1;
 	std::chrono::steady_clock::time_point m_log_redo_block;
 
 	Wallet &m_wallet;

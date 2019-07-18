@@ -19,17 +19,14 @@ constexpr float STATUS_ERROR_PERIOD = 5;
 
 using namespace cn;
 
-WalletSync::WalletSync(logging::ILogger &log, const Config &config, WalletState &wallet_state,
-    std::function<void()> &&state_changed_handler)
+WalletSync::WalletSync(logging::ILogger &log, WalletState &wallet_state, std::function<void()> &&state_changed_handler)
     : m_state_changed_handler(std::move(state_changed_handler))
     , m_log(log, "WalletSync")
-    , m_config(config)
-    , m_sync_error("CONNECTING")
+    , m_config(wallet_state.get_config())
+    , m_currency(wallet_state.get_currency())
     , m_status_timer(std::bind(&WalletSync::advance_sync, this))
-    , m_sync_agent(config.bytecoind_remote_ip,
-          config.bytecoind_remote_port ? config.bytecoind_remote_port : config.bytecoind_bind_port)
-    , m_commands_agent(config.bytecoind_remote_ip,
-          config.bytecoind_remote_port ? config.bytecoind_remote_port : config.bytecoind_bind_port)
+    , m_sync_agent(m_config.bytecoind_remote_ip,
+          m_config.bytecoind_remote_port ? m_config.bytecoind_remote_port : m_config.bytecoind_bind_port)
     , m_wallet_state(wallet_state)
     , preparator(m_wallet_state.get_wallet().get_hw(), m_wallet_state.get_wallet().get_output_handler(),
           m_wallet_state.get_wallet().get_view_secret_key(), std::bind(&WalletSync::on_prepared_block, this, _1),
@@ -142,8 +139,7 @@ void WalletSync::advance_sync() {
 		m_log(logging::INFO) << "Preventing computer sleep to sync wallet";
 		prevent_sleep = std::make_unique<platform::PreventSleep>("Synchronizing wallet");
 	}
-	if (prevent_sleep &&
-	    m_wallet_state.get_tip().timestamp > now - m_wallet_state.get_currency().block_future_time_limit * 2) {
+	if (prevent_sleep && m_wallet_state.get_tip().timestamp > now - m_currency.block_future_time_limit * 2) {
 		m_log(logging::INFO) << "Allowing computer sleep after sync wallet";
 		prevent_sleep = nullptr;
 	}
@@ -158,20 +154,9 @@ void WalletSync::advance_sync() {
 	if (preparator.get_total_block_size() != 0) {
 		return;  // Wait for preparator queue to drain
 	}
-	const bool node_behind_us_and_before_last_checkpoint =
-	    m_last_node_status.top_block_height < m_wallet_state.get_tip_height() &&
-	    m_last_node_status.top_block_height < m_wallet_state.get_currency().last_hard_checkpoint().height;
-	// We do not retreat until node passes checkpoint
 	if (m_last_node_status.top_block_hash != m_wallet_state.get_tip_bid()) {
-		if (node_behind_us_and_before_last_checkpoint) {
-			if (m_last_node_status.top_block_hash != Hash{})
-				m_sync_error = "Node is far behind, waiting";
-			m_state_changed_handler();
-			send_get_status();
-		} else {
-			m_next_send_hash = Hash{};  // We start sending again after new block
-			send_get_blocks();
-		}
+		m_next_send_hash = Hash{};  // We start sending again after new block
+		send_get_blocks();
 		return;
 	}
 	if (send_send_transaction())
@@ -365,7 +350,7 @@ bool WalletSync::send_send_transaction() {
                 m_log(logging::INFO) << "Json Error sending transaction from payment queue conflict height="
                                      << error.conflict_height << " code=" << error.code << " msg=" << error.message;
                 m_wallet_state.process_payment_queue_send_error(m_sending_transaction_hash, error);
-                set_sync_error("SEND_ERROR");
+                set_sync_error("CONNECTION_FAILED");
                 return;
             }
             m_log(logging::INFO) << "Success sending transaction from payment queue with result " << resp.send_result;

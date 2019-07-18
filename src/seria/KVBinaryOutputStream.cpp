@@ -65,7 +65,7 @@ size_t write_array_size(IOutputStream &s, size_t val) {
 
 }  // namespace
 
-KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : ISeria(false), m_target(target) {
+KVBinaryOutputStream::KVBinaryOutputStream(common::IOutputStream &target) : ISeria(false, false), m_target(target) {
 	KVBinaryStorageBlockHeader hdr{
 	    PORTABLE_STORAGE_SIGNATUREA, PORTABLE_STORAGE_SIGNATUREB, PORTABLE_STORAGE_FORMAT_VER};
 	write_pod(m_target, hdr.m_signature_a);

@@ -20,7 +20,7 @@ using namespace cn;
 using namespace platform;
 
 const std::string BlockChain::version_current = "8";
-// We increment when making incompatible changes to indices.
+// We increment when making incompatible changes to indexes.
 
 // We use suffixes so all keys related to the same block are close to each other in DB
 static const std::string BLOCK_PREFIX             = "b";
@@ -51,50 +51,65 @@ Block::Block(const RawBlock &rb) {
 
 PreparedBlock::PreparedBlock(BinaryArray &&ba, const Currency &currency, crypto::CryptoNightContext *context)
     : block_data(std::move(ba)) {
-	try {
-		seria::from_binary(raw_block, block_data);
-		prepare(currency, context);
-	} catch (const std::exception &ex) {
-		error = ConsensusError{common::what(ex)};
-		return;
-	}
+	seria::from_binary(raw_block, block_data);
+	prepare(currency, context);
 }
 
 PreparedBlock::PreparedBlock(RawBlock &&rba, const Currency &currency, crypto::CryptoNightContext *context)
     : raw_block(rba) {
-	try {
-		block_data = seria::to_binary(raw_block);
-		prepare(currency, context);
-	} catch (const std::exception &ex) {
-		error = ConsensusError{common::what(ex)};
-		return;
-	}
+	block_data = seria::to_binary(raw_block);
+	prepare(currency, context);
 }
 
 void PreparedBlock::prepare(const Currency &currency, crypto::CryptoNightContext *context) {
-	block           = Block{raw_block};
-	auto body_proxy = get_body_proxy_from_template(block.header);
-	bid             = cn::get_block_hash(block.header, body_proxy);
+	block = Block{raw_block};
+	invariant(block.transactions.size() == raw_block.transactions.size(), "");
+	base_transaction_hash = get_transaction_hash(block.header.base_transaction);
+	body_proxy            = get_body_proxy_from_template(base_transaction_hash, block.header.transaction_hashes);
+	bid                   = cn::get_block_hash(block.header, body_proxy);
 	if (block.header.is_merge_mined())
 		parent_block_size = seria::binary_size(block.header.root_block);
-	coinbase_tx_size      = seria::binary_size(block.header.base_transaction);
-	block_header_size     = seria::binary_size(static_cast<BlockHeader>(block.header));
-	base_transaction_hash = get_transaction_hash(block.header.base_transaction);
-	if (context) {
-		auto ba  = currency.get_block_pow_hashing_data(block.header, body_proxy);
-		pow_hash = context->cn_slow_hash(ba.data(), ba.size());
-	}
-	if (block.header.transaction_hashes.size() != raw_block.transactions.size()) {
-		error = ConsensusError{"Wrong transcation count in block template"};
-		return;
-	}
+	coinbase_tx_size  = seria::binary_size(block.header.base_transaction);
+	block_header_size = seria::binary_size(static_cast<BlockHeader>(block.header));
+	if (block.header.transaction_hashes.size() != raw_block.transactions.size())
+		throw ConsensusError{"Wrong transcation count in block template"};
 	// Transactions are in block
 	for (size_t i = 0; i != block.transactions.size(); ++i) {
 		Hash tid = get_transaction_hash(block.transactions.at(i));
-		if (tid != block.header.transaction_hashes.at(i)) {
-			error = ConsensusError{"Transaction from block template absent in block"};
-			return;
-		}
+		if (tid != block.header.transaction_hashes.at(i))
+			throw ConsensusError{"Transaction from block template absent in block"};
+	}
+	if (block.header.is_merge_mined()) {
+		extra::MergeMiningTag mm_tag;
+		if (!extra::get_merge_mining_tag(block.header.root_block.coinbase_transaction.extra, &mm_tag))
+			throw ConsensusError("No merge mining tag");
+		if (mm_tag.depth != block.header.root_block.blockchain_branch.size())
+			throw ConsensusError(common::to_string("Wrong merge mining depth,", mm_tag.depth, " should be ",
+			    block.header.root_block.blockchain_branch.size()));
+		if (block.header.root_block.blockchain_branch.size() > 8 * sizeof(Hash))
+			throw ConsensusError(common::to_string("Too big merge mining depth,",
+			    block.header.root_block.blockchain_branch.size(), "should be <=", 8 * sizeof(Hash)));
+		Hash aux_blocks_merkle_root = crypto::tree_hash_from_branch(block.header.root_block.blockchain_branch.data(),
+		    block.header.root_block.blockchain_branch.size(), get_block_header_prehash(block.header, body_proxy),
+		    &currency.genesis_block_hash);
+		if (aux_blocks_merkle_root != mm_tag.merkle_root)
+			throw ConsensusError(common::to_string(
+			    "Wrong merge mining merkle root, tag", mm_tag.merkle_root, "actual", aux_blocks_merkle_root));
+	}
+#if bytecoin_ALLOW_CM
+	if (block.header.is_cm_mined()) {
+		if (!crypto::cm_branch_valid(block.header.cm_merkle_branch))
+			throw ConsensusError("CM branch invalid");
+	}
+#endif
+	if (block.header.base_transaction.inputs.size() != 1)
+		throw ConsensusError(common::to_string(
+		    "Coinbase transaction input count wrong,", block.header.base_transaction.inputs.size(), "should be 1"));
+	if (block.header.base_transaction.inputs.at(0).type() != typeid(InputCoinbase))
+		throw ConsensusError("Coinbase transaction input type wrong");
+	if (context) {
+		auto ba  = currency.get_block_pow_hashing_data(block.header, body_proxy);
+		pow_hash = context->cn_slow_hash(ba.data(), ba.size());
 	}
 }
 
@@ -108,7 +123,7 @@ BlockChain::BlockChain(logging::ILogger &log, const Config &config, const Curren
 	invariant(CheckpointDifficulty{}.size() == currency.get_checkpoint_keys_count(), "");
 	std::string version;
 	if (!m_db.get("$version", version)) {
-		DB::Cursor cur = m_db.begin(std::string());
+		DB::Cursor cur = m_db.begin(std::string{});
 		if (!cur.end())
 			throw std::runtime_error("Blockchain database format unknown version, please delete " + m_db.get_path());
 		version = version_current;
@@ -174,9 +189,9 @@ bool BlockChain::add_block(
 	info->binary_nonce        = pb.block.header.nonce;
 	info->hash                = pb.bid;
 	info->height              = prev_info.height + 1;
-	// Rest fields are filled by check_standalone_consensus
-	check_standalone_consensus(pb, info, prev_info, true);  // throws ConsensusError
-	if (!add_blod(*info)) {  // Has parent that does not pass through last hard checkpoint
+	// Rest fields are filled by check_consensus
+	check_consensus(pb, info, prev_info, true);  // throws ConsensusError
+	if (!add_blod(*info)) {                      // Has parent that does not pass through last hard checkpoint
 		if (info->height > m_currency.last_hard_checkpoint().height)
 			m_archive.add(Archive::BLOCK, pb.block_data, pb.bid, source_address);
 		return false;
@@ -230,9 +245,9 @@ void BlockChain::debug_check_transaction_invariants(const RawBlock &raw_block, c
     const api::BlockHeader &info, const Hash &base_transaction_hash) const {
 	BinaryArray binary_tx;
 	Transaction rtx;
-	Height bhe;
+	Height bhe = 0;
 	Hash bha;
-	size_t iib;
+	size_t iib = 0;
 	invariant(get_transaction(base_transaction_hash, &binary_tx, &bhe, &bha, &iib), "tx index invariant failed 1");
 	seria::from_binary(rtx, binary_tx);
 	invariant(get_transaction_hash(rtx) == base_transaction_hash && bhe == info.height && bha == info.hash && iib == 0,
@@ -397,7 +412,7 @@ Height BlockChain::get_timestamp_lower_bound_height(Timestamp ts) const {
 	auto middle    = common::write_varint_sqlite4(ts);
 	DB::Cursor cur = m_db.begin(TIMESTAMP_BLOCK_PREFIX, middle);
 	if (cur.end())
-		return m_tip_height;
+		return m_tip_height + 1;
 	const char *be = cur.get_suffix().data();
 	const char *en = be + cur.get_suffix().size();
 	common::read_varint_sqlite4(be, en);  // We ignore result, auto actual_ts =
@@ -474,7 +489,7 @@ void BlockChain::redo_block(const Hash &bhash, const BinaryArray &block_data, co
 	redo_block(bhash, block, info);
 	auto tikey = TIMESTAMP_BLOCK_PREFIX + common::write_varint_sqlite4(info.timestamp) +
 	             common::write_varint_sqlite4(info.height);
-	m_db.put(tikey, std::string(), true);
+	m_db.put(tikey, std::string{}, true);
 
 	APITransactionPos tpos;
 	tpos.height = info.height;
@@ -618,7 +633,6 @@ void BlockChain::for_each_reversed_tip_segment(const api::BlockHeader &prev_info
 		invariant(
 		    header->height == 0, "Invariant dead - window size not reached, but genesis not found in get_tip_segment");
 		fun(*header);
-		count += 1;
 	}
 }
 
@@ -712,7 +726,7 @@ void BlockChain::modify_children_counter(CumulativeDifficulty cd, const Hash &bi
 		m_db.put(key, ba, false);
 	}
 	if (counter == 0) {
-		m_db.put(cd_key, std::string(), false);
+		m_db.put(cd_key, std::string{}, false);
 	} else {
 		m_db.del(cd_key, false);
 	}
@@ -860,10 +874,8 @@ void BlockChain::test_print_structure(Height n_confirmations) const {
 						if (!get_transaction(tid, &binary_tx, &height, &block_hash, &index_in_block)) {
 							Amount input_amount = 0;
 							for (const auto &input : block.transactions.at(tx_pos).inputs)
-								if (input.type() == typeid(InputKey)) {
-									const InputKey &in = boost::get<InputKey>(input);
-									input_amount += in.amount;
-								}
+								if (const InputKey *in = boost::get<InputKey>(&input))
+									input_amount += in->amount;
 							total_possible_ds_transactions += 1;
 							total_possible_ds_amount += input_amount;
 							std::cout << "        Potential ds tx amount=" << input_amount << " tid=" << tid
@@ -912,7 +924,7 @@ void BlockChain::start_internal_import() {
 	const std::string total_items_str = (total_items == std::numeric_limits<size_t>::max())
 	                                        ? "unknown"
 	                                        : common::to_string((total_items + 999999) / 1000000);
-	for (DB::Cursor cur = m_db.rbegin(std::string()); !cur.end();) {
+	for (DB::Cursor cur = m_db.rbegin(std::string{}); !cur.end();) {
 		if ((erased + skipped) % 1000000 == 0)
 			m_log(logging::INFO) << "Processing " << (erased + skipped) / 1000000 << "/" << total_items_str
 			                     << " million DB records";
@@ -949,7 +961,7 @@ bool BlockChain::internal_import() {
 				                        << " bid=" << bid;
 				break;
 			}
-			PreparedBlock pb(std::move(rb), m_currency, nullptr);
+			PreparedBlock pb{std::move(rb), m_currency, nullptr};
 			api::BlockHeader info;
 			if (!add_block(pb, &info, false, "internal_import")) {
 				m_log(logging::WARNING) << "Block corrupted during internal import for height=" << get_tip_height() + 1
@@ -1013,7 +1025,7 @@ void BlockChain::test_undo_everything(Height new_tip_height) {
 	m_db.del("$version", true);
 	std::cout << "---- After undo everything ---- " << std::endl;
 	int counter = 0;
-	for (DB::Cursor cur = m_db.begin(std::string()); !cur.end(); cur.next()) {
+	for (DB::Cursor cur = m_db.begin(std::string{}); !cur.end(); cur.next()) {
 		std::cout << DB::clean_key(cur.get_suffix()) << std::endl;
 		if (counter++ > 1000)  // In case of incomplete undo, prevent too much output
 			break;
@@ -1084,7 +1096,7 @@ bool BlockChain::add_checkpoint(const SignedCheckpoint &checkpoint, const std::s
 		RawBlock raw_block;
 		if (!get_block(bid, &raw_block))
 			return true;
-		PreparedBlock pb(std::move(raw_block), m_currency, nullptr);
+		PreparedBlock pb{std::move(raw_block), m_currency, nullptr};
 		reorganize_blocks(bid, pb, header);
 		tip_check_cd = get_checkpoint_difficulty(get_tip_bid());
 		return true;

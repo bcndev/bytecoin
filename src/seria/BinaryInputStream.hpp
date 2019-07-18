@@ -11,7 +11,7 @@ namespace seria {
 
 class BinaryInputStream : public ISeria {
 public:
-	explicit BinaryInputStream(common::IInputStream &strm) : ISeria(true), stream(strm) {}
+	explicit BinaryInputStream(common::IInputStream &strm) : ISeria(true, false), stream(strm) {}
 
 	bool begin_object() override { return true; }
 	void object_key(common::StringView, bool optional) override {}

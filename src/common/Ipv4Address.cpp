@@ -49,18 +49,6 @@ BinaryArray parse_ip_address(const std::string &addr) {
 	} catch (const std::exception &) {
 		std::throw_with_nested(std::runtime_error("IP Address component must be in range 0.255"));
 	}
-	//
-	//	if (sscanf(addr.c_str(), "%u.%u.%u.%u", &v[0], &v[1], &v[2], &v[3]) != 4) {
-	//		return false;
-	//	}
-	//
-	//	for (size_t i = 0; i < 4; ++i) {
-	//		if (v[i] > 0xff) {
-	//			return false;
-	//		}
-	//	}
-	//	//	*ip = (v[3] << 24) | (v[2] << 16) | (v[1] << 8) | v[0];
-	//	return true;
 }
 
 bool parse_ip_address(const std::string &addr, BinaryArray *ip) {
@@ -80,28 +68,6 @@ void parse_ip_address_and_port(const std::string &addr, BinaryArray *ip, uint16_
 		throw std::runtime_error("Address must be in ip:port format");
 	*ip = parse_ip_address(sip);
 	ewrap(*port = integer_cast<uint16_t>(sport), std::runtime_error("Port must be in range 0..65535"));
-	//	try{
-	//		*port = integer_cast<uint16_t>(sport);
-	//		return true;
-	//	}catch(const std::exception &){
-	//	}
-	//	uint32_t v[4]{};
-	//	uint32_t local_port = 0;
-	//
-	//	if (sscanf(addr.c_str(), "%u.%u.%u.%u:%u", &v[0], &v[1], &v[2], &v[3], &local_port) != 5) {
-	//		return false;
-	//	}
-	//
-	//	for (size_t i = 0; i < 4; ++i) {
-	//		if (v[i] > 0xff) {
-	//			return false;
-	//		}
-	//	}
-	//
-	//	*ip = BinaryArray{
-	//	    static_cast<uint8_t>(v[0]), static_cast<uint8_t>(v[1]), static_cast<uint8_t>(v[2]),
-	// static_cast<uint8_t>(v[3])}; 	if (local_port > 65535) 		return false; 	*port =
-	// static_cast<uint16_t>(local_port); 	return true;
 }
 
 void parse_ip_address_and_port(const std::string &addr, std::string *ip, uint16_t *port) {

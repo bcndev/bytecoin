@@ -316,10 +316,13 @@ void Transform(hashState *ctx,
 /* given state h, do h <- P(h)+h */
 void OutputTransformation(hashState *ctx) {
   int j;
-  u32 *temp, *y, *z;
-  temp = malloc(2*ctx->columns*sizeof(u32));
-  y    = malloc(2*ctx->columns*sizeof(u32));
-  z    = malloc(2*ctx->columns*sizeof(u32));
+  // Fixes to satisfy static analyzer (malloc result was not checked)
+  u32 temp[2*COLS1024];
+  u32 y[2*COLS1024];
+  u32 z[2*COLS1024];
+//  temp = malloc(2*ctx->columns*sizeof(u32));
+//  y    = malloc(2*ctx->columns*sizeof(u32));
+//  z    = malloc(2*ctx->columns*sizeof(u32));
 
   /* determine variant */
   switch (ctx->v) {
@@ -357,9 +360,9 @@ void OutputTransformation(hashState *ctx) {
     break;
   }
 
-  free(temp);
-  free(y);
-  free(z);
+//  free(temp);
+//  free(y);
+//  free(z);
 }
 
 /* initialise context */
@@ -384,10 +387,15 @@ HashReturn Init(hashState* ctx,
   }
 
   /* allocate memory for state and data buffer */
+  // Fixes to satisfy static analyzer (sometimes buffer was not freed)
   ctx->chaining = calloc(ctx->statesize,1);
-  ctx->buffer = malloc(ctx->statesize);
-  if (ctx->chaining == NULL || ctx->buffer == NULL)
+  if (ctx->chaining == NULL)
     return FAIL;
+  ctx->buffer = malloc(ctx->statesize);
+  if (ctx->buffer == NULL) {
+      free(ctx->chaining);
+      return FAIL;
+  }
 
   /* set initial value */
   ctx->chaining[2*ctx->columns-1] = U32BIG((u32)hashbitlen);

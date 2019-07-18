@@ -14,8 +14,7 @@ public:
 
 	void add_logger(ILogger &logger);
 	void remove_logger(ILogger &logger);
-	virtual void write(
-	    const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) override;
+	virtual void write(const std::string &category, Level level, std::time_t time, const std::string &body) override;
 
 protected:
 	std::vector<ILogger *> loggers;

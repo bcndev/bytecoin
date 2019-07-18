@@ -56,8 +56,9 @@ public:
 		// assert(pending_wait == false);
 		emscripten_fetch_attr_t attr;
 		emscripten_fetch_attr_init(&attr);
-		invariant(req.r.method.size() < sizeof(attr.requestMethod), "");
-		strcpy(attr.requestMethod, req.r.method.c_str());
+		invariant(req.r.method.size() + 1 <= sizeof(attr.requestMethod), "");
+		memmove(attr.requestMethod, req.r.method.c_str(), req.r.method.size() + 1);
+		// TODO - authorization
 		//		attr.userName = req.r.basic_authorization;
 		//		attr.password = req.r.basic_authorization;
 		attr.userData        = this;

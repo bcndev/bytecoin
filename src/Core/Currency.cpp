@@ -5,6 +5,8 @@
 #include <boost/algorithm/string/erase.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <cctype>
+#include <random>  // for distributions
+#include "Config.hpp"
 #include "CryptoNote.hpp"
 #include "CryptoNoteConfig.hpp"
 #include "CryptoNoteTools.hpp"
@@ -52,8 +54,8 @@ const std::vector<Amount> Currency::DECIMAL_PLACES = {1, 10, 100, 1000, 10000, 1
     1000000000, 10000000000, 100000000000, 1000000000000, 10000000000000, 100000000000000, 1000000000000000,
     10000000000000000, 100000000000000000, 1000000000000000000, 10000000000000000000ull};
 
-Currency::Currency(const std::string &net)
-    : net(net)
+Currency::Currency(const Config &config)
+    : net(config.net)
     , max_block_height(MAX_BLOCK_NUMBER)
     , mined_money_unlock_window(MINED_MONEY_UNLOCK_WINDOW)
     , block_future_time_limit(BLOCK_FUTURE_TIME_LIMIT)
@@ -73,20 +75,20 @@ Currency::Currency(const std::string &net)
     , key_image_subgroup_checking_height(KEY_IMAGE_SUBGROUP_CHECKING_HEIGHT)
     , amethyst_block_version(BLOCK_VERSION_AMETHYST)
     , amethyst_transaction_version(TRANSACTION_VERSION_AMETHYST)
-    , upgrade_vote_minor(8)
-    , upgrade_indicator_minor(8)  // We may now not need separate upgrade_indicator_minor
+    , upgrade_vote_minor(9)
     , upgrade_desired_major(4)
     , upgrade_voting_window(UPGRADE_VOTING_WINDOW)
     , upgrade_window(UPGRADE_WINDOW)
     , sendproof_base58_prefix(SENDPROOF_BASE58_PREFIX) {
-	// for upgrade_desired_major=4 upgrade_indicator_minor=7
+	// for upgrade_desired_major=4 upgrade_vote_minor=7
+	// for upgrade_desired_major=5 upgrade_vote_minor=5
 	if (net == "test") {
-		upgrade_heights       = {1, 1};  // block 1 is already V3
+		upgrade_heights       = {1, 1, 1};  // block 1 is already V4
 		upgrade_voting_window = 30;
 		upgrade_window        = 10;
 	}
 	if (net == "stage") {
-		upgrade_heights = {1, 1, 64233};  // block 1 is already V3
+		upgrade_heights = {1, 1, 64233};
 		upgrade_window  = EXPECTED_NUMBER_OF_BLOCKS_PER_DAY;
 	}
 	{
@@ -94,20 +96,23 @@ Currency::Currency(const std::string &net)
 		invariant(from_hex(GENESIS_COINBASE_TX_HEX, &miner_tx_blob),
 		    "Currency failed to parse coinbase tx from hard coded blob");
 		seria::from_binary(genesis_block_template.base_transaction, miner_tx_blob);
-		// 		Demystified genesis block calculations below
-		//		PublicKey genesis_output_key =
-		//			common::pfh<PublicKey>("9b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd088071");
-		//		PublicKey genesis_tx_public_key =
-		//			common::pfh<PublicKey>("3c086a48c15fb637a96991bc6d53caf77068b5ba6eeb3c82357228c49790584a");
-		//		Transaction coinbase_transaction;
-		//		coinbase_transaction.version                   = 1;
-		//		coinbase_transaction.unlock_block_or_timestamp = mined_money_unlock_window;
-		//		coinbase_transaction.inputs.push_back(CoinbaseInput{0});
-		//		coinbase_transaction.outputs.push_back(TransactionOutput{money_supply >> EMISSION_SPEED_FACTOR,
-		// KeyOutput{genesis_output_key}});
-		//		extra_add_transaction_public_key(coinbase_transaction.extra, genesis_tx_public_key);
-		//		invariant(miner_tx_blob == seria::to_binary(coinbase_transaction), "Demystified transaction does not
-		// match original one");
+		if (net == "main") {
+			// Demystified genesis block calculations below
+			PublicKey genesis_tx_public_key =
+			    common::pfh<PublicKey>("3c086a48c15fb637a96991bc6d53caf77068b5ba6eeb3c82357228c49790584a");
+			Transaction coinbase_transaction;
+			coinbase_transaction.version                   = 1;
+			coinbase_transaction.unlock_block_or_timestamp = mined_money_unlock_window;
+			coinbase_transaction.inputs.push_back(InputCoinbase{0});
+			OutputKey genesis_output;
+			genesis_output.amount = money_supply >> EMISSION_SPEED_FACTOR;
+			genesis_output.public_key =
+			    common::pfh<PublicKey>("9b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd088071");
+			coinbase_transaction.outputs.push_back(TransactionOutput{genesis_output});
+			extra::add_transaction_public_key(coinbase_transaction.extra, genesis_tx_public_key);
+			invariant(miner_tx_blob == seria::to_binary(coinbase_transaction),
+			    "Demystified transaction does not match original one");
+		}
 	}
 	genesis_block_template.major_version = 1;
 	genesis_block_template.minor_version = 0;
@@ -142,7 +147,7 @@ Currency::Currency(const std::string &net)
 		                      sizeof(CHECKPOINT_PUBLIC_KEYS_STAGENET) / sizeof(*CHECKPOINT_PUBLIC_KEYS_STAGENET);
 	}
 	miner_tx_blob_reserved_size =
-	    get_maximum_tx_size(1, get_max_coinbase_outputs(), 0) + 1 + extra::Nonce::MAX_COUNT;  // ~1k bytes
+	    get_maximum_tx_size_amethyst(1, get_max_coinbase_outputs(), 0) + 1 + extra::Nonce::MAX_COUNT;  // ~1k bytes
 }
 
 Height Currency::upgrade_votes_required() const { return upgrade_voting_window * UPGRADE_VOTING_PERCENT / 100; }
@@ -165,7 +170,7 @@ bool Currency::is_transaction_unlocked(uint8_t block_major_version, BlockOrTimes
 	return block_time + LOCKED_TX_ALLOWED_DELTA_SECONDS(difficulty_target) >= unlock_time;  // interpret as time
 }
 
-bool Currency::is_upgrade_vote(uint8_t major, uint8_t minor) const { return minor >= upgrade_indicator_minor; }
+bool Currency::is_upgrade_vote(uint8_t major, uint8_t minor) const { return minor == upgrade_vote_minor; }
 
 bool Currency::wish_to_upgrade() const { return upgrade_desired_major > 1 + upgrade_heights.size(); }
 
@@ -249,8 +254,8 @@ size_t Currency::max_block_transactions_cumulative_size(Height height) const {
 
 size_t Currency::minimum_anonymity(uint8_t block_major_version) const {
 	if (block_major_version >= amethyst_block_version)
-		return MINIMUM_ANONYMITY;
-	return MINIMUM_ANONYMITY_V1_3;
+		return MINIMUM_ANONYMITY_AMETHYST;
+	return 0;
 }
 
 Amount Currency::get_base_block_reward(
@@ -284,7 +289,6 @@ Transaction Currency::construct_miner_tx(const Hash &miner_secret, uint8_t block
     Amount block_reward, const AccountAddress &miner_address) const {
 	Transaction tx;
 	const bool is_tx_amethyst = miner_address.type() != typeid(AccountAddressLegacy);
-	const size_t max_outs     = get_max_coinbase_outputs();
 	// If we wish to limit number of outputs, it makes sense to round miner reward to some arbitrary number
 	// Though this solution will reduce number of coins to mix
 
@@ -298,6 +302,7 @@ Transaction Currency::construct_miner_tx(const Hash &miner_secret, uint8_t block
 		extra::add_transaction_public_key(tx.extra, txkey.public_key);
 
 	std::vector<Amount> out_amounts;
+	const size_t max_outs = get_max_coinbase_outputs();
 	decompose_amount(block_reward, min_dust_threshold, &out_amounts);
 
 	while (out_amounts.size() > max_outs && out_amounts.size() > 2) {
@@ -360,14 +365,12 @@ Amount Currency::get_penalized_amount(uint64_t amount, size_t median_size, size_
 }
 
 std::string Currency::account_address_as_string(const AccountAddress &v_addr) const {
-	if (v_addr.type() == typeid(AccountAddressLegacy)) {
-		auto &addr     = boost::get<AccountAddressLegacy>(v_addr);
-		BinaryArray ba = seria::to_binary(addr);
+	if (auto *addr = boost::get<AccountAddressLegacy>(&v_addr)) {
+		BinaryArray ba = seria::to_binary(*addr);
 		return common::base58::encode_addr(ADDRESS_BASE58_PREFIX, ba);
 	}
-	if (v_addr.type() == typeid(AccountAddressAmethyst)) {
-		auto &addr     = boost::get<AccountAddressAmethyst>(v_addr);
-		BinaryArray ba = seria::to_binary(addr);
+	if (auto *addr = boost::get<AccountAddressAmethyst>(&v_addr)) {
+		BinaryArray ba = seria::to_binary(*addr);
 		return common::base58::encode_addr(ADDRESS_BASE58_PREFIX_AMETHYST, ba);
 	}
 	throw std::runtime_error("Unknown address type");
@@ -584,13 +587,46 @@ BinaryArray Currency::get_block_pow_hashing_data(const BlockHeader &bh, const Bl
 	return cn::get_block_pow_hashing_data(bh, body_proxy, genesis_block_hash);
 }
 
-bool Currency::amount_allowed_in_output(uint8_t block_major_version, Amount amount) const {
-	if (block_major_version < amethyst_block_version)
-		return true;
-	auto pretty_it = std::lower_bound(std::begin(PRETTY_AMOUNTS), std::end(PRETTY_AMOUNTS), amount);
-	if (pretty_it != std::end(Currency::PRETTY_AMOUNTS) && *pretty_it == amount)
-		return true;
-	if (amount > min_dust_threshold)  // "crazy" amounts
-		return false;
-	return amount < 1000 || amount % 1000 == 0;  // 3-digit dust
+size_t Currency::mixin_distribution(Amount am, size_t stack_size) {
+	if (stack_size == 0)
+		return 0;
+	crypto::random_engine<uint64_t> generator;
+	std::normal_distribution<double> gaus_distribution{7.03635, 3.274266};  // magic
+	std::exponential_distribution<double> exp_distribution(1.13526e-01);    // magic
+	std::uniform_real_distribution<double> uniform_distribution(0.0, 1.0);
+
+	while (true) {
+		double bound = uniform_distribution(generator);
+		double y     = 0.0;
+		if (bound > 0.11) {  // 0.11 magic
+			y = gaus_distribution(generator);
+			y = exp(y);
+		} else {
+			y = exp_distribution(generator);
+		}
+		if (y > std::numeric_limits<int>::max() || y < std::numeric_limits<int>::min())
+			continue;
+		const int tmp = int(y);
+		if (tmp > static_cast<int>(stack_size - 1))
+			continue;
+		const size_t num = (tmp >= 0) ? stack_size - 1 - tmp : stack_size - 1;
+		return num;
+	}
+}
+
+std::vector<size_t> Currency::mixin_distribution(Amount am, size_t stack_size, size_t count) {
+	if (count >= stack_size) {
+		std::vector<size_t> result;
+		for (size_t i = 0; i != stack_size; ++i)
+			result.push_back(i);
+		return result;
+	}
+	std::set<size_t> tried_or_added;
+	size_t attempts = 0;
+	// If we are unlucky, first loop can take a long time, so we limit attempts
+	for (; tried_or_added.size() < count && attempts < count * 20; ++attempts)
+		tried_or_added.insert(mixin_distribution(am, stack_size));
+	for (size_t i = stack_size; tried_or_added.size() < count && i-- > 0;)
+		tried_or_added.insert(i);
+	return std::vector<size_t>(tried_or_added.begin(), tried_or_added.end());
 }

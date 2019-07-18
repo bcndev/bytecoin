@@ -4,9 +4,7 @@
 #include "Base58.hpp"
 
 #include <algorithm>
-#include <boost/crc.hpp>
 #include <iostream>
-#include <set>
 #include <vector>
 
 #include "Invariant.hpp"
@@ -160,7 +158,7 @@ bool decode_block_good(const char *block, size_t size, uint8_t *res) {
 		uint_be_to_bytes(res, res_size - 4, java_hi_part);
 		uint_be_to_bytes(res + res_size - 4, 4, java_lo_part);
 	} else {
-		if (res_size < full_block_size && java_lo_part >= (uint64_t(1) << (8 * res_size)))
+		if (java_hi_part != 0 || java_lo_part >= (uint64_t(1) << (8 * res_size)))
 			return false;  // Overflow
 		uint_be_to_bytes(res, res_size, java_lo_part);
 	}
@@ -257,6 +255,34 @@ bool decode_addr(std::string addr, uint64_t *tag, BinaryArray *data) {
 	//	tag->assign(addr_data.begin(), addr_data.end() - body_size);
 	//	data->assign(addr_data.end() - body_size, addr_data.end());
 	return true;
+}
+
+void interactive_test() {
+	std::cout << "interactive_test" << std::endl;
+	BinaryArray addr_data;
+	common::from_hex("cef5f4bdd171", &addr_data);
+	BinaryArray zeroes(16);
+	uint64_t tag = 0;
+	common::read_varint(addr_data.begin(), addr_data.end(), &tag);
+	std::cout << "tag=" << tag << std::endl;
+	while (true) {
+		std::cout << common::to_hex(addr_data) << std::endl;
+		for (size_t i = 0; i != 256; ++i) {
+			BinaryArray ba = addr_data;
+			ba.push_back(i);
+			append(ba, zeroes.begin(), zeroes.end());
+			std::string str = encode(ba);
+			std::cout << str << " " << i << std::endl;
+		}
+		int c = 0;
+		std::cin >> c;
+		if (c == -1) {
+			if (!addr_data.empty())
+				addr_data.pop_back();
+			continue;
+		}
+		addr_data.push_back(c);
+	}
 }
 
 }}  // namespace common::base58

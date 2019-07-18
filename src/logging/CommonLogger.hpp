@@ -10,13 +10,12 @@ namespace logging {
 
 class CommonLogger : public ILogger {
 public:
-	virtual void write(
-	    const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) override;
+	virtual void write(const std::string &category, Level level, std::time_t time, const std::string &body) override;
 	virtual void enable_category(const std::string &category);
 	virtual void disable_category(const std::string &category);
 	virtual void set_max_level(Level level);
 
-	void set_pattern(const std::string &pattern);
+	void set_pattern(const std::string &pt);
 
 protected:
 	std::set<std::string> m_disabled_categories;

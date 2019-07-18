@@ -12,15 +12,10 @@ using namespace cn;
 
 #if bytecoin_ALLOW_DEBUG_COMMANDS
 Hash p2p::ProofOfTrust::get_hash() const {
-	//	std::string s;
-	//  time was uint64_t here, adjust if seriously need this legacy peice of code
-	//	s.append(reinterpret_cast<const char *>(&peer_id), sizeof(peer_id));
-	//	s.append(reinterpret_cast<const char *>(&time), sizeof(time));
-	//	Hash old_hash = crypto::cn_fast_hash(s.data(), s.size());
-	BinaryArray ba = seria::to_binary(*this);
-	// We simplified proof of trust definition, because most likely
-	// trusted key is lost and to update it software update is required anyway
-	return crypto::cn_fast_hash(ba.data(), ba.size());
+	common::VectorStream vs;
+	vs.write_varint(peer_id);
+	vs.write_varint(time);
+	return crypto::cn_fast_hash(vs.buffer().data(), vs.buffer().size());
 }
 #endif
 
@@ -28,19 +23,23 @@ namespace seria {
 
 // TODO - Endianness
 template<typename T>
-typename std::enable_if<std::is_standard_layout<T>::value>::type serialize_as_binary(
-    std::vector<T> &value, common::StringView name, seria::ISeria &serializer) {
-	serializer.object_key(name);
-	std::string blob;
-	if (serializer.is_input()) {
-		ser(blob, serializer);
+void serialize_as_binary(std::vector<T> &value, common::StringView name, seria::ISeria &s) {
+	static_assert(std::is_standard_layout<T>::value, "T must be Standard Layout");
+	s.object_key(name);
+	BinaryArray blob;
+	if (s.is_input()) {
+		ser(blob, s);
+		if (blob.size() % sizeof(T) != 0)
+			throw std::runtime_error("serialize_as_binary wrong size for object " + common::to_string(blob.size()));
 		value.resize(blob.size() / sizeof(T));
-		if (!blob.empty())
-			memcpy(&value[0], blob.data(), blob.size());
-	} else {
 		if (!value.empty())
-			blob.assign(reinterpret_cast<const char *>(&value[0]), value.size() * sizeof(T));
-		ser(blob, serializer);
+			memcpy(value.data(), blob.data(), blob.size());
+	} else {
+		if (!value.empty()) {
+			auto ptr = reinterpret_cast<const char *>(value.data());
+			blob.assign(ptr, ptr + value.size() * sizeof(T));
+		}
+		ser(blob, s);
 	}
 }
 
@@ -51,11 +50,6 @@ void ser_members(PeerlistEntryLegacy &v, seria::ISeria &s) {
 	seria_kv("adr", v.adr, s);
 	seria_kv("id", v.id, s);
 	seria_kv("last_seen", v.last_seen, s);
-	//	uint64_t last_seen_64 = v.last_seen;
-	//	seria_kv("last_seen", last_seen_64, s);
-	//	if (s.is_input())
-	//		v.last_seen = static_cast<uint32_t>(last_seen_64);
-	//	seria_kv("reserved", v.reserved, s);
 }
 
 void ser_members(NetworkAddressLegacy &v, seria::ISeria &s) {
@@ -63,19 +57,6 @@ void ser_members(NetworkAddressLegacy &v, seria::ISeria &s) {
 	seria_kv("port", v.port, s);
 }
 
-// void ser_members(connection_entry &v, seria::ISeria &s) {
-//	seria_kv("adr", v.adr, s);
-//	seria_kv("id", v.id, s);
-//	seria_kv("is_income", v.is_income, s);
-//}
-
-// void ser_members(CoreStatistics &v, seria::ISeria &s) {
-//	seria::seria_kv("tx_pool_size", v.tx_pool_size, s);
-//	seria::seria_kv("blockchain_height", v.blockchain_height, s);
-//	seria::seria_kv("mining_speed", v.mining_speed, s);
-//	seria::seria_kv("alternative_blocks", v.alternative_blocks, s);
-//	seria::seria_kv("top_block_id_str", v.top_block_id_str, s);
-//}
 void ser_members(CoreStatistics &v, seria::ISeria &s) {
 	seria_kv("version", v.version, s);
 	seria_kv("platform", v.platform, s);
@@ -118,6 +99,9 @@ void ser_kv_plus1(common::StringView name, Height &v, seria::ISeria &s) {
 }
 void ser_members(CoreSyncData &v, seria::ISeria &s) {
 	ser_kv_plus1("current_height", v.current_height, s);
+	auto height = v.current_height;
+	// TODO - in V5, remove serialization as current_height
+	seria_kv("height", height, s);
 	seria_kv("top_id", v.top_id, s);
 }
 
@@ -129,23 +113,13 @@ void ser_members(p2p::Handshake::Request &v, seria::ISeria &s) {
 void ser_members(p2p::Handshake::Response &v, seria::ISeria &s) {
 	seria_kv("node_data", v.node_data, s);
 	seria_kv("payload_data", v.payload_data, s);
+	seria_kv("peerlist", v.peerlist, s);
 	serialize_as_binary(v.local_peerlist, "local_peerlist", s);
 }
 
-void ser_members(p2p::TimedSync::Request &v, seria::ISeria &s) { seria_kv("payload_data", v.payload_data, s); }
+void ser_members(p2p::TimedSync::Notify &v, seria::ISeria &s) { seria_kv("payload_data", v.payload_data, s); }
 
-void ser_members(p2p::TimedSync::Response &v, seria::ISeria &s) {
-	seria_kv("local_time", v.local_time, s);
-	seria_kv("payload_data", v.payload_data, s);
-	serialize_as_binary(v.local_peerlist, "local_peerlist", s);
-}
-
-void ser_members(p2p::PingLegacy::Request &v, seria::ISeria &s) {}
-
-void ser_members(p2p::PingLegacy::Response &v, seria::ISeria &s) {
-	seria_kv("status", v.status, s);
-	seria_kv("peer_id", v.peer_id, s);
-}
+void ser_members(p2p::TimedSync::Response &v, seria::ISeria &s) { seria_kv("payload_data", v.payload_data, s); }
 
 #if bytecoin_ALLOW_DEBUG_COMMANDS
 void ser_members(p2p::ProofOfTrust &v, seria::ISeria &s) {
@@ -159,63 +133,39 @@ void ser_members(p2p::GetStatInfo::Request &v, seria::ISeria &s) {
 	seria_kv("need_peer_lists", v.need_peer_lists, s);
 }
 
-/*void ser_members(p2p::GetStatInfo::Response &v, seria::ISeria &s) {
-    seria_kv("version", v.version, s);
-    seria_kv("os_version", v.os_version, s);
-    seria_kv("connections_count", v.connections_count, s);  // "*s_count" will be removed together with legacy P2P
-    seria_kv("incoming_connections_count", v.incoming_connections_count,
-        s);  // "*s_count" will be removed together with legacy P2P
-    seria_kv("payload_info", v.payload_info, s);
-}
-
-void ser_members(COMMAND_REQUEST_NETWORK_STATE::Request &v, seria::ISeria &s) { seria_kv("tr", v.tr, s); }
-
-void ser_members(COMMAND_REQUEST_NETWORK_STATE::Response &v, seria::ISeria &s) {
-    serialize_as_binary(v.local_peerlist_white, "local_peerlist_white", s);
-    serialize_as_binary(v.local_peerlist_gray, "local_peerlist_gray", s);
-    serialize_as_binary(v.connections_list, "connections_list", s);
-    seria_kv("my_id", v.my_id, s);
-    seria_kv("local_time", v.local_time, s);
-}*/
 #endif
 
 void ser_members(p2p::RelayBlock::Notify &v, seria::ISeria &s) {
 	seria_kv("b", v.b, s);
+	CoreSyncData payload_data{v.current_blockchain_height, v.top_id};
+	seria_kv("payload_data", payload_data, s);
+	// In 3.5.1 we added payload_data, will get rid of other fields later
 	ser_kv_plus1("current_blockchain_height", v.current_blockchain_height, s);
-	if (s.is_input() || v.top_id != Hash{})  // TODO - remove after 3.4 fork, this is workaround of bug in 3.2
-		seria_kv("top_id", v.top_id, s);
-	seria_kv("hop", v.hop, s);
+	seria_kv("top_id", v.top_id, s);
 }
 
 void ser_members(p2p::RelayTransactions::Notify &v, seria::ISeria &s) {
-	seria::seria_kv("txs", v.txs, s);
-	if (s.is_input() | !v.transaction_descs.empty())  // TODO - remove after 3.4 fork
-		seria::seria_kv("transaction_descs", v.transaction_descs, s);
+	seria::seria_kv("transaction_descs", v.transaction_descs, s);
 }
 
-void ser_members(p2p::GetObjectsRequest::Notify &v, seria::ISeria &s) {
+void ser_members(p2p::GetObjects::Request &v, seria::ISeria &s) {
 	serialize_as_binary(v.txs, "txs", s);
 	serialize_as_binary(v.blocks, "blocks", s);
 }
 
-void ser_members(p2p::GetObjectsResponse::Notify &v, seria::ISeria &s) {
+void ser_members(p2p::GetObjects::Response &v, seria::ISeria &s) {
 	seria_kv("txs", v.txs, s);
 	seria_kv("blocks", v.blocks, s);
 	serialize_as_binary(v.missed_ids, "missed_ids", s);
-	ser_kv_plus1("current_blockchain_height", v.current_blockchain_height, s);
 }
 
-void ser_members(p2p::GetChainRequest::Notify &v, seria::ISeria &s) {
-	serialize_as_binary(v.block_ids, "block_ids", s);
-}
+void ser_members(p2p::GetChain::Request &v, seria::ISeria &s) { serialize_as_binary(v.block_ids, "block_ids", s); }
 
-void ser_members(p2p::GetChainResponse::Notify &v, seria::ISeria &s) {
+void ser_members(p2p::GetChain::Response &v, seria::ISeria &s) {
 	seria_kv("start_height", v.start_height, s);
-	ser_kv_plus1("total_height", v.total_height, s);
 	serialize_as_binary(v.m_block_ids, "m_block_ids", s);
 }
 
-void ser_members(p2p::SyncPool::Notify &v, seria::ISeria &s) { serialize_as_binary(v.txs, "txs", s); }
 void ser_members(p2p::SyncPool::Request &v, seria::ISeria &s) {
 	seria_kv("from_fee_per_byte", v.from.first, s);
 	seria_kv("from_hash", v.from.second, s);
@@ -227,16 +177,16 @@ void ser_members(p2p::SyncPool::Response &v, seria::ISeria &s) {
 }
 
 bool ser(NetworkAddress &v, seria::ISeria &s) {
-	if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
+	if (s.is_json()) {
+		if (s.is_input()) {
+			std::string str;
+			if (!ser(str, s))
+				return false;
+			common::parse_ip_address_and_port(str, &v.ip, &v.port);
+			return true;
+		}
 		std::string str = common::ip_address_and_port_to_string(v.ip, v.port);
 		return ser(str, s);
-	}
-	if (dynamic_cast<seria::JsonInputStream *>(&s)) {
-		std::string str;
-		if (!ser(str, s))
-			return false;
-		common::parse_ip_address_and_port(str, &v.ip, &v.port);
-		return true;
 	}
 	bool result = s.begin_object();
 	seria_kv("ip", v.ip, s);

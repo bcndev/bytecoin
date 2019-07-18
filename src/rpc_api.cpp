@@ -146,9 +146,7 @@ void ser_members(api::Output &v, ISeria &s, bool only_bytecoind_fields) {
 	seria_kv("global_index", v.global_index, s);
 	seria_kv("height", v.height, s);
 	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
-	if (dynamic_cast<seria::JsonOutputStream *>(&s))
-		seria_kv("unlock_time", v.unlock_block_or_timestamp, s);  // deprecated
-	if (dynamic_cast<seria::JsonInputStream *>(&s))
+	if (s.is_json())
 		seria_kv("unlock_time", v.unlock_block_or_timestamp, s);  // deprecated
 	if (!only_bytecoind_fields)
 		seria_kv("index_in_transaction", v.index_in_transaction, s);
@@ -166,13 +164,9 @@ void ser_members(api::BlockHeader &v, ISeria &s) {
 	seria_kv("timestamp", v.timestamp, s);
 	seria_kv("previous_block_hash", v.previous_block_hash, s);
 	seria_kv("binary_nonce", v.binary_nonce, s);
-	if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
+	if (s.is_json()) {
 		auto nonce =
 		    common::uint_le_from_bytes<uint32_t>(v.binary_nonce.data(), std::min<size_t>(4, v.binary_nonce.size()));
-		seria_kv("nonce", nonce, s);
-	}
-	if (dynamic_cast<seria::JsonInputStream *>(&s)) {
-		uint32_t nonce = 0;
 		seria_kv("nonce", nonce, s);
 	}
 	seria_kv("height", v.height, s);
@@ -209,7 +203,7 @@ void ser_members(api::Transfer &v, ISeria &s, bool with_message) {
 	seria_kv("amount", v.amount, s);
 	seria_kv("ours", v.ours, s);
 	seria_kv("locked", v.locked, s);
-	seria_kv("outputs", v.outputs, s);
+	seria_kv_optional("outputs", v.outputs, s);
 	seria_kv("transaction_hash", v.transaction_hash, s);
 	if (with_message)  // TODO - remove on next WalletState db version upgrade
 		seria_kv_optional("message", v.message, s);
@@ -217,17 +211,15 @@ void ser_members(api::Transfer &v, ISeria &s, bool with_message) {
 
 void ser_members(api::Transaction &v, ISeria &s, bool with_message) {
 	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
-	if (dynamic_cast<seria::JsonOutputStream *>(&s))
-		seria_kv("unlock_time", v.unlock_block_or_timestamp, s);  // deprecated
-	if (dynamic_cast<seria::JsonInputStream *>(&s))
+	if (s.is_json())
 		seria_kv("unlock_time", v.unlock_block_or_timestamp, s);  // deprecated
 	seria_kv("amount", v.amount, s);
 	seria_kv("fee", v.fee, s);
-	seria_kv("public_key", v.public_key, s);
+	seria_kv_optional("public_key", v.public_key, s);
 	seria_kv_optional("transfers", v.transfers, s, with_message);
 	seria_kv_optional("payment_id", v.payment_id, s);
 	seria_kv("anonymity", v.anonymity, s);
-	seria_kv("extra", v.extra, s);
+	seria_kv_optional("extra", v.extra, s);
 	seria_kv("hash", v.hash, s);
 	seria_kv("prefix_hash", v.prefix_hash, s);
 	seria_kv("inputs_hash", v.inputs_hash, s);
@@ -236,9 +228,7 @@ void ser_members(api::Transaction &v, ISeria &s, bool with_message) {
 	seria_kv("block_hash", v.block_hash, s);
 	seria_kv("timestamp", v.timestamp, s);
 	seria_kv("size", v.size, s);
-	if (dynamic_cast<seria::JsonOutputStream *>(&s))
-		seria_kv("binary_size", v.size, s);  // deprecated
-	if (dynamic_cast<seria::JsonInputStream *>(&s))
+	if (s.is_json())
 		seria_kv("binary_size", v.size, s);  // deprecated
 }
 
@@ -363,6 +353,7 @@ void ser_members(api::walletd::GetTransfers::Request &v, ISeria &s) {
 	if (s.is_input())
 		seria_kv("desired_transactions_count", v.desired_transaction_count, s);  // deprecated
 	seria_kv("forward", v.forward, s);
+	seria_kv("need_outputs", v.need_outputs, s);
 }
 
 void ser_members(api::walletd::GetTransfers::Response &v, ISeria &s) {
@@ -395,11 +386,15 @@ void ser_members(api::walletd::CreateTransaction::Response &v, ISeria &s) {
 void ser_members(api::walletd::CreateSendproof::Request &v, ISeria &s) {
 	seria_kv_strict("transaction_hash", v.transaction_hash, s);
 	seria_kv("message", v.message, s);
+	seria_kv("address", v.address, s);
 	seria_kv("addresses", v.addresses, s);
 	seria_kv("reveal_secret_message", v.reveal_secret_message, s);
 }
 
-void ser_members(api::walletd::CreateSendproof::Response &v, ISeria &s) { seria_kv("sendproofs", v.sendproofs, s); }
+void ser_members(api::walletd::CreateSendproof::Response &v, ISeria &s) {
+	seria_kv("sendproof", v.sendproof, s);
+	seria_kv("sendproofs", v.sendproofs, s);
+}
 
 void ser_members(api::cnd::GetStatus::Request &v, ISeria &s) {
 	seria_kv("top_block_hash", v.top_block_hash, s);
@@ -423,7 +418,7 @@ void ser_members(api::cnd::GetStatus::Response &v, ISeria &s) {
 	seria_kv("top_block_timestamp", v.top_block_timestamp, s);
 	seria_kv("top_block_timestamp_median", v.top_block_timestamp_median, s);
 	seria_kv("recommended_fee_per_byte", v.recommended_fee_per_byte, s);
-	if (dynamic_cast<seria::JsonOutputStream *>(&s) || dynamic_cast<seria::JsonInputStream *>(&s))
+	if (s.is_json())
 		seria_kv("next_block_effective_median_size", v.recommended_max_transaction_size, s);
 	seria_kv("recommended_max_transaction_size", v.recommended_max_transaction_size, s);
 	seria_kv("top_known_block_height", v.top_known_block_height, s);
@@ -485,6 +480,8 @@ void ser_members(api::cnd::GetRawTransaction::Response &v, ISeria &s) {
 	seria_kv("transaction", v.transaction, s);
 	seria_kv("raw_transaction", v.raw_transaction, s);
 	seria_kv("mixed_public_keys", v.mixed_public_keys, s);
+	seria_kv("mixed_outputs", v.mixed_outputs, s);
+	//	seria_kv("signatures", v.signatures, s, v.raw_transaction); // Uncomment for experiments
 }
 
 void ser_members(api::cnd::SyncMemPool::Request &v, ISeria &s) {
@@ -565,9 +562,37 @@ void ser_members(api::cnd::GetArchive::Response &v, ISeria &s) {
 	seria_kv("checkpoints", v.checkpoints, s);
 }
 
-void ser_members(api::walletd::GetTransaction::Request &v, ISeria &s) { seria_kv_strict("hash", v.hash, s); }
+void ser_members(api::walletd::GetTransaction::Request &v, ISeria &s) {
+	seria_kv_strict("hash", v.hash, s);
+	seria_kv("need_outputs", v.need_outputs, s);
+}
 
 void ser_members(api::walletd::GetTransaction::Response &v, ISeria &s) { seria_kv("transaction", v.transaction, s); }
+
+void ser_members(cn::api::walletd::ExtCreateWallet::Request &v, ISeria &s) {
+	seria_kv("wallet_file", v.wallet_file, s);
+	seria_kv("wallet_password", v.wallet_password, s);
+	seria_kv("wallet_type", v.wallet_type, s);
+	seria_kv("mnemonic", v.mnemonic, s);
+	seria_kv("mnemonic_password", v.mnemonic_password, s);
+	seria_kv("import_keys", v.import_keys, s);
+	seria_kv("address_count", v.address_count, s);
+	seria_kv("creation_timestamp", v.creation_timestamp, s);
+	seria_kv("import_view_key", v.import_view_key, s);
+}
+
+void ser_members(cn::api::walletd::ExtCreateWallet::Response &v, ISeria &s) {
+	seria_kv("wallet_file", v.wallet_file, s);
+}
+
+void ser_members(cn::api::walletd::ExtOpenWallet::Request &v, ISeria &s) {
+	seria_kv("wallet_file", v.wallet_file, s);
+	seria_kv("wallet_password", v.wallet_password, s);
+}
+
+void ser_members(cn::api::walletd::ExtSetPassword::Request &v, ISeria &s) {
+	seria_kv("wallet_password", v.wallet_password, s);
+}
 
 void ser_members(api::cnd::GetBlockTemplate::Request &v, ISeria &s) {
 	seria_kv("reserve_size", v.reserve_size, s);

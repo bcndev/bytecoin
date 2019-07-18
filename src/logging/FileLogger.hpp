@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <memory>
 #include <mutex>
 #include "CommonLogger.hpp"
 #include "platform/Files.hpp"

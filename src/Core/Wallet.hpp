@@ -47,9 +47,9 @@ protected:
 
 	virtual AccountAddress record_to_address(size_t index) const = 0;
 
+public:
 	static std::string net_append(const std::string &net);
 
-public:
 	class Exception : public std::runtime_error {
 	public:
 		const int return_code;
@@ -63,10 +63,12 @@ public:
 	virtual void set_password(const std::string &password) = 0;
 	virtual void export_wallet(const std::string &export_path, const std::string &new_password, bool view_only,
 	    bool view_outgoing_addresses) const                = 0;
+	virtual std::string export_viewonly_wallet_string(
+	    const std::string &new_password, bool view_outgoing_addresses) const = 0;
 	virtual bool is_view_only() const { return m_wallet_records.at(0).spend_secret_key == SecretKey{}; }
 	virtual bool can_view_outgoing_addresses() const { return m_view_seed != Hash{}; }
 	virtual bool is_amethyst() const { return false; }
-	virtual std::string get_hardware_type() const { return std::string(); }
+	virtual std::string get_hardware_type() const { return std::string{}; }
 	virtual std::string export_keys() const = 0;
 	const PublicKey &get_view_public_key() const { return m_view_public_key; }
 	const SecretKey &get_view_secret_key() const { return m_view_secret_key; }

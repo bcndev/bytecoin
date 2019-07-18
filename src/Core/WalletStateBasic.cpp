@@ -51,9 +51,13 @@ static const std::string LOCKED_INDEX_KI_GI = "li";
 // (unl_he, gi) -> (output)         <- find yet locked by height/timestamp
 static const std::string LOCKED_INDEX_B_OR_T_GI_to_OUTPUT = "lh";  // key contain unlock_block_or_timestamp
 
-static const cn::Height max_undo_height = 1000;
+#ifdef __EMSCRIPTEN__
+static const cn::Height max_undo_height = 100;
+static const bool save_transfer_details = false;
+#else
+static const cn::Height max_undo_height = 10000;
 static const bool save_transfer_details = true;
-
+#endif
 using namespace cn;
 using namespace platform;
 
@@ -182,7 +186,7 @@ void WalletStateBasic::db_commit() {
 	m_log(logging::TRACE) << "WalletState::db_commit finished...";
 }
 
-std::string WalletStateBasic::format_output(const api::Output &v) {
+std::string WalletStateBasic::format_output(const api::Output &v) const {
 	std::stringstream str;
 	str << " he=" << v.height << " gi=" << v.global_index << " am=" << m_currency.format_amount(v.amount)
 	    << " si=" << v.stack_index << " ki=" << v.key_image << " addr=" << v.address
@@ -207,7 +211,7 @@ void WalletStateBasic::clear_db(bool everything) {
 	                                        ? "unknown"
 	                                        : common::to_string((total_items + 999999) / 1000000);
 	size_t erased = 0;
-	for (DB::Cursor cur = m_db.rbegin(std::string()); !cur.end();) {
+	for (DB::Cursor cur = m_db.rbegin(std::string{}); !cur.end();) {
 		if (!everything && (common::starts_with(cur.get_suffix(), "$") || common::starts_with(cur.get_suffix(), "a")))
 			cur.next();
 		else
@@ -242,6 +246,10 @@ void WalletStateBasic::push_chain(const api::BlockHeader &header) {
 	DB::Cursor cur =
 	    m_db.begin(INDEX_ADDRESS_HEIGHT_TID + "/" + common::write_varint_sqlite4(m_chain_height - max_undo_height));
 	if (!cur.end())  // Have transactions at this height
+		return;
+	DB::Cursor cur2 =
+	    m_db.begin(UNLOCKED_INDEX_REALHE_GI_to_OUTPUT + common::write_varint_sqlite4(m_chain_height - max_undo_height));
+	if (!cur2.end())  // Have unlocked block at this height
 		return;
 	m_db.del(INDEX_HEIGHT_to_HEADER + common::write_varint_sqlite4(m_chain_height - max_undo_height), false);
 }
@@ -476,11 +484,11 @@ void WalletStateBasic::add_transaction(
 	//	api::Transaction ptx2 = ptx; // Remove redundant info before saving
 	//	for (auto &&transfer : ptx2.transfers)
 	//		for(auto && ou : transfer.outputs)
-	//			ou.address = std::string();
+	//			ou.address = std::string{};
 	//	BinaryArray str_pa = seria::to_binary(std::make_pair(pwtx.tx, ptx2));
 	put_with_undo(trkey, str_pa, true);
 	std::set<std::string> addresses;
-	addresses.insert(std::string());
+	addresses.insert(std::string{});
 	for (auto &&transfer : ptx.transfers) {
 		addresses.insert(transfer.address);
 	}
@@ -515,8 +523,8 @@ static void parse_lock_key(const std::string &suffix, BlockOrTimestamp *unl, siz
 	invariant(en - be == 0, "");
 }
 
-std::vector<api::Block> WalletStateBasic::api_get_transfers(
-    const std::string &address, Height *from_height, Height *to_height, bool forward, size_t desired_tx_count) const {
+std::vector<api::Block> WalletStateBasic::api_get_transfers(const std::string &address, Height *from_height,
+    Height *to_height, bool forward, size_t desired_tx_count, bool need_outputs) const {
 	std::vector<api::Block> result;
 	if (*from_height >= *to_height)
 		return result;
@@ -577,6 +585,9 @@ std::vector<api::Block> WalletStateBasic::api_get_transfers(
 			TransactionPrefix ptx;
 			api::Transaction tx;
 			get_transaction(tid, &ptx, &tx);
+			if (!need_outputs)
+				for (auto &tr : tx.transfers)
+					tr.outputs.clear();
 			result.back().transactions.push_back(std::move(tx));
 			cur.next();
 			if (cur.end()) {
@@ -609,7 +620,8 @@ std::vector<api::Block> WalletStateBasic::api_get_transfers(
 				result.back().unlocked_transfers.back().ours             = true;
 			}
 			result.back().unlocked_transfers.at(ti).amount += output.amount;
-			result.back().unlocked_transfers.at(ti).outputs.push_back(std::move(output));
+			if (need_outputs)
+				result.back().unlocked_transfers.at(ti).outputs.push_back(std::move(output));
 		}
 		cur2.next();
 		if (cur2.end()) {
@@ -919,9 +931,9 @@ void WalletStateBasic::remove_from_lock_index(const api::Output &output) {
 
 void WalletStateBasic::unlock(Height now_height, Timestamp now) {
 	std::map<size_t, api::Output> to_unlock;
-	read_unlock_index(&to_unlock, LOCKED_INDEX_B_OR_T_GI_to_OUTPUT, std::string(), 0, now_height + 1);
+	read_unlock_index(&to_unlock, LOCKED_INDEX_B_OR_T_GI_to_OUTPUT, std::string{}, 0, now_height + 1);
 	read_unlock_index(
-	    &to_unlock, LOCKED_INDEX_B_OR_T_GI_to_OUTPUT, std::string(), m_currency.max_block_height, now + 1);
+	    &to_unlock, LOCKED_INDEX_B_OR_T_GI_to_OUTPUT, std::string{}, m_currency.max_block_height, now + 1);
 	if (!to_unlock.empty())
 		m_log(LEVEL) << "Unlocking for height=" << now_height << ", now=" << now << std::endl;
 	for (auto &&unl : to_unlock) {
@@ -1013,7 +1025,7 @@ void WalletStateBasic::test_undo_blocks() {
 	}
 	std::cout << "---- After undo everything ---- " << std::endl;
 	counter = 0;
-	for (DB::Cursor cur = m_db.begin(std::string()); !cur.end(); cur.next()) {
+	for (DB::Cursor cur = m_db.begin(std::string{}); !cur.end(); cur.next()) {
 		if (common::starts_with(cur.get_suffix(), "a"))
 			continue;
 		std::cout << DB::clean_key(cur.get_suffix()) << std::endl;
@@ -1024,7 +1036,7 @@ void WalletStateBasic::test_undo_blocks() {
 
 void WalletStateBasic::test_print_everything(const std::string &str) {
 	std::cout << str << " m_chain_height=" << m_chain_height << std::endl;
-	for (DB::Cursor cur = m_db.begin(std::string()); !cur.end(); cur.next()) {
+	for (DB::Cursor cur = m_db.begin(std::string{}); !cur.end(); cur.next()) {
 		if (common::starts_with(cur.get_suffix(), INDEX_HEIGHT_to_HEADER))
 			continue;
 		if (common::starts_with(cur.get_suffix(), INDEX_HEIGHT_to_STATE))

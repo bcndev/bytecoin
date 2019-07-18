@@ -8,11 +8,12 @@
 #include "Core/Node.hpp"
 #include "Core/WalletHDsqlite.hpp"
 #include "Core/WalletLegacy.hpp"
-#include "Core/WalletNode.hpp"
+#include "Core/WalletNodeExt.hpp"
 #include "common/BIPs.hpp"
 #include "common/Base64.hpp"
 #include "common/CommandLine.hpp"
 #include "common/ConsoleTools.hpp"
+#include "logging/ConsoleLogger.hpp"
 #include "logging/LoggerManager.hpp"
 #include "platform/ExclusiveLock.hpp"
 #include "platform/Network.hpp"
@@ -275,7 +276,7 @@ std::unique_ptr<Wallet> create_wallet(const Currency &currency, logging::ILogger
 		mnemonic          = cn::Bip32Key::check_bip39_mnemonic(mnemonic);
 		mnemonic_password = prompt_for_string("Enter BIP39 mnemonic password (empty recommended)", console_setup);
 	}
-	std::string new_password = ask_new_password(true, std::string(), console_setup);
+	std::string new_password = ask_new_password(true, std::string{}, console_setup);
 	std::unique_ptr<Wallet> wallet;
 	if (wallet_type == "hardware") {
 		wallet = std::make_unique<WalletHDsqlite>(
@@ -298,6 +299,8 @@ std::unique_ptr<Wallet> create_wallet(const Currency &currency, logging::ILogger
 	return wallet;
 }
 
+int main_app(common::console::UnicodeConsoleSetup &console_setup, common::CommandLine &cmd);
+
 int main(int argc, const char *argv[]) try {
 	common::console::UnicodeConsoleSetup console_setup;
 	const auto idea_start = std::chrono::high_resolution_clock::now();
@@ -310,13 +313,15 @@ int main(int argc, const char *argv[]) try {
 	common::CommandLine cmd(argc, argv);
 	if (cmd.show_help(Config::prepare_usage(USAGE).c_str(), cn::app_version()))
 		return 0;
+	if (cmd.get_bool("--app"))  // Experimental, undocumented
+		return main_app(console_setup, cmd);
 	if (cmd.get_bool("--create-mnemonic"))
 		return create_mnemonic(console_setup, cmd);
 	if (cmd.get_bool("--check-mnemonic"))  // Undocumented, used by GUI for now
 		return check_mnemonic(console_setup, cmd);
 
 	Config config(cmd);
-	Currency currency(config.net);
+	Currency currency(config);
 	const std::string coin_folder = config.get_data_folder();
 	if (const char *pa = cmd.get("--emulate-hardware-wallet"))  // Undocumented, used for debugging
 		hardware::Proxy::debug_set_mnemonic(pa);
@@ -353,8 +358,9 @@ int main(int argc, const char *argv[]) try {
 			if (cmd.show_errors("cannot be used with --export-view-only"))
 				return api::WALLETD_WRONG_ARGS;
 			wallet = open_wallet(currency, logManagerWalletNode, wallet_file, &password, true, console_setup);
-			if (wallet->is_view_only())
-				wrong_args("Cannot export as view-only, wallet file is already view-only");
+			if (wallet->is_view_only() && view_outgoing_addresses && !wallet->can_view_outgoing_addresses())
+				wrong_args(
+				    "Cannot export as view-only with --view-outgoing-addresses, because wallet file cannot view outgoing addresses");
 			std::string new_password = ask_new_password(set_password, password.get(), console_setup);
 			wallet->export_wallet(export_view_only, new_password, true, view_outgoing_addresses);
 			std::cout << "Successfully exported view-only copy of the wallet" << std::endl;
@@ -494,7 +500,7 @@ int main(int argc, const char *argv[]) try {
 	logging::LoggerManager logManagerNode;
 	logManagerNode.configure_default(config.get_data_folder("logs"), CRYPTONOTE_NAME "d-", cn::app_version());
 
-	auto wallet_node = std::make_unique<WalletNode>(nullptr, logManagerWalletNode, config, wallet_state);
+	auto wallet_node = std::make_unique<WalletNode>(logManagerWalletNode, wallet_state);
 
 	// Carefull, throwing after we create bytecoind thread will terminate immediately
 	std::promise<void> prm;
@@ -578,6 +584,35 @@ int main(int argc, const char *argv[]) try {
 } catch (const Wallet::Exception &ex) {
 	std::cout << common::what(ex) << std::endl;
 	return ex.return_code;
+} catch (const std::exception &ex) {  // On Windows what() is not printed if thrown from main
+	std::cout << "Uncaught Exception in main() - " << common::what(ex) << std::endl;
+	throw;
+}
+
+int main_app(common::console::UnicodeConsoleSetup &console_setup, common::CommandLine &cmd) try {
+	Config config(cmd);
+	Currency currency(config);
+
+	config.walletd_authorization = common::base64::encode(common::as_binary_array("user:111"));
+
+	logging::ConsoleLogger logger;
+
+	boost::asio::io_service io;
+	platform::EventLoop run_loop(io);
+
+	auto wallet_node = std::make_unique<WalletNodeExt>(config, currency, logger);
+
+	io.run();
+	return 0;
+} catch (const cn::Config::DataFolderError &ex) {
+	std::cout << common::what(ex) << std::endl;
+	return api::BYTECOIND_DATAFOLDER_ERROR;
+} catch (const platform::TCPAcceptor::AddressInUse &ex) {
+	std::cout << common::what(ex) << std::endl;
+	return api::WALLETD_BIND_PORT_IN_USE;
+} catch (const cn::Config::ConfigError &ex) {
+	std::cout << common::what(ex) << std::endl;
+	return api::WALLETD_WRONG_ARGS;
 } catch (const std::exception &ex) {  // On Windows what() is not printed if thrown from main
 	std::cout << "Uncaught Exception in main() - " << common::what(ex) << std::endl;
 	throw;

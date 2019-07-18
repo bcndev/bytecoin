@@ -9,9 +9,9 @@
 #include <list>
 #include <map>
 #include <memory>
-#include "PeerDB.hpp"
 #include "common/MemoryStreams.hpp"
 #include "logging/LoggerMessage.hpp"
+#include "p2p/P2pProtocolTypes.hpp"
 #include "platform/Network.hpp"
 
 namespace cn {
@@ -19,6 +19,7 @@ namespace cn {
 class Config;
 class P2P;
 class P2PClient;
+class PeerDB;
 
 class P2PProtocol {
 public:
@@ -97,13 +98,6 @@ public:
 
 	explicit P2P(logging::ILogger &log, const Config &config, PeerDB &peers, client_factory &&c_factory);
 
-	//	void broadcast(
-	//	    P2PProtocol *exclude_who, const BinaryArray &data, bool incoming, bool outgoing);  // to all, except who
-	//	void broadcast(P2PProtocol *exclude_who, const BinaryArray &data) { broadcast(exclude_who, data, true, true); }
-	//	P2PClient *find_client(const NetworkAddress &address, bool incoming);
-	//	P2PClient *find_connecting_client(const NetworkAddress &address);
-	//	std::vector<NetworkAddress> good_clients(bool incoming) const;
-	Timestamp get_p2p_time() const;
 	Timestamp get_local_time() const;
 	uint64_t get_unique_number() const { return unique_number; }
 

@@ -22,10 +22,10 @@ PreparedWalletTransaction::PreparedWalletTransaction(const Hash &tid, size_t siz
 void PreparedWalletTransaction::prepare(const Wallet::OutputHandler &o_handler, const SecretKey &view_secret_key) {
 	// We ignore results of most crypto calls here and absence of tx_public_key
 	// All errors will lead to spend_key not found in our wallet for legacy crypto
-	PublicKey tx_public_key = extra::get_transaction_public_key(tx.extra);
-	auto encrypted_messages = extra::get_encrypted_messages(tx.extra);
-	if (tx_public_key != PublicKey{})
+	PublicKey tx_public_key;
+	if (extra::get_transaction_public_key(tx.extra, &tx_public_key))
 		derivation = generate_key_derivation(tx_public_key, view_secret_key);
+	auto encrypted_messages = extra::get_encrypted_messages(tx.extra);
 
 	prefix_hash = get_transaction_prefix_hash(tx);
 	inputs_hash = get_transaction_inputs_hash(tx);
@@ -37,9 +37,9 @@ void PreparedWalletTransaction::prepare(const Wallet::OutputHandler &o_handler, 
 		const auto &output = tx.outputs.at(out_index);
 		if (output.type() != typeid(OutputKey))
 			continue;
-		const auto &key_output = boost::get<OutputKey>(output);
+		const auto &out = boost::get<OutputKey>(output);
 		PublicKey pk, ss;
-		o_handler(tx.version, derivation, inputs_hash, out_index, key_output, &pk, &ss);
+		o_handler(tx.version, derivation, inputs_hash, out_index, out, &pk, &ss);
 		address_public_keys.push_back(pk);
 		output_shared_secrets.push_back(ss);
 	}

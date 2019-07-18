@@ -126,7 +126,7 @@ void test_blockchain(common::CommandLine &cmd) {
 	BlockChain::DB::delete_db(config.data_folder + "/blockchain");
 
 	std::cout << "Point 1" << std::endl;
-	Currency currency(config.net);
+	Currency currency(config);
 
 	std::cout << "Point 2" << std::endl;
 	BlockChainState block_chain(logger, config, currency, false);

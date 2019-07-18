@@ -2,7 +2,6 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Node.hpp"
-#include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <iostream>
 #include "Config.hpp"
@@ -13,6 +12,7 @@
 #include "common/JsonValue.hpp"
 #include "common/StringTools.hpp"
 #include "http/Server.hpp"
+#include "p2p/PeerDB.hpp"
 #include "platform/PathTools.hpp"
 #include "platform/PreventSleep.hpp"
 #include "platform/Time.hpp"
@@ -28,8 +28,8 @@ Node::Node(logging::ILogger &log, const Config &config, BlockChainState &block_c
     : m_block_chain(block_chain)
     , m_config(config)
     , m_log(log, "Node")
-    , m_peer_db(log, config, "peer_db")
-    , m_p2p(log, config, m_peer_db, std::bind(&Node::client_factory, this, _1))
+    , m_peer_db(std::make_unique<PeerDB>(log, config, "peer_db"))
+    , m_p2p(log, config, *m_peer_db, std::bind(&Node::client_factory, this, _1))
     , multicast(config.multicast_address, config.multicast_port, std::bind(&Node::on_multicast, this, _1, _2, _3))
     , m_multicast_timer(std::bind(&Node::send_multicast, this))
     , m_start_time(m_p2p.get_local_time())
@@ -72,12 +72,12 @@ void Node::on_multicast(const std::string &addr, const unsigned char *data, size
 	if (!na.port)
 		return;
 	if (common::parse_ip_address(addr, &na.ip)) {
-		if (m_peer_db.add_incoming_peer(na, m_p2p.get_local_time()))
+		if (m_peer_db->add_incoming_peer(na, m_p2p.get_local_time()))
 			m_log(logging::INFO) << "Adding peer from multicast announce addr=" << na;
 	}
 	// We do not receive multicast from loopback, so we just guess peer could be from localhost
 	if (common::parse_ip_address("127.0.0.1", &na.ip)) {
-		if (m_peer_db.add_incoming_peer(na, m_p2p.get_local_time()))
+		if (m_peer_db->add_incoming_peer(na, m_p2p.get_local_time()))
 			m_log(logging::INFO) << "Adding local peer from multicast announce addr=" << na;
 	}
 	m_p2p.peers_updated();
@@ -344,7 +344,7 @@ bool Node::on_get_random_outputs(http::Client *, http::RequestBody &&, json_rpc:
 	Hash confirmed_hash;
 	invariant(m_block_chain.get_chain(confirmed_height_or_depth, &confirmed_hash), "");
 	invariant(m_block_chain.get_header(confirmed_hash, &confirmed_header), "");
-	for (uint64_t amount : request.amounts) {
+	for (auto amount : request.amounts) {
 		auto random_outputs =
 		    m_block_chain.get_random_outputs(confirmed_header.major_version, amount, request.output_count,
 		        confirmed_height_or_depth, confirmed_header.timestamp, confirmed_header.timestamp_median);
@@ -384,12 +384,6 @@ void Node::broadcast(P2PProtocolBytecoin *exclude, const BinaryArray &data) {
 		if (p != exclude)
 			p->P2PProtocol::send(BinaryArray(data));  // Move is impossible here
 }
-void Node::broadcast(P2PProtocolBytecoin *exclude, const BinaryArray &data_v1, const BinaryArray &data_v4) {
-	for (auto &&p : m_broadcast_protocols)
-		if (p != exclude)
-			p->P2PProtocol::send(BinaryArray(
-			    p->get_peer_version() >= P2PProtocolVersion::AMETHYST ? data_v4 : data_v1));  // Move is impossible here
-}
 
 bool Node::on_get_status(http::Client *who, http::RequestBody &&raw_request, json_rpc::Request &&raw_js_request,
     api::cnd::GetStatus::Request &&req, api::cnd::GetStatus::Response &res) {
@@ -423,8 +417,8 @@ api::cnd::GetStatistics::Response Node::create_statistics_response(const api::cn
 		}
 	}
 	if (req.need_peer_lists) {
-		res.peer_list_gray = m_peer_db.get_peer_list_gray();
-		res.peer_list_gray = m_peer_db.get_peer_list_white();
+		res.peer_list_gray = m_peer_db->get_peer_list_gray();
+		res.peer_list_gray = m_peer_db->get_peer_list_white();
 	}
 	res.platform           = platform::get_platform_name();
 	res.version            = cn::app_version();
@@ -451,24 +445,27 @@ bool Node::on_get_archive(http::Client *, http::RequestBody &&http_request, json
 	return true;
 }
 
-// mixed_public_keys can be null if keys not needed
-void Node::fill_transaction_info(const TransactionPrefix &tx, api::Transaction *api_tx,
-    std::vector<std::vector<PublicKey>> *mixed_public_keys) const {
+// mixed_outputs can be null if keys not needed
+void Node::fill_transaction_info(
+    const TransactionPrefix &tx, api::Transaction *api_tx, std::vector<std::vector<api::Output>> *mixed_outputs) const {
 	api_tx->unlock_block_or_timestamp = tx.unlock_block_or_timestamp;
 	api_tx->extra                     = tx.extra;
 	api_tx->anonymity                 = std::numeric_limits<size_t>::max();
-	api_tx->public_key                = extra::get_transaction_public_key(tx.extra);
-	api_tx->prefix_hash               = get_transaction_prefix_hash(tx);
-	api_tx->inputs_hash               = get_transaction_inputs_hash(tx);
-	extra::get_payment_id(tx.extra, api_tx->payment_id);
+	extra::get_transaction_public_key(tx.extra, &api_tx->public_key);
+	api_tx->prefix_hash = get_transaction_prefix_hash(tx);
+	api_tx->inputs_hash = get_transaction_inputs_hash(tx);
+	extra::get_payment_id(tx.extra, &api_tx->payment_id);
 	Amount input_amount = 0;
-	for (const auto &input : tx.inputs) {
+	if (mixed_outputs)
+		mixed_outputs->reserve(tx.inputs.size());
+	for (size_t input_index = 0; input_index != tx.inputs.size(); ++input_index) {
+		const auto &input = tx.inputs.at(input_index);
 		if (input.type() == typeid(InputKey)) {
 			const InputKey &in = boost::get<InputKey>(input);
 			api_tx->anonymity  = std::min(api_tx->anonymity, in.output_indexes.size() - 1);
 			input_amount += in.amount;
-			if (mixed_public_keys)
-				mixed_public_keys->push_back(m_block_chain.get_mixed_public_keys(in));
+			if (mixed_outputs)
+				mixed_outputs->push_back(m_block_chain.get_mixed_outputs(tx.version, input_index, in));
 		}
 	}
 	Amount output_amount = get_tx_sum_outputs(tx);
@@ -562,8 +559,8 @@ bool Node::on_sync_blocks(http::Client *, http::RequestBody &&http_request, json
 			}
 			res_block.raw_transactions.push_back(std::move(block.transactions.at(tx_index)));
 		}
-		invariant(m_block_chain.read_block_output_global_indices(bhash, &res_block.output_stack_indexes),
-		    "Invariant dead - bid is in chain but blockchain has no block indices");
+		invariant(m_block_chain.read_block_output_stack_indexes(bhash, &res_block.output_stack_indexes),
+		    "Invariant dead - bid is in chain but blockchain has no block indexes");
 		total_size += res_block.header.transactions_size;
 		if (total_size >= req.max_size) {
 			res.blocks.resize(i + 1);
@@ -579,7 +576,7 @@ bool Node::on_sync_blocks_bin(http::Client *, http::RequestBody &&http_request, 
 	Height start_height        = 0;
 	std::vector<Hash> subchain = fill_sync_blocks_subchain(req, &start_height);
 
-	res.blocks.reserve(req.max_count);
+	res.blocks.reserve(subchain.size());
 	size_t total_size = 0;
 	for (const auto &bid : subchain) {
 		res.blocks.push_back(m_block_chain.fill_sync_block_compact(bid));
@@ -678,8 +675,8 @@ bool Node::on_get_raw_block(http::Client *, http::RequestBody &&, json_rpc::Requ
 		b.transactions.at(tx_index + 1).timestamp    = b.raw_header.timestamp;
 		b.raw_transactions.push_back(std::move(block.transactions.at(tx_index)));
 	}
-	m_block_chain.read_block_output_global_indices(response.block.header.hash, &b.output_stack_indexes);
-	// If block not in main chain - global indices will be empty
+	m_block_chain.read_block_output_stack_indexes(response.block.header.hash, &b.output_stack_indexes);
+	// If block not in main chain - stack indexes will be empty
 	response.orphan_status = !m_block_chain.in_chain(b.header.height, b.header.hash);
 	response.depth = api::HeightOrDepth(b.header.height) - api::HeightOrDepth(m_block_chain.get_tip_height()) - 1;
 	return true;
@@ -691,12 +688,18 @@ bool Node::on_get_raw_transaction(http::Client *, http::RequestBody &&, json_rpc
 	auto tit         = pool.find(req.hash);
 	if (tit != pool.end()) {
 		res.raw_transaction = static_cast<const TransactionPrefix &>(tit->second.tx);
-		fill_transaction_info(tit->second.tx, &res.transaction, &res.mixed_public_keys);
+		fill_transaction_info(tit->second.tx, &res.transaction, &res.mixed_outputs);
+		for (const auto &outputs : res.mixed_outputs) {
+			res.mixed_public_keys.push_back(std::vector<PublicKey>{});
+			for (const auto &output : outputs)
+				res.mixed_public_keys.back().push_back(output.public_key);
+		}
 		res.transaction.fee          = tit->second.fee;
 		res.transaction.hash         = req.hash;
 		res.transaction.block_height = m_block_chain.get_tip_height() + 1;
 		res.transaction.timestamp    = tit->second.timestamp;
 		res.transaction.size         = tit->second.binary_tx.size();
+		res.signatures               = tit->second.tx.signatures;
 		return true;
 	}
 	BinaryArray binary_tx;
@@ -710,10 +713,16 @@ bool Node::on_get_raw_transaction(http::Client *, http::RequestBody &&, json_rpc
 		res.transaction.size      = binary_tx.size();
 		seria::from_binary(tx, binary_tx);
 		res.raw_transaction = static_cast<const TransactionPrefix &>(tx);
-		fill_transaction_info(tx, &res.transaction, &res.mixed_public_keys);
+		fill_transaction_info(tx, &res.transaction, &res.mixed_outputs);
+		for (const auto &outputs : res.mixed_outputs) {
+			res.mixed_public_keys.push_back(std::vector<PublicKey>{});
+			for (const auto &output : outputs)
+				res.mixed_public_keys.back().push_back(output.public_key);
+		}
 		res.transaction.coinbase = (index_in_block == 0);
 		res.transaction.hash     = req.hash;
 		res.transaction.fee      = get_tx_fee(res.raw_transaction);
+		res.signatures           = tx.signatures;
 		return true;
 	}
 	throw api::ErrorHash(
@@ -725,16 +734,12 @@ bool Node::on_send_transaction(http::Client *, http::RequestBody &&, json_rpc::R
     api::cnd::SendTransaction::Request &&request, api::cnd::SendTransaction::Response &response) {
 	response.send_result = "broadcast";
 
-	p2p::RelayTransactions::Notify msg;
 	p2p::RelayTransactions::Notify msg_v4;
-	//	Height conflict_height =
-	//	    m_block_chain.get_currency().max_block_height;  // So will not be accidentally viewed as confirmed
 	Transaction tx;
 	try {
 		seria::from_binary(tx, request.binary_transaction);
 		const Hash tid = get_transaction_hash(tx);
-		if (m_block_chain.add_transaction(tid, tx, request.binary_transaction, m_p2p.get_local_time(), "json_rpc")) {
-			msg.txs.push_back(request.binary_transaction);
+		if (m_block_chain.add_transaction(tid, tx, request.binary_transaction, true, "json_rpc")) {
 			TransactionDesc desc;
 			desc.hash                       = tid;
 			desc.size                       = request.binary_transaction.size();
@@ -744,9 +749,8 @@ bool Node::on_send_transaction(http::Client *, http::RequestBody &&, json_rpc::R
 			invariant(m_block_chain.get_chain(newest_referenced_height, &desc.newest_referenced_block), "");
 			msg_v4.transaction_descs.push_back(desc);
 
-			BinaryArray raw_msg    = LevinProtocol::send(msg);
 			BinaryArray raw_msg_v4 = LevinProtocol::send(msg_v4);
-			broadcast(nullptr, raw_msg, raw_msg_v4);
+			broadcast(nullptr, raw_msg_v4);
 			advance_long_poll();
 		}
 	} catch (const ConsensusErrorOutputDoesNotExist &ex) {
@@ -790,8 +794,9 @@ void Node::check_sendproof(const SendproofLegacy &sp, api::cnd::CheckSendproof::
 	if (address.type() != typeid(AccountAddressLegacy))
 		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::PROOF_WRONG_SIGNATURE,
 		    "Legacy proof for sending to address type other than legacy is invalid", sp.transaction_hash);
-	auto &addr              = boost::get<AccountAddressLegacy>(address);
-	PublicKey tx_public_key = extra::get_transaction_public_key(tx.extra);
+	auto &addr = boost::get<AccountAddressLegacy>(address);
+	PublicKey tx_public_key;
+	extra::get_transaction_public_key(tx.extra, &tx_public_key);
 	if (!crypto::check_sendproof(tx_public_key, addr.V, sp.derivation, message_hash, sp.signature)) {
 		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::PROOF_WRONG_SIGNATURE,
 		    "Proof object does not match transaction or was tampered with", sp.transaction_hash);
@@ -799,11 +804,10 @@ void Node::check_sendproof(const SendproofLegacy &sp, api::cnd::CheckSendproof::
 	Amount total_amount = 0;
 	size_t out_index    = 0;
 	for (const auto &output : tx.outputs) {
-		if (output.type() == typeid(OutputKey)) {
-			const auto &key_output    = boost::get<OutputKey>(output);
-			const PublicKey spend_key = underive_address_S(sp.derivation, out_index, key_output.public_key);
+		if (const auto *out = boost::get<OutputKey>(&output)) {
+			const PublicKey spend_key = underive_address_S(sp.derivation, out_index, out->public_key);
 			if (spend_key == addr.S) {
-				total_amount += key_output.amount;
+				total_amount += out->amount;
 				response.output_indexes.push_back(out_index);
 			}
 		}
@@ -884,7 +888,10 @@ void Node::check_sendproof(const BinaryArray &data_inside_base58, api::cnd::Chec
 	//	std::cout << "Proof hash: " << proof_prefix_hash << std::endl;
 
 	std::vector<KeyImage> all_keyimages{in.key_image};
-	std::vector<std::vector<PublicKey>> all_output_keys{m_block_chain.get_mixed_public_keys(in)};
+	std::vector<std::vector<PublicKey>> all_output_keys(1);
+	const auto mixed_outputs = m_block_chain.get_mixed_outputs(tx.version, 0, in);
+	for (size_t i = 0; i != mixed_outputs.size(); ++i)
+		all_output_keys.at(0).push_back(mixed_outputs.at(i).public_key);
 
 	if (!crypto::check_ring_signature_amethyst(proof_prefix_hash, all_keyimages, all_output_keys, rsa)) {
 		throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::PROOF_WRONG_SIGNATURE,
@@ -903,14 +910,14 @@ void Node::check_sendproof(const BinaryArray &data_inside_base58, api::cnd::Chec
 		const auto &output = tx.outputs.at(out_index);
 		if (output.type() != typeid(OutputKey))
 			continue;
-		const auto &key_output = boost::get<OutputKey>(output);
+		const auto &out = boost::get<OutputKey>(output);
 		if (sp.elements.empty() || sp.elements.back().out_index != out_index)
 			continue;
 		const auto &el = sp.elements.back();
 		AccountAddress output_address;
 		PublicKey output_shared_secret;
 		if (!TransactionBuilder::detect_not_our_output_amethyst(
-		        tx_inputs_hash, el.output_seed, out_index, key_output, &output_address, &output_shared_secret)) {
+		        tx_inputs_hash, el.output_seed, out_index, out, &output_address, &output_shared_secret)) {
 			throw api::cnd::CheckSendproof::Error(api::cnd::CheckSendproof::PROOF_WRONG_SIGNATURE,
 			    "Cannot underive address for proof output", sp.transaction_hash);
 		}
@@ -919,7 +926,7 @@ void Node::check_sendproof(const BinaryArray &data_inside_base58, api::cnd::Chec
 			    "Send proof address inconsistent", sp.transaction_hash);
 		}
 		all_addresses = output_address;
-		total_amount += key_output.amount;
+		total_amount += out.amount;
 		response.output_indexes.push_back(out_index);
 		sp.elements.pop_back();
 	}
@@ -992,22 +999,13 @@ void Node::submit_block(const BinaryArray &blockblob, api::BlockHeader *info) {
 	}
 	for (auto who : m_broadcast_protocols)
 		who->advance_transactions();
-	p2p::RelayBlock::Notify msg;
-	msg.b                         = std::move(raw_block);  // RawBlockLegacy{raw_block.block, raw_block.transactions};
-	msg.hop                       = 1;
-	msg.current_blockchain_height = m_block_chain.get_tip_height();
-	msg.top_id                    = m_block_chain.get_tip_bid();
 	p2p::RelayBlock::Notify msg_v4;
-	msg_v4.b.block                   = msg.b.block;
-	msg_v4.current_blockchain_height = msg.current_blockchain_height;
-	msg_v4.top_id                    = msg.top_id;
-	msg_v4.hop                       = msg.hop;
+	msg_v4.b.block                   = raw_block.block;
+	msg_v4.current_blockchain_height = m_block_chain.get_tip_height();
+	msg_v4.top_id                    = m_block_chain.get_tip_bid();
 
-	msg.top_id = Hash{};  // TODO - uncomment after 3.4 fork. This is workaround of bug in 3.2
-
-	BinaryArray raw_msg    = LevinProtocol::send(msg);
 	BinaryArray raw_msg_v4 = LevinProtocol::send(msg_v4);
-	broadcast(nullptr, raw_msg, raw_msg_v4);
+	broadcast(nullptr, raw_msg_v4);
 	advance_long_poll();
 }
 

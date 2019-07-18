@@ -74,7 +74,7 @@ bool JsonOutputStreamValue::seria_v(bool &value) {
 bool JsonOutputStreamValue::binary(void *value, size_t size) {
 	std::string hex = common::to_hex(value, size);
 	bool all_zeroes = hex.find_first_not_of('0') == std::string::npos;
-	insert_or_push(all_zeroes ? std::string() : hex, all_zeroes);
+	insert_or_push(all_zeroes ? std::string{} : hex, all_zeroes);
 	return true;
 }
 
@@ -154,7 +154,7 @@ void JsonOutputStreamText::end_object() {
 }
 
 bool JsonOutputStreamText::begin_array(size_t &size, bool fixed_size) {
-	if (!append_prefix(std::string(), size == 0)) {
+	if (!append_prefix(std::string{}, size == 0)) {
 		chain.push_back(std::make_pair(JsonValue::NIL, 0));  // NIL to mark empty optional array
 		return true;
 	}
@@ -209,7 +209,7 @@ bool JsonOutputStreamText::binary(void *value, size_t size) {
 	bool all_zeroes = hex.find_first_not_of('0') == std::string::npos;
 	if (!append_prefix("\"", all_zeroes))
 		return true;
-	text += all_zeroes ? std::string() : hex;
+	text += all_zeroes ? std::string{} : hex;
 	text += "\"";
 	return true;
 }

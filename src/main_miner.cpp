@@ -178,9 +178,8 @@ public:
             [&](http::ResponseBody &&response) {
                 submit_request.reset();
                 api::cnd::SubmitBlock::Response resp;
-                json_rpc::Response json_resp(response.body);
                 json_rpc::Error err_resp;
-                if (json_resp.get_error(err_resp)) {
+                if (!json_rpc::parse_response(response.body, resp, err_resp)) {
                     common::console::set_text_color(common::console::BrightRed);
                     std::cout << "Json Error submitting block code=" << err_resp.code << " msg=" << err_resp.message
                               << std::endl;
@@ -190,7 +189,6 @@ public:
                         found_blocks.pop_front();
                     send_submit();
                 } else {
-                    json_resp.get_result(resp);
                     common::console::set_text_color(common::console::BrightGreen);
                     std::cout << "Block submitted " << resp.block_header.hash << " orphan_status=" << resp.orphan_status
                               << std::endl;

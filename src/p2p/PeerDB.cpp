@@ -48,7 +48,7 @@ PeerDB::PeerDB(logging::ILogger &log, const Config &config, const std::string &d
 		if (!version.empty())
 			m_log(logging::INFO) << "PeerDB format different, old version=" << version
 			                     << " current version=" << version_current << ", clearing Peer DB...";
-		for (DB::Cursor cur = db.rbegin(std::string()); !cur.end(); cur.erase()) {
+		for (DB::Cursor cur = db.rbegin(std::string{}); !cur.end(); cur.erase()) {
 		}
 		db.put("$version", version_current, true);
 	}
@@ -344,8 +344,8 @@ void PeerDB::set_peer_banned(const NetworkAddress &addr, const std::string &ban_
 	m_log(logging::INFO) << "PeerDB peer " << addr << " banned, reason= " << ban_reason;
 	update_lists(addr, [&](Entry &entry) {
 		entry.ban_reason = ban_reason;
-		entry.ban_until = now + fix_time_delta(is_priority_or_seed(entry.address) ? config.p2p_reconnect_period_priority
-		                                                                          : config.p2p_ban_period);
+		entry.ban_until  = now + fix_time_delta(is_priority(entry.address) ? config.p2p_reconnect_period_priority
+                                                                          : config.p2p_ban_period);
 		entry.next_connection_attempt = entry.ban_until;
 	});
 }

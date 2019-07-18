@@ -2,7 +2,6 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "WalletHDsqlite.hpp"
-#include <boost/algorithm/string.hpp>
 #include "CryptoNoteTools.hpp"
 #include "TransactionBuilder.hpp"
 #include "common/BIPs.hpp"
@@ -375,7 +374,7 @@ void WalletHDsqlite::export_wallet(const std::string &export_path, const std::st
 		throw Exception(api::WALLET_FILE_DECRYPT_ERROR, "Exporting hardware-backed wallet is not possible");
 
 	WalletHDsqlite other(
-	    m_currency, m_log.get_logger(), export_path, new_password, std::string(), 0, std::string(), false);
+	    m_currency, m_log.get_logger(), export_path, new_password, std::string{}, 0, std::string{}, false);
 
 	if (!is_view_only() && view_only) {
 		if (m_hw) {
@@ -397,7 +396,7 @@ void WalletHDsqlite::export_wallet(const std::string &export_path, const std::st
 			other.put("view_secrets_signature", seria::to_binary(view_secrets_signature), true);
 			invariant(check_proof_H(sH, view_secrets_signature), "");
 		} else {
-			if (view_outgoing_addresses) {
+			if (view_outgoing_addresses) {  // always have m_view_seed here
 				other.put("view_seed", m_view_seed.as_binary_array(), true);
 			} else {
 				other.put("view_key", m_view_secret_key.as_binary_array(), true);
@@ -405,24 +404,32 @@ void WalletHDsqlite::export_wallet(const std::string &export_path, const std::st
 			}
 			auto sH = to_bytes(crypto::H * m_spend_secret_key);
 			other.put("sH", sH.as_binary_array(), true);
-
-			auto view_secrets_signature = generate_proof_H(m_spend_secret_key);
-			other.put("view_secrets_signature", seria::to_binary(view_secrets_signature), true);
-			invariant(check_proof_H(sH, view_secrets_signature), "");
+			other.put("view_secrets_signature", seria::to_binary(m_view_secrets_signature), true);
+			invariant(check_proof_H(sH, m_view_secrets_signature), "");
 		}
-		for (const auto &p : parameters_get())
-			if (p.first != "mnemonic" && p.first != "mnemonic-password")
-				other.put(p.first, p.second, true);
-		for (const auto &l : m_labels)
-			other.set_label(l.first, l.second);
+		other.put("version", current_version, true);
+		other.put("coinname", CRYPTONOTE_NAME, true);
+		other.put(ADDRESS_COUNT_PREFIX, seria::to_binary(m_used_address_count), true);
+	} else if (is_view_only() && view_only) {
+		if (view_outgoing_addresses && m_view_seed != Hash{}) {
+			other.put("view_seed", m_view_seed.as_binary_array(), true);
+		} else {
+			other.put("view_key", m_view_secret_key.as_binary_array(), true);
+			other.put("view_key_audit", m_audit_key_base.secret_key.as_binary_array(), true);
+		}
+		other.put("sH", m_sH.as_binary_array(), true);
+		other.put("view_secrets_signature", seria::to_binary(m_view_secrets_signature), true);
+		other.put("version", current_version, true);
+		other.put("coinname", CRYPTONOTE_NAME, true);
+		other.put(ADDRESS_COUNT_PREFIX, seria::to_binary(m_used_address_count), true);
 	} else {
 		for (const auto &p : parameters_get())
 			other.put(p.first, p.second, true);
-		for (const auto &l : m_labels)
-			other.set_label(l.first, l.second);
 		for (const auto &el : payment_queue_get2())
 			other.payment_queue_add(std::get<0>(el), std::get<1>(el), std::get<2>(el));
 	}
+	for (const auto &l : m_labels)
+		other.set_label(l.first, l.second);
 	other.commit();
 }
 

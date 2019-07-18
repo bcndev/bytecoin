@@ -32,7 +32,7 @@ void test_bip32() {
 	// TODO move this code to a proper test suite
 	cn::Bip32Key master_key = cn::Bip32Key::create_master_key(
 	    "sausage coast tank shrug idle hub fun amused display inquiry bone unfold fish stumble clerk skate mango pause cage glide lens armed point segment",
-	    std::string());
+	    std::string{});
 	cn::Bip32Key k0 = master_key.derive_key(0x8000002c);
 	cn::Bip32Key k1 = k0.derive_key(0x80000300);
 	cn::Bip32Key k2 = k1.derive_key(0x80000000);

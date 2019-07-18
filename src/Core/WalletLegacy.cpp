@@ -2,7 +2,6 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "WalletLegacy.hpp"
-#include <boost/algorithm/string.hpp>
 #include "CryptoNoteTools.hpp"
 #include "TransactionBuilder.hpp"
 #include "WalletSerializationV1.hpp"
@@ -334,6 +333,11 @@ void WalletLegacy::export_wallet(const std::string &export_path, const std::stri
 	CryptoNightContext cn_ctx;
 	auto new_wallet_key = generate_chacha8_key(cn_ctx, new_password.data(), new_password.size());
 	save(export_path, new_wallet_key, view_only, platform::O_CREATE_NEW);
+}
+
+std::string WalletLegacy::export_viewonly_wallet_string(
+    const std::string &new_password, bool view_outgoing_addresses) const {
+	throw std::runtime_error("Legacy view-only wallet cannot be exported as string");
 }
 
 bool WalletLegacy::operator==(const WalletLegacy &other) const {

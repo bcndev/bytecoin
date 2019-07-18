@@ -2,6 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "FileLogger.hpp"
+#include <iostream>
 #include "common/ConsoleTools.hpp"
 #include "common/exception.hpp"
 #include "platform/PathTools.hpp"

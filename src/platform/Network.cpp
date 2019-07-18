@@ -81,8 +81,18 @@ void Timer::once(float after_seconds) {
 	impl->start_timer(after_seconds / get_time_multiplier_for_tests());
 }
 
-#elif defined(__ANDROID__)
+#elif platform_USE_QT
 #include <QSslSocket>
+
+// thread_local EventLoop *EventLoop::current_loop = nullptr;
+
+// EventLoop::EventLoop() {
+//	if (current_loop)
+//		throw std::logic_error("RunLoop::RunLoop Only single RunLoop per thread is allowed");
+//	current_loop = this;
+//}
+
+// EventLoop::~EventLoop() { current_loop = nullptr; }
 
 Timer::Timer(after_handler a_handler) : a_handler(std::move(a_handler)), impl(nullptr) {
 	QObject::connect(&impl, &QTimer::timeout, [this]() { this->a_handler(); });
@@ -91,9 +101,46 @@ Timer::Timer(after_handler a_handler) : a_handler(std::move(a_handler)), impl(nu
 
 void Timer::cancel() { impl.stop(); }
 
+bool Timer::is_set() const { return impl.isActive(); }
+
 void Timer::once(float after_seconds) {
 	cancel();
 	impl.start(static_cast<int>(after_seconds * 1000.0f / get_time_multiplier_for_tests()));
+}
+
+SafeMessageImpl::SafeMessageImpl(SafeMessage *owner) : owner(owner) {}
+SafeMessageImpl::~SafeMessageImpl() {}
+
+void SafeMessageImpl::close() {
+	if (counter != 0) {
+		owner->impl.release();  // owned by JS now
+		owner = nullptr;
+	}
+}
+
+void SafeMessageImpl::handle_event() {
+	auto after = --counter;
+	if (owner)
+		return owner->a_handler();
+	if (after == 0)
+		delete this;  // was owned by JS
+}
+
+SafeMessage::SafeMessage(after_handler &&a_handler) : a_handler(std::move(a_handler)) {
+	impl = std::make_unique<SafeMessageImpl>(this);
+}
+
+SafeMessage::~SafeMessage() { impl->close(); }
+
+void SafeMessage::cancel() {
+	impl->close();
+	if (!impl)
+		impl = std::make_unique<SafeMessageImpl>(this);
+}
+
+void SafeMessage::fire() {
+	++impl->counter;
+	QMetaObject::invokeMethod(impl.get(), "handle_event", Qt::QueuedConnection);
 }
 
 TCPSocket::TCPSocket(RW_handler rw_handler, D_handler d_handler)

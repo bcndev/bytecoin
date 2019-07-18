@@ -2,10 +2,11 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "WalletHD.hpp"
-#include <boost/algorithm/string.hpp>
+#include "CryptoNoteConfig.hpp"
 #include "CryptoNoteTools.hpp"
 #include "TransactionBuilder.hpp"
 #include "common/BIPs.hpp"
+#include "common/Base58.hpp"
 #include "common/Math.hpp"
 #include "common/MemoryStreams.hpp"
 #include "common/StringTools.hpp"
@@ -124,6 +125,7 @@ void WalletHDBase::derive_secrets(std::string mnemonic, const std::string &mnemo
 		const BinaryArray sk_data   = m_seed.as_binary_array() | as_binary_array("spend_key");
 		m_spend_secret_key          = hash_to_scalar(sk_data.data(), sk_data.size());
 		m_sH                        = to_bytes(crypto::H * m_spend_secret_key);
+		m_view_secrets_signature    = generate_proof_H(m_spend_secret_key);
 	} else {  // View only
 		// only if we have output_secret_derivation_seed, view-only wallet will be able to see outgoing addresses
 		if (m_view_seed != Hash{}) {
@@ -144,10 +146,10 @@ void WalletHDBase::derive_secrets(std::string mnemonic, const std::string &mnemo
 }
 
 bool WalletHDBase::get_record(const AccountAddress &v_addr, size_t *index, WalletRecord *record) const {
-	if (v_addr.type() != typeid(AccountAddressAmethyst))
+	auto *addr = boost::get<AccountAddressAmethyst>(&v_addr);
+	if (!addr)
 		return false;
-	auto &addr = boost::get<AccountAddressAmethyst>(v_addr);
-	auto rit   = m_records_map.find(addr.S);
+	auto rit = m_records_map.find(addr->S);
 	if (rit == m_records_map.end() || rit->second >= get_actual_records_count())
 		return false;
 	// TODO - do not call record_to_address
@@ -296,7 +298,7 @@ void WalletHDBase::set_label(const std::string &address, const std::string &labe
 std::string WalletHDBase::get_label(const std::string &address) const {
 	auto lit = m_labels.find(address);
 	if (lit == m_labels.end())
-		return std::string();
+		return std::string{};
 	return lit->second;
 }
 
@@ -334,6 +336,21 @@ bool WalletHDBase::detect_our_output(uint8_t tx_version, const Hash &tx_inputs_h
 	return true;
 }
 
+std::string WalletHDBase::export_viewonly_wallet_string(
+    const std::string &new_password, bool view_outgoing_addresses) const {
+	WalletStringFormat ws;
+	ws.address_type            = AccountAddressAmethyst::type_tag;
+	ws.view_outgoing_addresses = view_outgoing_addresses && get_view_seed() != Hash{};
+	ws.view_seed               = get_view_seed();
+	ws.view_secret_key         = get_view_secret_key();
+	ws.audit_secret_key        = m_audit_key_base.secret_key;
+	ws.sH                      = m_sH;
+	ws.view_secrets_signature  = m_view_secrets_signature;
+
+	ws.address_count = m_used_address_count;
+	return base58::encode_addr(parameters::VIEWONLYWALLET_BASE58_PREFIX, seria::to_binary(ws));
+}
+
 WalletHDJson::WalletHDJson(const Currency &currency, logging::ILogger &log, const std::string &json_data)
     : WalletHDBase(currency, log) {
 	try {
@@ -349,11 +366,28 @@ WalletHDJson::WalletHDJson(const Currency &currency, logging::ILogger &log, cons
 
 WalletHDJson::WalletHDJson(const Currency &currency, logging::ILogger &log, const std::string &mnemonic,
     Timestamp creation_timestamp, const std::string &mnemonic_password)
-    : WalletHDBase(currency, log)
-    , m_mnemonic(cn::Bip32Key::check_bip39_mnemonic(mnemonic))
-    , m_mnemonic_password(mnemonic_password) {
-	on_first_output_found(creation_timestamp);
+    : WalletHDBase(currency, log), m_mnemonic_password(mnemonic_password) {
+	uint64_t utag = 0;
+	BinaryArray data_inside_base58;
+	if (common::base58::decode_addr(mnemonic, &utag, &data_inside_base58) &&
+	    utag == parameters::VIEWONLYWALLET_BASE58_PREFIX) {
+		WalletStringFormat ws;
+		seria::from_binary(ws, data_inside_base58);
+		if (ws.address_type != AccountAddressAmethyst::type_tag)
+			throw Wallet::Exception(api::WALLET_FILE_DECRYPT_ERROR, "View wallet type not supported");
+		m_view_seed                 = ws.view_seed;
+		m_used_address_count        = ws.address_count;
+		m_view_seed                 = ws.view_seed;
+		m_view_secret_key           = ws.view_secret_key;
+		m_audit_key_base.secret_key = ws.audit_secret_key;
+		m_sH                        = ws.sH;
+		m_view_secrets_signature    = ws.view_secrets_signature;
+	} else {
+		m_mnemonic = cn::Bip32Key::check_bip39_mnemonic(mnemonic);
+	}
 	derive_secrets(m_mnemonic, m_mnemonic_password);
+
+	on_first_output_found(creation_timestamp);
 	generate_ahead();
 }
 
@@ -384,3 +418,21 @@ void WalletHDJson::ser_members(seria::ISeria &s) {
 }
 
 std::string WalletHDJson::save_json_data() const { return seria::to_json_value(*this).to_string(); }
+
+namespace seria {
+
+void ser_members(cn::WalletHDBase::WalletStringFormat &v, ISeria &s) {
+	seria_kv("address_type", v.address_type, s);
+	seria_kv("view_outgoing_addresses", v.view_outgoing_addresses, s);
+	if (v.view_outgoing_addresses)
+		seria_kv("view_seed", v.view_seed, s);
+	else {
+		seria_kv("view_secret_key", v.view_secret_key, s);
+		seria_kv("audit_secret_key", v.audit_secret_key, s);
+	}
+	seria_kv("sH", v.sH, s);
+	seria_kv("view_secrets_signature", v.view_secrets_signature, s);
+	seria_kv("address_count", v.address_count, s);
+}
+
+}  // namespace seria

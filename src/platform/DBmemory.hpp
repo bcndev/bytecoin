@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <map>
 #include <string>
 #include "Files.hpp"  // For OpenMode
@@ -11,9 +12,8 @@
 
 namespace platform {
 
+class AsyncIndexDBOperation;
 class DBmemory {
-	const std::string full_path;
-
 public:
 	struct JournalEntry {
 		std::string key;
@@ -27,12 +27,11 @@ public:
 	};
 	typedef std::map<std::string, common::BinaryArray, CmpByUnsigned> Storage;
 
-	explicit DBmemory(
-	    OpenMode open_mode, const std::string &full_path, uint64_t max_tx_size = 0);  // no max size in memory
+	explicit DBmemory(OpenMode open_mode, const std::string &full_path, std::function<void()> &&o_handler);
+	~DBmemory();
 	const std::string &get_path() const { return full_path; }
 
 	std::vector<JournalEntry> move_journal();
-	const Storage &get_storage() const { return storage; }
 
 	void commit_db_txn();
 	size_t test_get_approximate_size() const;
@@ -65,8 +64,8 @@ public:
 		void erase();  // moves to the next value
 	};
 	friend class Cursor;
-	Cursor begin(const std::string &prefix, const std::string &middle = std::string(), bool forward = true) const;
-	Cursor rbegin(const std::string &prefix, const std::string &middle = std::string()) const;
+	Cursor begin(const std::string &prefix, const std::string &middle = std::string{}, bool forward = true) const;
+	Cursor rbegin(const std::string &prefix, const std::string &middle = std::string{}) const;
 
 	static std::string to_binary_key(const unsigned char *data, size_t size) {
 		std::string result;
@@ -87,6 +86,11 @@ public:
 	static void backup_db(const std::string &path, const std::string &dst_path);
 
 private:
+	const std::string full_path;
+#ifdef __EMSCRIPTEN__
+	std::unique_ptr<AsyncIndexDBOperation> async_op;
+#endif
+	std::function<void()> o_handler;
 	Storage storage;
 	std::vector<JournalEntry> journal;
 	bool use_journal    = false;

@@ -100,7 +100,7 @@ protected:
 	void advance_long_poll();
 
 	logging::LoggerRef m_log;
-	PeerDB m_peer_db;
+	const std::unique_ptr<PeerDB> m_peer_db;  // compilation speed optimization
 	P2P m_p2p;
 	platform::UDPMulticast multicast;
 	platform::Timer m_multicast_timer;
@@ -140,7 +140,7 @@ protected:
 		std::deque<std::map<Hash, DownloadInfo>::iterator> m_chain;
 		size_t m_chain_start_height = 0;
 
-		bool m_syncpool_equest_sent = false;
+		bool m_syncpool_request_sent = false;
 		std::pair<Amount, Hash> syncpool_start{std::numeric_limits<Amount>::max(), Hash{}};
 		size_t m_downloading_transaction_count = 0;
 		platform::Timer m_syncpool_timer;
@@ -154,22 +154,20 @@ protected:
 	protected:
 		void on_disconnect(const std::string &ban_reason) override;
 
-		void on_msg_bytes(size_t downloaded, size_t uploaded) override;
 		CoreSyncData get_my_sync_data() const override;
-		std::vector<PeerlistEntryLegacy> get_peers_to_share(bool lots) const override;
+		std::vector<NetworkAddress> get_peers_to_share() const override;
+		std::vector<PeerlistEntryLegacy> get_legacy_peers_to_share() const override;
 
 		void on_first_message_after_handshake() override;
 		void on_msg_handshake(p2p::Handshake::Request &&) override;
 		void on_msg_handshake(p2p::Handshake::Response &&) override;
-		void on_msg_notify_request_chain(p2p::GetChainRequest::Notify &&) override;
-		void on_msg_notify_request_chain(p2p::GetChainResponse::Notify &&) override;
-		void on_msg_notify_request_objects(p2p::GetObjectsRequest::Notify &&) override;
-		void on_msg_notify_request_objects(p2p::GetObjectsResponse::Notify &&) override;
-		void on_msg_notify_request_tx_pool(p2p::SyncPool::Notify &&) override;
+		void on_msg_notify_request_chain(p2p::GetChain::Request &&) override;
+		void on_msg_notify_request_chain(p2p::GetChain::Response &&) override;
+		void on_msg_notify_request_objects(p2p::GetObjects::Request &&) override;
+		void on_msg_notify_request_objects(p2p::GetObjects::Response &&) override;
 		void on_msg_notify_request_tx_pool(p2p::SyncPool::Request &&) override;
 		void on_msg_notify_request_tx_pool(p2p::SyncPool::Response &&) override;
-		void on_msg_timed_sync(p2p::TimedSync::Request &&) override;
-		void on_msg_timed_sync(p2p::TimedSync::Response &&) override;
+		void on_msg_timed_sync(p2p::TimedSync::Notify &&) override;
 		void on_msg_notify_new_block(p2p::RelayBlock::Notify &&) override;
 		void on_msg_notify_new_transactions(p2p::RelayTransactions::Notify &&) override;
 		void on_msg_notify_checkpoint(p2p::Checkpoint::Notify &&) override;
@@ -179,7 +177,6 @@ protected:
 	public:
 		explicit P2PProtocolBytecoin(Node *node, P2PClient *client);
 		~P2PProtocolBytecoin() override;
-		Node *get_node() const { return m_node; }
 		void advance_chain();
 		void advance_blocks();
 		bool on_idle(std::chrono::steady_clock::time_point idle_start);
@@ -199,7 +196,6 @@ protected:
 	// TODO - periodically clear m_pow_checker of blocks that were not asked
 
 	void broadcast(P2PProtocolBytecoin *exclude, const BinaryArray &data);
-	void broadcast(P2PProtocolBytecoin *exclude, const BinaryArray &data_v1, const BinaryArray &data_v4);
 
 	void fill_cors(const http::RequestBody &req, http::ResponseBody &res);
 	bool on_api_http_request(http::Client *, http::RequestBody &&, http::ResponseBody &);
@@ -209,7 +205,7 @@ protected:
 	static const std::unordered_map<std::string, BINARYRPCHandlerFunction> m_binaryrpc_handlers;
 
 	void fill_transaction_info(const TransactionPrefix &tx, api::Transaction *api_tx,
-	    std::vector<std::vector<PublicKey>> *mixed_public_keys) const;
+	    std::vector<std::vector<api::Output>> *mixed_outputs) const;
 	std::vector<Hash> fill_sync_blocks_subchain(api::cnd::SyncBlocks::Request &, Height *start_height) const;
 	void check_sendproof(const BinaryArray &data_inside_base58, api::cnd::CheckSendproof::Response &resp) const;
 	void check_sendproof(const SendproofLegacy &sp, api::cnd::CheckSendproof::Response &resp) const;

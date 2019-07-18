@@ -45,9 +45,9 @@ public:
 
 	std::vector<api::Output> get_random_outputs(uint8_t block_major_version, Amount, size_t output_count, Height,
 	    Timestamp block_timestamp, Timestamp block_median_timestamp) const;
-	typedef std::vector<std::vector<size_t>> BlockGlobalIndices;
-	bool read_block_output_global_indices(const Hash &bid, BlockGlobalIndices *) const;
-	bool read_block_output_global_indices_data(const Hash &bid, BinaryArray *) const;
+	typedef std::vector<std::vector<size_t>> BlockStackIndexes;
+	bool read_block_output_stack_indexes(const Hash &bid, BlockStackIndexes *) const;
+	bool read_block_output_stack_indexes_data(const Hash &bid, BinaryArray *) const;
 	api::cnd::SyncBlocks::RawBlockCompact fill_sync_block_compact(const Hash &bid) const;
 
 	Amount minimum_pool_fee_per_byte(bool zero_if_not_full, Hash *minimal_tid = nullptr) const;
@@ -80,10 +80,12 @@ public:
 	void dump_outputs_quality(size_t max_count) const;
 
 	void fill_statistics(api::cnd::GetStatistics::Response &res) const override;
-	std::vector<PublicKey> get_mixed_public_keys(const InputKey &in) const;
+	std::vector<api::Output> get_mixed_outputs(uint8_t tx_version, size_t input_index, const InputKey &in) const;
 
 protected:
-	void check_standalone_consensus(const PreparedBlock &pb, api::BlockHeader *info, const api::BlockHeader &prev_info,
+	// We add side chain to blocktree block by block, before switching to it when it becomes the best
+	// check_consensus checks everything that can be checked by blocktree structure only
+	void check_consensus(const PreparedBlock &pb, api::BlockHeader *info, const api::BlockHeader &prev_info,
 	    bool check_pow) const override;
 	void redo_block(const Hash &bhash, const Block &, const api::BlockHeader &) override;  // throws ConsensusError
 	void undo_block(const Hash &bhash, const Block &, Height) override;
@@ -134,10 +136,10 @@ private:
 	void spend_output(OutputIndexData &&, size_t hidden_index, size_t trigger_input_index, size_t level, bool spent);
 
 	void redo_transaction(uint8_t major_block_version, bool coinbase, const Transaction &, DeltaState *,
-	    BlockGlobalIndices *, Hash *newest_referenced_bid,
+	    BlockStackIndexes *, Hash *newest_referenced_bid,
 	    bool check_sigs) const;  // throws ConsensusError
 	void redo_block(
-	    const Block &, const api::BlockHeader &, DeltaState *, BlockGlobalIndices *) const;  // throws ConsensusError
+	    const Block &, const api::BlockHeader &, DeltaState *, BlockStackIndexes *) const;  // throws ConsensusError
 
 	void undo_transaction(IBlockChainState *delta_state, Height, const Transaction &);
 
@@ -148,7 +150,7 @@ private:
 
 	void remove_from_pool(Hash tid);
 
-	size_t m_tx_pool_version = 0;  // Incremented every time pool changes, reset on redo block.
+	size_t m_tx_pool_version = 1;  // Incremented every time pool changes, TODO cycle
 	PoolTransMap m_memory_state_tx;
 	std::map<KeyImage, Hash> m_memory_state_ki_tx;
 	std::set<std::pair<Amount, Hash>> m_memory_state_fee_tx;
@@ -173,6 +175,8 @@ private:
 	size_t calculate_next_median_block_capacity_vote(const api::BlockHeader &prev_info) const;
 
 	RingCheckerMulticore m_ring_checker;
+	RingSignatureCheckArgs fill_ring_check_args(const Transaction &transaction, uint8_t major_block_version,
+	    Height unlock_height, Timestamp block_timestamp, Timestamp block_median_timestamp) const;
 	std::chrono::steady_clock::time_point m_log_redo_block_timestamp;
 };
 

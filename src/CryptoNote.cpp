@@ -5,6 +5,7 @@
 #include "Core/CryptoNoteTools.hpp"
 #include "Core/TransactionExtra.hpp"
 #include "CryptoNoteConfig.hpp"  // We access TRANSACTION_VERSION_AMETHYST directly
+#include "common/Varint.hpp"
 #include "rpc_api.hpp"
 #include "seria/JsonInputStream.hpp"
 #include "seria/JsonOutputStream.hpp"
@@ -37,7 +38,7 @@ void ser_members(cn::SendproofLegacy &v, ISeria &s) {
 	seria_kv("address", v.address, s);
 	seria_kv("derivation", v.derivation, s);
 	seria_kv("signature", v.signature, s);
-	if (dynamic_cast<seria::JsonInputStream *>(&s))  // skip amount
+	if (s.is_input() && s.is_json())  // skip amount
 		seria_kv("amount", amount, s);
 }
 void ser_members(cn::SendproofAmethyst::Element &v, ISeria &s) {
@@ -58,16 +59,15 @@ void ser_members(cn::SendproofAmethyst &v, ISeria &s) {
 	} else if (v.version == parameters::TRANSACTION_VERSION_AMETHYST) {
 		seria_kv("elements", v.elements, s);
 	} else
-		throw std::runtime_error(
-		    "Unknown version of amethyst sendproof, version = " + common::to_string(int(v.version)));
+		throw std::runtime_error("Unknown version of sendproof, version = " + common::to_string(int(v.version)));
 	seria_kv("message", v.message, s);
 }
 
-void ser_members(TransactionInput &v, ISeria &s) {
+void ser_members(TransactionInput &v, ISeria &s, uint8_t transaction_version) {
 	if (s.is_input()) {
 		uint8_t type = 0;
 		s.object_key("type");
-		if (dynamic_cast<seria::JsonInputStream *>(&s)) {
+		if (s.is_json()) {
 			std::string str_type_tag;
 			ser(str_type_tag, s);
 			if (str_type_tag == InputCoinbase::str_type_tag())
@@ -87,7 +87,7 @@ void ser_members(TransactionInput &v, ISeria &s) {
 		}
 		case InputKey::type_tag: {
 			InputKey in{};
-			ser_members(in, s);
+			ser_members(in, s, transaction_version);
 			v = in;
 			break;
 		}
@@ -96,36 +96,34 @@ void ser_members(TransactionInput &v, ISeria &s) {
 		}
 		return;
 	}
-	if (v.type() == typeid(InputCoinbase)) {
-		auto &in     = boost::get<InputCoinbase>(v);
+	if (auto *in = boost::get<InputCoinbase>(&v)) {
 		uint8_t type = InputCoinbase::type_tag;
 		s.object_key("type");
-		if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
+		if (s.is_json()) {
 			std::string str_type_tag = InputCoinbase::str_type_tag();
 			ser(str_type_tag, s);
 		} else
 			s.binary(&type, 1);
-		ser_members(in, s);
-	} else if (v.type() == typeid(InputKey)) {
-		auto &in     = boost::get<InputKey>(v);
+		ser_members(*in, s);
+	} else if (auto *in = boost::get<InputKey>(&v)) {
 		uint8_t type = InputKey::type_tag;
 		s.object_key("type");
-		if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
+		if (s.is_json()) {
 			std::string str_type_tag = InputKey::str_type_tag();
 			ser(str_type_tag, s);
 		} else
 			s.binary(&type, 1);
-		ser_members(in, s);
+		ser_members(*in, s, transaction_version);
 	}
 }
-void ser_members(TransactionOutput &v, ISeria &s, bool is_tx_amethyst) {
+void ser_members(TransactionOutput &v, ISeria &s, uint8_t transaction_version) {
 	if (s.is_input()) {
 		Amount amount = 0;
-		if (!is_tx_amethyst)
+		if (transaction_version < parameters::TRANSACTION_VERSION_AMETHYST)
 			seria_kv("amount", amount, s);
 		uint8_t type = 0;
 		s.object_key("type");
-		if (dynamic_cast<seria::JsonInputStream *>(&s)) {
+		if (s.is_json()) {
 			std::string str_type_tag;
 			ser(str_type_tag, s);
 			if (str_type_tag == OutputKey::str_type_tag())
@@ -138,7 +136,7 @@ void ser_members(TransactionOutput &v, ISeria &s, bool is_tx_amethyst) {
 		case OutputKey::type_tag: {
 			OutputKey out{};
 			out.amount = amount;
-			ser_members(out, s, is_tx_amethyst);
+			ser_members(out, s, transaction_version);
 			v = out;
 			break;
 		}
@@ -147,23 +145,22 @@ void ser_members(TransactionOutput &v, ISeria &s, bool is_tx_amethyst) {
 		}
 		return;
 	}
-	if (v.type() == typeid(OutputKey)) {
-		auto &out = boost::get<OutputKey>(v);
-		if (!is_tx_amethyst)
-			seria_kv("amount", out.amount, s);
+	if (auto *out = boost::get<OutputKey>(&v)) {
+		if (transaction_version < parameters::TRANSACTION_VERSION_AMETHYST)
+			seria_kv("amount", out->amount, s);
 		s.object_key("type");
-		if (dynamic_cast<seria::JsonOutputStream *>(&s)) {
+		if (s.is_json()) {
 			std::string str_type_tag = OutputKey::str_type_tag();
 			ser(str_type_tag, s);
 		} else {
 			uint8_t type = OutputKey::type_tag;
 			s.binary(&type, 1);
 		}
-		ser_members(out, s, is_tx_amethyst);
+		ser_members(*out, s, transaction_version);
 	}
 }
 void ser_members(InputCoinbase &v, ISeria &s) { seria_kv("height", v.height, s); }
-void ser_members(InputKey &v, ISeria &s) {
+void ser_members(InputKey &v, ISeria &s, uint8_t transaction_version) {
 	seria_kv("amount", v.amount, s);
 	seria_kv("output_indexes", v.output_indexes, s);
 	seria_kv("key_image", v.key_image, s);
@@ -178,39 +175,39 @@ void ser_members(cn::RingSignatureAmethyst &v, ISeria &s) {
 }
 
 // Serializing in the context of transaction - sizes and types are known from transaction prefix
-void ser_members(cn::RingSignatureAmethyst &sigs, ISeria &s, const cn::TransactionPrefix &prefix) {
+void ser_members(cn::RingSignatureAmethyst &v, ISeria &s, const cn::TransactionPrefix &prefix) {
 	size_t sig_size = prefix.inputs.size();
 	if (s.is_input()) {
-		sigs.pp.resize(sig_size);
-		sigs.rr.resize(sig_size);
-		sigs.rs.resize(sig_size);
-		sigs.ra.resize(sig_size);
+		v.pp.resize(sig_size);
+		v.rr.resize(sig_size);
+		v.rs.resize(sig_size);
+		v.ra.resize(sig_size);
 	}
 	s.object_key("p");
 	s.begin_array(sig_size, true);
-	for (auto &sig : sigs.pp) {
+	for (auto &sig : v.pp) {
 		ser(sig, s);
 	}
 	s.end_array();
 	s.object_key("c0");
-	ser(sigs.c0, s);
+	ser(v.c0, s);
 	s.object_key("rr");
 	s.begin_array(sig_size, true);
 	for (size_t i = 0; i < sig_size; ++i) {
-		invariant(prefix.inputs[i].type() == typeid(InputKey),
+		invariant(prefix.inputs.at(i).type() == typeid(InputKey),
 		    "Serialization error: input type wrong for transaction version");
-		size_t signature_size = boost::get<InputKey>(prefix.inputs[i]).output_indexes.size();
+		size_t mixin_size = boost::get<InputKey>(prefix.inputs.at(i)).output_indexes.size();
 		if (s.is_input()) {
-			sigs.rr[i].resize(signature_size);
-			s.begin_array(signature_size, true);
-			for (crypto::EllipticCurveScalar &sig : sigs.rr[i]) {
+			v.rr.at(i).resize(mixin_size);
+			s.begin_array(mixin_size, true);
+			for (crypto::EllipticCurveScalar &sig : v.rr.at(i)) {
 				ser(sig, s);
 			}
 			s.end_array();
 		} else {
-			invariant(signature_size == sigs.rr[i].size(), "Serialization error: unexpected signatures size");
-			s.begin_array(signature_size, true);
-			for (crypto::EllipticCurveScalar &sig : sigs.rr[i]) {
+			invariant(mixin_size == v.rr.at(i).size(), "Serialization error: unexpected signatures size");
+			s.begin_array(mixin_size, true);
+			for (crypto::EllipticCurveScalar &sig : v.rr.at(i)) {
 				ser(sig, s);
 			}
 			s.end_array();
@@ -219,13 +216,13 @@ void ser_members(cn::RingSignatureAmethyst &sigs, ISeria &s, const cn::Transacti
 	s.end_array();
 	s.object_key("rs");
 	s.begin_array(sig_size, true);
-	for (auto &sig : sigs.rs) {
+	for (auto &sig : v.rs) {
 		ser(sig, s);
 	}
 	s.end_array();
 	s.object_key("ra");
 	s.begin_array(sig_size, true);
-	for (auto &sig : sigs.ra) {
+	for (auto &sig : v.ra) {
 		ser(sig, s);
 	}
 	s.end_array();
@@ -234,12 +231,13 @@ void ser_members(cn::RingSignatureAmethyst &sigs, ISeria &s, const cn::Transacti
 
 void ser_members(cn::TransactionSignatures &v, ISeria &s, const TransactionPrefix &prefix) {
 	const bool is_base = (prefix.inputs.size() == 1) && (prefix.inputs[0].type() == typeid(InputCoinbase));
-	if (is_base)
+	if (is_base) {
+		if (s.is_input())
+			v = boost::blank{};
 		return;  // No signatures in base transaction
-	const bool is_tx_amethyst = (prefix.version >= parameters::TRANSACTION_VERSION_AMETHYST);
-
+	}
 	s.object_key("signatures");
-	if (is_tx_amethyst) {
+	if (prefix.version >= parameters::TRANSACTION_VERSION_AMETHYST) {
 		s.begin_object();
 		if (s.is_input())
 			v = RingSignatureAmethyst{};
@@ -254,21 +252,21 @@ void ser_members(cn::TransactionSignatures &v, ISeria &s, const TransactionPrefi
 		if (s.is_input())
 			sigs.signatures.resize(sig_size);
 		for (size_t i = 0; i < sig_size; ++i) {
-			invariant(prefix.inputs[i].type() == typeid(InputKey),
+			invariant(prefix.inputs.at(i).type() == typeid(InputKey),
 			    "Serialization error: input type wrong for transaction version");
-			size_t signature_size = boost::get<InputKey>(prefix.inputs[i]).output_indexes.size();
+			size_t mixin_size = boost::get<InputKey>(prefix.inputs.at(i)).output_indexes.size();
 			if (s.is_input()) {
-				sigs.signatures[i].resize(signature_size);
-				s.begin_array(signature_size, true);
-				for (crypto::Signature &sig : sigs.signatures[i]) {
+				sigs.signatures.at(i).resize(mixin_size);
+				s.begin_array(mixin_size, true);
+				for (crypto::Signature &sig : sigs.signatures.at(i)) {
 					ser(sig, s);
 				}
 				s.end_array();
 			} else {
 				invariant(
-				    signature_size == sigs.signatures[i].size(), "Serialization error: unexpected signatures size");
-				s.begin_array(signature_size, true);
-				for (crypto::Signature &sig : sigs.signatures[i]) {
+				    mixin_size == sigs.signatures.at(i).size(), "Serialization error: unexpected signatures size");
+				s.begin_array(mixin_size, true);
+				for (crypto::Signature &sig : sigs.signatures.at(i)) {
 					ser(sig, s);
 				}
 				s.end_array();
@@ -278,11 +276,11 @@ void ser_members(cn::TransactionSignatures &v, ISeria &s, const TransactionPrefi
 	}
 }
 
-void ser_members(OutputKey &v, ISeria &s, bool is_tx_amethyst) {
-	if (is_tx_amethyst)  // We moved amount inside variant part in amethyst
-		seria_kv("amount", v.amount, s);
+void ser_members(OutputKey &v, ISeria &s, uint8_t transaction_version) {
+	if (transaction_version >= parameters::TRANSACTION_VERSION_AMETHYST)
+		seria_kv("amount", v.amount, s);  // We moved amount inside variant part in amethyst
 	seria_kv("public_key", v.public_key, s);
-	if (is_tx_amethyst) {
+	if (transaction_version >= parameters::TRANSACTION_VERSION_AMETHYST) {
 		seria_kv("encrypted_secret", v.encrypted_secret, s);
 		seria_kv_binary("encrypted_address_type", &v.encrypted_address_type, 1, s);
 	}
@@ -290,12 +288,12 @@ void ser_members(OutputKey &v, ISeria &s, bool is_tx_amethyst) {
 
 void ser_members(TransactionPrefix &v, ISeria &s, bool is_root) {
 	seria_kv("version", v.version, s);
-	const bool is_tx_amethyst = (v.version == parameters::TRANSACTION_VERSION_AMETHYST);
+	const bool is_tx_amethyst = (v.version >= parameters::TRANSACTION_VERSION_AMETHYST);
 	if (!is_root && v.version != 1 && !is_tx_amethyst)
 		throw std::runtime_error("Unknown transaction version " + common::to_string(v.version));
 	seria_kv("unlock_block_or_timestamp", v.unlock_block_or_timestamp, s);
-	seria_kv("inputs", v.inputs, s);
-	seria_kv("outputs", v.outputs, s, !is_root && is_tx_amethyst);
+	seria_kv("inputs", v.inputs, s, is_root ? uint8_t(1) : v.version);
+	seria_kv("outputs", v.outputs, s, is_root ? uint8_t(1) : v.version);
 	seria_kv("extra", v.extra, s);
 }
 void ser_members(RootBaseTransaction &v, ISeria &s) {
@@ -305,14 +303,6 @@ void ser_members(RootBaseTransaction &v, ISeria &s) {
 		seria_kv("ignored", ignored, s);
 	}
 }
-
-// static size_t get_signatures_count(const TransactionInput &input) {
-//	struct txin_signature_size_visitor : public boost::static_visitor<size_t> {
-//		size_t operator()(const InputCoinbase &) const { return 0; }
-//		size_t operator()(const InputKey &txin) const { return txin.output_indexes.size(); }
-//	};
-//	return boost::apply_visitor(txin_signature_size_visitor(), input);
-//}
 
 void ser_members(Transaction &v, ISeria &s) {
 	ser_members(static_cast<TransactionPrefix &>(v), s);
@@ -343,6 +333,7 @@ void ser_members(RootBlock &v, ISeria &s, BlockSeriaType seria_type) {
 
 	size_t branch_size = crypto_coinbase_tree_depth(v.transaction_count);
 	if (s.is_input()) {
+		// branch size is logarithmic, safe to resize
 		v.coinbase_transaction_branch.resize(branch_size);
 	} else {
 		if (v.coinbase_transaction_branch.size() != branch_size)
@@ -360,12 +351,13 @@ void ser_members(RootBlock &v, ISeria &s, BlockSeriaType seria_type) {
 	seria_kv("coinbase_transaction", v.coinbase_transaction, s);
 
 	extra::MergeMiningTag mm_tag;
-	if (!extra::get_merge_mining_tag(v.coinbase_transaction.extra, mm_tag))
+	if (!extra::get_merge_mining_tag(v.coinbase_transaction.extra, &mm_tag))
 		throw std::runtime_error("Can't get extra merge mining tag");
 	if (mm_tag.depth > 8 * sizeof(Hash))
 		throw std::runtime_error("Wrong merge mining tag depth");
 
 	if (s.is_input()) {
+		// depth checked, safe to resize
 		v.blockchain_branch.resize(mm_tag.depth);
 	} else {
 		if (mm_tag.depth != v.blockchain_branch.size())
@@ -509,8 +501,7 @@ void ser_members(SignedCheckpoint &v, seria::ISeria &s) {
 }  // namespace seria
 
 Hash cn::get_transaction_inputs_hash(const TransactionPrefix &tx) {
-	//	const bool is_tx_amethyst = (tx.version >= parameters::TRANSACTION_VERSION_AMETHYST);
-	BinaryArray ba = seria::to_binary(tx.inputs);
+	BinaryArray ba = seria::to_binary(tx.inputs, tx.version);
 	//	std::cout << "get_transaction_inputs_hash body=" << common::to_hex(ba) << std::endl;
 	return crypto::cn_fast_hash(ba.data(), ba.size());
 }

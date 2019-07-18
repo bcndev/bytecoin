@@ -10,7 +10,7 @@ namespace seria {
 
 class BinaryOutputStream : public ISeria {
 public:
-	explicit BinaryOutputStream(common::IOutputStream &strm) : ISeria(false), stream(strm) {}
+	explicit BinaryOutputStream(common::IOutputStream &strm) : ISeria(false, false), stream(strm) {}
 
 	bool begin_object() override { return true; }
 	void object_key(common::StringView, bool optional) override {}

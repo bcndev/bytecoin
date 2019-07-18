@@ -15,7 +15,8 @@
 #include "crypto/crypto.hpp"
 #include "hmac/hmac_sha2.h"
 
-#ifndef __EMSCRIPTEN__
+// Checks when we use openssl for https via boost asio anyway
+#if !defined(__EMSCRIPTEN__) && !platform_USE_QT
 #define CHECK_WITH_OPENSSL 1
 #endif
 

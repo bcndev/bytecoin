@@ -62,10 +62,10 @@ public:
 	static std::vector<std::unique_ptr<HardwareWallet>> get_connected();
 
 	// Common helper algos
-	static Hash encrypt_scalar(
-	    const Hash &encryption_key, const crypto::EllipticCurveScalar &scalar, size_t i, const char scalar_name[2]);
+	static Hash encrypt_scalar(const Hash &encryption_key, const crypto::EllipticCurveScalar &scalar,
+	    size_t input_index, const char scalar_name[2]);
 	static SecretKey decrypt_scalar(
-	    const Hash &encryption_key, const Hash &escalar, size_t i, const char scalar_name[2]);
+	    const Hash &encryption_key, const Hash &escalar, size_t input_index, const char scalar_name[2]);
 
 	RingSignatureAmethyst generate_ring_signature_amethyst(const Hash &tx_prefix_hash,
 	    const std::vector<BinaryArray> &output_secret_hash_args, const std::vector<size_t> &address_indexes,

@@ -11,12 +11,13 @@
 
 namespace cn {
 
+class Config;
 class Currency {  // Consensus calculations depend on those parameters
 public:
 	static const std::vector<Amount> PRETTY_AMOUNTS;
 	static const std::vector<Amount> DECIMAL_PLACES;
 
-	explicit Currency(const std::string &net);
+	explicit Currency(const Config &config);
 
 	std::string net;
 	BlockTemplate genesis_block_template{};
@@ -69,7 +70,6 @@ public:
 
 	// upgrade voting threshold must not be reached before or at last sw checkpoint!
 	uint8_t upgrade_vote_minor;
-	uint8_t upgrade_indicator_minor;
 	bool is_upgrade_vote(uint8_t major, uint8_t minor) const;
 	bool wish_to_upgrade() const;
 	uint8_t upgrade_desired_major;
@@ -114,12 +114,13 @@ public:
 	bool is_transaction_unlocked(uint8_t block_major_version, BlockOrTimestamp unlock_time, Height block_height,
 	    Timestamp block_time, Timestamp block_median_time) const;
 
-	bool amount_allowed_in_output(uint8_t block_major_version, Amount amount) const;
-
 	static uint64_t get_penalized_amount(uint64_t amount, size_t median_size, size_t current_transactions_size);
 	static std::string format_amount(size_t number_of_decimal_places, Amount);
 	static std::string format_amount(size_t number_of_decimal_places, SignedAmount);
 	static bool parse_amount(size_t number_of_decimal_places, const std::string &, Amount *);
+
+	static size_t mixin_distribution(Amount am, size_t stack_size);  // am == 0 for hidden
+	static std::vector<size_t> mixin_distribution(Amount am, size_t stack_size, size_t count);
 
 private:
 	const PublicKey *checkpoint_keys_begin  = nullptr;

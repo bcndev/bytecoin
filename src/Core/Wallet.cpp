@@ -1,11 +1,6 @@
 // Copyright (c) 2012-2018, The CryptoNote developers, The Bytecoin developers.
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
-//#include <openssl/crypto.h>
-//#include <openssl/evp.h>
-//#include <openssl/hmac.h>
-//#include <openssl/sha.h>
-#include <boost/algorithm/string.hpp>
 #include "CryptoNoteTools.hpp"
 #include "TransactionBuilder.hpp"
 #include "WalletSerializationV1.hpp"
@@ -29,7 +24,7 @@ using namespace cn;
 using namespace common;
 using namespace crypto;
 
-std::string Wallet::net_append(const std::string &net) { return net == "main" ? std::string() : "_" + net + "net"; }
+std::string Wallet::net_append(const std::string &net) { return net == "main" ? std::string{} : "_" + net + "net"; }
 
 Wallet::Wallet(const Currency &currency, logging::ILogger &log) : m_currency(currency), m_log(log, "Wallet") {}
 

@@ -17,11 +17,13 @@ class WalletState;
 
 class WalletSync {
 public:
-	explicit WalletSync(
-	    logging::ILogger &, const Config &, WalletState &, std::function<void()> &&state_changed_handler);
+	explicit WalletSync(logging::ILogger &, WalletState &, std::function<void()> &&state_changed_handler);
 	~WalletSync();
 	const api::cnd::GetStatus::Response &get_last_node_status() const { return m_last_node_status; }
 	std::string get_sync_error() const { return m_sync_error; }
+
+	WalletState &get_wallet_state() { return m_wallet_state; }
+	const WalletState &get_wallet_state() const { return m_wallet_state; }
 
 protected:
 	bool on_prepared_block(const PreparedWalletBlock &block);
@@ -31,6 +33,7 @@ protected:
 	const std::function<void()> m_state_changed_handler;
 	logging::LoggerRef m_log;
 	const Config &m_config;
+	const Currency &m_currency;
 
 	api::cnd::GetStatus::Response m_last_node_status;
 	api::cnd::GetStatus::Response m_last_syncpool_status;
@@ -42,9 +45,6 @@ protected:
 	http::Agent m_sync_agent;
 	std::unique_ptr<http::Request> m_sync_request;
 	void advance_sync();
-
-	http::Agent m_commands_agent;
-	std::unique_ptr<http::Request> m_command_request;
 
 	WalletState &m_wallet_state;
 	WalletPreparatorMulticore preparator;

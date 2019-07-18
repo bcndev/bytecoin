@@ -75,7 +75,7 @@ Emulator::Emulator(const std::string &mnemonic) {
 	// read m_wallet_key, m_spend_key_base_public_key from device
 
 	m_mnemonics                   = cn::Bip32Key::check_bip39_mnemonic(mnemonic);
-	const cn::Bip32Key master_key = cn::Bip32Key::create_master_key(m_mnemonics, std::string());
+	const cn::Bip32Key master_key = cn::Bip32Key::create_master_key(m_mnemonics, std::string{});
 
 	const cn::Bip32Key k0 = master_key.derive_key(0x8000002c);
 	const cn::Bip32Key k1 = k0.derive_key(0x800000cc);
@@ -115,10 +115,9 @@ Emulator::Emulator(const std::string &mnemonic) {
 		std::cout << "m_wallet_key " << m_wallet_key << std::endl;
 	}
 
-	SecretKey sc2;
-	sc2.data[0] = 2;
-	auto poi1   = crypto::G * sc2;
-	auto poi2   = crypto::H * sc2;
+	SecretKey sc2 = crypto::sc_from_uint64(2);
+	auto poi1     = crypto::G * sc2;
+	auto poi2     = crypto::H * sc2;
 	std::cout << "poi1=" << to_bytes(poi1) << std::endl;
 	std::cout << "poi2=" << to_bytes(poi2) << std::endl;
 	std::cout << "poi3=" << to_bytes(poi1 * sc2) << std::endl;

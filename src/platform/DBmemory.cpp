@@ -6,8 +6,13 @@
 #include <iostream>
 #include "common/Invariant.hpp"
 #include "common/Math.hpp"
+#include "common/MemoryStreams.hpp"
 #include "common/StringTools.hpp"
 #include "common/string.hpp"
+
+#ifdef __EMSCRIPTEN__
+#include "IndexDB.hpp"
+#endif
 
 using namespace platform;
 
@@ -19,8 +24,34 @@ int DBmemory::CmpByUnsigned::compare(const std::string &a, const std::string &b)
 	return int(a.size()) - int(b.size());
 }
 
-DBmemory::DBmemory(OpenMode open_mode, const std::string &full_path, uint64_t max_tx_size)
-    : full_path(full_path + ".memory") {}
+DBmemory::DBmemory(OpenMode open_mode, const std::string &full_path, std::function<void()> &&o_h)
+    : full_path(full_path + ".memory"), o_handler(std::move(o_h)) {
+#ifdef __EMSCRIPTEN__
+	async_op = std::make_unique<AsyncIndexDBOperation>(full_path + ".memory", [=](const char *data, size_t size) {
+		//		std::cout << "DBmemory::DBmemory async op" << size << std::endl;
+		if (data) {
+			std::cout << "fill_db " << size << std::endl;
+			common::MemoryInputStream stream(data, size);
+			size_t count = stream.read_varint<size_t>();
+			std::cout << "fill_db count=" << count << std::endl;
+			std::string key;
+			common::BinaryArray value;
+			for (size_t i = 0; i != count; ++i) {
+				stream.read(key, stream.read_varint<size_t>());
+				stream.read(value, stream.read_varint<size_t>());
+				put(key, value, true);
+			}
+			std::cout << "fill_db finished" << std::endl;
+		}
+		async_op.reset();
+		//		std::cout << "before o_handler " << bool(o_handler) << std::endl;
+		o_handler();
+		//		std::cout << "after o_handler" << std::endl;
+	});
+#endif
+}
+
+DBmemory::~DBmemory() = default;
 
 std::vector<DBmemory::JournalEntry> DBmemory::move_journal() {
 	std::vector<JournalEntry> new_journal;
@@ -101,14 +132,37 @@ DBmemory::Cursor DBmemory::rbegin(const std::string &prefix, const std::string &
 	return begin(prefix, middle, false);
 }
 
-void DBmemory::commit_db_txn() {}
+void DBmemory::commit_db_txn() {
+#ifdef __EMSCRIPTEN__
+	if (async_op) {
+		std::cout << "DBmemory::commit_db_txn kv previous op pending" << std::endl;
+		return;  // previous operation pending
+	}
+	std::string committed_state;
+	committed_state.reserve(test_get_approximate_size() * 4 / 3);
+	common::StringOutputStream stream(committed_state);
+	//	std::cout << "DBmemory::commit_db_txn kv count=" << storage.size() << std::endl;
+	stream.write_varint(storage.size());
+	for (const auto &item : storage) {
+		stream.write_varint(item.first.size());
+		stream.write(item.first);
+		stream.write_varint(item.second.size());
+		stream.write(item.second);
+	}
+	async_op =
+	    std::make_unique<AsyncIndexDBOperation>(full_path, committed_state.data(), committed_state.size(), [=]() {
+		    std::cout << "DBmemory::commit_db_txn async op finished" << std::endl;
+		    async_op.reset();
+	    });
+#endif
+}
 
 void DBmemory::put(const std::string &key, const common::BinaryArray &value, bool nooverwrite) {
 	auto res = storage.emplace(key, value);
 	if (res.second) {
 		total_size += key.size() + value.size();
-		if (key.size() > max_key_size)
-			std::cout << "max_key_size=" << key.size() << std::endl;
+		//		if (key.size() > max_key_size)
+		//			std::cout << "max_key_size=" << key.size() << std::endl;
 		max_key_size = std::max(max_key_size, key.size());
 		if (use_journal)
 			journal.push_back(JournalEntry{key, value, false});
@@ -194,7 +248,7 @@ void DBmemory::backup_db(const std::string &path, const std::string &dst_path) {
 void DBmemory::run_tests() {
 	delete_db("temp_db");
 	{
-		DBmemory db(platform::O_CREATE_NEW, "temp_db");
+		DBmemory db(platform::O_CREATE_NEW, "temp_db", []() {});
 		std::string str;
 		bool res = db.get("history/ha", str);
 		std::cout << "res=" << res << std::endl;
@@ -224,11 +278,11 @@ void DBmemory::run_tests() {
 		db.commit_db_txn();
 
 		std::cout << "-- all keys forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 		std::cout << "-- all keys backward --" << std::endl;
-		for (auto cur = db.rbegin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.rbegin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 		std::cout << "-- history forward --" << std::endl;
@@ -265,7 +319,7 @@ void DBmemory::run_tests() {
 		}
 		int c = 0;
 		std::cout << "-- deleting c=2 iterating forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); ++c) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); ++c) {
 			if (c == 2) {
 				std::cout << "deleting " << cur.get_suffix() << std::endl;
 				cur.erase();
@@ -275,12 +329,12 @@ void DBmemory::run_tests() {
 			}
 		}
 		std::cout << "-- all keys forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 		c = 0;
 		std::cout << "-- deleting c=2 iterating backward --" << std::endl;
-		for (auto cur = db.rbegin(std::string()); !cur.end(); ++c) {
+		for (auto cur = db.rbegin(std::string{}); !cur.end(); ++c) {
 			if (c == 2) {
 				std::cout << "deleting " << cur.get_suffix() << std::endl;
 				cur.erase();
@@ -290,7 +344,7 @@ void DBmemory::run_tests() {
 			}
 		}
 		std::cout << "-- all keys forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 	}

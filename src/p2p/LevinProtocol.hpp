@@ -13,8 +13,7 @@ namespace cn {
 
 class LevinProtocol {
 public:
-	enum { RETURN_CODE_SUCCESS = 1 };
-	enum CommandType { REQUEST, RESPONSE, NOTIFY };
+	enum CommandType { NOTIFY, REQUEST, RESPONSE };
 
 	static size_t HEADER_SIZE();
 	static size_t read_command_header(const BinaryArray &raw_header, CommandType *rrn, uint32_t *command);
@@ -32,10 +31,10 @@ public:
 		}
 		return true;
 	}
-	static BinaryArray send(CommandType rrn, uint32_t command, const BinaryArray &out, int32_t return_code);
+	static BinaryArray send(CommandType rrn, uint32_t command, const BinaryArray &out);
 	template<typename T>
 	static BinaryArray send(const T &message) {
-		return send(static_cast<CommandType>(T::TYPE), T::ID, seria::to_binary_kv(message), RETURN_CODE_SUCCESS);
+		return send(static_cast<CommandType>(T::TYPE), T::ID, seria::to_binary_kv(message));
 	}
 };
 }  // namespace cn

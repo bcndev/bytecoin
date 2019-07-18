@@ -101,24 +101,31 @@ void LegacyBlockChainReader::thread_run() {
 			}
 			to_load = *m_blocks_to_load.begin();
 		}
-		BinaryArray rba = get_block_data_by_index(to_load);
-		PreparedBlock pb(std::move(rba), m_currency, nullptr);
+		boost::variant<ConsensusError, PreparedBlock> result = ConsensusError{""};
+		BinaryArray rba                                      = get_block_data_by_index(to_load);
+		try {
+			result = PreparedBlock{std::move(rba), m_currency, nullptr};
+		} catch (const ConsensusError &ex) {
+			result = ex;
+		} catch (const std::runtime_error &ex) {
+			result = ConsensusError{"Runtime error - " + common::what(ex)};
+		} catch (const std::logic_error &ex) {  // TODO - terminate app
+			result = ConsensusError{"Logic error - " + common::what(ex)};
+		}
 		{
 			std::unique_lock<std::mutex> lock(m_mu);
 			m_blocks_to_load.erase(to_load);
-			m_total_prepared_data_size += pb.block_data.size();
-			m_prepared_blocks[to_load] = std::move(pb);
+			m_prepared_blocks.insert(std::make_pair(to_load, std::move(result)));
 			m_prepared_blocks_ready.notify_all();
 		}
 	}
 }
 
-PreparedBlock LegacyBlockChainReader::get_prepared_block_by_index(Height height) {
+boost::variant<ConsensusError, PreparedBlock> LegacyBlockChainReader::get_prepared_block_by_index(Height height) {
 	load_offsets();
 	if (!multicore) {
 		BinaryArray rba = get_block_data_by_index(height);
-		PreparedBlock pb(std::move(rba), m_currency, nullptr);
-		return pb;
+		return PreparedBlock{std::move(rba), m_currency, nullptr};
 	}
 	{
 		std::unique_lock<std::mutex> lock(m_mu);
@@ -137,9 +144,8 @@ PreparedBlock LegacyBlockChainReader::get_prepared_block_by_index(Height height)
 			m_prepared_blocks_ready.wait(lock);
 			continue;
 		}
-		PreparedBlock result = std::move(pit->second);
-		pit                  = m_prepared_blocks.erase(pit);
-		m_total_prepared_data_size -= result.block_data.size();
+		boost::variant<ConsensusError, PreparedBlock> result = std::move(pit->second);
+		pit                                                  = m_prepared_blocks.erase(pit);
 		return result;
 	}
 }
@@ -150,7 +156,7 @@ bool LegacyBlockChainReader::import_blocks(BlockChainState *block_chain) {
 		// size_t bs_count = std::min(block_chain.get_tip_height() + 1 + count, get_block_count());
 		while (block_chain->get_tip_height() + 1 < get_block_count()) {
 			BinaryArray rba = get_block_data_by_index(block_chain->get_tip_height() + 1);
-			PreparedBlock pb(std::move(rba), m_currency, nullptr);
+			PreparedBlock pb{std::move(rba), m_currency, nullptr};
 			api::BlockHeader info;
 			if (!block_chain->add_block(pb, &info, false, "blocks_file")) {
 				std::cout << "block_chain.add_block !BROADCAST_ALL block=" << block_chain->get_tip_height() + 1
@@ -192,7 +198,11 @@ bool LegacyBlockChainReader::import_blockchain2(const std::string &index_file_na
 		start_block = block_chain->get_tip_height();
 		//	api::BlockHeader prev_info;
 		while (block_chain->get_tip_height() < import_height) {
-			PreparedBlock pb = reader.get_prepared_block_by_index(block_chain->get_tip_height() + 1);
+			boost::variant<ConsensusError, PreparedBlock> result =
+			    reader.get_prepared_block_by_index(block_chain->get_tip_height() + 1);
+			if (const ConsensusError *err = boost::get<ConsensusError>(&result))
+				throw *err;
+			const PreparedBlock &pb = boost::get<PreparedBlock>(result);
 			api::BlockHeader info;
 			if (!block_chain->add_block(pb, &info, false, "blocks_file")) {
 				std::cout << "block_chain.add_block !BROADCAST_ALL block=" << block_chain->get_tip_height() + 1
@@ -260,16 +270,6 @@ bool LegacyBlockChainWriter::export_blockchain2(const std::string &index_file_na
 		writer.write_block(raw_block);
 		if (ha % 10000 == 0)
 			std::cout << "Exporting block " << ha << "/" << block_chain.get_tip_height() << std::endl;
-		//		Block block(raw_block);
-		//		if(block.header.is_merge_mined() && block.header.root_block.coinbase_transaction.version >= 2)
-		//			std::cout << "Base transaction with strange version found, height=" << ha << " version=" <<
-		// block.header.root_block.coinbase_transaction.version << std::endl;
-		//		for (auto &&tr : block.transactions) {
-		//			for (auto &&input : tr.inputs)
-		//				if (input.type() == typeid(InputKey)) {
-		//					const InputKey &in = boost::get<InputKey>(input);
-		//				}
-		//		}
 	}
 	auto idea_ms =
 	    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - idea_start);

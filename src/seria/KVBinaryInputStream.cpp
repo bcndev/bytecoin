@@ -189,6 +189,7 @@ JsonValue parse_binary(common::IInputStream &stream) {
 }  // namespace
 
 KVBinaryInputStream::KVBinaryInputStream(common::IInputStream &strm) : JsonInputStreamValue(value_storage, true) {
+	is_json_value = false;  // We use JsonInputStreamValue only as a convenient storage
 	// We init parent with & of value_storage, then set storage
 	value_storage = parse_binary(strm);
 }

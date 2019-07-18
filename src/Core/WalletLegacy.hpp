@@ -49,6 +49,8 @@ public:
 	void set_password(const std::string &password) override;
 	void export_wallet(const std::string &export_path, const std::string &new_password, bool view_only,
 	    bool view_outgoing_addresses) const override;
+	std::string export_viewonly_wallet_string(
+	    const std::string &new_password, bool view_outgoing_addresses) const override;
 	std::string export_keys() const override;
 
 	static size_t wallet_file_size(size_t records);
@@ -66,7 +68,7 @@ public:
 	void payment_queue_remove(const Hash &tid) override;
 
 	void set_label(const std::string &address, const std::string &label) override;
-	std::string get_label(const std::string &address) const override { return std::string(); }
+	std::string get_label(const std::string &address) const override { return std::string{}; }
 
 	OutputHandler get_output_handler() const override;
 	bool detect_our_output(uint8_t tx_version, const Hash &tx_inputs_hash, const KeyDerivation &kd, size_t out_index,

@@ -51,19 +51,17 @@ struct PreparedBlock {
 	BinaryArray block_data;
 	RawBlock raw_block;
 	Block block;
-	Hash bid;
 	Hash base_transaction_hash;
+	BlockBodyProxy body_proxy;
+	Hash bid;
 	size_t coinbase_tx_size  = 0;
 	size_t block_header_size = 0;
 	size_t parent_block_size = 0;
 	Hash pow_hash;  // only if passed context != nullptr
-	boost::optional<ConsensusError> error;
 
 	explicit PreparedBlock(BinaryArray &&ba, const Currency &currency, crypto::CryptoNightContext *context);
-	explicit PreparedBlock(
-	    RawBlock &&rba, const Currency &currency, crypto::CryptoNightContext *context);  // we get raw blocks from p2p
-	PreparedBlock() = default;
-
+	explicit PreparedBlock(RawBlock &&rba, const Currency &currency, crypto::CryptoNightContext *context);
+	// we get raw blocks from p2p
 private:
 	void prepare(const Currency &currency, crypto::CryptoNightContext *context);
 };
@@ -136,7 +134,7 @@ protected:
 	std::vector<Hash> m_internal_import_chain;
 	void start_internal_import();
 
-	virtual void check_standalone_consensus(
+	virtual void check_consensus(
 	    const PreparedBlock &pb, api::BlockHeader *info, const api::BlockHeader &prev_info, bool check_pow) const = 0;
 	virtual void redo_block(
 	    const Hash &bhash, const Block &block, const api::BlockHeader &info)      = 0;  // throws ConsensusError

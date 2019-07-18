@@ -7,8 +7,7 @@ namespace logging {
 
 namespace {
 
-std::string format_pattern(
-    const std::string &pattern, const std::string &category, Level level, boost::posix_time::ptime time) {
+std::string format_pattern(const std::string &pattern, const std::string &category, Level level, std::time_t time) {
 	std::stringstream s;
 
 	for (const char *p = pattern.c_str(); p && *p != 0; ++p) {
@@ -20,17 +19,25 @@ std::string format_pattern(
 			case 'C':
 				s << category;
 				break;
-			case 'D':
-				s << time.date();
+			case 'D': {
+				char tb[30]{};
+				std::strftime(tb, sizeof(tb) - 1, "%Y-%m-%d", std::localtime(&time));
+				s << std::string(tb);
 				break;
-			case 'T':
-				s << time.time_of_day();
+			}
+			case 'T': {
+				char tb[30]{};
+				std::strftime(tb, sizeof(tb) - 1, "%H:%M:%S", std::localtime(&time));
+				s << std::string(tb);
 				break;
+			}
 			case 'l':
 				s << ILogger::LEVEL_NAMES[level][0];
 				break;
 			case 'L':
-				s << std::setw(4) << std::left << ILogger::LEVEL_NAMES[level];
+				s << ILogger::LEVEL_NAMES[level];
+				if (ILogger::LEVEL_NAMES[level].size() < 5)
+					s << std::string(5 - ILogger::LEVEL_NAMES[level].size(), ' ');
 				break;
 			default:
 				s << *p;
@@ -44,8 +51,7 @@ std::string format_pattern(
 }
 }  // namespace
 
-void CommonLogger::write(
-    const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) {
+void CommonLogger::write(const std::string &category, Level level, std::time_t time, const std::string &body) {
 	if (level <= log_level && m_disabled_categories.count(category) == 0) {
 		std::string body2 = body;
 		if (!pattern.empty()) {
@@ -60,7 +66,7 @@ void CommonLogger::write(
 	}
 }
 
-void CommonLogger::set_pattern(const std::string &pattern) { this->pattern = pattern; }
+void CommonLogger::set_pattern(const std::string &pt) { pattern = pt; }
 
 void CommonLogger::enable_category(const std::string &category) { m_disabled_categories.erase(category); }
 

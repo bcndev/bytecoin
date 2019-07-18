@@ -10,10 +10,12 @@
 #include "crypto/bernstein/crypto-ops.h"
 #include "crypto/crypto_helpers.hpp"
 
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__)
 #include "Emulator.hpp"
 #include "Ledger.hpp"
+#if !platform_USE_QT
 #include "Trezor.hpp"
+#endif
 #endif
 
 using namespace cn::hardware;
@@ -23,8 +25,10 @@ using namespace common;
 std::vector<std::unique_ptr<HardwareWallet>> HardwareWallet::get_connected() {
 	std::vector<std::unique_ptr<HardwareWallet>> result;
 
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__)
+#if !platform_USE_QT
 	Trezor::add_connected(&result);
+#endif
 	Ledger::add_connected(&result);
 	if (!result.empty())
 		std::cout << "Connected hardware wallets" << std::endl;
@@ -92,13 +96,13 @@ RingSignatureAmethyst HardwareWallet::generate_ring_signature_amethyst(const Has
 static_assert(
     sizeof(crypto::EllipticCurveScalar::data) <= sizeof(Hash::data), "Encryption value_key size is not enough");
 
-Hash HardwareWallet::encrypt_scalar(
-    const Hash &encryption_key, const crypto::EllipticCurveScalar &scalar, size_t i, const char scalar_name[2]) {
+Hash HardwareWallet::encrypt_scalar(const Hash &encryption_key, const crypto::EllipticCurveScalar &scalar,
+    size_t input_index, const char scalar_name[2]) {
 	KeccakStream ks{};
 	ks.append(encryption_key.data, 32);
 	ks.append_byte(scalar_name[0]);
 	ks.append_byte(scalar_name[1]);
-	ks.append(i);
+	ks.append(input_index);
 	Hash value_key = ks.cn_fast_hash();
 	for (size_t i = 0; i != sizeof(scalar.data); ++i)
 		value_key.data[i] ^= scalar.data[i];
@@ -106,12 +110,12 @@ Hash HardwareWallet::encrypt_scalar(
 }
 
 SecretKey HardwareWallet::decrypt_scalar(
-    const Hash &encryption_key, const Hash &escalar, size_t i, const char scalar_name[2]) {
+    const Hash &encryption_key, const Hash &escalar, size_t input_index, const char scalar_name[2]) {
 	KeccakStream ks{};
 	ks.append(encryption_key.data, 32);
 	ks.append_byte(scalar_name[0]);
 	ks.append_byte(scalar_name[1]);
-	ks.append(i);
+	ks.append(input_index);
 	Hash value_key = ks.cn_fast_hash();
 	SecretKey result;
 	for (size_t i = 0; i != sizeof(escalar.data); ++i)

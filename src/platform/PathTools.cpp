@@ -17,7 +17,6 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
-#include <boost/algorithm/string/trim.hpp>
 
 #endif
 
@@ -81,7 +80,7 @@ static std::string get_special_folder_path(int nfolder, bool iscreate) {
 	if (SHGetSpecialFolderPathW(NULL, psz_path, nfolder, iscreate)) {
 		return FileStream::utf16_to_utf8(psz_path);
 	}
-	return std::string();
+	return std::string{};
 }
 std::string get_platform_name() { return sizeof(size_t) == 4 ? "windows(32bit)" : "windows"; }
 std::string get_app_data_folder(const std::string &app_name) {
@@ -101,7 +100,7 @@ std::string get_os_version_string() {
 
 	if (uname(&un) < 0)
 		return std::string("*nix: failed to get os version");
-	return std::string() + un.sysname + " " + un.version + " " + un.release;
+	return std::string{} + un.sysname + " " + un.version + " " + un.release;
 }
 std::string get_platform_name() {
 #if defined(__linux__)

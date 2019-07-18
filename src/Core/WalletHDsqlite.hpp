@@ -49,7 +49,7 @@ public:
 	bool can_view_outgoing_addresses() const override {
 		return m_hw ? true : WalletHDBase::can_view_outgoing_addresses();
 	}
-	std::string get_hardware_type() const override { return m_hw ? m_hw->get_hardware_type() : std::string(); }
+	std::string get_hardware_type() const override { return m_hw ? m_hw->get_hardware_type() : std::string{}; }
 	std::vector<WalletRecord> generate_new_addresses(const std::vector<SecretKey> &sks, Timestamp ct, Timestamp now,
 	    std::vector<AccountAddress> *addresses, bool *rescan_from_ct) override;
 	void set_password(const std::string &password) override;

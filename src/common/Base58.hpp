@@ -15,4 +15,6 @@ bool decode(const std::string &enc, BinaryArray *data);
 std::string encode_addr(uint64_t tag, const BinaryArray &data);
 bool decode_addr(std::string addr, uint64_t *tag, BinaryArray *data);
 
+void interactive_test();
+
 }}  // namespace common::base58

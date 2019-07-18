@@ -6,11 +6,7 @@
 namespace logging {
 
 LoggerMessage::LoggerMessage(ILogger &logger, const std::string &category, Level level)
-    : std::ostream(this)
-    , logger(logger)
-    , category(category)
-    , log_level(level)
-    , timestamp(boost::posix_time::microsec_clock::local_time()) {
+    : std::ostream(this), logger(logger), category(category), log_level(level), timestamp(time(nullptr)) {
 	//	(*this) << std::string{ILogger::COLOR_PREFIX, static_cast<char>(ILogger::COLOR_LETTER_DEFAULT + color)};
 	//	(*this) << color;
 }
@@ -25,14 +21,14 @@ LoggerMessage::LoggerMessage(LoggerMessage &&other)
     , logger(other.logger)
     , category(other.category)
     , log_level(other.log_level)
-    , timestamp(boost::posix_time::microsec_clock::local_time()) {
+    , timestamp(time(nullptr)) {
 	(*this) << other.str();
-	other.str(std::string());
+	other.str(std::string{});
 }
 
 int LoggerMessage::sync() {
 	logger.write(category, log_level, timestamp, str());
-	str(std::string());
+	str(std::string{});
 	return 0;
 }
 }  // namespace logging

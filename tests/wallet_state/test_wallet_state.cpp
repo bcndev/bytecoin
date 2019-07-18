@@ -243,8 +243,8 @@ public:
 void test_wallet_state(common::CommandLine &cmd) {
 	common::Random random{};
 	logging::ConsoleLogger logger;
-	Currency currency("main");
 	Config config(cmd);
+	Currency currency(config);
 	config.data_folder = "../tests/scratchpad";
 	const auto db_name = config.get_data_folder("wallet_cache") + "/test_wallet_state";
 	WalletStateTest::DB::delete_db(db_name);
@@ -354,7 +354,7 @@ void test_wallet_state(common::CommandLine &cmd) {
 			}
 		}
 		if (ha == TEST_HEIGHT - 1) {
-			auto ba = wm.get_balance(std::string(), TEST_HEIGHT - 1);
+			auto ba = wm.get_balance(std::string{}, TEST_HEIGHT - 1);
 			std::cout << "Total coins remains before final spend"
 			          << (ba.locked_or_unconfirmed_outputs + ba.spendable_outputs + ba.spendable_dust_outputs)
 			          << " spent " << wm.all_keyimages.size() << std::endl;

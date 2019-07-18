@@ -7,8 +7,7 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 11)
 set(CRYPTONOTE_NAME bytecoin)
 add_definitions(-DCRYPTONOTE_NAME=\"${CRYPTONOTE_NAME}\" -DNDEBUG=1)
-option(USE_INSTRUMENTATION "For testing - builds with address sanitizer instrument" OFF)
-option(WITH_THREAD_SANITIZER "For testing - builds with thread sanitizer instrument, USE_INSTRUMENTATION must be also set" OFF)
+message("SANITIZE adds clang sanitizer options. Examples thread or address,undefined or fuzzer,address,undefined")
 option(BETTER_DEBUG "Disables optimizations. We do not use standard debug/realease configurations because they change too much" OFF)
 option(CRYPTO128 "Uses faster crypto" OFF)
 get_filename_component(PARENT_DIR ${CMAKE_SOURCE_DIR} DIRECTORY)
@@ -26,12 +25,19 @@ if(APPLE)
 endif()
 if(WIN32)
     add_definitions(-D_SCL_SECURE_NO_WARNINGS=1 -D_CRT_SECURE_NO_WARNINGS=1 -D_WIN32_WINNT=0x0501)
-    add_compile_options(/we4715)
+    add_compile_options(/we4715) # not all paths return value is error
 else()
     # We can build on old Ubuntu 14 with clang by adding next line (does not work with add_compile_options)
     # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
     # Binaries will need sudo apt-get install libc++-dev to run on machines without clang
-    add_compile_options(-maes -g -Wall -Wextra -Werror=return-type -Wno-unused-parameter)
+    add_compile_options(-maes -g -Wall -Wextra -Wformat -Wformat-security -Werror=return-type -Wno-unused-parameter)
+    # Security options below, on old Linux replace -fstack-protector-strong with -fstack-protector
+    add_compile_options(-fPIE -fPIC -fstack-protector-strong)
+    add_definitions(-D_FORTIFY_SOURCE=2)
+if(NOT APPLE)
+    link_libraries("-pie -Wl,-z,now -Wl,-z,relro -Wl,-z,noexecstack")
+    # investigate -Wl,-z,noexecheap
+endif()
     # We can use -Wshadow with clang occasionally
     if(BETTER_DEBUG)
         message(STATUS "Using better debug: " ${BETTER_DEBUG})
@@ -39,13 +45,12 @@ else()
     else()
         add_compile_options(-O2)
     endif()
-    message(STATUS "Instrumentation usage: " ${USE_INSTRUMENTATION})
-    message(STATUS "Thread sanitizer usage: " ${WITH_THREAD_SANITIZER})
-    if(USE_INSTRUMENTATION)
-        if(WITH_THREAD_SANITIZER)
-            add_compile_options(-fsanitize=thread)
-        else()
-            add_compile_options(-fno-omit-frame-pointer -fsanitize=address,undefined)
+    if(SANITIZE)
+        message(STATUS "Sanitizer usage: " ${SANITIZE})
+        add_compile_options(-fno-omit-frame-pointer -fsanitize=${SANITIZE})
+        link_libraries(-fno-omit-frame-pointer -fsanitize=${SANITIZE})
+        if("${SANITIZE}" STREQUAL "fuzzer,address,undefined")
+            add_definitions(-DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1)
         endif()
     endif()
 endif()
@@ -151,7 +156,6 @@ else()
     set_property(SOURCE ${SRC_SERIA} PROPERTY COMPILE_FLAGS -O3)
 endif()
 include_directories(src)
-#include_directories(${CMAKE_BINARY_DIR})
 set(SOURCE_FILES
     ${SRC_DB}
     ${SRC_NO_WARNINGS}
@@ -182,6 +186,8 @@ if(NOT WIN32)
     link_libraries(${LINK_OPENSSL} dl pthread)
 endif()
 
+if(NOT "${SANITIZE}" STREQUAL "fuzzer,address,undefined")
+
 if(WIN32)
     add_executable(walletd src/main_walletd.cpp src/bytecoin.rc) # .rc works only if referenced directly in add_executable
     add_executable(${CRYPTONOTE_NAME}d src/main_bytecoind.cpp src/bytecoin.rc) # .rc works only if referenced directly in add_executable
@@ -198,6 +204,8 @@ add_executable(tests src/main_tests.cpp tests/io.hpp tests/Random.hpp
         tests/json/test_json.cpp tests/json/test_json.hpp
         tests/wallet_state/test_wallet_state.cpp tests/wallet_state/test_wallet_state.hpp
         tests/wallet_file/test_wallet_file.cpp tests/wallet_file/test_wallet_file.hpp tests/crypto/benchmarks.cpp tests/crypto/benchmarks.hpp)
+endif()
+
 set(Boost_USE_STATIC_LIBS ON)
 add_definitions(-DBOOST_BIND_NO_PLACEHOLDERS=1 -DBOOST_CONFIG_SUPPRESS_OUTDATED_MESSAGE=1) # boost::_1 conflicts with std::_1
 add_definitions(-DBOOST_ERROR_CODE_HEADER_ONLY=1 -DBOOST_SYSTEM_NO_DEPRECATED=1) # required for header-only compilation
@@ -215,10 +223,14 @@ else()
 endif()
 include_directories(${Boost_INCLUDE_DIRS})
 
+if(NOT "${SANITIZE}" STREQUAL "fuzzer,address,undefined")
+
 target_link_libraries(walletd ${HID_LIBRARY})
 
 if(APPLE)
     target_link_libraries(walletd "-framework IOKit") # -dead_strip_dylibs
     target_link_libraries(${CRYPTONOTE_NAME}d "-framework IOKit") # -dead_strip_dylibs
+endif()
+
 endif()
 

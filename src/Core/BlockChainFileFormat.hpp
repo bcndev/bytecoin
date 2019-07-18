@@ -31,9 +31,8 @@ class LegacyBlockChainReader {
 	std::condition_variable m_prepared_blocks_ready;
 	bool m_quit = false;
 
-	std::map<Height, PreparedBlock> m_prepared_blocks;
+	std::map<Height, boost::variant<ConsensusError, PreparedBlock>> m_prepared_blocks;
 	std::set<Height> m_blocks_to_load;
-	size_t m_total_prepared_data_size = 0;
 	void thread_run();
 
 public:
@@ -43,7 +42,7 @@ public:
 	~LegacyBlockChainReader();
 	Height get_block_count() const { return m_count; }
 	BinaryArray get_block_data_by_index(Height);
-	PreparedBlock get_prepared_block_by_index(Height);
+	boost::variant<ConsensusError, PreparedBlock> get_prepared_block_by_index(Height);
 
 	bool import_blocks(BlockChainState *block_chain);  // return false when no more blocks remain
 

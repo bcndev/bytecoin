@@ -160,7 +160,7 @@ void DBlmdb::Cursor::check_prefix(const lmdb::Val &itkey) {
 	    std::char_traits<char>::compare(prefix.data(), itkey.data(), prefix.size()) != 0) {
 		is_end = true;
 		data   = lmdb::Val{};
-		suffix = std::string();
+		suffix = std::string{};
 		return;
 	}
 	suffix = std::string(itkey.data() + prefix.size(), itkey.size() - prefix.size());
@@ -286,11 +286,11 @@ void DBlmdb::run_tests() {
 		db.put("unspent/ub", "ub", false);
 		db.put("unspent/uc", "uc", false);
 		std::cout << "-- all keys forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 		std::cout << "-- all keys backward --" << std::endl;
-		for (auto cur = db.rbegin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.rbegin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 		std::cout << "-- history forward --" << std::endl;
@@ -327,7 +327,7 @@ void DBlmdb::run_tests() {
 		}
 		int c = 0;
 		std::cout << "-- deleting c=2 iterating forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); ++c) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); ++c) {
 			if (c == 2) {
 				std::cout << "deleting " << cur.get_suffix() << std::endl;
 				cur.erase();
@@ -337,12 +337,12 @@ void DBlmdb::run_tests() {
 			}
 		}
 		std::cout << "-- all keys forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 		c = 0;
 		std::cout << "-- deleting c=2 iterating backward --" << std::endl;
-		for (auto cur = db.rbegin(std::string()); !cur.end(); ++c) {
+		for (auto cur = db.rbegin(std::string{}); !cur.end(); ++c) {
 			if (c == 2) {
 				std::cout << "deleting " << cur.get_suffix() << std::endl;
 				cur.erase();
@@ -352,7 +352,7 @@ void DBlmdb::run_tests() {
 			}
 		}
 		std::cout << "-- all keys forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 	}

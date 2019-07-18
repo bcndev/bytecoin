@@ -71,7 +71,7 @@ typedef std::vector<Signature> RingSignature;
 
 typedef std::vector<uint8_t> BinaryArray;
 
-struct RingSignatureAmethyst {  // New amethyst signatures
+struct RingSignatureAmethyst {
 	std::vector<PublicKey> pp;
 	EllipticCurveScalar c0;
 	std::vector<std::vector<EllipticCurveScalar>> rr;

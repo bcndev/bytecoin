@@ -143,6 +143,8 @@ private:
 	};
 
 	void destruct_value();
+	JsonValue &set_number_unchecked(const std::string &number);
+	JsonValue &set_number_unchecked(std::string &&number);
 
 	struct StreamContext {
 		std::istreambuf_iterator<char> it;
@@ -152,7 +154,7 @@ private:
 		bool prev_white_space = true;  // collapse whitespaces in mini_buf
 	public:
 		explicit StreamContext(std::istream &in);
-		char peek_char();
+		char peek_char() const;
 		char read_char();
 		char read_non_ws_char();
 		char peek_non_ws_char();
@@ -167,7 +169,7 @@ private:
 	void read_true(StreamContext &ctx);
 	void read_false(StreamContext &ctx);
 	void read_null(StreamContext &ctx);
-	void read_number(StreamContext &ctx, char c);
+	void read_number(StreamContext &ctx, char first_char);
 	void read_object(size_t level, StreamContext &ctx);
 	void read_string(StreamContext &ctx);
 };

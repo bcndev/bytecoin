@@ -15,8 +15,8 @@ void sqlite::check(int rc, const char *msg) {
 		throw Error((msg ? msg : "") + common::to_string(rc));
 }
 
-void sqlite::Dbi::open_check_create(OpenMode open_mode, const std::string &full_path, bool *created) {
-	this->full_path = full_path;
+void sqlite::Dbi::open_check_create(OpenMode open_mode, const std::string &fp, bool *created) {
+	full_path = fp;
 	sqlite::check(sqlite3_open_v2(platform::expand_path(full_path).c_str(),
 	                  &handle,
 	                  open_mode == OpenMode::O_READ_EXISTING
@@ -99,7 +99,7 @@ DBsqliteKV::DBsqliteKV(OpenMode open_mode, const std::string &full_path, uint64_
 	//	std::cout << "sqlite3_libversion=" << sqlite3_libversion() << std::endl;
 	//	create_directories_if_necessary(full_path);
 	bool created = false;
-	db_dbi.open_check_create(open_mode, platform::expand_path(this->full_path).c_str(), &created);
+	db_dbi.open_check_create(open_mode, platform::expand_path(this->full_path), &created);
 	if (created)
 		db_dbi.exec("CREATE TABLE kv_table(kk BLOB PRIMARY KEY COLLATE BINARY, vv BLOB NOT NULL) WITHOUT ROWID");
 	stmt_get.prepare(db_dbi, "SELECT kk, vv FROM kv_table WHERE kk = ?");
@@ -157,7 +157,7 @@ void DBsqliteKV::Cursor::step_and_check() {
 		data   = nullptr;
 		size   = 0;
 		is_end = true;
-		suffix = std::string();
+		suffix = std::string{};
 		return;
 	}
 	size = stmt_get.column_bytes(0);
@@ -170,7 +170,7 @@ void DBsqliteKV::Cursor::step_and_check() {
 		data   = nullptr;
 		size   = 0;
 		is_end = true;
-		suffix = std::string();
+		suffix = std::string{};
 		return;
 	}
 	suffix = std::string(it_key.data() + prefix.size(), it_key.size() - prefix.size());
@@ -215,10 +215,8 @@ static std::pair<const unsigned char *, size_t> get(const sqlite::Stmt &stmt, co
 	stmt.bind_blob(1, key.data(), key.size());
 	if (!stmt.step())
 		return std::make_pair(nullptr, 0);
-	auto si = stmt.column_bytes(0);
-	auto da = stmt.column_blob(0);
-	si      = stmt.column_bytes(1);
-	da      = stmt.column_blob(1);
+	auto si = stmt.column_bytes(1);
+	auto da = stmt.column_blob(1);
 	return std::make_pair(da, si);
 }
 
@@ -337,11 +335,11 @@ void DBsqliteKV::run_tests() {
 		db.commit_db_txn();
 
 		std::cout << "-- all keys forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 		std::cout << "-- all keys backward --" << std::endl;
-		for (auto cur = db.rbegin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.rbegin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 		std::cout << "-- history forward --" << std::endl;
@@ -378,7 +376,7 @@ void DBsqliteKV::run_tests() {
 		}
 		int c = 0;
 		std::cout << "-- deleting c=2 iterating forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); ++c) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); ++c) {
 			if (c == 2) {
 				std::cout << "deleting " << cur.get_suffix() << std::endl;
 				cur.erase();
@@ -388,12 +386,12 @@ void DBsqliteKV::run_tests() {
 			}
 		}
 		std::cout << "-- all keys forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 		c = 0;
 		std::cout << "-- deleting c=2 iterating backward --" << std::endl;
-		for (auto cur = db.rbegin(std::string()); !cur.end(); ++c) {
+		for (auto cur = db.rbegin(std::string{}); !cur.end(); ++c) {
 			if (c == 2) {
 				std::cout << "deleting " << cur.get_suffix() << std::endl;
 				cur.erase();
@@ -403,7 +401,7 @@ void DBsqliteKV::run_tests() {
 			}
 		}
 		std::cout << "-- all keys forward --" << std::endl;
-		for (auto cur = db.begin(std::string()); !cur.end(); cur.next()) {
+		for (auto cur = db.begin(std::string{}); !cur.end(); cur.next()) {
 			std::cout << cur.get_suffix() << std::endl;
 		}
 	}

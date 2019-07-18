@@ -410,6 +410,7 @@ struct GetTransfers {  // Can be used incrementally by high-performace clients t
 		size_t desired_transaction_count =
 		    std::numeric_limits<size_t>::max();  // Will return this number of transactions or a bit more, It can
 		                                         // return more, because this call always returns full blocks
+		bool need_outputs = false;  // Experimental, outputs are very rarely needed, so clients should ask explicitly
 	};
 	struct Response {
 		std::vector<api::Block> blocks;  // includes only blocks with transactions with transfers we can view
@@ -443,7 +444,7 @@ struct CreateTransaction {
 		std::string change_address;      // Change will be returned to change_address.
 		HeightOrDepth confirmed_height_or_depth = -DEFAULT_CONFIRMATIONS - 1;
 		// Mix-ins will be selected from the [0..confirmed_height] window.
-		// Reorganizations larger than confirmations may change mix-in global indices, making transaction invalid.
+		// Reorganizations larger than confirmations may change mix-in global indexes, making transaction invalid.
 		boost::optional<Amount> fee_per_byte;  // Fee of created transaction will be close to the
 		                                       // size of tx * fee_per_byte.
 		// You can check it in response.transaction.fee before sending, if you wish
@@ -547,12 +548,58 @@ struct GetTransaction {
 	static std::string method() { return "get_transaction"; }
 	struct Request {
 		Hash hash;
+		bool need_outputs = false;  // Experimental, outputs are very rarely needed, so clients should ask explicitly
 	};
 	struct Response {
 		api::Transaction
 		    transaction;  // empty transaction no hash returned if this transaction contains no recognizable transfers
 	};
 };
+
+struct ExtCreateWallet {  // Experimental, undocumented
+	static std::string method() { return "ext_create_wallet"; }
+	struct Request {
+		std::string wallet_file;
+		std::string wallet_password;
+		std::string wallet_type = "amethyst";
+		std::string mnemonic;
+		std::string mnemonic_password;
+		std::string import_keys;
+		size_t address_count         = 1;
+		Timestamp creation_timestamp = 0;
+		bool import_view_key         = false;
+	};
+	struct Response {  // On some platforms, wallet file name is chosen by walletd
+		std::string wallet_file;
+	};
+	// json error codes correspond to walletd exit codes
+};
+
+struct ExtOpenWallet {  // Experimental, undocumented
+	static std::string method() { return "ext_open_wallet"; }
+	struct Request {
+		std::string wallet_file;
+		std::string wallet_password;
+	};
+	typedef EmptyStruct Response;
+	// json error codes correspond to walletd exit codes
+};
+
+struct ExtSetPassword {  // Experimental, undocumented
+	static std::string method() { return "ext_set_password"; }
+	struct Request {
+		std::string wallet_password;
+	};
+	typedef EmptyStruct Response;
+	// json error codes correspond to walletd exit codes
+};
+
+struct ExtCloseWallet {  // Experimental, undocumented
+	static std::string method() { return "ext_close_wallet"; }
+	typedef EmptyStruct Request;
+	typedef EmptyStruct Response;
+};
+
 }  // namespace walletd
 }}  // namespace cn::api
 
@@ -654,8 +701,10 @@ struct GetRawTransaction {
 	struct Response {
 		api::Transaction transaction;  // contain only info known to bytecoind
 		TransactionPrefix raw_transaction;
-		std::vector<std::vector<PublicKey>> mixed_public_keys;  // not documented yet
+		std::vector<std::vector<PublicKey>> mixed_public_keys;  // deprecated
+		std::vector<std::vector<api::Output>> mixed_outputs;    // TODO - document
 		// TransactionPrefix contains only indexes, we need public keys to sign sendproof
+		TransactionSignatures signatures;
 	};
 	enum {
 		HASH_NOT_FOUND = -5  // Neither in main nor in side chain
@@ -686,7 +735,7 @@ struct GetRandomOutputs {
 		size_t output_count                     = 0;
 		HeightOrDepth confirmed_height_or_depth = -DEFAULT_CONFIRMATIONS - 1;
 		// Mix-ins will be selected from the [0..confirmed_height] window.
-		// Reorganizations larger than confirmations may change mix-in global indices,
+		// Reorganizations larger than confirmations may change mix-in global indexes,
 		// making transaction invalid
 	};
 	struct Response {
@@ -926,6 +975,10 @@ void ser_members(cn::api::walletd::CreateSendproof::Request &v, ISeria &s);
 void ser_members(cn::api::walletd::CreateSendproof::Response &v, ISeria &s);
 void ser_members(cn::api::walletd::GetTransaction::Request &v, ISeria &s);
 void ser_members(cn::api::walletd::GetTransaction::Response &v, ISeria &s);
+void ser_members(cn::api::walletd::ExtCreateWallet::Request &v, ISeria &s);
+void ser_members(cn::api::walletd::ExtCreateWallet::Response &v, ISeria &s);
+void ser_members(cn::api::walletd::ExtOpenWallet::Request &v, ISeria &s);
+void ser_members(cn::api::walletd::ExtSetPassword::Request &v, ISeria &s);
 
 void ser_members(cn::api::cnd::GetStatus::Request &v, ISeria &s);
 void ser_members(cn::api::cnd::GetStatus::Response &v, ISeria &s);

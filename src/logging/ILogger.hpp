@@ -4,7 +4,7 @@
 #pragma once
 
 #include <array>
-#include <boost/date_time/posix_time/posix_time.hpp>
+#include <ctime>
 #include <string>
 #include "common/ConsoleTools.hpp"
 
@@ -21,8 +21,7 @@ public:
 
 	const static std::array<std::string, 6> LEVEL_NAMES;
 
-	virtual void write(
-	    const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) = 0;
+	virtual void write(const std::string &category, Level level, std::time_t time, const std::string &body) = 0;
 	virtual ~ILogger() {}
 };
 

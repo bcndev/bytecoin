@@ -9,8 +9,7 @@
 
 namespace logging {
 
-void LoggerManager::write(
-    const std::string &category, Level level, boost::posix_time::ptime time, const std::string &body) {
+void LoggerManager::write(const std::string &category, Level level, std::time_t time, const std::string &body) {
 	//	std::unique_lock<std::mutex> lock(reconfigure_lock);
 	LoggerGroup::write(category, level, time, body);
 }
@@ -35,8 +34,7 @@ void LoggerManager::configure_default(
 		loggers.emplace_back(std::move(logger));
 		add_logger(*loggers.back());
 	}
-	write("START", TRACE, boost::posix_time::microsec_clock::local_time(),
-	    version + " ----------------------------------------\n");
+	write("START", TRACE, time(nullptr), version + " ----------------------------------------\n");
 }
 
 }  // namespace logging

@@ -13,7 +13,6 @@
 
 #include <sys/utsname.h>
 #include <sys/stat.h>
-#include <boost/algorithm/string/trim.hpp>
 
 namespace platform {
 

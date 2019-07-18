@@ -7,17 +7,14 @@
 #include <iostream>
 #include <map>
 #include "Core/Config.hpp"
+#include "PeerDB.hpp"
 #include "common/Invariant.hpp"
 #include "crypto/crypto.hpp"
 #include "platform/Time.hpp"
 
 using namespace cn;
 
-void P2PProtocol::on_disconnect(const std::string &ban_reason) {
-	//	std::cout << "P2PProtocol::on_disconnect this=" << std::hex << (size_t)this << " m_client=" << (size_t)m_client
-	// << std::dec << std::endl;
-	m_client = nullptr;
-}
+void P2PProtocol::on_disconnect(const std::string &ban_reason) { m_client = nullptr; }
 
 const NetworkAddress &P2PProtocol::get_address() const { return m_client->get_address(); }
 bool P2PProtocol::is_incoming() const { return m_client->is_incoming(); }
@@ -35,10 +32,8 @@ P2PClient::P2PClient(bool incoming, D_handler &&d_handler)
 
 void P2PClient::set_protocol(std::unique_ptr<P2PProtocol> &&protocol) {
 	bool protocol_switch = protocol && m_protocol;
-	//	std::cout << "P2PClient::set_protocol this=" << std::hex << (size_t)this << std::dec << " m_protocol=" <<
-	//(size_t)m_protocol.get() << " protocol=" << (size_t)protocol.get() << std::endl;
 	if (m_protocol)
-		m_protocol->on_disconnect(std::string());
+		m_protocol->on_disconnect(std::string{});
 	m_protocol.reset();
 	if (protocol_switch)
 		std::cout << "P2PClient::set_protocol protocol switch" << std::endl;
@@ -122,7 +117,6 @@ void P2PClient::disconnect(const std::string &ban_reason) {
 	responses.clear();
 
 	sock.close();
-	//	std::cout << "P2PClient::disconnect this=" << std::hex << (size_t)this << std::dec << std::endl;
 	if (m_protocol)
 		m_protocol->on_disconnect(ban_reason);
 	m_protocol.reset();
@@ -152,7 +146,7 @@ void P2PClient::advance_state(bool called_from_runloop) {
 	}
 }
 
-void P2PClient::on_socket_disconnect() { disconnect(std::string()); }
+void P2PClient::on_socket_disconnect() { disconnect(std::string{}); }
 
 void P2P::on_client_disconnected(P2PClient *who, std::string ban_reason) {
 	if (!ban_reason.empty())
@@ -288,8 +282,5 @@ P2P::P2P(logging::ILogger &log, const Config &config, PeerDB &peers, client_fact
 	connect_all();
 	accept_all();
 }
-
-// We do not have p2p time yet
-Timestamp P2P::get_p2p_time() const { return get_local_time(); }
 
 Timestamp P2P::get_local_time() const { return platform::now_unix_timestamp(); }

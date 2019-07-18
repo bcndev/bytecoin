@@ -31,11 +31,11 @@ const Height UPGRADE_HEIGHT_V4                  = 1792117;
 const Height KEY_IMAGE_SUBGROUP_CHECKING_HEIGHT = 1267000;
 
 // Radical simplification of consensus rules starts from versions
+// Amethyst blocks can contain v1 transactions
 const uint8_t BLOCK_VERSION_AMETHYST       = 4;
 const uint8_t TRANSACTION_VERSION_AMETHYST = 4;
 
-const size_t MINIMUM_ANONYMITY_V1_3 = 0;
-const size_t MINIMUM_ANONYMITY      = 3;
+const size_t MINIMUM_ANONYMITY_AMETHYST = 3;
 
 // Emission and formats
 const Amount MONEY_SUPPLY            = std::numeric_limits<uint64_t>::max();
@@ -49,8 +49,10 @@ const Amount SELF_DUST_THRESHOLD   = 1000;               // forfeit outputs smal
 
 const uint64_t ADDRESS_BASE58_PREFIX          = 6;       // legacy addresses start with "2"
 const uint64_t ADDRESS_BASE58_PREFIX_AMETHYST = 572238;  // addresses start with "bcnZ", varintdata={0xce, 0xf6, 0x22}
-const uint64_t SENDPROOF_BASE58_PREFIX =
-    86762904402638;  // proofs start with "bcn1PRoof", varintdata={0xce, 0xf5, 0xe2, 0x80, 0x91, 0xdd, 0x13}
+const uint64_t SENDPROOF_BASE58_PREFIX        = 86762904402638;
+// proofs start with "bcn1PRoof", varintdata={0xce, 0xf5, 0xe2, 0x80, 0x91, 0xdd, 0x13}
+const uint64_t VIEWONLYWALLET_BASE58_PREFIX = 3904523549390;
+// wallets start with "bcnAUDit", varintdata={0xce, 0xf5, 0xf4, 0xbd, 0xd1, 0x71}
 const char BLOCKS_FILENAME[]       = "blocks.bin";
 const char BLOCKINDEXES_FILENAME[] = "blockindexes.bin";
 
@@ -218,7 +220,8 @@ constexpr const HardCheckpoint CHECKPOINTS[] = {
     {1709000, common::pfh<Hash>("82185d3365e730074c4804b151c19d29ee4b2407772467853f96839567d8b45a")},
     {1740000, common::pfh<Hash>("769ef18196c1ebeab9ef372e40475c2ce8c65ca7e22b0894e41f3d675343ab49")},
     {1764000, common::pfh<Hash>("b79c80df808d6447965e5e75d0e2a40ab07e591e9efa8efa1be3945fe3278669")},
-    {1795000, common::pfh<Hash>("db3f1f99b45d8e771dce12eeadd2e9258743d0d7094f2a78b3d9a2af283d78a6")}};
+    {1795000, common::pfh<Hash>("db3f1f99b45d8e771dce12eeadd2e9258743d0d7094f2a78b3d9a2af283d78a6")},
+    {1826000, common::pfh<Hash>("5edc3138a77631ee7ada27d8c5cf6307577f762b83399d25f3ea9eec529f23b6")}};
 
 // When adding checkpoint and BEFORE release, you MUST check that daemon fully syncs both mainnet and stagenet.
 
@@ -231,5 +234,7 @@ constexpr const HardCheckpoint CHECKPOINTS_STAGENET[] = {
     {450, common::pfh<Hash>("c69823a6b3e0c1f724411e697219a9d31a2df900cb49bb0488b1a91a9989a805")},
     {30000, common::pfh<Hash>("4a3b02206d120bab6c3bef4a7bcbc1934b5327c27c181d790f4db407dc92c640")},
     {49000, common::pfh<Hash>("1960a677cda6afd47dd4a928bf876b7cb7c9bd86107e3193ca9b0fd0926bad4c")},
-    {70000, common::pfh<Hash>("10ce87ab253c1142414a700336795057781572b5d9f026c57463ae420e456240")}};
+    {70000, common::pfh<Hash>("10ce87ab253c1142414a700336795057781572b5d9f026c57463ae420e456240")},
+    {101000, common::pfh<Hash>("6cbba1769cf623518c13656d608185f3085dfb47672d561e77ed9b0d3b295391")},
+    {122000, common::pfh<Hash>("3e8e49a09bf2ccdcbd618ed898c44e23fcb6df3d7a33bfadc419af048651bfd0")}};
 }}  // namespace cn::parameters

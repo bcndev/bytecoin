@@ -17,7 +17,7 @@ namespace sqlite {
 struct Dbi : private common::Nocopy {
 	sqlite3 *handle = nullptr;
 	std::string full_path;  // Remembered after open for better error messages
-	void open_check_create(OpenMode open_mode, const std::string &full_path, bool *created);
+	void open_check_create(OpenMode open_mode, const std::string &fp, bool *created);
 	void exec(const char *statement, const char *err_msg = nullptr);
 	void commit_txn();
 	void begin_txn();
@@ -93,8 +93,8 @@ public:
 		void next();
 		void erase();  // moves to the next value
 	};
-	Cursor begin(const std::string &prefix, const std::string &middle = std::string(), bool forward = true) const;
-	Cursor rbegin(const std::string &prefix, const std::string &middle = std::string()) const;
+	Cursor begin(const std::string &prefix, const std::string &middle = std::string{}, bool forward = true) const;
+	Cursor rbegin(const std::string &prefix, const std::string &middle = std::string{}) const;
 
 	static std::string to_binary_key(const unsigned char *data, size_t size) {
 		std::string result;

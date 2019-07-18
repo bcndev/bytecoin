@@ -3,6 +3,7 @@
 
 #include "CryptoNoteTools.hpp"
 #include <crypto/crypto.hpp>
+#include "CryptoNoteConfig.hpp"
 #include "TransactionExtra.hpp"
 #include "common/StringTools.hpp"
 #include "common/Varint.hpp"
@@ -91,55 +92,81 @@ void cn::decompose_amount(Amount amount, Amount dust_threshold, std::vector<Amou
 
 const size_t KEY_IMAGE_SIZE                    = sizeof(KeyImage);
 const size_t OUTPUT_KEY_SIZE                   = sizeof(PublicKey);
-const size_t OUTPUT_SECRET_SIZE                = sizeof(Hash);
+const size_t OUTPUT_SECRET_SIZE                = sizeof(PublicKey);
+const size_t OUTPUT_AMOUNT_COMMITMENT_SIZE     = sizeof(PublicKey);
 const size_t AMOUNT_SIZE                       = sizeof(uint64_t) + 2;  // varint
 const size_t IO_COUNT_SIZE                     = 3;                     // varint
 const size_t GLOBAL_INDEXES_VECTOR_SIZE_SIZE   = 1;                     // varint
 const size_t GLOBAL_INDEXES_INITIAL_VALUE_SIZE = sizeof(size_t);        // varint
 const size_t GLOBAL_INDEXES_DIFFERENCE_SIZE    = sizeof(size_t);        // varint
-const size_t SIGNATURE_SIZE                    = sizeof(Signature);
-const size_t EXTRA_TAG_SIZE                    = 1;
 const size_t INPUT_TAG_SIZE                    = 1;
 const size_t OUTPUT_TAG_SIZE                   = 1;
-const size_t PUBLIC_KEY_SIZE                   = sizeof(PublicKey);
 const size_t TRANSACTION_VERSION_SIZE          = 1;
-const size_t TRANSACTION_UNLOCK_TIME_SIZE      = sizeof(uint64_t);
+const size_t TRANSACTION_UNLOCK_TIME_SIZE      = sizeof(uint64_t) + 2;  // varint
+const size_t TRANSACTION_FEE_SIZE              = sizeof(uint64_t) + 2;  // varint
+const size_t AMETHYST_SIGNATURE_C0_SIZE        = sizeof(SecretKey);
+const size_t AMETHYST_SIGNATURE_PER_INPUT_SIZE = 2 * sizeof(SecretKey) + sizeof(PublicKey);
+const size_t AMETHYST_SIGNATURE_PER_MIXIN_SIZE = sizeof(SecretKey);
 
-const size_t header_size = TRANSACTION_VERSION_SIZE + TRANSACTION_UNLOCK_TIME_SIZE + EXTRA_TAG_SIZE + PUBLIC_KEY_SIZE;
+const size_t tx_fixed_size_amethyst =
+    TRANSACTION_VERSION_SIZE + TRANSACTION_UNLOCK_TIME_SIZE + 3 * IO_COUNT_SIZE + AMETHYST_SIGNATURE_C0_SIZE;
+const size_t tx_fixed_size_jade      = tx_fixed_size_amethyst + TRANSACTION_FEE_SIZE;
+const size_t tx_output_size_amethyst = OUTPUT_TAG_SIZE + 1 + OUTPUT_KEY_SIZE + OUTPUT_SECRET_SIZE + AMOUNT_SIZE;
+const size_t tx_output_size_jade     = tx_output_size_amethyst + OUTPUT_AMOUNT_COMMITMENT_SIZE;
 
-size_t cn::get_maximum_tx_input_size(size_t anonymity) {
-	return INPUT_TAG_SIZE + AMOUNT_SIZE + KEY_IMAGE_SIZE + SIGNATURE_SIZE + GLOBAL_INDEXES_VECTOR_SIZE_SIZE +
-	       GLOBAL_INDEXES_INITIAL_VALUE_SIZE + anonymity * (GLOBAL_INDEXES_DIFFERENCE_SIZE + SIGNATURE_SIZE);
+static size_t get_maximum_tx_input_size_amethyst(size_t anonymity) {
+	const size_t fixed_part = INPUT_TAG_SIZE + AMOUNT_SIZE + KEY_IMAGE_SIZE + GLOBAL_INDEXES_VECTOR_SIZE_SIZE +
+	                          GLOBAL_INDEXES_INITIAL_VALUE_SIZE + AMETHYST_SIGNATURE_PER_INPUT_SIZE;
+	return fixed_part + (anonymity + 1) * (GLOBAL_INDEXES_DIFFERENCE_SIZE + AMETHYST_SIGNATURE_PER_MIXIN_SIZE);
 }
-
-size_t cn::get_maximum_tx_size(size_t input_count, size_t output_count, size_t anonymity) {
-	const size_t outputs_size =
-	    IO_COUNT_SIZE + output_count * (OUTPUT_TAG_SIZE + OUTPUT_KEY_SIZE + OUTPUT_SECRET_SIZE + AMOUNT_SIZE);
-	const size_t inputs_size = IO_COUNT_SIZE + input_count * get_maximum_tx_input_size(anonymity);
-	return header_size + outputs_size + inputs_size;
+static size_t get_maximum_tx_input_size_jade(size_t anonymity) {
+	// TODO - modify for jade
+	return get_maximum_tx_input_size_amethyst(anonymity);
+}
+size_t cn::get_maximum_tx_size_amethyst(size_t input_count, size_t output_count, size_t anonymity) {
+	const size_t outputs_size = output_count * tx_output_size_amethyst;
+	const size_t inputs_size  = input_count * get_maximum_tx_input_size_amethyst(anonymity);
+	return tx_fixed_size_amethyst + outputs_size + inputs_size;
+}
+size_t cn::get_maximum_tx_input_count_amethyst(size_t tx_size, size_t output_count, size_t anonymity) {
+	const size_t outputs_size = output_count * tx_output_size_amethyst;
+	if (tx_size < tx_fixed_size_amethyst + outputs_size)
+		return 0;
+	return (tx_size - tx_fixed_size_amethyst - outputs_size) / get_maximum_tx_input_size_amethyst(anonymity);
+}
+size_t cn::get_maximum_tx_size_jade(size_t input_count, size_t output_count, size_t anonymity) {
+	const size_t outputs_size = output_count * tx_output_size_jade;
+	const size_t inputs_size  = input_count * get_maximum_tx_input_size_jade(anonymity);
+	return tx_fixed_size_jade + outputs_size + inputs_size;
+}
+size_t cn::get_maximum_tx_input_count_jade(size_t tx_size, size_t output_count, size_t anonymity) {
+	const size_t outputs_size = output_count * tx_output_size_jade;
+	if (tx_size < tx_fixed_size_jade + outputs_size)
+		return 0;
+	return (tx_size - tx_fixed_size_jade - outputs_size) / get_maximum_tx_input_size_jade(anonymity);
 }
 
 Amount cn::get_tx_sum_outputs(const TransactionPrefix &tx) {
 	uint64_t amount_out = 0;
-	for (const auto &o : tx.outputs) {
-		if (o.type() == typeid(OutputKey))
-			amount_out += boost::get<OutputKey>(o).amount;
+	for (const auto &output : tx.outputs) {
+		if (const auto *out = boost::get<OutputKey>(&output))
+			amount_out += out->amount;
 	}
 	return amount_out;
 }
 Amount cn::get_tx_sum_inputs(const TransactionPrefix &tx) {
 	uint64_t amount_in = 0;
-	for (const auto &in : tx.inputs) {
-		if (in.type() == typeid(InputKey))
-			amount_in += boost::get<InputKey>(in).amount;
+	for (const auto &input : tx.inputs) {
+		if (const auto *in = boost::get<InputKey>(&input))
+			amount_in += in->amount;
 	}
 	return amount_in;
 }
 
 size_t cn::get_tx_key_outputs_count(const TransactionPrefix &tx) {
 	size_t count = 0;
-	for (const auto &o : tx.outputs) {
-		if (o.type() == typeid(OutputKey))
+	for (const auto &output : tx.outputs) {
+		if (boost::get<OutputKey>(&output))
 			count += 1;
 	}
 	return count;
@@ -187,13 +214,18 @@ bool cn::relative_output_offsets_to_absolute(std::vector<size_t> *result, const 
 	return true;
 }
 
-BlockBodyProxy cn::get_body_proxy_from_template(const BlockTemplate &bt) {
+BlockBodyProxy cn::get_body_proxy_from_template(
+    const Hash &base_transaction_hash, const std::vector<Hash> &transaction_hashes) {
 	BlockBodyProxy body_proxy;
-	std::vector<Hash> transaction_hashes;
-	transaction_hashes.reserve(bt.transaction_hashes.size() + 1);
-	transaction_hashes.push_back(get_transaction_hash(bt.base_transaction));
-	transaction_hashes.insert(transaction_hashes.end(), bt.transaction_hashes.begin(), bt.transaction_hashes.end());
-	body_proxy.transactions_merkle_root = crypto::tree_hash(transaction_hashes.data(), transaction_hashes.size());
-	body_proxy.transaction_count        = transaction_hashes.size();
+	std::vector<Hash> all;
+	all.reserve(transaction_hashes.size() + 1);
+	all.push_back(base_transaction_hash);
+	all.insert(all.end(), transaction_hashes.begin(), transaction_hashes.end());
+	body_proxy.transactions_merkle_root = crypto::tree_hash(all.data(), all.size());
+	body_proxy.transaction_count        = all.size();
 	return body_proxy;
+}
+
+BlockBodyProxy cn::get_body_proxy_from_template(const BlockTemplate &bt) {
+	return cn::get_body_proxy_from_template(get_transaction_hash(bt.base_transaction), bt.transaction_hashes);
 }

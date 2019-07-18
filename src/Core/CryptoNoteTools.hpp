@@ -23,8 +23,14 @@ Hash get_root_block_base_transaction_hash(const RootBaseTransaction &tx);
 void set_root_extra_to_solo_mining_tag(BlockTemplate &block);  // MM headers must still have valid mm_tag if solo mining
 
 void decompose_amount(Amount amount, Amount dust_threshold, std::vector<Amount> *decomposed_amounts);
-size_t get_maximum_tx_size(size_t input_count, size_t output_count, size_t anonymity);
-size_t get_maximum_tx_input_size(size_t anonymity);
+
+// Size is counted with corressponding signatures
+const size_t MIN_NONCOINBASE_TRANSACTION_SIZE = 140;  // It is better to underestimate it
+
+size_t get_maximum_tx_size_amethyst(size_t input_count, size_t output_count, size_t anonymity);
+size_t get_maximum_tx_input_count_amethyst(size_t tx_size, size_t output_count, size_t anonymity);
+size_t get_maximum_tx_size_jade(size_t input_count, size_t output_count, size_t anonymity);
+size_t get_maximum_tx_input_count_jade(size_t tx_size, size_t output_count, size_t anonymity);
 
 Amount get_tx_sum_outputs(const TransactionPrefix &tx);
 Amount get_tx_sum_inputs(const TransactionPrefix &tx);
@@ -44,6 +50,8 @@ Amount get_tx_fee(const TransactionPrefix &tx);
 std::vector<size_t> absolute_output_offsets_to_relative(const std::vector<size_t> &off);
 bool relative_output_offsets_to_absolute(std::vector<size_t> *result, const std::vector<size_t> &off);
 
+BlockBodyProxy get_body_proxy_from_template(
+    const Hash &base_transaction_hash, const std::vector<Hash> &transaction_hashes);
 BlockBodyProxy get_body_proxy_from_template(const BlockTemplate &bt);
 
 }  // namespace cn

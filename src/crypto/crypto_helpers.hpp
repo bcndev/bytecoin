@@ -172,6 +172,7 @@ inline SecretKey sc_invert(const EllipticCurveScalar &sec) {
 	sc_invert(&result, &sec);
 	return result;
 }
+SecretKey sc_from_uint64(uint64_t val);
 
 inline void check_scalar(const EllipticCurveScalar &scalar) {
 	if (!sc_isvalid_vartime(&scalar))

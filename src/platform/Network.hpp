@@ -33,14 +33,51 @@ private:
 };
 
 }  // namespace platform
-#elif defined(__ANDROID__)
+#elif platform_USE_QT
+#include <QObject>
 #include <QTcpSocket>
 #include <QTimer>
+#include <atomic>
 
 namespace platform {
 class EventLoop {
+	//    Q_OBJECT
+	// public:
+	//	EventLoop();
+	//	~EventLoop();
+	//	static EventLoop *current() { return current_loop; }
+	//	static void cancel_current() {}
+	// private:
+	//	static thread_local EventLoop *current_loop;
+};
+class SafeMessage;
+// Nested classes cannot have slots
+class SafeMessageImpl : public QObject {
+	Q_OBJECT
 public:
-	static void cancel_current() {}
+	explicit SafeMessageImpl(SafeMessage *owner);
+	~SafeMessageImpl();
+	platform::SafeMessage *owner;
+	std::atomic<int> counter;
+
+	void close();
+public slots:
+	void handle_event();
+};
+class SafeMessage : private common::Nocopy {
+public:
+	typedef std::function<void()> after_handler;
+
+	explicit SafeMessage(after_handler &&a_handler);
+	~SafeMessage();
+
+	void fire();  // The only method to be called from other threads
+	void cancel();
+
+private:
+	friend class SafeMessageImpl;
+	std::unique_ptr<SafeMessageImpl> impl;
+	after_handler a_handler;
 };
 class Timer : private common::Nocopy {
 public:
@@ -50,6 +87,7 @@ public:
 	~Timer() { cancel(); }
 
 	void once(float after_seconds);  // cancels previous once first
+	bool is_set() const;
 	void cancel();
 
 private:
@@ -84,6 +122,11 @@ private:
 };
 class TCPAcceptor : private common::Nocopy {
 public:
+	class AddressInUse : public std::runtime_error {
+	public:
+		using std::runtime_error::runtime_error;
+	};
+
 	typedef std::function<void()> A_handler;
 
 	explicit TCPAcceptor(const std::string &addr, uint16_t port, A_handler a_handler) : a_handler(a_handler) {}

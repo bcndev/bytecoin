@@ -2,7 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "JsonValue.hpp"
-#include <math.h>
+#include <cmath>
 #include <iomanip>
 #include <iterator>
 #include <limits>
@@ -80,7 +80,6 @@ JsonValue::JsonValue(Type value_type) {
 	default:
 		throw std::runtime_error("Invalid JsonValue type for constructor");
 	}
-
 	type = value_type;
 }
 
@@ -244,21 +243,21 @@ JsonValue &JsonValue::operator=(Bool value) {
 }
 
 JsonValue &JsonValue::operator=(Integer value) {
-	set_number(common::to_string(value));
+	set_number_unchecked(common::to_string(value));
 	return *this;
 }
 
 JsonValue &JsonValue::operator=(Unsigned value) {
-	set_number(common::to_string(value));
+	set_number_unchecked(common::to_string(value));
 	return *this;
 }
 
 JsonValue &JsonValue::operator=(Double value) {
-	set_number(common::to_string(value));
+	set_number_unchecked(common::to_string(value));
 	return *this;
 }
 
-JsonValue &JsonValue::set_number(const std::string &number) {
+JsonValue &JsonValue::set_number_unchecked(const std::string &number) {
 	if (type != STRING && type != NUMBER) {
 		destruct_value();
 		new (&value_string) String(number);
@@ -270,7 +269,7 @@ JsonValue &JsonValue::set_number(const std::string &number) {
 	return *this;
 }
 
-JsonValue &JsonValue::set_number(std::string &&number) {
+JsonValue &JsonValue::set_number_unchecked(std::string &&number) {
 	if (type != STRING && type != NUMBER) {
 		destruct_value();
 		new (&value_string) String(std::move(number));
@@ -280,6 +279,102 @@ JsonValue &JsonValue::set_number(std::string &&number) {
 		type                                     = NUMBER;
 	}
 	return *this;
+}
+
+struct StreamContext2 {
+	const char *it  = nullptr;
+	const char *end = nullptr;
+
+	void throw_error(const std::string &text) { throw std::runtime_error(text); }
+	char read_char() {
+		if (it == end)
+			throw_error("unexpected end of stream");
+		return *it++;
+	}
+	char peek_char() const {
+		if (it == end)
+			return 0;  // Peeking ok, reading is not ok
+		return *it;
+	}
+};
+
+static void split_number_to_parts(const std::string &str,
+    size_t &zpos,
+    std::string &ip,
+    std::string &fp,
+    std::string &ep) {
+	StreamContext2 ctx{str.data(), str.data() + str.size()};
+	auto first_char = ctx.read_char();
+	ip += first_char;
+	zpos = 0;
+	if (first_char == '-') {
+		first_char = ctx.read_char();
+		if (first_char < '0' || first_char > '9')
+			ctx.throw_error("Digit expected");
+		ip += first_char;
+		zpos = 1;
+	} else {
+		if (first_char < '0' || first_char > '9')
+			ctx.throw_error("Digit expected");
+	}
+	// Here first_char is always digit
+	auto i = ctx.peek_char();
+	if (first_char >= '1' && first_char <= '9') {
+		// Whole part
+		while (i >= '0' && i <= '9') {
+			ip += ctx.read_char();
+			i = ctx.peek_char();
+		}
+	}
+	if (i == '.') {
+		ctx.read_char();
+		i = ctx.peek_char();
+		if (i < '0' || i > '9')
+			ctx.throw_error("Digit expected");
+		while (i >= '0' && i <= '9') {
+			fp += ctx.read_char();
+			i = ctx.peek_char();
+		}
+		while (!fp.empty() && fp.back() == '0')
+			fp.pop_back();
+	}
+	if (i == 'e' || i == 'E') {
+		ctx.read_char();
+		i = ctx.peek_char();
+		if (i == '+') {
+			ctx.read_char();
+			i = ctx.peek_char();
+		} else if (i == '-') {
+			ep += ctx.read_char();
+			i = ctx.peek_char();
+		}
+		if (i < '0' || i > '9')
+			ctx.throw_error("Digit expected");
+		while (i >= '0' && i <= '9') {
+			ep += ctx.read_char();
+			i = ctx.peek_char();
+		}
+	}
+	if (ctx.it != ctx.end)
+		ctx.throw_error("Excess characters in number");
+}
+
+JsonValue &JsonValue::set_number(const std::string &number) {
+	std::string ip;
+	std::string fp;
+	std::string ep;
+	size_t zpos = 0;
+	split_number_to_parts(number, zpos, ip, fp, ep);
+	return set_number_unchecked(number);
+}
+
+JsonValue &JsonValue::set_number(std::string &&number) {
+	std::string ip;
+	std::string fp;
+	std::string ep;
+	size_t zpos = 0;
+	split_number_to_parts(number, zpos, ip, fp, ep);
+	return set_number_unchecked(number);
 }
 
 JsonValue &JsonValue::operator=(std::nullptr_t) {
@@ -351,48 +446,104 @@ JsonValue::Bool JsonValue::get_bool() const {
 	return value_bool;
 }
 
+template<class T>
+T get_integer_impl(const std::string &str, double mi, double ma_plus_1) {
+	try {
+		return common::integer_cast<T>(str);
+	} catch (const std::exception &) {
+	}
+	double value_real = 0;
+	size_t pos        = 0;
+	try {
+		value_real = std::stod(str, &pos);
+	} catch (const std::exception &ex) {
+		throw std::out_of_range("Json number (" + str + ") can not be converted because " + common::what(ex));
+	}
+	if (has_tail(str, pos))
+		throw std::out_of_range("Json number (" + str + ") can not be converted");
+	if (std::isinf(value_real) || std::isnan(value_real))
+		throw std::runtime_error("Json number (" + str + ") must not be inf or nan");
+	double intpart   = 0;
+	double fractpart = modf(value_real, &intpart);
+	if (fractpart != 0)
+		throw std::runtime_error("Json number (" + str + ") must be integer");
+	if (std::isless(value_real, mi) || std::isgreaterequal(value_real, ma_plus_1))
+		throw std::runtime_error("Json number (" + str + ") must be in range [" +
+		                         common::to_string(std::numeric_limits<T>::min()) + ".." +
+		                         common::to_string(std::numeric_limits<T>::max()) + "]");
+	return static_cast<T>(value_real);  // Hopefully no undefined behaviour here
+}
+
+template<class T>
+T get_integer_impl2(const std::string &str) {
+	try {
+		// Most integers are integers, fast path
+		return common::integer_cast<T>(str);
+	} catch (const std::exception &) {
+	}
+	// But if not, we try maximally adhere to standard.
+	// We parse example values below as integers without losing precision
+	// 20000000000000000000000000000000E-31
+	// 0.000000000000000000000000000000003E33
+	// 92233720368547758060E-1
+	// 0.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001811234E206
+	try {
+		std::string ip;
+		std::string fp;
+		std::string ep;
+		size_t zpos = 0;  // fast detect of ip == "0" || ip == "-0"
+		split_number_to_parts(str, zpos, ip, fp, ep);
+		if (!ep.empty()) {
+			int ex = common::integer_cast<int>(ep);
+			// If fp not empty or number is zero, cannot shift right
+			if (fp.empty() && (ip.size() != zpos + 1 || ip[zpos] != '0')) {
+				for (; ex < 0; ++ex) {
+					// Can only shift if right digit is zero
+					if (ip.empty() || ip.back() != '0')
+						throw std::runtime_error("Number must be whole");
+					ip.pop_back();
+				}
+			}
+			for (; ex > 0; --ex) {
+				if (!fp.empty()) {
+					// If ip is zero, replace right digit with fractional digit
+					if (ip.size() == zpos + 1 && ip[zpos] == '0')
+						ip.pop_back();
+					ip.push_back(fp[0]);
+					fp.erase(fp.begin());
+				} else {
+					// If ip is zero and fp empty, result is zero
+					if (ip.size() == zpos + 1 && ip[zpos] == '0')
+						break;
+					ip.push_back('0');
+				}
+				if (ip.size() > 100)  // Arbitrary limit to stop loop
+					throw std::runtime_error("Number too large");
+			}
+		}
+		if (!fp.empty())
+			throw std::runtime_error("Number must be whole");
+		if (ip == "-0")
+			ip = "0";
+		return common::integer_cast<T>(ip);
+	} catch (const std::exception &ex) {
+		throw std::out_of_range("Json number (" + str + ") can not be converted because " + common::what(ex));
+	}
+}
 JsonValue::Integer JsonValue::get_integer() const {
 	if (type != NUMBER)
 		throw std::runtime_error("JsonValue type is not NUMBER");
 	const auto &s = reinterpret_cast<const String &>(value_string);
-	try {
-		return common::integer_cast<Integer>(s);
-	} catch (const std::exception &) {
-	}
-	double value_real = 0;
-	std::istringstream{s} >> value_real;
-	double intpart   = 0;
-	double fractpart = modf(value_real, &intpart);
-	if (fractpart != 0)
-		throw std::runtime_error("Json number (" + s + ") must be integer");
-	auto result = static_cast<Integer>(value_real);
-	if (value_real != result)
-		throw std::runtime_error("Json number (" + s + ") must be in range [" +
-		                         common::to_string(std::numeric_limits<Integer>::min()) + ".." +
-		                         common::to_string(std::numeric_limits<Integer>::max()) + "]");
-	return result;
+	//	return get_integer_impl<JsonValue::Integer>(s, -9223372036854775808.0, 9223372036854775808.0);
+	return get_integer_impl2<JsonValue::Integer>(s);
 }
 
 JsonValue::Unsigned JsonValue::get_unsigned() const {
 	if (type != NUMBER)
 		throw std::runtime_error("JsonValue type is not NUMBER");
 	const auto &s = reinterpret_cast<const String &>(value_string);
-	try {
-		return common::integer_cast<Unsigned>(s);
-	} catch (const std::exception &) {
-	}
-	double value_real = 0;
-	std::istringstream{s} >> value_real;
-	double intpart   = 0;
-	double fractpart = modf(value_real, &intpart);
-	if (fractpart != 0)
-		throw std::runtime_error("Json number (" + s + ") must be integer");
-	auto result = static_cast<Unsigned>(value_real);
-	if (value_real != result)
-		throw std::runtime_error("Json number (" + s + ") must be in range [" +
-		                         common::to_string(std::numeric_limits<Unsigned>::min()) + ".." +
-		                         common::to_string(std::numeric_limits<Unsigned>::max()) + "]");
-	return result;
+	//	return get_integer_impl<JsonValue::Unsigned>(s, 0, 18446744073709551616.0);
+	return get_integer_impl2<JsonValue::Unsigned>(s);
 }
 
 JsonValue::Object &JsonValue::get_object() {
@@ -410,9 +561,16 @@ const JsonValue::Object &JsonValue::get_object() const {
 JsonValue::Double JsonValue::get_double() const {
 	if (type != NUMBER)
 		throw std::runtime_error("JsonValue type is not NUMBER");
-	const auto &s     = reinterpret_cast<const String &>(value_string);
+	const auto &str   = reinterpret_cast<const String &>(value_string);
 	double value_real = 0;
-	std::istringstream{s} >> value_real;
+	size_t pos        = 0;
+	try {
+		value_real = std::stod(str, &pos);
+	} catch (const std::exception &ex) {
+		throw std::out_of_range("Json number (" + str + ") can not be converted because " + common::what(ex));
+	}
+	if (has_tail(str, pos))
+		throw std::out_of_range("Json number (" + str + ") can not be converted");
 	return value_real;
 }
 
@@ -598,9 +756,9 @@ char JsonValue::StreamContext::read_char() {
 	return c;
 }
 
-char JsonValue::StreamContext::peek_char() {
+char JsonValue::StreamContext::peek_char() const {
 	if (it == end)
-		throw_error("unexpected end of stream");
+		return 0;  // Peeking ok, reading is not ok
 	return *it;
 }
 
@@ -718,7 +876,7 @@ std::string JsonValue::StreamContext::read_string_token() {
 		value += c;
 	}
 	throw_error("end of stream inside string");
-	return std::string();
+	return std::string{};
 }
 
 void JsonValue::read_json(size_t level, StreamContext &ctx) {
@@ -751,6 +909,7 @@ void JsonValue::destruct_value() {
 	case OBJECT:
 		reinterpret_cast<Object *>(&value_object)->~Object();
 		break;
+	case NUMBER:
 	case STRING:
 		reinterpret_cast<String *>(&value_string)->~String();
 		break;
@@ -810,62 +969,54 @@ void JsonValue::read_null(StreamContext &ctx) {
 	destruct_value();
 }
 
-void JsonValue::read_number(StreamContext &ctx, char c) {
+void JsonValue::read_number(StreamContext &ctx, char first_char) {
 	std::string text;
-	text += c;
-	size_t dots = 0;
-	for (;;) {
-		int i = ctx.peek_char();
-		if (i >= '0' && i <= '9') {
-			c = ctx.read_char();
-			text += c;
-		} else if (i == '.') {
-			c = ctx.read_char();
-			text += '.';
-			++dots;
-		} else {
-			break;
+	text += first_char;
+	if (first_char == '-') {
+		first_char = ctx.read_char();
+		if (first_char < '0' || first_char > '9')
+			ctx.throw_error("Digit expected");
+		text += first_char;
+	}
+	// Here first_char is always digit
+	auto i = ctx.peek_char();
+	if (first_char >= '1' && first_char <= '9') {
+		// Whole part
+		while (i >= '0' && i <= '9') {
+			text += ctx.read_char();
+			i = ctx.peek_char();
 		}
 	}
-
-	char pee = ctx.peek_char();
-	if (dots > 0 || pee == 'e' || pee == 'E') {
-		if (dots > 1) {
-			ctx.throw_error("More than one '.' in a number");
+	if (i == '.') {
+		text += ctx.read_char();
+		i = ctx.peek_char();
+		if (i < '0' || i > '9')
+			ctx.throw_error("Digit expected");
+		while (i >= '0' && i <= '9') {
+			text += ctx.read_char();
+			i = ctx.peek_char();
 		}
-		if (pee == 'e' || pee == 'E') {
-			c = ctx.read_char();
-			text += c;
-			int i = ctx.peek_char();
-			if (i == '+') {
-				c = ctx.read_char();
-				text += c;
-				i = ctx.peek_char();
-			} else if (i == '-') {
-				c = ctx.read_char();
-				text += c;
-				i = ctx.peek_char();
-			}
-
-			if (i < '0' || i > '9')
-				ctx.throw_error("Digit expected");
-
-			do {
-				c = ctx.read_char();
-				text += c;
-				i = ctx.peek_char();
-			} while (i >= '0' && i <= '9');
-		}
-		destruct_value();
-		new (&value_string) String(text);
-		type = NUMBER;
-	} else {
-		if (text.size() > 1 && ((text[0] == '0') || (text[0] == '-' && text[1] == '0')))
-			ctx.throw_error("Number expected");
-		destruct_value();
-		new (&value_string) String(text);
-		type = NUMBER;
 	}
+	if (i == 'e' || i == 'E') {
+		text += ctx.read_char();
+		i = ctx.peek_char();
+		if (i == '+') {
+			text += ctx.read_char();
+			i = ctx.peek_char();
+		} else if (i == '-') {
+			text += ctx.read_char();
+			i = ctx.peek_char();
+		}
+		if (i < '0' || i > '9')
+			ctx.throw_error("Digit expected");
+		while (i >= '0' && i <= '9') {
+			text += ctx.read_char();
+			i = ctx.peek_char();
+		}
+	}
+	destruct_value();
+	new (&value_string) String(text);
+	type = NUMBER;
 }
 
 void JsonValue::read_object(size_t level, StreamContext &ctx) {

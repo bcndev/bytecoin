@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <boost/optional.hpp>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -43,6 +42,8 @@ public:
 	uint16_t p2p_bind_port;
 	uint16_t p2p_external_port;
 	std::string p2p_bind_ip;
+	uint8_t p2p_minimum_version;
+
 	std::string multicast_address;
 	uint16_t multicast_port;
 	float multicast_period;
@@ -63,8 +64,7 @@ public:
 	size_t max_undo_transactions_size = 200 * 1000 * 1000;
 	// During very large reorganization, only last transaction within limit will be redone
 
-	// a bit different commit periods to make most commits not simultaneous
-	Timestamp db_commit_period_wallet_cache = 291;
+	Timestamp db_commit_period_wallet_cache = 111;
 	Timestamp db_commit_period_blockchain   = 311;
 	Timestamp db_commit_period_peers        = 60;
 	size_t db_commit_every_n_blocks         = 50000;
@@ -104,7 +104,7 @@ public:
 
 	size_t max_downloading_blocks_from_each_peer = 100;
 	size_t download_window                       = 2000;
-	float download_block_timeout                 = 30.0f;
+	float download_block_timeout                 = 60.0f;
 	float download_transaction_timeout           = 30.0f;
 	float download_chain_timeout                 = 30.0f;
 	float sync_pool_timeout                      = 30.0f;

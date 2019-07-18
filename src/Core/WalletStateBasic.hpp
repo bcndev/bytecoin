@@ -25,7 +25,8 @@ public:
 
 	explicit WalletStateBasic(
 	    logging::ILogger &, const Config &, const Currency &, DB &db, const std::string &cache_name);
-	const Currency &get_currency() const { return m_currency; };
+	const Config &get_config() const { return m_config; }
+	const Currency &get_currency() const { return m_currency; }
 
 	//	bool is_version_compact()const { return m_version_compact; }
 	Hash get_tip_bid() const { return m_tip.hash; }
@@ -43,7 +44,7 @@ public:
 	    bool forward,
 	    size_t desired_tx_count = std::numeric_limits<size_t>::max()) const;  // TODO - remove after testing
 	std::vector<api::Block> api_get_transfers(const std::string &address, Height *from_height, Height *to_height,
-	    bool forward, size_t desired_tx_count = std::numeric_limits<size_t>::max()) const;
+	    bool forward, size_t desired_tx_count = std::numeric_limits<size_t>::max(), bool need_outputs = true) const;
 	virtual std::vector<api::Output> api_get_locked_or_unconfirmed_unspent(
 	    const std::string &address, Height height) const;
 	virtual api::Balance get_balance(const std::string &address, Height height) const;
@@ -68,12 +69,10 @@ public:
 		PublicKey public_key;
 	};
 
-	void db_commit();
+	virtual void db_commit();
 	void test_undo_blocks();
 	void test_print_everything(const std::string &str);
 	static void combine_balance(api::Balance &balance, const api::Output &output, int locked_op, int spendable_op);
-
-	const Config &get_config() const { return m_config; }
 
 protected:
 	const Hash m_genesis_bid;
@@ -108,7 +107,7 @@ protected:
 	void add_transaction(
 	    Height, const Hash &tid, const PreparedWalletTransaction &pwtx, const api::Transaction &ptx) override;
 
-	std::string format_output(const api::Output &output);
+	std::string format_output(const api::Output &output) const;
 
 private:
 	Height m_chain_height = -1;
@@ -127,7 +126,7 @@ private:
 	bool undo_db_state(Height height);
 	static api::BlockHeader fill_genesis(Hash genesis_bid, const BlockTemplate &g);
 
-	// indices implemenation
+	// indexes implemenation
 	bool add_incoming_output(const api::Output &, bool just_unlocked);
 	void modify_balance(const api::Output &output, int locked_op, int spendable_op);
 	// lock/unlock

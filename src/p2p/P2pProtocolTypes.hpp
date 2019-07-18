@@ -16,12 +16,12 @@ using common::NetworkAddress;
 
 typedef uint64_t PeerIdType;
 
-enum P2PProtocolVersion : uint8_t { NO_HANDSHAKE_YET = 0, V1 = 1, AMETHYST = 4 };
+enum P2PProtocolVersion : uint8_t { NO_HANDSHAKE_YET = 0, LEGACY = 1, AMETHYST = 4 };
 // V4 adds several fields/messages and sets strict rules, violating would be BAN.
 
 #pragma pack(push, 1)
 struct UUID {
-	uint8_t data[16];  // TODO - return {} initializer when Google updates NDK compiler
+	uint8_t data[16]{};
 };
 
 struct NetworkAddressLegacy {
@@ -44,7 +44,7 @@ struct PeerlistEntryLegacy {
 #pragma pack(pop)
 
 struct BasicNodeData {
-	UUID network_id{};
+	UUID network_id;
 	uint8_t version      = 0;
 	Timestamp local_time = 0;
 	uint16_t my_port     = 0;  // p2p external port.

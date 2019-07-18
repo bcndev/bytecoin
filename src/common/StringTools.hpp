@@ -64,7 +64,7 @@ inline bool split_string(const std::string &str, const std::string &separator, P
 	return split_string_helper(str, 0, separator, parts...);
 }
 
-inline void to_string_helper(std::stringstream &ss, bool first) {}
+inline void to_string_helper(std::stringstream &, bool) {}
 template<typename T, typename... Parts>
 inline void to_string_helper(std::stringstream &ss, bool first, T &&t, const Parts &... parts) {
 	if (!first)

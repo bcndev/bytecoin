@@ -57,6 +57,7 @@ Config::Config(common::CommandLine &cmd)
     , p2p_bind_port(P2P_DEFAULT_PORT)
     , p2p_external_port(P2P_DEFAULT_PORT)
     , p2p_bind_ip("0.0.0.0")
+    , p2p_minimum_version(P2PProtocolVersion::AMETHYST)
     , multicast_address("239.195.17.131")
     , multicast_port(P2P_DEFAULT_PORT)
     , multicast_period(net == "main" ? 0 : 60.0f)  // No multicast in main net due to anonymity

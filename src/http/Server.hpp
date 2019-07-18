@@ -25,6 +25,30 @@ public:
 
 class Client;
 
+/*
+#if platform_USE_QT
+
+class Client : public QObject {
+    Q_OBJECT
+    bool is_sent = false;
+public:
+    explicit Client();
+    ~Client();
+
+    Q_INVOKABLE void send(const QString & body);
+
+    void write(ResponseBody &&response);
+public signals:
+    void handle_response(int status, const QString & body);
+};
+
+class Server : public QObject {
+    Q_OBJECT
+public slot:
+    void send_request(int cid, const QString & body);
+public:
+#else
+*/
 class Server {
 public:
 	typedef std::function<bool(Client *who, RequestBody &&request, ResponseBody &response)> request_handler;

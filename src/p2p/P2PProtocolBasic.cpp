@@ -30,15 +30,13 @@ levin_pair(void (P2PProtocolBasic::*handler)(Cmd &&)) {
 
 const std::map<std::pair<uint32_t, LevinProtocol::CommandType>,
     std::pair<P2PProtocolBasic::LevinHandlerFunction, size_t>>
-    P2PProtocolBasic::before_handshake_handlers = {levin_pair<p2p::PingLegacy::Request>(&P2PProtocolBasic::msg_ping),
-        levin_pair<p2p::PingLegacy::Response>(&P2PProtocolBasic::msg_ping),
+    P2PProtocolBasic::before_handshake_handlers = {
         levin_pair<p2p::Handshake::Request>(&P2PProtocolBasic::msg_handshake),
         levin_pair<p2p::Handshake::Response>(&P2PProtocolBasic::msg_handshake)};
 
 const std::map<std::pair<uint32_t, LevinProtocol::CommandType>,
     std::pair<P2PProtocolBasic::LevinHandlerFunction, size_t>>
-    P2PProtocolBasic::after_handshake_handlers = {
-        levin_pair<p2p::TimedSync::Request>(&P2PProtocolBasic::msg_timed_sync),
+    P2PProtocolBasic::after_handshake_handlers = {levin_pair<p2p::TimedSync::Notify>(&P2PProtocolBasic::msg_timed_sync),
         levin_pair<p2p::TimedSync::Response>(&P2PProtocolBasic::msg_timed_sync),
 #if bytecoin_ALLOW_DEBUG_COMMANDS
         levin_pair<p2p::GetStatInfo::Request>(&P2PProtocolBasic::on_msg_stat_info),
@@ -46,24 +44,23 @@ const std::map<std::pair<uint32_t, LevinProtocol::CommandType>,
 #endif
         levin_pair<p2p::RelayBlock::Notify>(&P2PProtocolBasic::on_msg_notify_new_block),
         levin_pair<p2p::RelayTransactions::Notify>(&P2PProtocolBasic::on_msg_notify_new_transactions),
-        levin_pair<p2p::SyncPool::Notify>(&P2PProtocolBasic::on_msg_notify_request_tx_pool),
         levin_pair<p2p::SyncPool::Request>(&P2PProtocolBasic::on_msg_notify_request_tx_pool),
         levin_pair<p2p::SyncPool::Response>(&P2PProtocolBasic::on_msg_notify_request_tx_pool),
-        levin_pair<p2p::GetChainRequest::Notify>(&P2PProtocolBasic::on_msg_notify_request_chain),
-        levin_pair<p2p::GetChainResponse::Notify>(&P2PProtocolBasic::on_msg_notify_request_chain),
+        levin_pair<p2p::GetChain::Request>(&P2PProtocolBasic::on_msg_notify_request_chain),
+        levin_pair<p2p::GetChain::Response>(&P2PProtocolBasic::on_msg_notify_request_chain),
         levin_pair<p2p::Checkpoint::Notify>(&P2PProtocolBasic::on_msg_notify_checkpoint),
-        levin_pair<p2p::GetObjectsRequest::Notify>(&P2PProtocolBasic::on_msg_notify_request_objects),
-        levin_pair<p2p::GetObjectsResponse::Notify>(&P2PProtocolBasic::on_msg_notify_request_objects)};
+        levin_pair<p2p::GetObjects::Request>(&P2PProtocolBasic::on_msg_notify_request_objects),
+        levin_pair<p2p::GetObjects::Response>(&P2PProtocolBasic::on_msg_notify_request_objects)};
 
 P2PProtocolBasic::P2PProtocolBasic(const Config &config, uint64_t my_unique_number, P2PClient *client)
     : P2PProtocol(client)
-    , no_incoming_timer([this]() { disconnect(std::string()); })
+    , no_incoming_timer([this]() { disconnect(std::string{}); })
     , no_outgoing_timer(std::bind(&P2PProtocolBasic::send_timed_sync, this))
     , my_unique_number(my_unique_number)
     , config(config) {}
 
 void P2PProtocolBasic::send_timed_sync() {
-	p2p::TimedSync::Request req;
+	p2p::TimedSync::Notify req;
 	req.payload_data = get_my_sync_data();
 
 	BinaryArray msg = LevinProtocol::send(req);
@@ -128,13 +125,9 @@ size_t P2PProtocolBasic::on_parse_header(common::CircularBuffer &buffer, BinaryA
 			throw std::runtime_error("202 Expecting handshake or ping");
 		max_size = ha->second.second;
 	} else {
-		if (peer_version < P2PProtocolVersion::AMETHYST)  // Legacy rules are very primitive
-			max_size = p2p::LEVIN_DEFAULT_MAX_PACKET_SIZE;
-		else {
-			auto ha = after_handshake_handlers.find({command, command_type});
-			if (ha != after_handshake_handlers.end())
-				max_size = ha->second.second;
-		}
+		auto ha = after_handshake_handlers.find({command, command_type});
+		if (ha != after_handshake_handlers.end())
+			max_size = ha->second.second;
 	}
 	if (size > max_size)
 		throw std::runtime_error("Command too big cmd=" + common::to_string(command) +
@@ -153,13 +146,20 @@ void P2PProtocolBasic::msg_handshake(p2p::Handshake::Request &&req) {
 			return;
 		}
 	}
+	if (req.node_data.version < config.p2p_minimum_version) {
+		disconnect("202 old version");
+		return;
+	}
 	// on self-connect, incoming side replies so that outgoing side can add to ban
 	p2p::Handshake::Response msg;
 	msg.payload_data   = get_my_sync_data();
 	msg.node_data      = get_my_node_data();
-	msg.local_peerlist = get_peers_to_share(true);
-	if (msg.local_peerlist.size() > p2p::Handshake::Response::MAX_PEER_COUNT)
-		msg.local_peerlist.resize(p2p::Handshake::Response::MAX_PEER_COUNT);
+	msg.local_peerlist = get_legacy_peers_to_share();
+	if (msg.local_peerlist.size() > p2p::Handshake::Response::MAX_SEND_PEER_COUNT)
+		msg.local_peerlist.resize(p2p::Handshake::Response::MAX_SEND_PEER_COUNT);
+	msg.peerlist = get_peers_to_share();
+	if (msg.peerlist.size() > p2p::Handshake::Response::MAX_SEND_PEER_COUNT)
+		msg.peerlist.resize(p2p::Handshake::Response::MAX_SEND_PEER_COUNT);
 
 	BinaryArray raw_msg = LevinProtocol::send(msg);
 	send(std::move(raw_msg));
@@ -182,62 +182,24 @@ void P2PProtocolBasic::msg_handshake(p2p::Handshake::Response &&req) {
 	if (req.node_data.peer_id == my_unique_number)
 		return disconnect("203 self-connect");
 	peer_version = req.node_data.version;
-	if (peer_version >= P2PProtocolVersion::AMETHYST &&
-	    req.local_peerlist.size() > p2p::Handshake::Response::MAX_PEER_COUNT)
+	if (req.local_peerlist.size() > p2p::Handshake::Response::MAX_PEER_COUNT)
+		return disconnect("204 max_local_peer_count");
+	if (req.peerlist.size() > p2p::Handshake::Response::MAX_PEER_COUNT)
 		return disconnect("204 max_peer_count");
 	peer_unique_number = req.node_data.peer_id;
 	set_peer_sync_data(req.payload_data);
 	std::cout << "P2p p2p::Handshake response version=" << int(req.node_data.version)
 	          << " unique_number=" << req.node_data.peer_id << " current_height=" << req.payload_data.current_height
-	          << " local_peerlist.size=" << req.local_peerlist.size() << " from " << get_address() << std::endl;
+	          << " local_peerlist.size=" << req.local_peerlist.size() << " peerlist.size=" << req.peerlist.size()
+	          << " from " << get_address() << std::endl;
 	on_msg_handshake(std::move(req));
 }
-void P2PProtocolBasic::msg_ping(p2p::PingLegacy::Request &&req) {
-	if (!is_incoming()) {
-		disconnect("p2p::PingLegacy from outgoing node");
-		return;
-	}
-	p2p::PingLegacy::Response msg;
-	msg.status  = p2p::PingLegacy::status_ok();
-	msg.peer_id = my_unique_number;
 
-	BinaryArray raw_msg = LevinProtocol::send(msg);
-	send(std::move(raw_msg));
-	send_shutdown();
-	std::cout << "P2p PING" << std::endl;
-	on_msg_ping(std::move(req));
-}
-void P2PProtocolBasic::msg_ping(p2p::PingLegacy::Response &&req) {
-	if (is_incoming()) {
-		disconnect("p2p::PingLegacy response from incoming node");
-		return;
-	}
-	std::cout << "P2p PONG" << std::endl;
-	on_msg_ping(std::move(req));
-}
-void P2PProtocolBasic::msg_timed_sync(p2p::TimedSync::Request &&req) {
-	//	std::cout << "P2p p2p::TimedSync request height=" << req.payload_data.current_height << std::endl;
-	set_peer_sync_data(req.payload_data);
-
-	p2p::TimedSync::Response msg;
-	msg.payload_data   = get_my_sync_data();
-	msg.local_time     = get_local_time();
-	msg.local_peerlist = get_peers_to_share(false);
-	if (msg.local_peerlist.size() > p2p::TimedSync::Response::MAX_PEER_COUNT)
-		msg.local_peerlist.resize(p2p::TimedSync::Response::MAX_PEER_COUNT);
-
-	BinaryArray raw_msg = LevinProtocol::send(msg);
-	send(std::move(raw_msg));
-	on_msg_timed_sync(std::move(req));
-}
-void P2PProtocolBasic::msg_timed_sync(p2p::TimedSync::Response &&req) {
-	//	std::cout << "P2p p2p::TimedSync response height=" << req.payload_data.current_height << std::endl;
-	if (peer_version >= P2PProtocolVersion::AMETHYST &&
-	    req.local_peerlist.size() > p2p::TimedSync::Response::MAX_PEER_COUNT)
-		return disconnect("204 max_peer_count");
+void P2PProtocolBasic::msg_timed_sync(p2p::TimedSync::Notify &&req) {
 	set_peer_sync_data(req.payload_data);
 	on_msg_timed_sync(std::move(req));
 }
+void P2PProtocolBasic::msg_timed_sync(p2p::TimedSync::Response &&req) {}
 
 void P2PProtocolBasic::on_request_ready(BinaryArray &&header, BinaryArray &&body) {
 	try {

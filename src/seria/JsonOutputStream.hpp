@@ -15,7 +15,7 @@ protected:
 	bool numbers_as_strings = false;
 
 public:
-	JsonOutputStream() : ISeria(false) {}
+	JsonOutputStream() : ISeria(false, true) {}
 	void set_numbers_as_strings(bool v) { numbers_as_strings = v; }
 };
 

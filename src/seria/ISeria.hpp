@@ -25,14 +25,17 @@ namespace seria {
 class ISeria;
 
 class ISeria {
-	bool is_input_value;  // optimization
 protected:
-	explicit ISeria(bool iv) : is_input_value(iv) {}
+	bool is_input_value;  // optimization
+	bool is_json_value;   // sometimes we wish different behavior
+
+	explicit ISeria(bool iv, bool ij) : is_input_value(iv), is_json_value(ij) {}
 
 public:
 	virtual ~ISeria() = default;
 
 	bool is_input() const { return is_input_value; }
+	bool is_json() const { return is_json_value; }
 
 	virtual bool begin_object()                                     = 0;
 	virtual void object_key(common::StringView name, bool optional) = 0;
@@ -153,19 +156,26 @@ bool ser(T &value, ISeria &s, Context... context) {
 }
 template<typename Cont, typename... Context>
 bool seria_container(Cont &value, ISeria &s, Context... context) {
-	size_t size = value.size();
-	bool result = s.begin_array(size);
-	if (s.is_input())
-		value.resize(size);
+	size_t size    = value.size();
+	bool result    = s.begin_array(size);
 	size_t counter = 0;
-	for (auto &item : value) {
-		try {
-			ser(const_cast<typename Cont::value_type &>(item), s, context...);
-		} catch (const std::exception &) {
-			std::throw_with_nested(
-			    std::runtime_error("Error while serializing array element #" + common::to_string(counter)));
+	try {
+		if (s.is_input()) {
+			value.clear();
+			for (; counter != size; ++counter) {
+				typename Cont::value_type item{};
+				ser(item, s, context...);
+				value.push_back(std::move(item));
+			}
+		} else {
+			for (auto &item : value) {
+				ser(const_cast<typename Cont::value_type &>(item), s, context...);
+				counter += 1;
+			}
 		}
-		counter += 1;
+	} catch (const std::exception &) {
+		std::throw_with_nested(
+		    std::runtime_error("Error while serializing array element #" + common::to_string(counter)));
 	}
 	s.end_array();
 	return result;
@@ -194,7 +204,7 @@ bool seria_map_string(MapT &value, ISeria &s, Context... context) {
 				std::throw_with_nested(std::runtime_error("Error while serializing map key #" + common::to_string(i)));
 			}
 			try {
-				typename MapT::mapped_type v;
+				typename MapT::mapped_type v{};
 				ser(v, s, context...);
 				value.insert(std::make_pair(std::move(k), std::move(v)));
 			} catch (const std::exception &) {
@@ -225,7 +235,7 @@ bool seria_map_integral(MapT &value, ISeria &s, std::true_type, Context... conte
 	if (s.is_input()) {
 		for (size_t i = 0; i != size; ++i) {
 			std::string key;
-			typename MapT::key_type k;
+			typename MapT::key_type k{};
 			try {
 				s.next_map_key(key);
 				k = static_cast<typename MapT::key_type>(common::stoll(key));
@@ -235,7 +245,7 @@ bool seria_map_integral(MapT &value, ISeria &s, std::true_type, Context... conte
 			}
 			// We use widest possible conversion because no generic function provided in C++
 			try {
-				typename MapT::mapped_type v;
+				typename MapT::mapped_type v{};
 				ser(v, s, context...);
 				value.insert(std::make_pair(k, std::move(v)));
 			} catch (const std::exception &) {
@@ -267,7 +277,7 @@ bool seria_map_integral(MapT &value, ISeria &s, std::false_type, Context... cont
 	if (s.is_input()) {
 		for (size_t i = 0; i != size; ++i) {
 			std::string key;
-			typename MapT::key_type k;
+			typename MapT::key_type k{};
 			try {
 				s.next_map_key(key);
 				if (!common::pod_from_hex(key, &k))
@@ -279,7 +289,7 @@ bool seria_map_integral(MapT &value, ISeria &s, std::false_type, Context... cont
 			}
 			// We use widest possible conversion because no generic function provided in C++
 			try {
-				typename MapT::mapped_type v;
+				typename MapT::mapped_type v{};
 				ser(v, s, context...);
 				value.insert(std::make_pair(std::move(k), std::move(v)));
 			} catch (const std::exception &) {
@@ -310,7 +320,7 @@ bool seria_set(SetT &value, ISeria &s) {
 	bool result = s.begin_array(size);
 	if (s.is_input()) {
 		for (size_t i = 0; i != size; ++i) {
-			typename SetT::value_type key;
+			typename SetT::value_type key{};
 			try {
 				ser(key, s);
 				value.insert(std::move(key));

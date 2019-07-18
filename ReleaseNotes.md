@@ -1,5 +1,32 @@
 ## Release Notes
 
+### v3.5.1 (Beryl)
+
+- Fixed bug when `walletd` will not sync after being unable to contact `bytecoind` for a long time.
+- Fixed rare bug when exported view wallet contained wrong view secrets signature.
+- Fixed bug when instead of error message, empty send proof was generated for address not used in particular transaction. Such proofs are invalid so this did not lead to any security issues.
+- Fixed bug when `walletd` sometimes included no block information for unlocked outputs in `get_transfers` JSON RPC call. This affected only clients who inspected per-block `unlocked_transfers`, but not `unlocked_transfers` array returned for the request as a whole.
+- Fixed problem when during `sync_blocks` excess block was returned at the start of the response. This could lead to endless sync loop if this block size was larger that `max_size` limit set by caller, because only that block would be returned again and again.
+- Removed addresses from wallet cache for amethyst wallets
+- `walletd` can now export view-only wallet without ability to view outgoing addresses from a view-wallet with such capability.
+- `tx_pool_version` is no more reset to `0` on block change, but steadily increases on each pool modification. Ir prevents some very rare race conditions between APi users and daemons.
+
+*Security-related changes*
+- Lots of code reorganisation to remove false positives from clang static analyser.
+- Several potential undefined behaviours fixed, related to forgetting to initialise values of primitive types in templates.
+- Potential floating-point undefined behaviour fixed.
+- Several additional checks added to P2P commands parsing.
+- Potential crash in groestl hash implementation fixed.
+- Connections using legacy P2P version (and legacy commands) prohibited, effectively enabling much stricter consensus rules for P2P (such as hard limits on size of all commands), hardening against potential attacks.
+- Security options (non-executable stack, position-independent-binary, non-writable relocation table) for binaries enabled by default on Linux.
+- Tiny memory leak fixed.
+
+*Incompatible API changes*
+- `get_transfers` and `get_transaction` `walletd` methods do not return outputs in transfers by default (they are large and very rarely needed). If you need outputs, you should set `need_outputs` parameter to true.
+- `outputs` field is now optional in transfer in all contexts.
+- `public_key` field is now optional in transaction in all contexts (motivation - amethyst transactions contain no public key)
+- `extra` field is now optional in transaction in all contexts (motivation - after removing public key from extra, it is empty for most transactions)
+
 ### v3.5.0 (Beryl)
 
 *API tweaks*

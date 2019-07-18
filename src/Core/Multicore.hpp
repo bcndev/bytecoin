@@ -32,8 +32,13 @@ class BlockPreparatorMulticore {
 	//	std::condition_variable prepared_blocks_ready;
 	bool quit = false;
 
-	std::deque<std::tuple<Hash, bool, RawBlock>> work;
-	std::map<Hash, PreparedBlock> prepared_blocks;
+	struct WorkItem {
+		Hash hash;
+		bool check_pow = false;
+		RawBlock rb;
+	};
+	std::deque<WorkItem> work;
+	std::map<Hash, boost::variant<ConsensusError, PreparedBlock>> prepared_blocks;
 
 	void thread_run();
 
@@ -42,50 +47,44 @@ public:
 	~BlockPreparatorMulticore();
 
 	void add_block(Hash bid, bool check_pow, RawBlock &&rb);
-	bool get_prepared_block(Hash bid, PreparedBlock *pb);
+	bool get_prepared_block(Hash bid, boost::variant<ConsensusError, PreparedBlock> *pb);
 	bool has_prepared_block(Hash bid) const;
 };
 
-struct RingSignatureArg {
-	Hash tx_prefix_hash;
-	Height newest_referenced_height = 0;
-	KeyImage key_image;
-	std::vector<PublicKey> output_keys;
-	RingSignature input_signature;
-};
-
-struct RingSignatureArgA {
+struct RingSignatureCheckArgs {
 	Hash tx_prefix_hash;
 	Height newest_referenced_height = 0;
 	std::vector<KeyImage> key_images;
-	std::vector<PublicKey> ps;
 	std::vector<std::vector<PublicKey>> output_keys;
-	RingSignatureAmethyst input_signature;
+	std::vector<std::vector<PublicKey>> amount_commitments;
+	std::vector<std::vector<Amount>> amounts;
+	TransactionSignatures signatures;
+
+	bool check() const;
 };
 
 class RingCheckerMulticore {
 	std::vector<std::thread> threads;
-	mutable std::mutex mu;
+	size_t total_counter = 0;
+
+	mutable std::mutex mu;  // everything below is protected by mutex
 	mutable std::condition_variable have_work;
 	mutable std::condition_variable result_ready;
 	bool quit = false;
 
-	size_t total_counter = 0;
 	size_t ready_counter = 0;
 	std::vector<ConsensusErrorBadOutputOrSignature> errors;
 
-	std::deque<RingSignatureArg> args;
-	std::deque<RingSignatureArgA> argsa;
-	int work_counter = 0;
+	std::deque<RingSignatureCheckArgs> work;
+	int batch_counter = 0;
 	void thread_run();
 
 public:
 	RingCheckerMulticore();
 	~RingCheckerMulticore();
-	void cancel_work();
-	void start_work(IBlockChainState *state, const Currency &currency, const Block &block, Height unlock_height,
-	    Timestamp block_timestamp, Timestamp block_median_timestamp);  // can throw ConsensusError immediately
-	std::vector<ConsensusErrorBadOutputOrSignature> move_errors();
+	void start_batch();
+	void add_work(RingSignatureCheckArgs &&args);
+	std::vector<ConsensusErrorBadOutputOrSignature> move_batch_errors();
 };
 
 }  // namespace cn

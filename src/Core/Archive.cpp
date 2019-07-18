@@ -27,7 +27,7 @@ Archive::Archive(bool read_only, const std::string &path) : m_read_only(read_onl
 	try {
 		m_db = std::make_unique<DB>(read_only ? platform::O_READ_EXISTING : platform::O_OPEN_ALWAYS, path);
 		if (!m_db->get("$unique_id", m_unique_id)) {
-			DB::Cursor cur = m_db->begin(std::string());
+			DB::Cursor cur = m_db->begin(std::string{});
 			if (!cur.end())
 				throw std::runtime_error("Archive database format unknown version, please delete " + m_db->get_path());
 			m_unique_id = common::pod_to_hex(crypto::rand<crypto::Hash>());

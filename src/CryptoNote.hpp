@@ -74,7 +74,7 @@ typedef boost::variant<OutputKey> TransactionOutput;
 struct TransactionPrefix {
 	// version is serialized as varint, but value > 127 will throw on parsing
 	uint8_t version                            = 0;
-	BlockOrTimestamp unlock_block_or_timestamp = 0;  // In boron, only 1st output is locked
+	BlockOrTimestamp unlock_block_or_timestamp = 0;  // In jade, only 1st output is locked
 	std::vector<TransactionInput> inputs;
 	std::vector<TransactionOutput> outputs;
 	BinaryArray extra;
@@ -116,9 +116,11 @@ struct BlockHeader {
 	Hash previous_block_hash;
 	BinaryArray nonce;  // 4 bytes, except in blocks with is_cm_mined() (variable-length there)
 
-	RootBlock root_block;                                   // For block with is_merge_mined() true
+	RootBlock root_block;  // For block with is_merge_mined() true
+#if bytecoin_ALLOW_CM
 	std::vector<crypto::CMBranchElement> cm_merkle_branch;  // For blocks with is_cm_mined() true
-	bool is_cm_mined() const { return major_version == 5; }
+	bool is_cm_mined() const { return major_version == 6; }
+#endif
 	bool is_merge_mined() const { return major_version == 2 || major_version == 3 || major_version == 4; }
 };
 
@@ -257,18 +259,18 @@ void ser_members(cn::AccountAddressAmethyst &v, ISeria &s);
 void ser_members(cn::SendproofLegacy &v, ISeria &s);
 void ser_members(cn::SendproofAmethyst::Element &v, ISeria &s);
 void ser_members(cn::SendproofAmethyst &v, ISeria &s);
-void ser_members(cn::TransactionInput &v, ISeria &s);
-void ser_members(cn::TransactionOutput &v, ISeria &s, bool is_tx_amethyst);
+void ser_members(cn::TransactionInput &v, ISeria &s, uint8_t transaction_version);
+void ser_members(cn::TransactionOutput &v, ISeria &s, uint8_t transaction_version);
 
 void ser_members(cn::InputCoinbase &v, ISeria &s);
-void ser_members(cn::InputKey &v, ISeria &s);
+void ser_members(cn::InputKey &v, ISeria &s, uint8_t transaction_version);
 void ser_members(cn::RingSignatures &v, ISeria &s);
 void ser_members(cn::RingSignatureAmethyst &v, ISeria &s);
 
 void ser_members(cn::RingSignatureAmethyst &v, ISeria &s, const cn::TransactionPrefix &prefix);
 void ser_members(cn::TransactionSignatures &v, ISeria &s, const cn::TransactionPrefix &prefix);
 
-void ser_members(cn::OutputKey &v, ISeria &s, bool is_tx_amethyst);
+void ser_members(cn::OutputKey &v, ISeria &s, uint8_t transaction_version);
 
 void ser_members(cn::TransactionPrefix &v, ISeria &s, bool is_root = false);
 void ser_members(cn::RootBaseTransaction &v, ISeria &s);

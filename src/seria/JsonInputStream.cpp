@@ -15,7 +15,7 @@ using common::JsonValue;
 using namespace seria;
 
 JsonInputStreamValue::JsonInputStreamValue(const common::JsonValue &root_value, bool allow_unused_object_keys)
-    : root_value(root_value), allow_unused_object_keys(allow_unused_object_keys) {}
+    : ISeria(true, true), root_value(root_value), allow_unused_object_keys(allow_unused_object_keys) {}
 
 void JsonInputStreamValue::object_key(common::StringView name, bool optional) {
 	const JsonValue *parent = chain.back();
@@ -176,7 +176,7 @@ const JsonValue *JsonInputStreamValue::get_value() {
 		return nullptr;
 	const JsonValue &val = *chain.back();
 	if (val.is_array())
-		return &val[idxs.back()++];
+		return &val[idxs.back()++];  // [] is checked
 	auto ret         = object_key_value;
 	object_key_value = nullptr;
 	return ret;

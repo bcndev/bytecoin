@@ -9,6 +9,8 @@
 #include "common/Invariant.hpp"
 #include "common/exception.hpp"
 #include "platform/Network.hpp"
+#include "seria/BinaryInputStream.hpp"
+#include "seria/BinaryOutputStream.hpp"
 
 #ifdef __EMSCRIPTEN__
 
@@ -18,39 +20,18 @@
 static http::Server *global_server = nullptr;
 // If we later need more than 1, we will make a map of port->servers
 
-/*
-extern "C" {
-void cn_http_server_reply(int handle, const char * body) {}
-
-void EMSCRIPTEN_KEEPALIVE cn_http_server_call(int handle, const char * method, const char * uri, const char * body) {
-    std::cout << "cn_http_server_call " << handle << " " << std::string(method) << " " << std::string(uri) << std::endl;
-    http::RequestBody req;
-    req.r.http_version_major = 1;
-    req.r.http_version_minor = 1;
-    req.r.method = method;
-    req.r.uri = uri;
-    req.body = body;
-    global_server->global_request(handle, std::move(req));
-}
-void EMSCRIPTEN_KEEPALIVE cn_http_server_cancel(int handle) {
-    std::cout << "cn_http_server_cancel " << handle << std::endl;
-    global_server->global_disconnect(handle);
-}
-}
-*/
-
 namespace http {
 
 class Client {
 public:
-	explicit Client(emscripten::val &&cb) : cb(std::move(cb)) {}
+	explicit Client(emscripten::val &&cb, size_t handle) : cb(std::move(cb)), handle(handle) {}
 	emscripten::val cb;
+	size_t handle;
 
 	void write(ResponseBody &&response) {
-		//		std::cout << "Client write 1" << std::endl;
+		//		std::cout << "Client write " << handle << std::endl;
 		try {
-			cb(response.r.status, response.body);
-			//			std::cout << "Client write 2" << std::endl;
+			cb(handle, response.r.status, response.body);
 		} catch (...) {
 			// We catch JS errors as ... and ignore them
 			std::cout << "Client::write cb leads to throw/catch" << std::endl;
@@ -61,29 +42,20 @@ public:
 
 }  // namespace http
 
-int cn_http_server_call(std::string method, std::string uri, std::string body, emscripten::val cb) {
-	//	std::cout << "cn_http_server_call " << method << " " << uri << " " << body << std::endl;
-	auto next_client = std::make_unique<http::Client>(std::move(cb));
+void worker_http_request(emscripten::val cb, size_t handle, std::string method, std::string uri, std::string body) {
+	//	std::cout << "worker_http_request " << handle << std::endl;
+
+	auto next_client = std::make_unique<http::Client>(std::move(cb), handle);
 	http::RequestBody req;
 	req.r.http_version_major = 1;
 	req.r.http_version_minor = 1;
 	req.r.method             = std::move(method);
 	req.r.uri                = std::move(uri);
 	req.body                 = std::move(body);
-	http::Client *who        = next_client.get();
 	global_server->global_request(std::move(next_client), std::move(req));
-	return reinterpret_cast<int>(who);
 }
 
-void cn_http_server_cancel(int handle) {
-	//	std::cout << "cn_http_server_cancel " << handle << std::endl;
-	global_server->global_disconnect(reinterpret_cast<http::Client *>(handle));
-}
-
-EMSCRIPTEN_BINDINGS(my_module) {
-	emscripten::function("cn_http_server_call", &cn_http_server_call);
-	emscripten::function("cn_http_server_cancel", &cn_http_server_cancel);
-}
+EMSCRIPTEN_BINDINGS(my_module2) { emscripten::function("worker_http_request", &worker_http_request); }
 
 using namespace http;
 
@@ -113,6 +85,63 @@ void Server::global_request(std::unique_ptr<Client> &&client, RequestBody &&requ
 
 void Server::global_disconnect(Client *client) { on_client_disconnected(client); }
 
+/*
+#elif platform_USE_QT
+
+Client::Client(){
+
+}
+
+void Client::send(const QString & body) {
+    if(is_sent)
+        throw std::runtime_error("You can send each request only once");
+    is_sent = true;
+    global_server->on_client_handle_request(who, std::move(request));
+}
+
+Client::~Client() {
+    global_server->on_client_disconnected(this);
+}
+
+void Client::write(ResponseBody &&response) {
+    std::cout << "Client write 1" << std::endl;
+    try {
+        cb(response.r.status, response.body);
+        std::cout << "Client write 2" << std::endl;
+    } catch (...) {
+        // We catch JS errors as ... and ignore them
+        std::cout << "Client::write cb leads to throw/catch" << std::endl;
+    }
+}
+
+using namespace http;
+
+static http::Server *global_server = nullptr;
+// If we later need more than 1, we will make a map of port->servers
+
+Server::Server(const std::string &address, uint16_t port, request_handler &&r_handler, disconnect_handler &&d_handler)
+    : r_handler(std::move(r_handler)), d_handler(std::move(d_handler)) {
+    if (global_server)
+        throw std::runtime_error("You can have only 1 server for now");
+    global_server = this;
+}
+
+Server::~Server() {
+    if (global_server == this)  // Must be always
+        global_server = nullptr;
+}
+
+void Server::global_request(std::unique_ptr<Client> &&client, RequestBody &&request) {
+    //	std::cout << "global_request 1" << std::endl;
+    Client *who = client.get();
+    //	std::cout << "global_request 2" << std::endl;
+    clients[who] = std::move(client);
+    //	auto who     = next_client.get();
+    //	if (!clients.emplace(handle, std::move(next_client)).second)
+    //		throw std::runtime_error("cn_http_server_call with repeated handle");
+    //	std::cout << "global_request 3" << std::endl;
+}
+*/
 #else
 
 #include "Client.hpp"
@@ -144,7 +173,7 @@ void Server::on_client_handler(Client *who) {
 void Server::accept_all() {
 	if (!la_socket)
 		return;
-	while (true) {
+	while (true) {  // clients.size() < max_incoming_connections
 		if (!next_client) {
 			next_client = std::make_unique<Client>();
 			// We do not know Client * in constructor, so set handlers afterwards
@@ -176,7 +205,7 @@ void Server::on_client_disconnected(Client *who) {
 void Server::on_client_handle_request(Client *who, RequestBody &&request) {
 	ResponseBody response(request.r);
 	response.r.status = 422;
-	response.set_body(std::string());
+	response.set_body(std::string{});
 
 	bool result = true;
 	try {

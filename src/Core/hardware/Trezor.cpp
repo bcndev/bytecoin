@@ -2,6 +2,7 @@
 // Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 #include "Trezor.hpp"
+#include <boost/array.hpp>
 #include <ctime>
 #include <iostream>
 #include "Core/TransactionBuilder.hpp"
@@ -44,7 +45,6 @@ static http::ResponseBody sync_http_request(tcp::socket &socket, const http::Req
 	while (!receiving_body || response.body.size() < response.r.content_length) {
 		boost::array<char, 128> buf;
 		char *ptr = buf.data();
-		boost::system::error_code error;
 
 		size_t len = socket.read_some(boost::asio::buffer(ptr, buf.size()), error);
 		if (error == boost::asio::error::eof)
@@ -142,8 +142,8 @@ void Trezor::add_connected(std::vector<std::unique_ptr<HardwareWallet>> *result)
 			if (s.is_string()) {
 				std::cout << "Trezor device locked, try again or disconnect and reconnect it from USB. path=" << path
 				          << " session=" << s.get_string() << std::endl;
-				auto resp = trezor_post(socket, "/release/" + s.get_string(), "");
-				std::cout << resp.body << std::endl;
+				auto resp2 = trezor_post(socket, "/release/" + s.get_string(), "");
+				std::cout << resp2.body << std::endl;
 			}
 			try {
 				result->emplace_back(std::make_unique<Trezor>(path));

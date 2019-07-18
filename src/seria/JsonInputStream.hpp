@@ -10,13 +10,7 @@
 
 namespace seria {
 
-// Common base for use with dynamic_cast in ser() methods
-class JsonInputStream : public ISeria {
-public:
-	JsonInputStream() : ISeria(true) {}
-};
-
-class JsonInputStreamValue : public JsonInputStream, private common::Nocopy {
+class JsonInputStreamValue : public ISeria, private common::Nocopy {
 public:
 	explicit JsonInputStreamValue(const common::JsonValue &root_value, bool allow_unused_object_keys);
 

@@ -6,9 +6,9 @@
 //#include <cstring>
 //#include <sys/param.h>
 #include <crypto/bernstein/crypto-ops-data.h>
-#include <boost/multiprecision/cpp_int.hpp>
 #include <common/MemoryStreams.hpp>
 #include <fstream>
+#include <iomanip>
 #include <map>
 
 #include "../io.hpp"
@@ -106,7 +106,7 @@ void test_linkable() {
 		throw Error("Uhu");
 }
 
-namespace boron {
+namespace jade {
 
 crypto::P3 gen_u() {
 	crypto::KeccakStream str;
@@ -298,19 +298,19 @@ EllipticCurveScalar small_scalar(uint64_t s) {
 	return result;
 }
 
-}  // namespace boron
+}  // namespace jade
 
-void test_boron() {
-	boron::SVec a{16};
-	boron::SVec b{16};
+void test_jade() {
+	jade::SVec a{16};
+	jade::SVec b{16};
 	for (size_t i = 0; i != a.size(); ++i)
 		a[i] = crypto::random_scalar();
 	for (size_t i = 0; i != b.size(); ++i)
 		b[i] = crypto::random_scalar();
 
-	boron::Proof proof = boron::create_proof(a, b);
-	bool result        = boron::check_proof(proof);
-	std::cout << "boron proof=" << result << std::endl;
+	jade::Proof proof = jade::create_proof(a, b);
+	bool result       = jade::check_proof(proof);
+	std::cout << "jade proof=" << result << std::endl;
 }
 
 PublicKey test_get_H() {
@@ -418,14 +418,14 @@ bool test_generate_ring_signature_amethyst(std::istream &input) {
 	std::vector<KeyImage> images;
 	std::vector<SecretKey> audit_keys;
 	std::vector<SecretKey> spend_keys;
-	std::vector<VarInt> secret_indices_varint;
+	std::vector<VarInt> secret_indexes_varint;
 	RingSignatureAmethyst signature;
 	Hash seed{};  // zeroes
 	get(input, prefix_hash);
-	input >> inputs >> images >> audit_keys >> spend_keys >> secret_indices_varint >> signature;
-	std::vector<size_t> secret_indices(secret_indices_varint.begin(), secret_indices_varint.end());
+	input >> inputs >> images >> audit_keys >> spend_keys >> secret_indexes_varint >> signature;
+	std::vector<size_t> secret_indexes(secret_indexes_varint.begin(), secret_indexes_varint.end());
 	auto actual =
-	    generate_ring_signature_amethyst(prefix_hash, images, inputs, spend_keys, audit_keys, secret_indices, &seed);
+	    generate_ring_signature_amethyst(prefix_hash, images, inputs, spend_keys, audit_keys, secret_indexes, &seed);
 	bool result = (signature.c0 == actual.c0) && (signature.ra == actual.ra) && (signature.rs == actual.rs) &&
 	              (signature.rr == actual.rr) && (signature.pp == actual.pp);
 	return result;
@@ -694,7 +694,7 @@ void test_crypto(const std::string &test_vectors_folder,
     const std::vector<std::string> &selected_test_cases = std::vector<std::string>(),
     const std::string &test_results_log = "", const bool break_on_failure = false) {
 	//	test_fe();
-	//	test_beryl();
+	//	test_jade();
 
 	std::map<std::string, test_case> test_function;
 	test_function["elligator"]                            = test_elligator;

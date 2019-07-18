@@ -88,7 +88,7 @@ UnicodeConsoleSetup::~UnicodeConsoleSetup() {
 int UnicodeConsoleSetup::sync() {
 	printf("%s", str().c_str());
 	fflush(stdout);
-	str(std::string());
+	str(std::string{});
 	return 0;
 }
 bool UnicodeConsoleSetup::getline(std::string &line, bool hide_input) {

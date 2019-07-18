@@ -848,4 +848,29 @@ P3 bytes_to_good_point_p3(const Hash &h) {
 	return P3(p3);
 }
 
+// copy verbatim from common/Varint.hpp, we do not wish dependency
+template<class T>
+T uint_le_from_bytes(const unsigned char *buf, size_t si) {
+	static_assert(std::is_unsigned<T>::value, "works only with unsigned types");
+	T result = 0;
+	for (size_t i = si; i-- > 0;)
+		result = (result << 8) + buf[i];
+	return result;
+}
+
+template<class T>
+void uint_le_to_bytes(unsigned char *buf, size_t si, T val) {
+	static_assert(std::is_unsigned<T>::value, "works only with unsigned types");
+	for (size_t i = 0; i != si; ++i) {
+		buf[i] = static_cast<unsigned char>(val);
+		val >>= 8;
+	}
+}
+
+SecretKey sc_from_uint64(uint64_t val) {
+	SecretKey result;
+	uint_le_to_bytes(result.data, 8, val);
+	return result;
+}
+
 }  // namespace crypto

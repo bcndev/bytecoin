@@ -9,13 +9,17 @@ namespace http {
 class Server;
 class Client;
 }  // namespace http
+namespace platform {
+class ExclusiveLock;
+}  // namespace platform
 namespace cn {
 class Node;
 
-class WalletNode : public WalletSync {
+class WalletNode {
 public:
-	explicit WalletNode(Node *inproc_node, logging::ILogger &, const Config &, WalletState &);
-	~WalletNode();
+	explicit WalletNode(logging::ILogger &, WalletState &);
+	explicit WalletNode(const Config &config, const Currency &currency, logging::ILogger &);
+	virtual ~WalletNode();
 
 	typedef std::function<bool(WalletNode *, http::Client *, http::RequestBody &&, json_rpc::Request &&, std::string &)>
 	    JSONRPCHandlerFunction;
@@ -50,13 +54,26 @@ public:
 	bool on_get_transaction(http::Client *, http::RequestBody &&, json_rpc::Request &&,
 	    api::walletd::GetTransaction::Request &&, api::walletd::GetTransaction::Response &);
 
+	virtual bool on_ext_create_wallet(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+	    api::walletd::ExtCreateWallet::Request &&, api::walletd::ExtCreateWallet::Response &);
+	virtual bool on_ext_open_wallet(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+	    api::walletd::ExtOpenWallet::Request &&, api::walletd::ExtOpenWallet::Response &);
+	virtual bool on_ext_set_password(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+	    api::walletd::ExtSetPassword::Request &&, api::walletd::ExtSetPassword::Response &);
+	virtual bool on_ext_close_wallet(http::Client *, http::RequestBody &&, json_rpc::Request &&,
+	    api::walletd::ExtCloseWallet::Request &&, api::walletd::ExtCloseWallet::Response &);
+
 	typedef std::unordered_map<std::string, JSONRPCHandlerFunction> HandlersMap;
 	static const HandlersMap m_jsonrpc_handlers;
 
-private:
-	Node *m_inproc_node;
+protected:
+	logging::LoggerRef m_log;
+	const Config &m_config;
+	const Currency &m_currency;
 
 	std::unique_ptr<http::Server> m_api;
+
+	std::unique_ptr<WalletSync> m_wallet_sync;
 
 	struct WaitingClient {
 		http::Client *original_who = nullptr;
@@ -67,6 +84,9 @@ private:
 		std::function<void(const WaitingClient &wc, std::string)> err_fun;
 	};
 	std::deque<WaitingClient> m_waiting_command_requests;
+	http::Agent m_commands_agent;
+	std::unique_ptr<http::Request> m_command_request;
+
 	void add_waiting_command(http::Client *who, http::RequestBody &&original_request,
 	    json_rpc::Request &&original_json_request, http::RequestBody &&request,
 	    std::function<void(const WaitingClient &wc, http::ResponseBody &&resp)> &&fun,
@@ -87,10 +107,15 @@ private:
 	api::walletd::GetStatus::Response create_status_response() const;
 
 	bool on_api_http_request(http::Client *, http::RequestBody &&, http::ResponseBody &);
-	void on_api_http_disconnect(http::Client *);
+	virtual void on_api_http_disconnect(http::Client *);
 
 	bool on_json_rpc(http::Client *, http::RequestBody &&, http::ResponseBody &, bool &method_found);
 	void check_address_in_wallet_or_throw(const std::string &addr) const;
+
+	WalletState &get_wallet_state() { return m_wallet_sync->get_wallet_state(); }
+	const WalletState &get_wallet_state() const { return m_wallet_sync->get_wallet_state(); }
+
+	void check_wallet_open();
 };
 
 }  // namespace cn

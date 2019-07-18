@@ -34,9 +34,7 @@ private:
 
 	void msg_handshake(p2p::Handshake::Request &&req);
 	void msg_handshake(p2p::Handshake::Response &&req);
-	void msg_ping(p2p::PingLegacy::Request &&req);
-	void msg_ping(p2p::PingLegacy::Response &&req);
-	void msg_timed_sync(p2p::TimedSync::Request &&req);
+	void msg_timed_sync(p2p::TimedSync::Notify &&req);
 	void msg_timed_sync(p2p::TimedSync::Response &&req);
 
 protected:
@@ -47,30 +45,27 @@ protected:
 	void on_request_ready(BinaryArray &&header, BinaryArray &&body) override;
 	bool handshake_ok() const override { return peer_version != 0; }
 
-	virtual void on_msg_bytes(size_t, size_t) {}                    // downloaded, uploaded
-	virtual void on_first_message_after_handshake() {}              // calling disconnect from here will crash
-	virtual void on_msg_handshake(p2p::Handshake::Request &&) {}    // called after some internal processing
-	virtual void on_msg_handshake(p2p::Handshake::Response &&) {}   // called after some internal processing
-	virtual void on_msg_ping(p2p::PingLegacy::Request &&) {}        // called after some internal processing
-	virtual void on_msg_ping(p2p::PingLegacy::Response &&) {}       // called after some internal processing
-	virtual void on_msg_timed_sync(p2p::TimedSync::Request &&) {}   // called after some internal processing
-	virtual void on_msg_timed_sync(p2p::TimedSync::Response &&) {}  // called after some internal processing
+	virtual void on_msg_bytes(size_t, size_t) {}                   // downloaded, uploaded
+	virtual void on_first_message_after_handshake() {}             // calling disconnect from here will crash
+	virtual void on_msg_handshake(p2p::Handshake::Request &&) {}   // called after some internal processing
+	virtual void on_msg_handshake(p2p::Handshake::Response &&) {}  // called after some internal processing
+	virtual void on_msg_timed_sync(p2p::TimedSync::Notify &&) {}   // called after some internal processing
 #if bytecoin_ALLOW_DEBUG_COMMANDS
 	virtual void on_msg_stat_info(p2p::GetStatInfo::Request &&) {}
 	virtual void on_msg_stat_info(p2p::GetStatInfo::Response &&) {}
 #endif
 	virtual void on_msg_notify_new_block(p2p::RelayBlock::Notify &&) {}
 	virtual void on_msg_notify_new_transactions(p2p::RelayTransactions::Notify &&) {}
-	virtual void on_msg_notify_request_tx_pool(p2p::SyncPool::Notify &&) {}
 	virtual void on_msg_notify_request_tx_pool(p2p::SyncPool::Request &&) {}
 	virtual void on_msg_notify_request_tx_pool(p2p::SyncPool::Response &&) {}
-	virtual void on_msg_notify_request_chain(p2p::GetChainRequest::Notify &&) {}
-	virtual void on_msg_notify_request_chain(p2p::GetChainResponse::Notify &&) {}
-	virtual void on_msg_notify_request_objects(p2p::GetObjectsRequest::Notify &&) {}
-	virtual void on_msg_notify_request_objects(p2p::GetObjectsResponse::Notify &&) {}
+	virtual void on_msg_notify_request_chain(p2p::GetChain::Request &&) {}
+	virtual void on_msg_notify_request_chain(p2p::GetChain::Response &&) {}
+	virtual void on_msg_notify_request_objects(p2p::GetObjects::Request &&) {}
+	virtual void on_msg_notify_request_objects(p2p::GetObjects::Response &&) {}
 	virtual void on_msg_notify_checkpoint(p2p::Checkpoint::Notify &&) {}
 	virtual CoreSyncData get_my_sync_data() const = 0;
-	virtual std::vector<PeerlistEntryLegacy> get_peers_to_share(bool lots) const {
+	virtual std::vector<NetworkAddress> get_peers_to_share() const { return std::vector<NetworkAddress>(); }
+	virtual std::vector<PeerlistEntryLegacy> get_legacy_peers_to_share() const {
 		return std::vector<PeerlistEntryLegacy>();
 	}
 

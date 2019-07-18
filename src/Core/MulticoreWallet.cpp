@@ -118,11 +118,13 @@ WalletPreparatorMulticore::WalletPreparatorMulticore(hardware::HardwareWallet *h
 	std::cout << "Starting " << th_count << " workers for wallet processing" << std::endl;
 	workers.resize(th_count);
 	for (auto &w : workers)
-		w.handle = emscripten_create_worker("bin/walletworker.js");
+		w.handle = emscripten_create_worker("walletworker.js");
 }
 
 WalletPreparatorMulticore::~WalletPreparatorMulticore() {
-	// TODO - destory workers
+	for (auto &w : workers)
+		emscripten_destroy_worker(w.handle);
+	workers.clear();
 }
 
 void WalletPreparatorMulticore::add_work(std::vector<api::cnd::SyncBlocks::RawBlockCompact> &&new_work) {
@@ -173,7 +175,7 @@ void WalletPreparatorMulticore::send_work() {
 			msg.is_amethyst         = is_amethyst;
 			msg.worker_num          = least_i;
 			auto ba                 = seria::to_binary(msg);
-			//    std::cout << "emscripten_call_worker transaction " << ba.size() << std::endl;
+			//			std::cout << "emscripten_call_worker transaction " << ba.size() << std::endl;
 			emscripten_call_worker(workers.at(least_i).handle, "worker_transaction_prepare",
 			    reinterpret_cast<char *>(ba.data()), ba.size(),
 			    &WalletPreparatorMulticore::on_transaction_prepared_handler, reinterpret_cast<void *>(this));
@@ -185,7 +187,7 @@ void WalletPreparatorMulticore::send_work() {
 			msg.is_amethyst         = is_amethyst;
 			msg.worker_num          = least_i;
 			auto ba                 = seria::to_binary(msg);
-			//    std::cout << "emscripten_call_worker block " << ba.size() << std::endl;
+			//			std::cout << "emscripten_call_worker block " << ba.size() << std::endl;
 			emscripten_call_worker(workers.at(least_i).handle, "worker_block_prepare",
 			    reinterpret_cast<char *>(ba.data()), ba.size(), &WalletPreparatorMulticore::on_block_prepared_handler,
 			    reinterpret_cast<void *>(this));
@@ -217,11 +219,11 @@ void WalletPreparatorMulticore::broadcast_received_work() {
 }
 
 void WalletPreparatorMulticore::on_block_prepared_handler(char *data, int size, void *arg) {
-	//    std::cout << "on_block_prepared_handler " << size << std::endl;
+	//	std::cout << "on_block_prepared_handler " << size << std::endl;
 	reinterpret_cast<WalletPreparatorMulticore *>(arg)->on_block_prepared(data, static_cast<size_t>(size));
 }
 void WalletPreparatorMulticore::on_transaction_prepared_handler(char *data, int size, void *arg) {
-	//    std::cout << "on_transaction_prepared_handler " << size << std::endl;
+	//	std::cout << "on_transaction_prepared_handler " << size << std::endl;
 	reinterpret_cast<WalletPreparatorMulticore *>(arg)->on_transaction_prepared(data, static_cast<size_t>(size));
 }
 
@@ -299,8 +301,8 @@ static void fill_tx_output_public_keys(std::vector<PublicKey> *output_public_key
 		const auto &output = tx.outputs.at(out_index);
 		if (output.type() != typeid(OutputKey))
 			continue;
-		const auto &key_output = boost::get<OutputKey>(output);
-		output_public_keys->push_back(key_output.public_key);
+		const auto &out = boost::get<OutputKey>(output);
+		output_public_keys->push_back(out.public_key);
 	}
 	auto encrypted_messages = extra::get_encrypted_messages(tx.extra);
 	for (size_t m_index = 0; m_index != encrypted_messages.size(); ++m_index)
