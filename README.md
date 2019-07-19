@@ -12,6 +12,22 @@ Contents
 * Building on Windows
 * Building on other platforms
 
+
+## Docker image
+
+[![](https://images.microbadger.com/badges/image/homdx/bytecoin.svg)](https://microbadger.com/images/homdx/bytecoin "Get your own image badge on microbadger.com")
+
+[![](https://images.microbadger.com/badges/version/homdx/bytecoin.svg)](https://microbadger.com/images/homdx/bytecoin "Get your own version badge on microbadger.com")
+
+docker pull homdx/bytecoin
+### docker pull homdx/bytecoin:alpine
+
+Test Alpine docker image. In the future it will be possible to make this image basic (according to your feedback)
+
+### You can check the result and build logs
+https://hub.docker.com/r/homdx/bytecoin/
+
+
 ## Building on Linux 64-bit
 
 All commands below work on Ubuntu 18.*, other distributions may need different command set.
@@ -218,3 +234,4 @@ Currently bytecoin does not work out of the box on any Big-Endian platform, due 
 ## Building with parameters
 
 If you want to use tools like `clang-tidy`, run `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..` instead of `cmake ..`
+
