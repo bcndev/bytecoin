@@ -1,0 +1,8 @@
+version: '2'
+services:
+  devbcn:
+    build:
+      context: ./docker1
+      dockerfile: Dockerfile-bcn
+    volumes:
+      - './save:/save'

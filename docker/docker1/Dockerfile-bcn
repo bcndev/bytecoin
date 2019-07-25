@@ -1,0 +1,19 @@
+FROM fedora:27
+#Fedora image
+
+#FROM debian:stable
+#FROM ubuntu:latest
+#Debian and Ubuntu image
+
+#Fedora setup requirements
+RUN dnf -y update && dnf -y install gcc-c++ boost-static boost-devel qt5-devel cmake git lmdb-devel openssl-devel && dnf clean all
+
+#Debian and Ubuntu setup requirements
+#RUN apt-get -y update && apt-get -y install build-essential cmake libboost-all-dev liblmdb-dev git qtbase5-dev libssl-dev && apt-get clean all
+
+#Only for ubuntu docker: setup new version boost 1.64
+#RUN apt-get install -y wget && wget https://dl.bintray.com/boostorg/release/1.64.0/source/boost_1_64_0.tar.gz && tar -xvf boost_1_64_0.tar.gz && cd boost_1_64_0 && ./bootstrap.sh && ./b2 install && cd / && rm -r boost_1_64_0
+
+ADD ./src /src
+
+CMD /src/make-bcn-docker.sh

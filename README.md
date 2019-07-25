@@ -16,6 +16,17 @@ Contents
 
 All commands below work on Ubuntu 18.*, other distributions may need different command set.
 
+## Build Gui and Daemon via docker
+Result stored to save
+$cd docker
+$./make-bcn.sh
+
+You can try compiled (via script upper) docker image, via Dockerfile:
+FROM homdx/bytecoin-docker
+
+#CMD ["/bin/walletd"]
+#CMD ["/bin/bytecoind"]
+
 ### Building with standard options
 
 Create directory `bcndev` somewhere and go there:
