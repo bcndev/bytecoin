@@ -5,6 +5,7 @@
 
 #include <set>
 #include <unordered_map>
+#include <memory>
 #include "CryptoNote.hpp"
 #include "Currency.hpp"
 #include "crypto/chacha.hpp"
