@@ -127,7 +127,7 @@ public:
 	}
 	virtual void fill_statistics(api::cnd::GetStatistics::Response &res) const;
 
-	typedef std::array<Height, 7> CheckpointDifficulty;  // size must be == m_currency.get_checkpoint_keys_count()
+    typedef std::array<Height, 1> CheckpointDifficulty;  // size must be == m_currency.get_checkpoint_keys_count()
 protected:
 	bool has_block(const Hash &bid) const;
 

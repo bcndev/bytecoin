@@ -41,7 +41,7 @@ typedef boost::optional<common::JsonValue> OptionalJsonValue;
 class Request {
 public:
 	Request() = default;
-	explicit Request(const std::string &request_body, bool allow_empty_id = false) {
+    explicit Request(const std::string &request_body, bool allow_empty_id = false) {
 		parse(request_body, allow_empty_id);
 	}
 	template<typename T>

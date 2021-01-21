@@ -2,10 +2,10 @@
 # Licensed under the GNU Lesser General Public License. See LICENSE for details.
 
 cmake_minimum_required(VERSION 3.0)
-project(bytecoin)
+project(armornetwork)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD 11)
-set(CRYPTONOTE_NAME bytecoin)
+set(CRYPTONOTE_NAME armor)
 add_definitions(-DCRYPTONOTE_NAME=\"${CRYPTONOTE_NAME}\" -DNDEBUG=1)
 message("SANITIZE adds clang sanitizer options. Examples thread or address,undefined or fuzzer,address,undefined")
 option(BETTER_DEBUG "Disables optimizations. We do not use standard debug/realease configurations because they change too much" OFF)
@@ -21,7 +21,7 @@ else()
 endif()
 
 if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.11")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.14")
 endif()
 if(WIN32)
     add_definitions(-D_SCL_SECURE_NO_WARNINGS=1 -D_CRT_SECURE_NO_WARNINGS=1 -D_WIN32_WINNT=0x0501)
@@ -80,14 +80,14 @@ add_definitions(-Dplatform_USE_SSL=1)
 file(GLOB SRC_CRYPTO
         src/crypto/*.cpp src/crypto/*.hpp
         src/crypto/*.c src/crypto/*.h
-        src/crypto/bernstein/*.h src/crypto/bernstein/chacha8.c
-        src/crypto/bernstein/crypto-ops.c
-        src/crypto/blake/*.h src/crypto/blake/*.c
-        src/crypto/groestl/*.h src/crypto/groestl/*.c
-        src/crypto/jh/*.h src/crypto/jh/*.c
-        src/crypto/keccak/*.c
-        src/crypto/oaes/*.h src/crypto/oaes/*.c
-        src/crypto/skein/*.h src/crypto/skein/*.c
+	src/crypto/bernstein/*.h src/crypto/bernstein/chacha8.c
+	src/crypto/bernstein/crypto-ops.c
+	src/crypto/blake/*.h src/crypto/blake/*.c
+	src/crypto/groestl/*.h src/crypto/groestl/*.c
+	src/crypto/jh/*.h src/crypto/jh/*.c
+	src/crypto/keccak/*.c
+	src/crypto/oaes/*.h src/crypto/oaes/*.c
+	src/crypto/skein/*.h src/crypto/skein/*.c
 )
 if(CRYPTO128)
     message(STATUS "Fast crypto using int128 selected - do not use for production builds until fully tested")

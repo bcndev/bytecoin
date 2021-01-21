@@ -56,9 +56,10 @@ public:
 	Amount max_dust_threshold;
 	Amount self_dust_threshold;
 
-	Timestamp difficulty_target;
+    Timestamp difficulty_target, difficulty_window_lwma;
 	Difficulty get_minimum_difficulty(uint8_t block_major_version) const;
 	Height difficulty_windows_plus_lag() const;
+    Height difficulty_windows() const;
 	Height expected_blocks_per_day() const;
 	Height expected_blocks_per_year() const;
 
@@ -106,6 +107,8 @@ public:
 	    std::vector<Timestamp> *timestamps, std::vector<CumulativeDifficulty> *cumulative_difficulties) const;
 	Difficulty next_effective_difficulty(uint8_t block_major_version, std::vector<Timestamp> timestamps,
 	    std::vector<CumulativeDifficulty> cumulative_difficulties) const;
+
+    Difficulty next_difficultyLWMA3(uint8_t block_major_version, std::vector<Timestamp> timestamps, std::vector<CumulativeDifficulty> cumulative_difficulties) const;
 
 	BinaryArray get_block_pow_hashing_data(const BlockHeader &, const BlockBodyProxy &) const;
 

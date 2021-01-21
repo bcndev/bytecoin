@@ -77,7 +77,7 @@ void Request::parse(const std::string &request_body, bool allow_empty_id) {
 			throw Error(INVALID_REQUEST, "id value must be number, string or null");
 		jid = std::move(p);
 		stripped_req.erase("id");
-	} else {
+    } else {
 		if (!allow_empty_id)
 			throw Error(INVALID_REQUEST, "id value is REQUIRED");
 	}
