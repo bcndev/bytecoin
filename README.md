@@ -120,7 +120,7 @@ $armor> git clone https://github.com/noritte/armor.git
 
 Put LMDB source code in `armor` folder (source files are referenced via relative paths, so you do not need to separately build it):
 ```
-$~/Downloads/armor> git clone https://github.com/armor/lmdb.git
+$~/Downloads/armor> git clone https://github.com/noritte/lmdb.git
 ```
 
 Install OpenSSL to `armor/openssl` folder:
@@ -166,7 +166,7 @@ $C:\armor> git clone https://github.com/noritte/armor.git
 
 Put LMDB in the same folder (source files are referenced via relative paths, so you do not need to separately build it):
 ```
-$C:\armor> git clone https://github.com/armor/lmdb.git
+$C:\armor> git clone https://github.com/noritte/lmdb.git
 ```
 
 Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into the same folder (source files are referenced via relative paths, so you do not need to separately build it).
