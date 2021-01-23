@@ -74,7 +74,7 @@ To go futher you have to have a number of packages and utilities. You need at le
 
     Difference to official LMDB repository is lifted 2GB database limit if built by MSVC (even of 64-bit machine).
     ```
-    $armor> git clone https://github.com/armor/lmdb.git
+    $armor> git clone https://github.com/noritte/lmdb.git
 
     ```
 
