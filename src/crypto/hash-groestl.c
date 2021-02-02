@@ -14,3 +14,11 @@ void crypto_hash_extra_groestl(const void *data, size_t length, struct cryptoHas
 	Update(&context, data, length * 8);
 	Final(&context, hash->data);
 }
+
+void hash_extra_groestl(const void *data, size_t length, unsigned char *hash) {
+	hashState context;
+
+	Init(&context, 256);
+	Update(&context, data, length * 8);
+	Final(&context, hash);
+}

@@ -35,7 +35,7 @@ static void hash_tree(const void *vdata, size_t vlength, cryptoHash *hash) {
 static void slow_hash(const void *data, size_t length, cryptoHash *hash) {
 	context.cn_slow_hash(data, length, hash);
 	crypto::Hash hash2;
-	crypto_cn_slow_hash_platform_independent(context.get_data(), data, length, &hash2);
+    //crypto_cn_slow_hash_platform_independent(context.get_data(), data, length, &hash2);
 	crypto::Hash chash;
 	static_cast<cryptoHash &>(chash) = *hash;
 	invariant(chash == hash2, "");

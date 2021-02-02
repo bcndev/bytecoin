@@ -422,6 +422,7 @@ void ser_members(api::cnd::GetStatus::Response &v, ISeria &s) {
 		seria_kv("next_block_effective_median_size", v.recommended_max_transaction_size, s);
 	seria_kv("recommended_max_transaction_size", v.recommended_max_transaction_size, s);
 	seria_kv("top_known_block_height", v.top_known_block_height, s);
+    seria_kv("already_generated_coins", v.already_generated_coins, s);
 }
 
 void ser_members(api::cnd::GetBlockHeader::Request &v, ISeria &s) {

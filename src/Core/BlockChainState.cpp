@@ -317,7 +317,7 @@ void BlockChainState::check_consensus(
 	{
 		std::vector<Timestamp> timestamps;
 		std::vector<CumulativeDifficulty> difficulties;
-		const Height blocks_count = m_currency.difficulty_windows_plus_lag();
+        const Height blocks_count = m_currency.difficulty_windows(); //m_currency.difficulty_windows_plus_lag();
 		timestamps.reserve(blocks_count);
 		difficulties.reserve(blocks_count);
 		for_each_reversed_tip_segment(prev_info, blocks_count, false, [&](const api::BlockHeader &header) {
@@ -444,7 +444,7 @@ void BlockChainState::create_mining_block_template(const Hash &parent_bid, const
 	{
 		std::vector<Timestamp> timestamps;
 		std::vector<CumulativeDifficulty> difficulties;
-		const Height blocks_count = m_currency.difficulty_windows_plus_lag();
+        const Height blocks_count = m_currency.difficulty_windows(); // m_currency.difficulty_windows_plus_lag();
 		timestamps.reserve(blocks_count);
 		difficulties.reserve(blocks_count);
 		for_each_reversed_tip_segment(parent_info, blocks_count, false, [&](const api::BlockHeader &header) {

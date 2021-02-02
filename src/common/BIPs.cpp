@@ -374,7 +374,7 @@ std::string Bip32Key::create_random_bip39_mnemonic(size_t bits) {
 	const size_t cs_bits         = bits / 32;
 	const size_t should_be_words = (bits + cs_bits) / 11;
 	std::vector<uint8_t> ent_data(bits / 8);
-	crypto::generate_random_bytes(ent_data.data(), ent_data.size());
+    crypto::generate_random_bytes(ent_data.data(), ent_data.size());
 
 	unsigned char hash[32];
 	sha256_checked(ent_data.data(), ent_data.size(), hash);
