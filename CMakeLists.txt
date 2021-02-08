@@ -174,14 +174,14 @@ set(SOURCE_FILES
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/libs")
-add_library(bytecoin-crypto ${SRC_CRYPTO})
+add_library(armor-crypto ${SRC_CRYPTO})
 if(APPLE)
     link_libraries(-dead_strip  "-framework Foundation")
 endif()
-add_library(bytecoin-core ${SOURCE_FILES})
-target_link_libraries(bytecoin-core bytecoin-crypto ${HID_LIBRARY})
+add_library(armor-core ${SOURCE_FILES})
+target_link_libraries(armor-core armor-crypto ${HID_LIBRARY})
 
-link_libraries(bytecoin-crypto bytecoin-core)
+link_libraries(armor-crypto armor-core)
 if(NOT WIN32)
     link_libraries(${LINK_OPENSSL} dl pthread)
 endif()

@@ -20,13 +20,13 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "Bytecoin Developers"
-            VALUE "FileDescription", "Bytecoin"
+            VALUE "CompanyName", "Armor Network Developers"
+            VALUE "FileDescription", "Armor Network"
             VALUE "FileVersion", bytecoin_VERSION_STRING
-            VALUE "InternalName", "Bytecoin"
-            VALUE "LegalCopyright", "Copyright (C) Bytecoin Developers 2012-2018"
-            VALUE "OriginalFilename", "Bytecoin"
-            VALUE "ProductName", "Bytecoin"
+            VALUE "InternalName", "Armor Network"
+            VALUE "LegalCopyright", "Armor Network Developers 2020-2021 Copyright (C) Bytecoin Developers 2012-2018"
+            VALUE "OriginalFilename", "Armor"
+            VALUE "ProductName", "Armor"
             VALUE "ProductVersion", bytecoin_VERSION_STRING
         END
     END

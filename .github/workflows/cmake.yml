@@ -1,0 +1,51 @@
+name: CMake
+
+on: [push]
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    # The CMake configure and build commands are platform agnostic and should work equally
+    # well on Windows or Mac.  You can convert this to a matrix build if you need
+    # cross-platform coverage.
+    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
+    runs-on: ubuntu-18.04
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install dependeces
+      working-directory: ${{github.workspace}}
+      shell: bash
+      run: |
+          sudo apt-get install libudev-dev
+          sudo apt-get install libboost-all-dev
+          cd ..
+          git clone --single-branch --branch OpenSSL_1_1_1-stable --depth 1 https://github.com/openssl/openssl.git
+          cd openssl
+          ./Configure linux-x86_64 no-shared
+          make
+          cd ..
+          git clone https://github.com/armornetworkdev/lmdb.git
+    - name: CMAKE
+      working-directory: ${{github.workspace}}
+      shell: bash
+      run: |
+          mkdir build
+          cd build
+          cmake ..
+          
+    - name: Build
+      working-directory: ${{github.workspace}}/build
+      shell: bash
+      run: |
+        make
+
+    - name: Test
+      working-directory: ${{github.workspace}}/bin
+      shell: bash
+      run: |
+          ./armord --version
+          ./walletd --version
