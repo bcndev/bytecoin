@@ -34,7 +34,7 @@ To go futher you have to have a number of packages and utilities. You need at le
     ```
     sudo apt-get install libudev-dev
     ```
-    
+
 * CMake (3.0 or newer):
     ```
     $armor> sudo apt-get install cmake
@@ -74,13 +74,13 @@ To go futher you have to have a number of packages and utilities. You need at le
 
     Difference to official LMDB repository is lifted 2GB database limit if built by MSVC (even of 64-bit machine).
     ```
-    $armor> git clone https://github.com/noritte/lmdb.git
+    $armor> git clone https://github.com/armornetworkdev/lmdb.git
 
     ```
 
 Git-clone (or git-pull) Armor source code in that folder:
 ```
-$armor> git clone https://github.com/noritte/armor.git
+$armor> git clone https://github.com/armornetworkdev/armor.git
 ```
 
 Create build directory inside armor, go there and run CMake and Make:
@@ -115,12 +115,12 @@ $~/Downloads> cd armor
 
 Git-clone (or git-pull) Armor source code in that folder:
 ```
-$armor> git clone https://github.com/noritte/armor.git
+$armor> git clone https://github.com/armornetworkdev/armor.git
 ```
 
 Put LMDB source code in `armor` folder (source files are referenced via relative paths, so you do not need to separately build it):
 ```
-$~/Downloads/armor> git clone https://github.com/noritte/lmdb.git
+$~/Downloads/armor> git clone https://github.com/armornetworkdev/lmdb.git
 ```
 
 Install OpenSSL to `armor/openssl` folder:
@@ -161,12 +161,12 @@ Boost (1.65 or newer):
 
 Git-clone (or git-pull) Armor source code in that folder:
 ```
-$C:\armor> git clone https://github.com/noritte/armor.git
+$C:\armor> git clone https://github.com/armornetworkdev/armor.git
 ```
 
 Put LMDB in the same folder (source files are referenced via relative paths, so you do not need to separately build it):
 ```
-$C:\armor> git clone https://github.com/noritte/lmdb.git
+$C:\armor> git clone https://github.com/armornetworkdev/lmdb.git
 ```
 
 Download amalgamated [SQLite 3](https://www.sqlite.org/download.html) and unpack it into the same folder (source files are referenced via relative paths, so you do not need to separately build it).

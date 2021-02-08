@@ -121,7 +121,7 @@ constexpr PublicKey P2P_STAT_TRUSTED_PUBLIC_KEY =
     common::pfh<PublicKey>("E29507CA55455F37A3B783EE2C5123B8B6A34A0C5CAAE050922C6254161480C2");
 
 constexpr PublicKey CHECKPOINT_PUBLIC_KEYS[] = {
-    common::pfh<PublicKey>("a9fb59d721aa495decac1477605a1e6530e1615c0eace9333e8a7fde90fff908"),
+    common::pfh<PublicKey>("a9fb59d721aa495decac1477605a1e6530e1615c0eace9333e8a7fde90fff908")
     //common::pfh<PublicKey>("9b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd088071"),
     //common::pfh<PublicKey>("6e03debc66cfeabe0fb8720f4ed3a433a16a40dc9b72e6d14679f0b8a784cd58"),
     //common::pfh<PublicKey>("7afcd21a758f0568d536bec2e613c8470c086c97f14dfec3f2a744492ad02f0f"),
@@ -130,6 +130,7 @@ constexpr PublicKey CHECKPOINT_PUBLIC_KEYS[] = {
     //common::pfh<PublicKey>("eb39db3c11b09c637a06122e48d0ee88603e7b216dda01901daa27c485d82eff")
 };
 constexpr PublicKey CHECKPOINT_PUBLIC_KEYS_TESTNET[] = {
+	common::pfh<PublicKey>("a9fb59d721aa495decac1477605a1e6530e1615c0eace9333e8a7fde90fff908")
     //common::pfh<PublicKey>("577ac6a6cdc5e0114c5a7e6338f1332fd0684e2aaf7aa3efb415e9f623d04bf5"),
     //common::pfh<PublicKey>("49950afc665e2f23354c03559f67e01e4f23fe2f30c6c6037b4de6dbd914ed80"),
     //common::pfh<PublicKey>("07f8bba2577c0bfd9f5dc8af7319b6acbbde22bf95678927c707bb42e22fd157"),
@@ -139,6 +140,7 @@ constexpr PublicKey CHECKPOINT_PUBLIC_KEYS_TESTNET[] = {
     //common::pfh<PublicKey>("005d18764a7c4514d217d55f39633c8145e25afe91fd84837fc1a9ab5e048e8e")
 };
 constexpr PublicKey CHECKPOINT_PUBLIC_KEYS_STAGENET[] = {
+	common::pfh<PublicKey>("a9fb59d721aa495decac1477605a1e6530e1615c0eace9333e8a7fde90fff908")
     //common::pfh<PublicKey>("11bcb3340a24e7cc2d3e4faa4c4f66ff7ef2813c1ae49e4f8b545d14b0f79bdc"),
     //common::pfh<PublicKey>("32be85c1afd74f924a7487a76dda12b4a9925adf6212c903d7188ebd16ce8495"),
     //common::pfh<PublicKey>("d1789d5103bc8328285124dfc77d3fd3c5d3d76e70616bb409d84d3f335326cf"),
@@ -155,7 +157,9 @@ const char *const SEED_NODES_STAGENET[] = {
 // testnet will have no seed nodes
 
 constexpr const HardCheckpoint CHECKPOINTS[] = {
-    };
+	//{0, common::pfh<Hash>("d07c564a59aeb25258f9575ffa24bd0ad88b2d88452bec2a3d0c150571e623bb")},
+	{500, common::pfh<Hash>("93457e2e8942edcadaebeadda8d78b520476abfcffeb499a0b88832f3ddb2335")}
+};
 
 // When adding checkpoint and BEFORE release, you MUST check that daemon fully syncs both mainnet and stagenet.
 
@@ -164,5 +168,8 @@ constexpr const HardCheckpoint CHECKPOINTS[] = {
 // 2. never set checkpoint before height where upgrade happened (with desired major version)
 // 3. after setting checkpoint after upgrade, modify upgrade_heights array
 
-constexpr const HardCheckpoint CHECKPOINTS_STAGENET[] = {};
+constexpr const HardCheckpoint CHECKPOINTS_STAGENET[] = {
+	{(Height)(-1),common::pfh<Hash>("0000000000000000000000000000000000000000000000000000000000000000")}
+};
+
 }}  // namespace cn::parameters

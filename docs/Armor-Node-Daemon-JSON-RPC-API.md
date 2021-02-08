@@ -1,14 +1,14 @@
 ## Service location
 
-By default, Bytecoin Node Service (`bytecoind`, Node Daemon) is bound only to `127.0.0.1` (`localhost`) interface, so it can be accessed only from the same computer it runs on. This is done to reduce number of external attack vectors. `bytecoind` itself has access to only public information, but it sometimes runs in the same process with `walletd`, which has access to wallet keys. To bind `bytecoind` to all network interfaces, use `--bytecoind-bind-address=0.0.0.0:8081` command line argument (specifying port is mandatory).
+By default, Armor Node Service (`armord`, Node Daemon) is bound only to `127.0.0.1` (`localhost`) interface, so it can be accessed only from the same computer it runs on. This is done to reduce number of external attack vectors. `armord` itself has access to only public information, but it sometimes runs in the same process with `walletd`, which has access to wallet keys. To bind `armord` to all network interfaces, use `--armord-bind-address=0.0.0.0:58081` command line argument (specifying port is mandatory).
 
-To make a JSON PRC request to the `bytecoind` you should make an HTTP POST request to an entry point:
+To make a JSON PRC request to the `armord` you should make an HTTP POST request to an entry point:
 ```
 http://<ip>:<port>/json_rpc
 ```
 where:
-* `<ip>` is IPv4 address of `bytecoind` service. If the service is on local machine, use `127.0.0.1` instead of `localhost`.
-* `<port>` is TCP port of `bytecoind`. By default the service is bound to `8081`.
+* `<ip>` is IPv4 address of `armord` service. If the service is on local machine, use `127.0.0.1` instead of `localhost`.
+* `<port>` is TCP port of `armord`. By default the service is bound to `58081`.
 
 ### Curl template
 
@@ -26,8 +26,8 @@ curl -s -u <user>:<pass> -X POST http://<ip>:<port>/json_rpc -H 'Content-Type: a
 | 2.  | `get_block_header`    | TODO.                                                         |
 | 3.  | `get_raw_block`       | Gets raw block from the blockchain.                           |
 | 4.  | `get_raw_transaction` | Gets raw transaction from the blockchain.                     |
-| 5.  | `get_statistics`      | Gets statistics about running `bytecoind`.                    |
-| 6.  | `get_status`          | Returns status of `bytecoind`.                                |
+| 5.  | `get_statistics`      | Gets statistics about running `armord`.                    |
+| 6.  | `get_status`          | Returns status of `armord`.                                |
 | 7.  | `sync_blocks`         | Gets blockchain blocks for `walletd` and block explorer sync. |
 | 8.  | `sync_mem_pool`       | Gets difference to transaction pool.                          |
 
@@ -87,7 +87,7 @@ Let's check a sendproof that has been created before.
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "check_sendproof",
@@ -144,7 +144,7 @@ Lets request the header of a top block .
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_block_header",
@@ -229,7 +229,7 @@ Let's request raw block for the block with hash `b33dbedd5b1b7e1daf8dfbe3abd6d87
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_raw_block",
@@ -538,7 +538,7 @@ Let's request raw block for the block with height `1500004`. Positive values are
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_raw_block",
@@ -571,7 +571,7 @@ Returns standard transaction object, raw transaction with inputs and outputs and
 
 | Field              | Type             | Description                                                           |
 |--------------------|------------------|-----------------------------------------------------------------------|
-| `transaction`      | `Transaction`    | Standard Transaction object. Contains info only known to `bytecoind`. |
+| `transaction`      | `Transaction`    | Standard Transaction object. Contains info only known to `armord`. |
 | `raw_transaction`  | `RawTransaction` | Raw transaction with inputs and outputs.                              |
 | `signatures`       | `[][]Signature`  | Signatures for inputs of the transaction.                             |
 
@@ -582,7 +582,7 @@ Let's request raw transaction for TX `7547cd3187173258a5aa13eec59d117de1da5f8b73
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_raw_transaction",
@@ -723,7 +723,7 @@ __Output:__
 
 #### About
 
-Returns misc statistics about `bytecoind` being queried.
+Returns misc statistics about `armord` being queried.
 
 #### Input (params)
 
@@ -738,25 +738,25 @@ No parameters.
 | `net`                                  | `string`       | `main`, `stage` or `test`.                               |
 | `genesis_block_hash`                   | `string`       | Hash of genesis block.                                   |
 | `peer_id`                              | `bool`         | Randomly generated unique peer id.                       |
-| `start_time`                           | `timestamp`    | Timestamp of `bytecoind` start time in UTC.              |
+| `start_time`                           | `timestamp`    | Timestamp of `armord` start time in UTC.              |
 | `checkpoints`                          | `[]Checkpoint` | Current Checkpoint objects.                              |
 | `transaction_pool_size`                | `uint64`       | Size of local TX pool.                                   |
 | `transaction_pool_max_size`            | `uint64`       | Max size of local TX pool.                               |
 | `transaction_pool_lowest_fee_per_byte` | `uint64`       | Lowest fee per byte of local TX pool.                    |
 | `upgrade_decided_height`               | `uint32`       | Upgrade height during a consensus update.                |
 | `upgrade_votes_in_top_block`           | `uint32`       | Upgrade votes in top block during a consensus update.    |
-| `peer_list_white`                      | `[]Peer`       | Peers `bytecoind` has successfully connected to.         |
+| `peer_list_white`                      | `[]Peer`       | Peers `armord` has successfully connected to.         |
 | `peer_list_gray`                       | `[]Peer`       | Peers given by other nodes.                              |
 | `connections`                          | `[]Connection` | Current connections to peers.                            |
 
 
 #### Example 1
 
-Let's make a `get_statistics` query to `bytecoind`.
+Let's make a `get_statistics` query to `armord`.
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_statistics"
@@ -795,7 +795,7 @@ __Output:__
     "connected_peers": [
       {
         "peer_id": 17765294269699030000,
-        "address": "145.239.3.130:8080",
+        "address": "145.239.3.130:58080",
         "is_incoming": false,
         "p2p_version": 4,
         "top_block_desc": {
@@ -806,7 +806,7 @@ __Output:__
       },
       {
         "peer_id": 5309359925305110000,
-        "address": "198.27.69.208:8080",
+        "address": "198.27.69.208:58080",
         "is_incoming": false,
         "p2p_version": 4,
         "top_block_desc": {
@@ -817,7 +817,7 @@ __Output:__
       },
       {
         "peer_id": 3281592841578633000,
-        "address": "144.76.106.36:8080",
+        "address": "144.76.106.36:58080",
         "is_incoming": false,
         "p2p_version": 4,
         "top_block_desc": {
@@ -836,8 +836,8 @@ __Output:__
 
 #### About
 
-Get status about state of `bytecoind`. This method supports longpolling. If you specify all input parameters, \
-and they are equal to the current state of the `bytecoind`, you will get response only when some of them change. \
+Get status about state of `armord`. This method supports longpolling. If you specify all input parameters, \
+and they are equal to the current state of the `armord`, you will get response only when some of them change. \
 But if you specify only certain argument, changes to other arguments won't trigger the longpoll. For example, if \
 you are interested in `outgoing_peer_count` only, you can specify only `outgoing_peer_count` in request and get \
 response when `outgoing_peer_count changes`.
@@ -856,15 +856,15 @@ response when `outgoing_peer_count changes`.
 
 | Field                              | Type     | Description                                                                              |
 |------------------------------------|----------|------------------------------------------------------------------------------------------|
-| `incoming_peer_count`              | `uint32` | Incoming peers to bytecoind.                                                             |
-| `lower_level_error`                | `string` | Error on lower level (bytecoind for walletd, etc).                                       |
+| `incoming_peer_count`              | `uint32` | Incoming peers to armord.                                                             |
+| `lower_level_error`                | `string` | Error on lower level (armord for walletd, etc).                                       |
 | `next_block_effective_median_size` | `uint32` | Created transaction raw size should be less this value, otherwise will not fit in block. |
-| `outgoing_peer_count`              | `uint32` | Outgoing peers from bytecoind.                                                           |
+| `outgoing_peer_count`              | `uint32` | Outgoing peers from armord.                                                           |
 | `recommended_fee_per_byte`         | `uint64` | Value of fee recommended.                                                                |
 | `top_block_cumulative_difficulty`  | `uint64` | Cumulative difficulty of top local block.                                                |
 | `top_block_difficulty`             | `uint64` | Difficulty of top local block.                                                           |
 | `top_block_hash`                   | `string` | Hash of top local block.                                                                 |
-| `top_block_height`                 | `uint32` | All transaction prior to that height have been processed by bytecoind.                   |
+| `top_block_height`                 | `uint32` | All transaction prior to that height have been processed by armord.                   |
 | `top_block_timestamp`              | `uint32` | Timestamp of top block.                                                                  |
 | `top_block_timestamp_median`       | `uint32` | Median timestamp of top block.                                                           |
 | `top_known_block_height`           | `uint32` | Largest of heights reported by external peers (network block height).                    |
@@ -877,7 +877,7 @@ Let's do a regular status request.
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_status",
@@ -922,7 +922,7 @@ has to be assembled and sent. Returns missing blocks, `start_height` and regular
 | Field                      | Type        | Mandatory | Default value | Description                                                      |
 |----------------------------|-------------|-----------|---------------|------------------------------------------------------------------|
 | `sparse_chain`             | `[]string`  | Yes       | Empty         | A specific sequence of local block hashes`*`.                    |
-| `first_block_timestamp`    | `timestamp` | No        | `0`           | `bytecoind` won't return blocks earlier than this point in time. |
+| `first_block_timestamp`    | `timestamp` | No        | `0`           | `armord` won't return blocks earlier than this point in time. |
 | `max_count`                | `uint32`    | No        | `100`         | Maximum number of blocks to return.                              |
 
 `*` `sparse_chain` is a sequence of blocks hashes from the last known block to genesis block. \
@@ -944,7 +944,7 @@ Let's request not more than `2` blocks from `8fc8417addbe4b68cc8136d6b02e7f28b21
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "sync_blocks",
@@ -1512,7 +1512,7 @@ Let's request the difference to the memory pool by sending hashes of TXs that we
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "sync_mem_pool",
@@ -1587,7 +1587,7 @@ A total of four outputs is returned (two for each amount) from the window from b
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_random_outputs",
@@ -1660,7 +1660,7 @@ __Output:__
 
 Places the (previously created) transaction into the payment queue for sending to the p2p network. Transactions are kept in the payment queue until they are either confirmed in the blockchain with 720 confirmations or are determined to be conflicting with another transaction, which has 720 (or more) confirmations.
 
-Result of call will be `broadcast`, if transaction was successfully placed into the payment queue. Note, that if `bytecoind` is not connected to internet, this method will nevertheless succeed.
+Result of call will be `broadcast`, if transaction was successfully placed into the payment queue. Note, that if `armord` is not connected to internet, this method will nevertheless succeed.
 
 
 #### Input (params)
@@ -1678,11 +1678,11 @@ Result of call will be `broadcast`, if transaction was successfully placed into 
 
 #### Example 1
 
-Let's send a previously created transaction by submitting `binary_transaction` to `bytecoind`.
+Let's send a previously created transaction by submitting `binary_transaction` to `armord`.
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "send_transaction",
@@ -1712,7 +1712,7 @@ TODO
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58081/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_block_template",
@@ -1769,3 +1769,4 @@ __Output:__
 
 ### 12. `submit_block`
 Used by miners.
+
