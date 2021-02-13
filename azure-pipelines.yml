@@ -46,7 +46,7 @@ jobs:
     displayName: Install libudev
 
   - script: |
-      mkdir bytecoin && cd bytecoin
+      mkdir armor && cd armor
       git init
       git remote add origin https://user:$(GithubPAT)@github.com/$(daemonsRepo)
       git fetch --depth 1 origin $(Build.SourceBranch)
@@ -59,7 +59,7 @@ jobs:
     displayName: Fetch boost
 
   - script: |
-      git clone --single-branch --depth 1 https://github.com/bcndev/lmdb.git
+      git clone --single-branch --depth 1 https://github.com/armornetworkdev/lmdb.git
     displayName: Clone LMDB
 
   - script: |
@@ -71,16 +71,16 @@ jobs:
     displayName: Build OpenSSL
 
   - script: |
-      mkdir bytecoin/build && cd bytecoin/build
+      mkdir armor/build && cd armor/build
       cmake .. && make -j$(nproc)
     displayName: Build daemons
 
   - script: |
-      zip -v -j $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-linux64.zip bytecoin/bin/bytecoind bytecoin/bin/minerd bytecoin/bin/walletd
+      zip -v -j $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-linux64.zip armor/bin/armord armor/bin/minerd armor/bin/walletd
     displayName: Zip daemons
 
   - script: |
-      zip -v -r $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-linux64-crypto.zip bytecoin/libs/libbytecoin-crypto.a bytecoin/src/*
+      zip -v -r $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-linux64-crypto.zip armor/libs/libarmor-crypto.a armor/src/*
     displayName: Zip artifacts for future desktop build
 
   - task: PublishBuildArtifacts@1
@@ -93,16 +93,11 @@ jobs:
 ####################### Macos #######################
 - job: Mac
   pool:
-    vmImage: macOS-10.13
+    vmImage: macOS-10.14
   variables:
     MACOSX_DEPLOYMENT_TARGET: 10.11
   condition: |
-    and(
-      succeeded(),
-      or(
-        startsWith(variables['build.sourceBranch'], 'refs/heads/releases/'),
-        startsWith(variables['build.sourceBranch'], 'refs/tags/')
-    ))
+      succeeded()
   steps:
   - checkout: none
 
@@ -111,7 +106,7 @@ jobs:
     displayName: Install boost from Homebrew
 
   - script: |
-      mkdir bytecoin && cd bytecoin
+      mkdir armor && cd armor
       git init
       git remote add origin https://user:$(GithubPAT)@github.com/$(daemonsRepo)
       git fetch --depth 1 origin $(Build.SourceBranch)
@@ -119,7 +114,7 @@ jobs:
     displayName: Clone daemons code
 
   - script: |
-      git clone --single-branch --depth 1 https://github.com/bcndev/lmdb.git
+      git clone --single-branch --depth 1 https://github.com/armornetworkdev/lmdb.git
     displayName: Clone LMDB
 
   - script: |
@@ -131,16 +126,16 @@ jobs:
     displayName: Build OpenSSL
 
   - script: |
-      mkdir bytecoin/build && cd bytecoin/build
+      mkdir armor/build && cd armor/build
       cmake .. && make -j
     displayName: Build daemons
 
   - script: |
-      zip -v -j $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-macos.zip bytecoin/bin/bytecoind bytecoin/bin/minerd bytecoin/bin/walletd
+      zip -v -j $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-macos.zip armor/bin/armord armor/bin/minerd armor/bin/walletd
     displayName: Zip daemons
 
   - script: |
-      zip -v -r $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-macos-crypto.zip bytecoin/libs/libbytecoin-crypto.a bytecoin/src/*
+      zip -v -r $(Build.ArtifactStagingDirectory)/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-macos-crypto.zip armor/libs/libarmor-crypto.a armor/src/*
     displayName: Zip artifacts for future desktop build
 
   - task: PublishBuildArtifacts@1
@@ -155,12 +150,7 @@ jobs:
   pool:
     vmImage: vs2017-win2016
   condition: |
-    and(
-      succeeded(),
-      or(
-        startsWith(variables['build.sourceBranch'], 'refs/heads/releases/'),
-        startsWith(variables['build.sourceBranch'], 'refs/tags/')
-    ))
+      succeeded()
   variables:
     vsPath: C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise
     vsCMakeDir: $(vsPath)\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin
@@ -173,17 +163,12 @@ jobs:
         opensslConfig: VC-WIN64A
         generatorName: Visual Studio 15 2017 Win64
         arch: 64
-      win32:
-        opensslDir: openssl32
-        opensslConfig: VC-WIN32
-        generatorName: Visual Studio 15 2017
-        arch: 32
   steps:
   - checkout: none
 
   - bash: |
-      curl -O http://strawberryperl.com/download/5.28.1.1/strawberry-perl-5.28.1.1-64bit-portable.zip
-      7z x strawberry-perl-5.28.1.1-64bit-portable.zip -ostrawberry-perl
+      curl -O https://strawberryperl.com/download/5.28.2.1/strawberry-perl-5.28.2.1-64bit-portable.zip
+      7z x strawberry-perl-5.28.2.1-64bit-portable.zip -ostrawberry-perl
     displayName: Install ActivePerl (required to build OpenSSL)
 
   - bash: |
@@ -192,7 +177,7 @@ jobs:
     displayName: Install Jom
 
   - bash: |
-      mkdir bytecoin && cd bytecoin
+      mkdir armor && cd armor
       git init
       git remote add origin https://user:$(GithubPAT)@github.com/$(daemonsRepo)
       git fetch --depth 1 origin $(Build.SourceBranch)
@@ -206,7 +191,7 @@ jobs:
     displayName: Fetch boost
 
   - bash: |
-      git clone --single-branch --depth 1 https://github.com/bcndev/lmdb.git
+      git clone --single-branch --depth 1 https://github.com/armornetworkdev/lmdb.git
     displayName: Clone LMDB
 
   - bash: |
@@ -232,29 +217,29 @@ jobs:
     displayName: Build OpenSSL
 
   - bash: |
-      mkdir bytecoin/build && cd bytecoin/build
+      mkdir armor/build && cd armor/build
       "$(vsCMakeDir)"/cmake.exe -G "$(generatorName)" --config RelWithDebInfo ..
       CL=/MP
       "$(vsMSBuildDir)"/msbuild.exe ALL_BUILD.vcxproj -maxcpucount -p:Configuration=RelWithDebInfo
     displayName: Build daemons
 
   - bash: |
-      mv -v bytecoin/bin/RelWithDebInfo/* bytecoin/bin
-      mv -v bytecoin/libs/RelWithDebInfo/* bytecoin/libs
+      mv -v armor/bin/RelWithDebInfo/* armor/bin
+      mv -v armor/libs/RelWithDebInfo/* armor/libs
     displayName: Move daemons from RelWithDebInfo to bin/ or libs/
 
   - bash: |
-      7z a "$(Build.ArtifactStagingDirectory)"/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win$(arch).zip \
-        ./bytecoin/bin/bytecoind.exe \
-        ./bytecoin/bin/bytecoind.pdb \
-        ./bytecoin/bin/minerd.exe \
-        ./bytecoin/bin/minerd.pdb \
-        ./bytecoin/bin/walletd.exe \
-        ./bytecoin/bin/walletd.pdb
+      7z a "$(Build.ArtifactStagingDirectory)"/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-win$(arch).zip \
+        ./armor/bin/armord.exe \
+        ./armor/bin/armord.pdb \
+        ./armor/bin/minerd.exe \
+        ./armor/bin/minerd.pdb \
+        ./armor/bin/walletd.exe \
+        ./armor/bin/walletd.pdb
     displayName: Zip daemons
 
   - bash: |
-      7z a "$(Build.ArtifactStagingDirectory)"/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win$(arch)-crypto.zip bytecoin/libs/bytecoin-crypto.lib bytecoin/src
+      7z a "$(Build.ArtifactStagingDirectory)"/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-win$(arch)-crypto.zip armor/libs/armor-crypto.lib armor/src
     displayName: Zip artifacts for future desktop build
 
   - task: PublishBuildArtifacts@1
@@ -272,10 +257,7 @@ jobs:
   - Mac
   - Windows
   condition: |
-    and(
-      succeeded(),
-      startsWith(variables['build.sourceBranch'], 'refs/heads/releases/')
-    )
+      succeeded()
   steps:
   - checkout: none
 
@@ -292,9 +274,9 @@ jobs:
       ls -alh $(Build.ArtifactStagingDirectory)
       [[ `echo $(Build.SourceBranchName) | grep '-'` ]] && preRelease=true || preRelease=false
       curl -H "Authorization: token $(GithubPAT)" \
-        -d '{ "tag_name": "v$(Build.SourceBranchName)",
-            "target_commitish": "$(Build.SourceVersion)",
-            "name": "v$(Build.SourceBranchName)",
+        -d '{ "tag_name": "v$(TagName)",
+            "target_commitish": "$(Build.SourceBranchName)",
+            "name": "v$(TagName)",
             "draft": true,
             "prerelease": '$preRelease'}' \
         https://api.github.com/repos/$(daemonsRepo)/releases > resp
@@ -304,25 +286,31 @@ jobs:
       curl \
         -H "Authorization: token $(GithubPAT)" \
         -H "Content-Type: application/zip" -X POST \
-        --data-binary "@$(Build.ArtifactStagingDirectory)/linux64/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-linux64.zip" \
-        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-linux64.zip"
+        --data-binary "@$(Build.ArtifactStagingDirectory)/linux64/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-linux64.zip" \
+        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-linux64.zip"
       curl \
         -H "Authorization: token $(GithubPAT)" \
         -H "Content-Type: application/zip" -X POST \
-        --data-binary "@$(Build.ArtifactStagingDirectory)/macos/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-macos.zip" \
-        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-macos.zip"
+        --data-binary "@$(Build.ArtifactStagingDirectory)/linux64/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-linux64-crypto.zip" \
+        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-linux64-crypto.zip"
       curl \
         -H "Authorization: token $(GithubPAT)" \
         -H "Content-Type: application/zip" -X POST \
-        --data-binary "@$(Build.ArtifactStagingDirectory)/win64/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win64.zip" \
-        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win64.zip"
+        --data-binary "@$(Build.ArtifactStagingDirectory)/macos/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-macos.zip" \
+        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-macos.zip"
       curl \
         -H "Authorization: token $(GithubPAT)" \
         -H "Content-Type: application/zip" -X POST \
-        --data-binary "@$(Build.ArtifactStagingDirectory)/win32/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win32.zip" \
-        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-win32.zip"
+        --data-binary "@$(Build.ArtifactStagingDirectory)/macos/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-macos-crypto.zip" \
+        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-macos-crypto.zip"
+      curl \
+        -H "Authorization: token $(GithubPAT)" \
+        -H "Content-Type: application/zip" -X POST \
+        --data-binary "@$(Build.ArtifactStagingDirectory)/win64/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-win64.zip" \
+        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-win64.zip"
+      curl \
+        -H "Authorization: token $(GithubPAT)" \
+        -H "Content-Type: application/zip" -X POST \
+        --data-binary "@$(Build.ArtifactStagingDirectory)/win64/$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-win64-crypto.zip" \
+        https://uploads.github.com/repos/$(daemonsRepo)/releases/$release_id/assets?name="$(System.TeamProject)-daemons-$(Build.SourceBranchName)-$(TagName)-win64-crypto.zip"
     displayName: Create github release in daemons repo
-
-  - script: |
-      curl -H "Authorization: token $(GithubPAT)" -X DELETE https://api.github.com/repos/$(daemonsRepo)/git/$(Build.SourceBranch)
-    displayName: Remove branch created for the build
