@@ -206,8 +206,6 @@ $armor/build> time make -j8
 
 Armor works on 32-bit systems if SQLite is used instead of LMDB (we've experienced lots of problems building and running with lmdb in 32-bit compatibility mode, especially on iOS).
 
-We build official x86 32-bit version for Windows only, because there is zero demand for 32-bit version for Linux or Mac.
-
 Building source code for iOS, Android, Raspberry PI, etc is possible (we have experimental `armord` and `walletd` running on ARM64 iPhone) but requires major skills on your part. __TBD__
 
 ## Building on Big-Endian platforms
