@@ -19,7 +19,7 @@ using namespace cn::hardware;
 using namespace crypto;
 
 #define BTCHIP_VID 0x2c97
-#define BTCHIP_PID 0x0001
+#define BTCHIP_PID 0x1001
 #define DEFAULT_LEDGER_CHANNEL 0x0101
 #define LEDGER_HID_PACKET_SIZE 64
 #define TAG_APDU 0x05
