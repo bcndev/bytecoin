@@ -157,8 +157,10 @@ const char *const SEED_NODES_STAGENET[] = {
 // testnet will have no seed nodes
 
 constexpr const HardCheckpoint CHECKPOINTS[] = {
-	//{0, common::pfh<Hash>("d07c564a59aeb25258f9575ffa24bd0ad88b2d88452bec2a3d0c150571e623bb")},
-	{500, common::pfh<Hash>("93457e2e8942edcadaebeadda8d78b520476abfcffeb499a0b88832f3ddb2335")}
+    {500, common::pfh<Hash>("93457e2e8942edcadaebeadda8d78b520476abfcffeb499a0b88832f3ddb2335")},
+    {10000, common::pfh<Hash>("8ca6dee104f34c090171ab23b3875561916122683a6c560a6e5b61f2a30368f9")},
+    {20000, common::pfh<Hash>("2d04a899bfca9cd42f58aa275c5957532a6e865f08fa74156875c0d38a5e9845")},
+    {30000, common::pfh<Hash>("36b2d490940e3badec0c4ffe50db2de196c53ad8e3738ba87d7415fc22986c61")},
 };
 
 // When adding checkpoint and BEFORE release, you MUST check that daemon fully syncs both mainnet and stagenet.
