@@ -151,9 +151,17 @@ constexpr PublicKey CHECKPOINT_PUBLIC_KEYS_STAGENET[] = {
 };
 
 const char *const SEED_NODES[] = {
-    "62.171.176.187:58080"};
+    "207.180.200.250:58080",
+    "207.180.200.250:57080",
+    "107.172.43.135:58080",
+    "144.76.186.203:58080"
+};
 const char *const SEED_NODES_STAGENET[] = {
-    "62.171.176.187:58080"};
+    "207.180.200.250:58080",
+    "207.180.200.250:57080",
+    "107.172.43.135:58080",
+    "144.76.186.203:58080"
+};
 // testnet will have no seed nodes
 
 constexpr const HardCheckpoint CHECKPOINTS[] = {
