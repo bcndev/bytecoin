@@ -168,7 +168,11 @@ constexpr const HardCheckpoint CHECKPOINTS[] = {
     {500, common::pfh<Hash>("93457e2e8942edcadaebeadda8d78b520476abfcffeb499a0b88832f3ddb2335")},
     {10000, common::pfh<Hash>("8ca6dee104f34c090171ab23b3875561916122683a6c560a6e5b61f2a30368f9")},
     {20000, common::pfh<Hash>("2d04a899bfca9cd42f58aa275c5957532a6e865f08fa74156875c0d38a5e9845")},
-    {30000, common::pfh<Hash>("36b2d490940e3badec0c4ffe50db2de196c53ad8e3738ba87d7415fc22986c61")}
+    {30000, common::pfh<Hash>("36b2d490940e3badec0c4ffe50db2de196c53ad8e3738ba87d7415fc22986c61")},
+    {40000, common::pfh<Hash>("dab79ac59adf1e0a7c1e6f0f741ae4a8ca4d1dbeead23cf79933a53d903c2239")},
+    {50000, common::pfh<Hash>("ccdf7c2c4b363a57ed5fe884c712a8d4313965e1d569aafe77cae6a0c7d0dc9a")},
+    {60000, common::pfh<Hash>("eb2d0f3e043d111dc929bad94d4776975aed1afd906f2eafabf97cacde8f4e04")},
+    {68000, common::pfh<Hash>("6eea30c9b3d1884019cc00ce77d079a508aacaa930f485679a6ee794c045ed3a")}
 };
 
 // When adding checkpoint and BEFORE release, you MUST check that daemon fully syncs both mainnet and stagenet.
