@@ -55,7 +55,7 @@ jobs:
 
   - script: |
       wget -c 'https://github.com/boostorg/boost/archive/refs/tags/boost-1.69.0.tar.gz'
-      mkdir boost && tar -xzf ./boost_1_69_0.tar.gz --directory boost --strip-components=1
+      mkdir boost && tar -xzf ./boost-1.69.0.tar.gz --directory boost --strip-components=1
     displayName: Fetch boost
 
   - script: |
@@ -186,7 +186,7 @@ jobs:
 
   - bash: |
       curl -L -O https://github.com/boostorg/boost/archive/refs/tags/boost-1.69.0.zip
-      7z x boost_1_69_0.zip
+      7z x boost-1.69.0.zip
       mv boost_1_69_0 boost
     displayName: Fetch boost
 
