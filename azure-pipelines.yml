@@ -187,7 +187,7 @@ jobs:
   - bash: |
       curl -L -O https://github.com/boostorg/boost/archive/refs/tags/boost-1.69.0.zip
       7z x boost-1.69.0.zip
-      mv boost_1_69_0 boost
+      mv boost-1.69.0.zip
     displayName: Fetch boost
 
   - bash: |
