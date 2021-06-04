@@ -54,7 +54,7 @@ jobs:
     displayName: Clone daemons code
 
   - script: |
-      wget -c 'https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz'
+      wget -c 'https://github.com/boostorg/boost/archive/refs/tags/boost-1.69.0.tar.gz'
       mkdir boost && tar -xzf ./boost_1_69_0.tar.gz --directory boost --strip-components=1
     displayName: Fetch boost
 
@@ -185,7 +185,7 @@ jobs:
     displayName: Clone daemons code
 
   - bash: |
-      curl -L -O https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.zip
+      curl -L -O https://github.com/boostorg/boost/archive/refs/tags/boost-1.69.0.zip
       7z x boost_1_69_0.zip
       mv boost_1_69_0 boost
     displayName: Fetch boost
