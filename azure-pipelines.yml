@@ -95,15 +95,16 @@ jobs:
   pool:
     vmImage: macOS-10.14
   variables:
-    MACOSX_DEPLOYMENT_TARGET: 10.11
+    MACOSX_DEPLOYMENT_TARGET: 10.14
   condition: |
       succeeded()
   steps:
   - checkout: none
 
   - script: |
-      brew install boost
-    displayName: Install boost from Homebrew
+      wget -c 'https://github.com/boostorg/boost/archive/refs/tags/boost-1.69.0.tar.gz'
+      mkdir boost && tar -xzf ./boost-1.69.0.tar.gz --directory boost --strip-components=1
+    displayName: Install boost
 
   - script: |
       mkdir armor && cd armor
