@@ -54,8 +54,8 @@ jobs:
     displayName: Clone daemons code
 
   - script: |
-      wget -c 'https://github.com/boostorg/boost/archive/refs/tags/boost-1.69.0.tar.gz'
-      mkdir boost && tar -xzf ./boost-1.69.0.tar.gz --directory boost --strip-components=1
+      wget -c 'https://boostorg.jfrog.io/artifactory/main/release/1.69.0/source/boost_1_69_0.tar.gz'
+      mkdir boost && tar -xzf ./boost_1_69_0.tar.gz --directory boost --strip-components=1
     displayName: Fetch boost
 
   - script: |
@@ -102,8 +102,8 @@ jobs:
   - checkout: none
 
   - script: |
-      wget -c 'https://github.com/boostorg/boost/archive/refs/tags/boost-1.69.0.tar.gz'
-      mkdir boost && tar -xzf ./boost-1.69.0.tar.gz --directory boost --strip-components=1
+      wget -c 'https://boostorg.jfrog.io/artifactory/main/release/1.69.0/source/boost_1_69_0.tar.gz'
+      mkdir boost && tar -xzf ./boost_1_69_0.tar.gz --directory boost --strip-components=1
     displayName: Install boost
 
   - script: |
@@ -186,9 +186,9 @@ jobs:
     displayName: Clone daemons code
 
   - bash: |
-      curl -L -O https://github.com/boostorg/boost/archive/refs/tags/boost-1.69.0.zip
-      7z x boost-1.69.0.zip
-      mv boost-boost-1.69.0 boost
+      curl -L -O https://boostorg.jfrog.io/artifactory/main/release/1.69.0/source/boost_1_69_0.tar.gz
+      7z x "boost_1_69_0.tar.gz" -so | 7z x -aoa -si -ttar -o "boost_1_69_0"
+      mv boost_1_69_0 boost
     displayName: Fetch boost
 
   - bash: |
