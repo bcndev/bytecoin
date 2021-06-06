@@ -52,7 +52,7 @@ To go futher you have to have a number of packages and utilities. You need at le
     If the latest boost installed is too old (e.g. for Ubuntu 16.*), then you need to download and unpack boost into the `armor/boost` folder.
 
     ```
-    $armor> wget -c 'https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz'
+    $armor> wget -c 'https://boostorg.jfrog.io/artifactory/main/release/1.69.0/source/boost_1_69_0.tar.gz'
     $armor> tar -xzf ./boost_1_69_0.tar.gz
     $armor> rm ./boost_1_69_0.tar.gz
     $armor> mv ./boost_1_69_0/ ./boost/
