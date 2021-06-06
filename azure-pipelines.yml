@@ -30,7 +30,7 @@ jobs:
 ####################### Linux #######################
 - job: Linux
   pool:
-    vmImage: ubuntu-16.04
+    vmImage: ubuntu-18.04
   steps:
   - checkout: none
 
@@ -54,7 +54,7 @@ jobs:
     displayName: Clone daemons code
 
   - script: |
-      wget -c 'https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.tar.gz'
+      wget -c 'https://boostorg.jfrog.io/artifactory/main/release/1.69.0/source/boost_1_69_0.tar.gz'
       mkdir boost && tar -xzf ./boost_1_69_0.tar.gz --directory boost --strip-components=1
     displayName: Fetch boost
 
@@ -95,15 +95,16 @@ jobs:
   pool:
     vmImage: macOS-10.14
   variables:
-    MACOSX_DEPLOYMENT_TARGET: 10.11
+    MACOSX_DEPLOYMENT_TARGET: 10.14
   condition: |
       succeeded()
   steps:
   - checkout: none
 
   - script: |
-      brew install boost
-    displayName: Install boost from Homebrew
+      wget -c 'https://boostorg.jfrog.io/artifactory/main/release/1.69.0/source/boost_1_69_0.tar.gz'
+      mkdir boost && tar -xzf ./boost_1_69_0.tar.gz --directory boost --strip-components=1
+    displayName: Install boost
 
   - script: |
       mkdir armor && cd armor
@@ -185,8 +186,8 @@ jobs:
     displayName: Clone daemons code
 
   - bash: |
-      curl -L -O https://dl.bintray.com/boostorg/release/1.69.0/source/boost_1_69_0.zip
-      7z x boost_1_69_0.zip
+      curl -L -O https://boostorg.jfrog.io/artifactory/main/release/1.69.0/source/boost_1_69_0.tar.gz
+      7z x -tgzip -so boost_1_69_0.tar.gz | 7z x -si -ttar
       mv boost_1_69_0 boost
     displayName: Fetch boost
 
