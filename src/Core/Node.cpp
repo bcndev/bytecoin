@@ -376,6 +376,7 @@ api::cnd::GetStatus::Response Node::create_status_response() const {
 	res.recommended_fee_per_byte         = m_block_chain.get_currency().coin() / 1000000;  // TODO - calculate
 	res.recommended_max_transaction_size = m_block_chain.get_currency().get_recommended_max_transaction_size();
 	res.transaction_pool_version         = m_block_chain.get_tx_pool_version();
+    res.already_generated_coins          = tip.already_generated_coins;
 	return res;
 }
 

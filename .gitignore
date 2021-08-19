@@ -5,6 +5,7 @@ xcuserdata
 /bytecoin.cbp
 *swp
 WorkspaceSettings.xcsettings
+*.user
 
 # cmake specific
 CMakeLists.txt.user*

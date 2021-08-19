@@ -258,6 +258,7 @@ struct GetStatus {
 		// effective median size concept, but if your tx size is larger, chance it will not be included in block for
 		// a long time (or never).
 		bool ready_for_longpoll(const Request &other) const;
+        Amount already_generated_coins = 0;
 	};
 };
 

@@ -1,10 +1,10 @@
 ## Introduction
 
-The Bytecoin Wallet Daemon (`walletd`, Bytecoin RPC Wallet) is designed to manage a user's account while operating together with a Bytecoin Node Daemon. To start the `walletd` you must pass a path to a wallet file as a command-line parameter which identifies the context the service will work within.
+The Armor Wallet Daemon (`walletd`, Armor RPC Wallet) is designed to manage a user's account while operating together with a Armor Node Daemon. To start the `walletd` you must pass a path to a wallet file as a command-line parameter which identifies the context the service will work within.
 
 ## Service Location
 
-By default, the Bytecoin Wallet Daemon is only bound to `127.0.0.1` (`localhost`) interface, so it can only be reached from the same computer it runs on. To bind it to all interfaces, use `--walletd-bind-address=0.0.0.0:8070` command line argument (note that specifying port is mandatory).
+By default, the Armor Wallet Daemon is only bound to `127.0.0.1` (`localhost`) interface, so it can only be reached from the same computer it runs on. To bind it to all interfaces, use `--walletd-bind-address=0.0.0.0:58082` command line argument (note that specifying port is mandatory).
 
 To make a JSON PRC request to the `walletd` you should make an HTTP POST request to an entry point:
 ```
@@ -12,7 +12,7 @@ http://<ip>:<port>/json_rpc
 ```
 where:
 * `<ip>` is the IPv4 address of the `walletd` service. If the service is on a local machine, use `127.0.0.1` instead of `localhost`.
-* `<port>` is TCP port of `walletd`. By default the service is bound to `8070`.
+* `<port>` is TCP port of `walletd`. By default the service is bound to `58082`.
 
 ## Curl Template
 
@@ -39,7 +39,7 @@ curl -s -u <user>:<pass> -X POST http://<ip>:<port>/json_rpc -H 'Content-Type: a
 |-----|---------------------|-------------------------------------------------------------------------------|
 | 7.  | `create_sendproof`  | Creates sendproof that money has been sent to an address.                     |
 | 8.  | `get_balance`       | Returns balance for a single address or all addresses.                        |
-| 9.  | `get_status`        | Returns combined status of `walletd` and `bytecoind`.                         |
+| 9.  | `get_status`        | Returns combined status of `walletd` and `armord`.                         |
 | 10. | `get_transaction`   | Returns transaction (only if it has transfer(s) to/from any address) by hash. |
 | 11. | `get_transfers`     | Allows iterating through history of transfers to/from addresses.              |
 | 12. | `get_unspents`      | Returns balance split into outputs.                                           |
@@ -87,7 +87,7 @@ Let's create two new addresses.
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "create_addresses",
@@ -142,7 +142,7 @@ Let's request all the addresses in the current wallet file.
 __Input:__
 
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_addresses"
@@ -172,7 +172,7 @@ Let's request `2` addresses, starting from position `1` in the file (count start
 __Input:__
 
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_addresses",
@@ -225,7 +225,7 @@ Let's receive a pair of view keys from the current wallet file.
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_view_key_pair"
@@ -282,7 +282,7 @@ Let's receive a pair of view keys from the current wallet file.
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_wallet_info"
@@ -329,7 +329,7 @@ Gets (first creating if desired) wallet records (addresses). `index` and `count`
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_wallet_records"
@@ -374,7 +374,7 @@ __Output:__
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "set_address_label",
@@ -424,7 +424,7 @@ Let's create a send proof for a transaction sent from the current wallet.
 
 __Input:__
 ```
-curl -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "create_sendproof",
@@ -483,7 +483,7 @@ Let's get balance for all addresses under a depth of 6 blocks.
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_balance",
@@ -515,7 +515,7 @@ Let's get balance for address `2AGmhxRPbK3BtiyUz7vc4hHTj4n2cPdiWTHXgfHmPow5gr83G
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_balance",
@@ -546,7 +546,7 @@ __Output:__
 
 #### About
 
-Get status about state of walletd and bytecoind. If you specify all input parameters, and they are equal to the current state of the `walletd`, you will get response only when some of them change. Most simple way to accomplish this is just sending previous response as the next request.
+Get status about state of walletd and armord. If you specify all input parameters, and they are equal to the current state of the `walletd`, you will get response only when some of them change. Most simple way to accomplish this is just sending previous response as the next request.
 
 `get_status` supports longpoll. All longpoll arguments are optional. For example, if you are interested in `outgoing_peer_count` only, you can specify only `outgoing_peer_count` in the request and get the response when `outgoing_peer_count` changes. Changes to other fields will not trigger response to longpoll.
 
@@ -564,7 +564,7 @@ Get status about state of walletd and bytecoind. If you specify all input parame
 
 | Field                              | Type     | Description                                                                              |
 |------------------------------------|----------|------------------------------------------------------------------------------------------|
-| `top_known_block_height`           | `uint32` | Largest block height known to walletd or bytecoind.                                      |
+| `top_known_block_height`           | `uint32` | Largest block height known to walletd or armord.                                      |
 | `top_block_height`                 | `uint32` | All transaction prior to that height have been processed by walletd.                     |
 | `top_block_difficulty`             | `uint64` | Difficulty of top block.                                                                 |
 | `top_block_timestamp`              | `uint32` | Timestamp of top block.                                                                  |
@@ -572,9 +572,9 @@ Get status about state of walletd and bytecoind. If you specify all input parame
 | `top_block_timestamp_median`       | `uint32` | Median timestamp of top block.                                                           |
 | `recommended_fee_per_byte`         | `uint64` | Value of fee recommended.                                                                |
 | `transaction_pool_version`         | `uint32` | Adding or removing transaction from pool increments version.                             |
-| `incoming_peer_count`              | `uint32` | Incoming peers to bytecoind.                                                             |
-| `outgoing_peer_count`              | `uint32` | Outgoing peers from bytecoind.                                                           |
-| `lower_level_error`                | `string` | Error on lower level (bytecoind for walletd, etc).                                       |
+| `incoming_peer_count`              | `uint32` | Incoming peers to armord.                                                             |
+| `outgoing_peer_count`              | `uint32` | Outgoing peers from armord.                                                           |
+| `lower_level_error`                | `string` | Error on lower level (armord for walletd, etc).                                       |
 | `next_block_effective_median_size` | `uint32` | Created transaction raw size should be less this value, otherwise will not fit in block. |
 
 #### Example 1
@@ -583,7 +583,7 @@ Let's do a regular status request.
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_status"
@@ -640,7 +640,7 @@ Let's request the transaction info by its hash.
 
 __Input:__
 ```
-curl -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_transaction",
@@ -775,12 +775,12 @@ Let's get transfers for address `2AGmhxRPbK3BtiyUz7vc4hHTj4n2cPdiWTHXgfHmPow5gr8
 
 __Input:__
 ```
-curl -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_transfers",
   "params": {
-  	"address":"238HrUqVy8DMxHRufGEt6o1qmomTHbUp55FndtK7ABEuc2hUJQZFGjMZXNtsKQaAaZiVgnBuJgcG2Lt1ZEKcjv5s6fwStLv",
+    "address":"238HrUqVy8DMxHRufGEt6o1qmomTHbUp55FndtK7ABEuc2hUJQZFGjMZXNtsKQaAaZiVgnBuJgcG2Lt1ZEKcjv5s6fwStLv",
     "desired_transaction_count": 100
   }
 }'
@@ -1122,7 +1122,7 @@ Let's view unpsents for address `2AGmhxRPbK3BtiyUz7vc4hHTj4n2cPdiWTHXgfHmPow5gr8
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "get_unspents",
@@ -1254,7 +1254,7 @@ Let's create a transaction, which transfers `10000` AU to address `2AREy1c2nBj7N
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "create_transaction",
@@ -1484,7 +1484,7 @@ __Output:__
 
 #### About
 
-Place the transaction (previously created with `create_transaction`) into the payment queue for immediate sending to the p2p network. The record of the TX would be removed from payment queue in 24 hours if the TX has reached 720 confirmations.  Note, that if `bytecoind` is not connected to internet, this method will nevertheless succeed.
+Place the transaction (previously created with `create_transaction`) into the payment queue for immediate sending to the p2p network. The record of the TX would be removed from payment queue in 24 hours if the TX has reached 720 confirmations.  Note, that if `armord` is not connected to internet, this method will nevertheless succeed.
 
 Result of call will be `broadcast`, if transaction was successfully placed into the payment queue.
 
@@ -1507,7 +1507,7 @@ Let's create a transaction, which transfers `10000` AU to address `2AREy1c2nBj7N
 
 __Input:__
 ```
-curl -s -u user:pass -X POST http://127.0.0.1:8070/json_rpc -H 'Content-Type: application/json-rpc' -d '{
+curl -s -u user:pass -X POST http://127.0.0.1:58082/json_rpc -H 'Content-Type: application/json-rpc' -d '{
   "jsonrpc": "2.0",
   "id": "0",
   "method": "send_transaction",

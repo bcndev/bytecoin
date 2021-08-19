@@ -23,8 +23,8 @@ void crypto_cn_fast_hash(const void *data, size_t length, struct cryptoHash *has
 // void crypto_cn_fast_hash64(const void *data, size_t length, unsigned char hash[64]);
 
 void crypto_cn_slow_hash(void *scratchpad, const void *data, size_t length, struct cryptoHash *hash);
-void crypto_cn_slow_hash_platform_independent(
-    void *scratchpad, const void *data, size_t length, struct cryptoHash *hash);
+//void crypto_cn_slow_hash_platform_independent(
+//    void *scratchpad, const void *data, size_t length, struct cryptoHash *hash);
 
 struct cryptoKeccakState {
 	uint8_t b[200];

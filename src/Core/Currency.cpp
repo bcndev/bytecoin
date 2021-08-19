@@ -69,8 +69,10 @@ Currency::Currency(const Config &config)
     , min_dust_threshold(MIN_DUST_THRESHOLD)
     , max_dust_threshold(MAX_DUST_THRESHOLD)
     , self_dust_threshold(SELF_DUST_THRESHOLD)
-    , difficulty_target(std::max<Timestamp>(1,
-          DIFFICULTY_TARGET / platform::get_time_multiplier_for_tests()))  // multiplier can be != 1 only in testnet
+    //, difficulty_target(std::max<Timestamp>(1,
+    //      DIFFICULTY_TARGET / platform::get_time_multiplier_for_tests()))  // multiplier can be != 1 only in testnet
+    , difficulty_target(DIFFICULTY_TARGET)
+    , difficulty_window_lwma(DIFFICULTY_WINDOWS_LWMA)
     , upgrade_heights{UPGRADE_HEIGHT_V2, UPGRADE_HEIGHT_V3, UPGRADE_HEIGHT_V4}
     , key_image_subgroup_checking_height(KEY_IMAGE_SUBGROUP_CHECKING_HEIGHT)
     , amethyst_block_version(BLOCK_VERSION_AMETHYST)
@@ -99,7 +101,7 @@ Currency::Currency(const Config &config)
 		if (net == "main") {
 			// Demystified genesis block calculations below
 			PublicKey genesis_tx_public_key =
-			    common::pfh<PublicKey>("3c086a48c15fb637a96991bc6d53caf77068b5ba6eeb3c82357228c49790584a");
+                common::pfh<PublicKey>("a9fb59d721aa495decac1477605a1e6530e1615c0eace9333e8a7fde90fff908");
 			Transaction coinbase_transaction;
 			coinbase_transaction.version                   = 1;
 			coinbase_transaction.unlock_block_or_timestamp = mined_money_unlock_window;
@@ -107,7 +109,7 @@ Currency::Currency(const Config &config)
 			OutputKey genesis_output;
 			genesis_output.amount = money_supply >> EMISSION_SPEED_FACTOR;
 			genesis_output.public_key =
-			    common::pfh<PublicKey>("9b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd088071");
+                common::pfh<PublicKey>("9b2e4c0281c0b02e7c53291a94d1d0cbff8883f8024f5142ee494ffbbd088071");
 			coinbase_transaction.outputs.push_back(TransactionOutput{genesis_output});
 			extra::add_transaction_public_key(coinbase_transaction.extra, genesis_tx_public_key);
 			invariant(miner_tx_blob == seria::to_binary(coinbase_transaction),
@@ -227,6 +229,8 @@ Difficulty Currency::get_minimum_difficulty(uint8_t block_major_version) const {
 
 Height Currency::difficulty_windows_plus_lag() const { return DIFFICULTY_WINDOW + DIFFICULTY_LAG; }
 
+Height Currency::difficulty_windows() const {return DIFFICULTY_WINDOWS_LWMA; }
+
 size_t Currency::get_minimum_size_median(uint8_t block_major_version) const {
 	if (block_major_version == 1)
 		return MINIMUM_SIZE_MEDIAN_V1;
@@ -280,7 +284,8 @@ Amount Currency::get_block_reward(uint8_t block_major_version, Height height, si
 
 Height Currency::largest_window() const {
 	return std::max(block_capacity_vote_window,
-	    std::max(difficulty_windows_plus_lag(),
+        //std::max(difficulty_windows_plus_lag(),
+          std::max(difficulty_windows(),
 	        std::max(median_block_size_window,
 	            std::max(BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW, BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW_V1_3))));
 }
@@ -577,10 +582,73 @@ Difficulty Currency::next_difficulty(
 
 Difficulty Currency::next_effective_difficulty(uint8_t block_major_version, std::vector<Timestamp> timestamps,
     std::vector<CumulativeDifficulty> cumulative_difficulties) const {
+    /*
 	Difficulty difficulty = next_difficulty(&timestamps, &cumulative_difficulties);
 	if (difficulty < get_minimum_difficulty(block_major_version))  // even when it is 0
 		difficulty = get_minimum_difficulty(block_major_version);
 	return difficulty;
+    */
+    Difficulty difficulty = next_difficultyLWMA3(block_major_version, timestamps, cumulative_difficulties);
+    return difficulty;
+}
+
+// LWMA-3 difficulty algorithm
+// Copyright (c) 2017-2018 Zawy, MIT License
+// https://github.com/zawy12/difficulty-algorithms/issues/3
+Difficulty Currency::next_difficultyLWMA3(uint8_t block_major_version, std::vector<Timestamp> timestamps, std::vector<CumulativeDifficulty> cumulative_difficulties) const
+{
+    uint64_t T = difficulty_target;
+    uint64_t N = difficulty_window_lwma - 1;
+    uint64_t L(0), ST, sum_3_ST(0), next_D, prev_D, thisTimestamp, previousTimestamp;
+    Timestamp difficulty_limit = get_minimum_difficulty(block_major_version);
+
+    if (timestamps.size() <= 10)
+        return difficulty_limit;
+
+    /* Don't have the full amount of blocks yet, starting up */
+    if (timestamps.size() < N+1)
+        N = timestamps.size() - 1;
+
+    previousTimestamp = timestamps[0];
+
+    for (uint64_t i = 1; i <= N; i++)
+    {
+        if (timestamps[i] > previousTimestamp)
+            thisTimestamp = timestamps[i];
+        else
+            thisTimestamp = previousTimestamp + 1;
+
+        ST = std::min(6*T, thisTimestamp - previousTimestamp);
+        previousTimestamp = thisTimestamp;
+        L +=  ST * i;
+
+        if (i > N-3)
+        {
+            sum_3_ST += ST;
+        }
+    }
+
+    CumulativeDifficulty nD = (cumulative_difficulties[N] - cumulative_difficulties[0]);
+    next_D = (nD.lo *T*(N+1)*99 ) / (100*2*L);
+
+    CumulativeDifficulty pD = (cumulative_difficulties[N] - cumulative_difficulties[N-1]);
+    prev_D = pD.lo;
+
+    next_D = std::max((prev_D * 67) / 100, std::min(next_D, (prev_D * 150) / 100));
+
+    if(nD.hi!=0 || pD.hi!=0)
+        return 0;//DIFFICULTY_OVERHEAD
+
+    if (sum_3_ST < (8 * T) / 10)
+    {
+        next_D = std::max(next_D, (prev_D * 108) / 100);
+    }
+
+    // Minimum limit
+    if (next_D < difficulty_limit)
+        next_D = difficulty_limit;
+
+    return next_D;
 }
 
 BinaryArray Currency::get_block_pow_hashing_data(const BlockHeader &bh, const BlockBodyProxy &body_proxy) const {
