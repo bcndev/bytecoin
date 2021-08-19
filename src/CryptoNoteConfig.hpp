@@ -167,14 +167,22 @@ const char *const SEED_NODES_STAGENET[] = {
 // testnet will have no seed nodes
 
 constexpr const HardCheckpoint CHECKPOINTS[] = {
-    {500, common::pfh<Hash>("93457e2e8942edcadaebeadda8d78b520476abfcffeb499a0b88832f3ddb2335")},
-    {10000, common::pfh<Hash>("8ca6dee104f34c090171ab23b3875561916122683a6c560a6e5b61f2a30368f9")},
-    {20000, common::pfh<Hash>("2d04a899bfca9cd42f58aa275c5957532a6e865f08fa74156875c0d38a5e9845")},
-    {30000, common::pfh<Hash>("36b2d490940e3badec0c4ffe50db2de196c53ad8e3738ba87d7415fc22986c61")},
-    {40000, common::pfh<Hash>("dab79ac59adf1e0a7c1e6f0f741ae4a8ca4d1dbeead23cf79933a53d903c2239")},
-    {50000, common::pfh<Hash>("ccdf7c2c4b363a57ed5fe884c712a8d4313965e1d569aafe77cae6a0c7d0dc9a")},
-    {60000, common::pfh<Hash>("eb2d0f3e043d111dc929bad94d4776975aed1afd906f2eafabf97cacde8f4e04")},
-    {68000, common::pfh<Hash>("6eea30c9b3d1884019cc00ce77d079a508aacaa930f485679a6ee794c045ed3a")}
+    {500, common::pfh("93457e2e8942edcadaebeadda8d78b520476abfcffeb499a0b88832f3ddb2335")},
+    {10000, common::pfh("8ca6dee104f34c090171ab23b3875561916122683a6c560a6e5b61f2a30368f9")},
+    {20000, common::pfh("2d04a899bfca9cd42f58aa275c5957532a6e865f08fa74156875c0d38a5e9845")},
+    {30000, common::pfh("36b2d490940e3badec0c4ffe50db2de196c53ad8e3738ba87d7415fc22986c61")},
+    {40000, common::pfh("dab79ac59adf1e0a7c1e6f0f741ae4a8ca4d1dbeead23cf79933a53d903c2239")},
+    {50000, common::pfh("ccdf7c2c4b363a57ed5fe884c712a8d4313965e1d569aafe77cae6a0c7d0dc9a")},
+    {60000, common::pfh("eb2d0f3e043d111dc929bad94d4776975aed1afd906f2eafabf97cacde8f4e04")},
+    {68000, common::pfh("6eea30c9b3d1884019cc00ce77d079a508aacaa930f485679a6ee794c045ed3a")}
+   ,{109739, common::pfh("123e88f375ca4a62a5bbcd29a975944961785b2d63f5874765880b4d2b10e0c5")}
+   ,{109740, common::pfh("1e3d052a10895e40d13bdb823c0f158f76bb11661f4420e3f7cb607b150aed83")}
+   ,{130175, common::pfh("89594bc8ae96d9f9939348b1ca29a6322a8c9f4c2968524c27fca9078012676f")}
+   ,{130176, common::pfh("dd8244dbd2022c2dc15737d712f4744ff1398223f7107af533924d6a9c57e3bd")}
+   ,{130177, common::pfh("52532259e58f3851f22f7d4564cfd442b762d0bc71d2db3a26d21ebb1c1f4f94")}
+   ,{132350, common::pfh("a4098dae7962c2dc07f4ba9c3bf5ea6e9ba60ad523e87392225e3e266d11ace5")}
+   ,{132351, common::pfh("107af3a99654f501ac29d90aa0a32106b5052b5de1ce97e3326b9e9a678d1361")}
+   ,{139999, common::pfh("1e8baa8031e80eb86e5464cb4aeee550945dd5e2a1eede348d58da1505465664")}
 };
 
 // When adding checkpoint and BEFORE release, you MUST check that daemon fully syncs both mainnet and stagenet.
